@@ -50,7 +50,7 @@ If you have any wishes for adding new features, want to share this bot with your
 
 Btw, the following features will be added soon:
     `- Translation of this bot's commands and description into French;`""",
-        "forget": "{} previous messages have been forgotten!",
+        "forget": "All previous messages have been forgotten!",
         "balance": """*You balance: ${} \u2248 {}*\u20bd. 
 
 *Note that if your balance is empty, your access to GPT-4-Turbo will be paused until you add funds.*

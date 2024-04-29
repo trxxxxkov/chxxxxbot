@@ -111,7 +111,7 @@ async def variate_image(path):
     return media
 
 
-async def send_markdown(chat_id, text):
+async def send_markdown(chat_id, text, reply_markup=None):
     if text.replace("\n", "").replace(",", "").replace(".", ""):
         markdown_text = (
             text.replace("$$", "*")
@@ -149,7 +149,9 @@ async def send_markdown(chat_id, text):
         for i in range(len(lines)):
             if lines[i] in ".,?!-:;":
                 lines[i] = ""
-        await bot.send_message(chat_id=chat_id, text="\n".join(lines))
+        await bot.send_message(
+            chat_id=chat_id, text="\n".join(lines), reply_markup=reply_markup
+        )
 
 
 def latex_detection(text):
@@ -299,7 +301,7 @@ async def generate_completion(chat_id, data):
                     response += par[: par.rfind("```")]
                     par = par[par.rfind("```") :]
                 par_type = "code"
-    await send_markdown(chat_id, par)
+    await send_markdown(chat_id, par, reply_markup=keyboards.forget_keyboard)
     response += par
     return response
 
@@ -425,7 +427,7 @@ async def command_start_handler(message: Message) -> None:
     username = message.from_user.username
     if await authorized(message):
         data = read_data(username)
-        await answer(message, "forget", len(data["messages"]))
+        await answer(message, "forget")
         data["messages"].clear()
         data["timestamps"].clear()
         data["tokens"] = 0
