@@ -1,0 +1,15 @@
+[Unit]
+Description = @chxxxxbot's background service 
+After = network.target 
+ 
+[Service]
+Type = simple
+User = bots
+WorkingDirectory=/home/bots/projects/chxxxxbot
+ExecStart = /home/bots/projects/chxxxxbot/.venv/bin/python /home/bots/projects/chxxxxbot/main.py
+Restart = always 
+RestartSec = 5
+TimeoutStartSec = infinity
+ 
+[Install]
+WantedBy = multi-user.target 

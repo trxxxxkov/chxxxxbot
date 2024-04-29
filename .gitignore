@@ -1,0 +1,7 @@
+.env
+.venv
+.vscode
+test.py
+data/
+photos/
+__pycache__/
