@@ -17,7 +17,7 @@ OpenAI, модели которой используются этим ботом
 
 Кстати, в ближайшее время Себастиан получит новые возможности:
     ` - Перевод описания и команд бота на Французский язык;`""",
-        "forget": "{} предыдущих сообщений было забыто!",
+        "forget": "Все предыдущие сообщения были забыты!",
         "balance": """*Ваш баланс: ${} \u2248 {}*\u20bd.
 
 *Обратите внимание, что если на вашем балансе будет недостаточно средств для совершения запроса, доступ к GPT-4-Turbo и DALLE-3 будет приостановлен до тех пор, пока вы не пополните счёт.*
@@ -30,7 +30,11 @@ OpenAI, модели которой используются этим ботом
         "draw": """Введите команду /draw и опишите изображение, которое желаете получить, например:```
 /draw Теннисные мячики небес, которые соединяют и лупят, как захотят```""",
         "redraw": "Нарисовать похожие изображения!",
-        "tokens": "Что такое токены?",
+        "payment": "Узнать цены",
+        "what": "Что теперь?",
+        "error": """Возникла непредвиденная ошибка. Для предотвращения повторного сбоя память Себастиана была автоматически отчищена, и теперь вы можете начать новый диалог. 
+        
+ Не переживайте! Об этом инциденте уже сообщено, так что скоро проблема будет исправлена!""",
     },
     "en": {
         "auth": "You are not authorized. Contact @trxxxxkov to be allowed to chat.",
@@ -65,6 +69,10 @@ For more details, type /balance""",
         "draw": """Describe the image you want to get after /draw command, for example:```
 /draw The stars tennis-balls, struck and bandied which way please them```""",
         "redraw": "Draw similar images!",
-        "tokens": "What are tokens?",
+        "payment": "Learn more about payment",
+        "what": "What now?",
+        "error": """An unexpected error has occurred. To prevent it from happening again, the Sebastian's memory has been automatically cleared, so you may start a new conversation with him. 
+        
+ Don't worry! This incident has been reported and the problem will be fixed soon!""",
     },
 }

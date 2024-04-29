@@ -226,81 +226,106 @@ def translited(text):
     return text
 
 
-async def generate_completion(chat_id, data):
+async def generate_completion(message, data):
     stream = await client.chat.completions.create(
         model=GPT_MODEL, messages=data["messages"], temperature=0.4, stream=True
     )
+    chat_id = message.chat.id
     response = ""
     par = ""
     par_type = "text"
-    async for chunk in stream:
-        if chunk.choices[0].delta.content is not None:
-            par += chunk.choices[0].delta.content
-            if par.find("```") == -1 or par.find("```") != par.rfind(
-                "```"
-            ):  # "```" is absent or has a pair
-                if par_type == "code":
-                    await send_markdown(chat_id, par[: par.rfind("```") + 3])
-                    await bot.send_chat_action(chat_id, ChatAction.TYPING)
-                    response += par[: par.rfind("```") + 3]
-                    par = par[par.rfind("```") + 3 :]
-                elif par_type == "latex":
+    try:
+        async for chunk in stream:
+            if chunk.choices[0].delta.content is not None:
+                par += chunk.choices[0].delta.content
+                if par.find("```") == -1 or par.find("```") != par.rfind(
+                    "```"
+                ):  # "```" is absent or has a pair
+                    if par_type == "code":
+                        await send_markdown(chat_id, par[: par.rfind("```") + 3])
+                        await bot.send_chat_action(chat_id, ChatAction.TYPING)
+                        response += par[: par.rfind("```") + 3]
+                        par = par[par.rfind("```") + 3 :]
+                    elif par_type == "latex":
+                        latex_found = latex_detection(par)
+                        for f in latex_found:
+                            formula = (
+                                par[f[0] + len(f[2][0]) : f[1]]
+                                .replace("если", "if")
+                                .replace("для", "for")
+                                .replace("всех", "all")
+                            )
+                            image_url = (
+                                "https://math.vercel.app?from="
+                                + translited(formula).replace("\\\\", ";\,")
+                            ).replace(" ", "\,\!")
+                            svg_to_jpg(image_url, f"photos/{chat_id}.jpg")
+                            photo = FSInputFile(f"photos/{chat_id}.jpg")
+                            await bot.send_photo(chat_id=chat_id, photo=photo)
+                            await bot.send_chat_action(chat_id, ChatAction.TYPING)
+                        if not latex_found:
+                            await send_markdown(
+                                chat_id,
+                                par[
+                                    par.lower().find("```latex") + 8 : par.rfind("```")
+                                ],
+                            )
+                            await bot.send_chat_action(chat_id, ChatAction.TYPING)
+                        response += par[: par.rfind("```") + 3]
+                        par = par[par.rfind("```") + 3 :]
+                    par_type = "text"
                     latex_found = latex_detection(par)
+                    char_processed = 0
                     for f in latex_found:
-                        formula = (
-                            par[f[0] + len(f[2][0]) : f[1]]
-                            .replace("если", "if")
-                            .replace("для", "for")
-                            .replace("всех", "all")
-                        )
+                        formula = par[
+                            f[0] + len(f[2][0]) - char_processed : f[1] - char_processed
+                        ]
                         image_url = (
                             "https://math.vercel.app?from="
                             + translited(formula).replace("\\\\", ";\,")
                         ).replace(" ", "\,\!")
                         svg_to_jpg(image_url, f"photos/{chat_id}.jpg")
                         photo = FSInputFile(f"photos/{chat_id}.jpg")
+                        await send_markdown(chat_id, par[: f[0] - char_processed])
                         await bot.send_photo(chat_id=chat_id, photo=photo)
                         await bot.send_chat_action(chat_id, ChatAction.TYPING)
-                    if not latex_found:
-                        await send_markdown(
-                            chat_id,
-                            par[par.lower().find("```latex") + 8 : par.rfind("```")],
-                        )
+                        par = par[f[1] + len(f[2][1]) - char_processed :]
+                        char_processed = f[1] + len(f[2][1])
+                    if "\n\n" in par:
+                        await send_markdown(chat_id, par[: par.rfind("\n\n") + 4])
                         await bot.send_chat_action(chat_id, ChatAction.TYPING)
-                    response += par[: par.rfind("```") + 3]
-                    par = par[par.rfind("```") + 3 :]
-                par_type = "text"
-                latex_found = latex_detection(par)
-                char_processed = 0
-                for f in latex_found:
-                    formula = par[
-                        f[0] + len(f[2][0]) - char_processed : f[1] - char_processed
-                    ]
-                    image_url = (
-                        "https://math.vercel.app?from="
-                        + translited(formula).replace("\\\\", ";\,")
-                    ).replace(" ", "\,\!")
-                    svg_to_jpg(image_url, f"photos/{chat_id}.jpg")
-                    photo = FSInputFile(f"photos/{chat_id}.jpg")
-                    await send_markdown(chat_id, par[: f[0] - char_processed])
-                    await bot.send_photo(chat_id=chat_id, photo=photo)
-                    await bot.send_chat_action(chat_id, ChatAction.TYPING)
-                    par = par[f[1] + len(f[2][1]) - char_processed :]
-                    char_processed = f[1] + len(f[2][1])
-                if "\n\n" in par:
-                    await send_markdown(chat_id, par[: par.rfind("\n\n") + 4])
-                    await bot.send_chat_action(chat_id, ChatAction.TYPING)
-                    response += par[: par.rfind("\n\n") + 4]
-                    par = par[par.rfind("\n\n") + 4 :]
-            elif "```latex" in par.lower():
-                par_type = "latex"
-            else:
-                if par_type == "text":
-                    await send_markdown(chat_id, par[: par.rfind("```")])
-                    await bot.send_chat_action(chat_id, ChatAction.TYPING)
-                    response += par[: par.rfind("```")]
-                    par = par[par.rfind("```") :]
-                par_type = "code"
+                        response += par[: par.rfind("\n\n") + 4]
+                        par = par[par.rfind("\n\n") + 4 :]
+                elif "```latex" in par.lower():
+                    par_type = "latex"
+                else:
+                    if par_type == "text":
+                        await send_markdown(chat_id, par[: par.rfind("```")])
+                        await bot.send_chat_action(chat_id, ChatAction.TYPING)
+                        response += par[: par.rfind("```")]
+                        par = par[par.rfind("```") :]
+                    par_type = "code"
+    except Exception as e:
+        await send_markdown(
+            OWNER_ID,
+            f"*ERROR*: {e}\n\n*User:* {message.from_user.username}\n\n*Last prompt:*\n"
+            + data["messages"][-1]["content"]
+            + f"\n\n*Collected response:*\n{response}",
+        )
+        data["messages"].clear()
+        data["timestamps"].clear()
+        data["tokens"] = 0
+        write_data(message.from_user.username, data)
+        builder = InlineKeyboardBuilder()
+        lang = await get_lang(message)
+        builder.add(
+            types.InlineKeyboardButton(
+                text=templates[lang]["what"], callback_data="error"
+            ),
+        )
+        await send_markdown(chat_id, f"Error: {e}", reply_markup=builder.as_markup())
+    finally:
+        await stream.close()
     await send_markdown(chat_id, par, reply_markup=keyboards.forget_keyboard)
     response += par
     return response
@@ -525,7 +550,7 @@ async def universal_handler(message: Message) -> None:
         username = message.from_user.username
         data = read_data(username)
         async with ChatActionSender.typing(bot=bot, chat_id=message.chat.id):
-            response = await generate_completion(message.chat.id, data)
+            response = await generate_completion(message, data)
         data["timestamps"].append(time.time())
         data["messages"].append({"role": "system", "content": response})
         encoding = tiktoken.encoding_for_model("gpt-4-turbo")
@@ -548,6 +573,11 @@ async def redraw_handler(callback: types.CallbackQuery):
     data = read_data(username)
     data["balance"] -= 2 * FEE * DALLE2_OUTPUT
     write_data(username, data)
+
+
+@dp.callback_query(F.data == "error")
+async def error_message_handler(callback: types.CallbackQuery):
+    await answer(callback.message, "error")
 
 
 async def main() -> None:
