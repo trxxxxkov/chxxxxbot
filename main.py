@@ -18,7 +18,7 @@ from openai import AsyncOpenAI
 
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.client.default import DefaultBotProperties
-from aiogram.enums import ParseMode, InputMediaType
+from aiogram.enums import ParseMode, InputMediaType, ChatAction
 from aiogram.filters import Command
 from aiogram.utils.chat_action import ChatActionSender
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -162,6 +162,7 @@ def latex_detection(text):
         ["\\begin{align}", "\end{align}"],
         ["\\begin{gather}", "\end{gather}"],
         ["\\begin{multiline}", "\end{multiline}"],
+        ["\\begin{cases}", "\end{cases}"],
     ]
     from_idx = 0
     math_found = []
@@ -238,25 +239,32 @@ async def generate_completion(chat_id, data):
             ):  # "```" is absent or has a pair
                 if par_type == "code":
                     await send_markdown(chat_id, par[: par.rfind("```") + 3])
+                    await bot.send_chat_action(chat_id, ChatAction.TYPING)
                     response += par[: par.rfind("```") + 3]
                     par = par[par.rfind("```") + 3 :]
                 elif par_type == "latex":
                     latex_found = latex_detection(par)
                     for f in latex_found:
-                        formula = par[f[0] + len(f[2][0]) : f[1]]
+                        formula = (
+                            par[f[0] + len(f[2][0]) : f[1]]
+                            .replace("если", "if")
+                            .replace("для", "for")
+                            .replace("всех", "all")
+                        )
                         image_url = (
                             "https://math.vercel.app?from="
                             + translited(formula).replace("\\\\", ";\,")
                         ).replace(" ", "\,\!")
-                        print("IMAGE_URL: ", image_url, "\n\n")
                         svg_to_jpg(image_url, f"photos/{chat_id}.jpg")
                         photo = FSInputFile(f"photos/{chat_id}.jpg")
                         await bot.send_photo(chat_id=chat_id, photo=photo)
+                        await bot.send_chat_action(chat_id, ChatAction.TYPING)
                     if not latex_found:
                         await send_markdown(
                             chat_id,
                             par[par.lower().find("```latex") + 8 : par.rfind("```")],
                         )
+                        await bot.send_chat_action(chat_id, ChatAction.TYPING)
                     response += par[: par.rfind("```") + 3]
                     par = par[par.rfind("```") + 3 :]
                 par_type = "text"
@@ -270,15 +278,16 @@ async def generate_completion(chat_id, data):
                         "https://math.vercel.app?from="
                         + translited(formula).replace("\\\\", ";\,")
                     ).replace(" ", "\,\!")
-                    print("IMAGE_URL: ", image_url, "\n\n")
                     svg_to_jpg(image_url, f"photos/{chat_id}.jpg")
                     photo = FSInputFile(f"photos/{chat_id}.jpg")
                     await send_markdown(chat_id, par[: f[0] - char_processed])
                     await bot.send_photo(chat_id=chat_id, photo=photo)
+                    await bot.send_chat_action(chat_id, ChatAction.TYPING)
                     par = par[f[1] + len(f[2][1]) - char_processed :]
                     char_processed = f[1] + len(f[2][1])
                 if "\n\n" in par:
                     await send_markdown(chat_id, par[: par.rfind("\n\n") + 4])
+                    await bot.send_chat_action(chat_id, ChatAction.TYPING)
                     response += par[: par.rfind("\n\n") + 4]
                     par = par[par.rfind("\n\n") + 4 :]
             elif "```latex" in par.lower():
@@ -286,6 +295,7 @@ async def generate_completion(chat_id, data):
             else:
                 if par_type == "text":
                     await send_markdown(chat_id, par[: par.rfind("```")])
+                    await bot.send_chat_action(chat_id, ChatAction.TYPING)
                     response += par[: par.rfind("```")]
                     par = par[par.rfind("```") :]
                 par_type = "code"
