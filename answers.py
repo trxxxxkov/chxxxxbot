@@ -34,7 +34,8 @@ OpenAI, модели которой используются этим ботом
         "what": "Что теперь?",
         "error": """Возникла непредвиденная ошибка. Для предотвращения повторного сбоя память Себастиана была автоматически отчищена, и теперь вы можете начать новый диалог. 
         
- Не переживайте! Об этом инциденте уже сообщено, так что скоро проблема будет исправлена!""",
+ *Не переживайте! Об этом инциденте уже сообщено, так что скоро проблема будет исправлена!*""",
+        "unknown": "*Команда не найдена.* Введите /help, чтобы узнать информацию о доступных командах.",
     },
     "en": {
         "auth": "You are not authorized. Contact @trxxxxkov to be allowed to chat.",
@@ -73,6 +74,7 @@ For more details, type /balance""",
         "what": "What now?",
         "error": """An unexpected error has occurred. To prevent it from happening again, the Sebastian's memory has been automatically cleared, so you may start a new conversation with him. 
         
- Don't worry! This incident has been reported and the problem will be fixed soon!""",
+ *Don't worry! This incident has been reported and the problem will be fixed soon!*""",
+        "unknown": "*Command not found.* Type /help to find out information about usage.",
     },
 }

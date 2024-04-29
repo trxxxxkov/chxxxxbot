@@ -412,7 +412,7 @@ async def answer(message, template, *args, reply_markup=None):
 
 async def authorized(message):
     if message.from_user.username not in BOT_USERS:
-        await answer(message, "auth")
+        await answer(message, "auth", reply_markup=keyboards.help_keyboard)
         return False
     return True
 
@@ -438,11 +438,10 @@ async def command_start_handler(message: Message) -> None:
 async def help_handler(message: Message) -> None:
     builder = InlineKeyboardBuilder()
     lang = await get_lang(message)
-    builder.row(
+    builder.add(
         types.InlineKeyboardButton(
-            text=templates[lang]["tokens"],
-            url="https://softonit.ru/blog/articles/uit/chto-takoe-tokeny-chatgpt/",
-        )
+            text=templates[lang]["payment"], callback_data="payment"
+        ),
     )
     await answer(message, "help", reply_markup=builder.as_markup())
 
@@ -544,9 +543,15 @@ async def image_generation_handler(message: Message) -> None:
         write_data(username, data)
 
 
+async def unknown_commands_handler(message: Message) -> None:
+    await answer(message, "unknown", reply_markup=keyboards.help_keyboard)
+
+
 @dp.message()
 async def universal_handler(message: Message) -> None:
-    if await authorized(message) and await updated_data(message):
+    if message.text[0] == "/":
+        await unknown_commands_handler(message)
+    elif await authorized(message) and await updated_data(message):
         username = message.from_user.username
         data = read_data(username)
         async with ChatActionSender.typing(bot=bot, chat_id=message.chat.id):
@@ -578,6 +583,17 @@ async def redraw_handler(callback: types.CallbackQuery):
 @dp.callback_query(F.data == "error")
 async def error_message_handler(callback: types.CallbackQuery):
     await answer(callback.message, "error")
+
+
+@dp.callback_query(F.data == "payment")
+async def payment_redirection_handler(callback: types.CallbackQuery):
+    data = read_data(callback.from_user.username)
+    lang = callback.from_user.language_code
+    text = templates[lang]["balance"]
+    text = text.format(round(data["balance"], 4), round(94 * data["balance"], 2))
+    await callback.message.answer(
+        re.sub(r"[_[\]()~>#\+\-=|{}.!]", lambda x: "\\" + x.group(), text)
+    )
 
 
 async def main() -> None:
