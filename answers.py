@@ -39,6 +39,7 @@ OpenAI, модели которой используются этим ботом
         
  *Не переживайте! Об этом инциденте уже сообщено, так что скоро проблема будет исправлена!*""",
         "unknown": "*Команда не найдена.* Введите /help, чтобы узнать информацию о доступных командах.",
+        "block": "*Ваш запрос был отклонён сервером OpenAI, так как в нём содержится запрещённая информация.* Попробуйте изменить формулировку и использовать другие слова!",
     },
     "en": {
         "auth": "You are not authorized. Contact @trxxxxkov to be allowed to chat.",
@@ -49,7 +50,6 @@ OpenAI, модели которой используются этим ботом
 
  Only the last 80 messages of your conversation are stored. Sebastian remembers them for 2 hours and then forgets. You may use /forget command to explicitly clear Sebastian's memory.
 Among regular text messages, *image recognition* is available - attach an image to your question and wait for a result. Sebastian also can *compile LaTeX formulas into images*, so he is exceptionally good at talking about math. He may compile your formula if you want to! 
-
 
 `Note: it's recommended to run /forget when you want to change a topic of conversation because the less memory Sebastian uses, the cheaper your conversation is: stored messages can be considered as a "big single message" which is sent and processed together with each new message.`
 
@@ -83,5 +83,6 @@ For more details, type /balance""",
         
  *Don't worry! This incident has been reported and the problem will be fixed soon!*""",
         "unknown": "*Command not found.* Type /help to find out information about usage.",
+        "block": "*The response has been blocked by OpenAI because your prompt violates its content policy.* Consider using other words in your prompt!",
     },
 }

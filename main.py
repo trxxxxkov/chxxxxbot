@@ -7,14 +7,14 @@ import re
 import os
 import base64
 import tiktoken
-
+import openai
 import cairosvg
 
 from mimetypes import guess_type
 from dotenv import load_dotenv
 from os import getenv
 from PIL import Image
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, OpenAIError
 
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.client.default import DefaultBotProperties
@@ -305,12 +305,14 @@ async def generate_completion(message, data):
                         response += par[: par.rfind("```")]
                         par = par[par.rfind("```") :]
                     par_type = "code"
-    except Exception as e:
-        await send_markdown(
+    except (Exception, OpenAIError) as e:
+        data = read_data(message.from_user.username)
+        await bot.send_message(
             OWNER_ID,
-            f"*ERROR*: {e}\n\n*User:* {message.from_user.username}\n\n*Last prompt:*\n"
+            f"<b>ERROR:</b> {e}\n\n<b>User:</b> {message.from_user.username}\n\n<b>Last prompt:</b>\n"
             + data["messages"][-1]["content"]
-            + f"\n\n*Collected response:*\n{response}",
+            + f"<b>Collected response:</b>\n {response}",
+            parse_mode=ParseMode.HTML,
         )
         data["messages"].clear()
         data["timestamps"].clear()
@@ -323,7 +325,12 @@ async def generate_completion(message, data):
                 text=templates[lang]["what"], callback_data="error"
             ),
         )
-        await send_markdown(chat_id, f"Error: {e}", reply_markup=builder.as_markup())
+        await bot.send_message(
+            message.chat.id,
+            f"<b>ERROR:</b> {e}",
+            reply_markup=builder.as_markup(),
+            parse_mode=ParseMode.HTML,
+        )
     finally:
         await stream.close()
     await send_markdown(chat_id, par, reply_markup=keyboards.forget_keyboard)
@@ -521,26 +528,42 @@ async def delete_handler(message: Message) -> None:
 @dp.message(Command("draw"))
 async def image_generation_handler(message: Message) -> None:
     if await authorized(message) and await updated_data(message):
-        username = message.from_user.username
-        prompt = message.text.split("draw")[1].strip()
-        if len(prompt) == 0:
-            await answer(message, "draw")
-            return
-        async with ChatActionSender.upload_photo(bot=bot, chat_id=message.chat.id):
-            image_url = await generate_image(prompt)
-        builder = InlineKeyboardBuilder()
-        lang = await get_lang(message)
-        builder.add(
-            types.InlineKeyboardButton(
-                text=templates[lang]["redraw"], callback_data="redraw"
-            ),
-        )
-        await bot.send_photo(
-            chat_id=message.chat.id, photo=image_url, reply_markup=builder.as_markup()
-        )
-        data = read_data(username)
-        data["balance"] -= FEE * DALLE3_OUTPUT
-        write_data(username, data)
+        try:
+            username = message.from_user.username
+            prompt = message.text.split("draw")[1].strip()
+            if len(prompt) == 0:
+                await answer(message, "draw")
+                return
+            async with ChatActionSender.upload_photo(bot=bot, chat_id=message.chat.id):
+                image_url = await generate_image(prompt)
+            builder = InlineKeyboardBuilder()
+            lang = await get_lang(message)
+            builder.add(
+                types.InlineKeyboardButton(
+                    text=templates[lang]["redraw"], callback_data="redraw"
+                ),
+            )
+            await bot.send_photo(
+                chat_id=message.chat.id,
+                photo=image_url,
+                reply_markup=builder.as_markup(),
+            )
+            data = read_data(username)
+            data["balance"] -= FEE * DALLE3_OUTPUT
+            write_data(username, data)
+        except (Exception, OpenAIError) as e:
+            data = read_data(username)
+            await bot.send_message(
+                OWNER_ID,
+                f"<b>ERROR:</b> {e}\n\n<b>User:</b> {message.from_user.username}\n\n<b>Last prompt:</b>\n"
+                + data["messages"][-1]["content"],
+                parse_mode=ParseMode.HTML,
+            )
+            data["messages"].clear()
+            data["timestamps"].clear()
+            data["tokens"] = 0
+            write_data(message.from_user.username, data)
+            await answer(message, "block")
 
 
 async def unknown_commands_handler(message: Message) -> None:
