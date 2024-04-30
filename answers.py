@@ -1,7 +1,21 @@
 templates = {
     "ru": {
         "auth": "Вы не были добавлены в список разрешённых пользователей. Свяжитесь с @trxxxxkov, чтобы получить доступ к боту.",
-        "start": "Привет, *{}*! Введите команду /help, чтобы больше узнать о возможностях этого бота.",
+        "start": """Привет, *{}*! 
+
+Меня зовут *Себастиан*. Я - бот под управлением GPT-4-Turbo. Вот краткий список моих возможностей:
+
+        *Свободное общение*: начните разговор, просто написав мне любое сообщение;
+
+        *Генерация (DALLE-3) и вариация (DALLE-2) изображений*: опишите свою идею и получите изображение, созданное по мотивам ваших слов;
+
+        *Распознавание изображений*: прикрепите фотографию к вашему сообщению и задавайте любые вопросы;
+
+        *Автоматическое компиляция формул LaTeX*: обсуждайте математику с комфортом! Все формулы будут скомпилированы и отправлены в виде изображений;
+
+        *Никаких подписок и ежемесячных платежей*: платите только за токены, которые вы использовали. Ничего не использовали - ничего не платите;
+
+ *Введите команду /help, чтобы узнать больше!*""",
         "help": """Себастиан предоставляет доступ к моделям GPT-4-Turbo и DALL-E от OpenAI. Принцип его работы очень прост:
 
       *Просто напишите любое сообщение, чтобы начать общение с GPT-4-Turbo.*
@@ -43,8 +57,22 @@ OpenAI, модели которой используются этим ботом
     },
     "en": {
         "auth": "You are not authorized. Contact @trxxxxkov to be allowed to chat.",
-        "start": "Hello, ***{}***! Type /help to get started with this bot.",
-        "help": """Sebastian provides access to OpenAI's GPT-4-Turbo and DALL-E. Its usage is pretty straightforward:
+        "start": """Hello, *{}*!
+
+My name is *Sebastian*. I'm a bot powered by GPT-4-Turbo. Here is a short list of my skills:
+
+        *Casual conversations*: type any message to start a conversation;
+
+        *Image generation (DALLE-3) and variation (DALLE-2)*: describe your idea and generate an image based on it;
+
+        *Image recognition*: attach an image to your message and ask any questions about it;
+        
+        *Automatic compilation of LaTeX formulas*: discuss math problems with comfort! All formulas will be compiled and send as images;
+
+        *No subscription or annual payments*: You should only pay for the tokens that you used. No usage - no payment;
+
+ *Type /help to get started!*""",
+        "help": """Sebastian provides access to OpenAI's *GPT-4-Turbo* and *DALL-E*. Its usage is pretty straightforward:
 
      *Just type any message to chat with GPT-4-Turbo.*
 

@@ -309,9 +309,9 @@ async def generate_completion(message, data):
         data = read_data(message.from_user.username)
         await bot.send_message(
             OWNER_ID,
-            f"<b>ERROR:</b> {e}\n\n<b>User:</b> {message.from_user.username}\n\n<b>Last prompt:</b>\n"
+            f"<b>ERROR:</b> {e}\n\n<b>User:</b> {message.from_user.username}\n\n<b>Last prompt:</b> "
             + data["messages"][-1]["content"]
-            + f"<b>Collected response:</b>\n {response}",
+            + f"\n\n<b>Collected response:</b> {response}",
             parse_mode=ParseMode.HTML,
         )
         data["messages"].clear()
