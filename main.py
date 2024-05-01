@@ -113,9 +113,16 @@ async def variate_image(path):
 
 
 async def send_markdown(chat_id, text, reply_markup=None):
-    if text.replace("\n", "").replace(",", "").replace(".", ""):
+    if text.replace("\n", ""):
+        if text[0] == ",":
+            text = text[1:]
+        lines = text.split("\n")
+        for i in range(len(lines)):
+            if lines[i].strip() in ".,?!-:;":
+                lines[i] = ""
+        lines = "\n".join([elem for elem in lines if elem])
         markdown_text = (
-            text.replace("$$", "*")
+            lines.replace("$$", "*")
             .replace("$", "*")
             .replace("\[", "*")
             .replace("\]", "*")
@@ -140,13 +147,10 @@ async def send_markdown(chat_id, text, reply_markup=None):
             .replace(".", "\\.")
             .replace("!", "\\!")
         )
-        lines = markdown_text.split("\n")
-        for i in range(len(lines)):
-            if lines[i] in ".,?!-:;":
-                lines[i] = ""
-        await bot.send_message(
-            chat_id=chat_id, text="\n".join(lines), reply_markup=reply_markup
-        )
+        if markdown_text.replace("\n", ""):
+            await bot.send_message(
+                chat_id=chat_id, text=markdown_text, reply_markup=reply_markup
+            )
 
 
 def latex_detection(text):
@@ -293,6 +297,7 @@ async def generate_completion(message, data):
                         await send_markdown(chat_id, par[: f[0] - char_processed])
                         await bot.send_photo(chat_id=chat_id, photo=photo)
                         await bot.send_chat_action(chat_id, ChatAction.TYPING)
+                        response += par[: f[1]]
                         par = par[f[1] + len(f[2][1]) - char_processed :]
                         char_processed = f[1] + len(f[2][1])
                     if "\n\n" in par:
