@@ -69,7 +69,7 @@ My name is *Sebastian*. I'm a bot powered by GPT-4-Turbo. Here is a short list o
         
         *Automatic compilation of LaTeX formulas*: discuss math problems with comfort! All formulas will be compiled and send as images;
 
-        *No subscription or annual payments*: You should only pay for the tokens that you used. No usage - no payment;
+        *No subscription or annual payments*: you should only pay for the tokens that you used. No usage - no payment;
 
  *Type /help to get started!*""",
         "help": """Sebastian provides access to OpenAI's *GPT-4-Turbo* and *DALL-E*. Its usage is pretty straightforward:

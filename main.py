@@ -13,6 +13,7 @@ import cairosvg
 from mimetypes import guess_type
 from dotenv import load_dotenv
 from os import getenv
+import urllib.parse
 from PIL import Image
 from openai import AsyncOpenAI, OpenAIError
 
@@ -120,12 +121,6 @@ async def send_markdown(chat_id, text, reply_markup=None):
             .replace("\]", "*")
             .replace("\(", "*")
             .replace("\)", "*")
-            .replace("mathbb", "")
-            .replace("mathbf", "")
-            .replace("mathrm", "")
-            .replace("mathit", "")
-            .replace("mathsf", "")
-            .replace("mathtt", "")
             .replace("**", "*")
             .replace("\\", "\\\\")
             .replace("_", "\\_")
@@ -165,6 +160,11 @@ def latex_detection(text):
         ["\\begin{gather}", "\end{gather}"],
         ["\\begin{multiline}", "\end{multiline}"],
         ["\\begin{cases}", "\end{cases}"],
+        ["\\begin{equation*}", "\end{equation*}"],
+        ["\\begin{align*}", "\end{align*}"],
+        ["\\begin{gather*}", "\end{gather*}"],
+        ["\\begin{multiline*}", "\end{multiline*}"],
+        ["\\begin{cases*}", "\end{cases*}"],
     ]
     from_idx = 0
     math_found = []
@@ -257,8 +257,10 @@ async def generate_completion(message, data):
                             )
                             image_url = (
                                 "https://math.vercel.app?from="
-                                + translited(formula).replace("\\\\", ";\,")
-                            ).replace(" ", "\,\!")
+                                + urllib.parse.quote(
+                                    translited(formula).replace("\\\\", ";\,")
+                                ).replace(" ", "\,\!")
+                            )
                             svg_to_jpg(image_url, f"photos/{chat_id}.jpg")
                             photo = FSInputFile(f"photos/{chat_id}.jpg")
                             await bot.send_photo(chat_id=chat_id, photo=photo)
@@ -282,8 +284,10 @@ async def generate_completion(message, data):
                         ]
                         image_url = (
                             "https://math.vercel.app?from="
-                            + translited(formula).replace("\\\\", ";\,")
-                        ).replace(" ", "\,\!")
+                            + urllib.parse.quote(
+                                translited(formula).replace("\\\\", ";\,")
+                            ).replace(" ", "\,\!")
+                        )
                         svg_to_jpg(image_url, f"photos/{chat_id}.jpg")
                         photo = FSInputFile(f"photos/{chat_id}.jpg")
                         await send_markdown(chat_id, par[: f[0] - char_processed])
