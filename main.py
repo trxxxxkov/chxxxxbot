@@ -462,7 +462,7 @@ async def help_handler(message: Message) -> None:
     await answer(message, "help", reply_markup=builder.as_markup())
 
 
-@dp.message(Command("forget"))
+@dp.message(Command("forget", "clear"))
 async def command_start_handler(message: Message) -> None:
     username = message.from_user.username
     if await authorized(message):
@@ -581,7 +581,7 @@ async def unknown_commands_handler(message: Message) -> None:
 
 @dp.message()
 async def universal_handler(message: Message) -> None:
-    if message.text[0] == "/":
+    if message.text and message.text[0] == "/":
         await unknown_commands_handler(message)
     elif await authorized(message) and await updated_data(message):
         username = message.from_user.username

@@ -5,15 +5,15 @@ templates = {
 
 Меня зовут *Себастиан*. Я - бот под управлением GPT-4-Turbo. Вот краткий список моих возможностей:
 
-        *Свободное общение*: начните разговор, просто написав мне любое сообщение;
+ *Свободное общение*: начните разговор, просто написав мне любое сообщение.
 
-        *Генерация (DALLE-3) и вариация (DALLE-2) изображений*: опишите свою идею и получите изображение, созданное по мотивам ваших слов;
+ *Генерация (DALLE-3) и вариация (DALLE-2) изображений*: опишите свою идею и получите изображение, созданное по мотивам ваших слов.
 
-        *Распознавание изображений*: прикрепите фотографию к вашему сообщению и задавайте любые вопросы;
+ *Распознавание изображений*: прикрепите фотографию к вашему сообщению и задавайте любые вопросы.
 
-        *Автоматическое компиляция формул LaTeX*: обсуждайте математику с комфортом! Все формулы будут скомпилированы и отправлены в виде изображений;
+ *Автоматическое компиляция формул LaTeX*: обсуждайте математику с комфортом! Все формулы будут скомпилированы и отправлены в виде изображений.
 
-        *Никаких подписок и ежемесячных платежей*: платите только за токены, которые вы использовали. Ничего не использовали - ничего не платите;
+ *Никаких подписок и ежемесячных платежей*: платите только за токены, которые вы использовали. Ничего не использовали - ничего не платите.
 
  *Введите команду /help, чтобы узнать больше!*""",
         "help": """Себастиан предоставляет доступ к моделям GPT-4-Turbo и DALL-E от OpenAI. Принцип его работы очень прост:
@@ -61,17 +61,17 @@ OpenAI, модели которой используются этим ботом
 
 My name is *Sebastian*. I'm a bot powered by GPT-4-Turbo. Here is a short list of my skills:
 
-        *Casual conversations*: type any message to start a conversation;
+ *Casual conversations*: type any message to start a conversation.
 
-        *Image generation (DALLE-3) and variation (DALLE-2)*: describe your idea and generate an image based on it;
+ *Image generation (DALLE-3) and variation (DALLE-2)*: describe your idea and generate an image based on it.
 
-        *Image recognition*: attach an image to your message and ask any questions about it;
+ *Image recognition*: attach an image to your message and ask any questions about it.
         
-        *Automatic compilation of LaTeX formulas*: discuss math problems with comfort! All formulas will be compiled and send as images;
+ *Automatic compilation of LaTeX formulas*: discuss math problems with comfort! All formulas will be compiled and sent as images.
 
-        *No subscription or annual payments*: you should only pay for the tokens that you used. No usage - no payment;
+ *No subscription or annual payments*: you should only pay for the tokens that you used. No usage - no payment.
 
- *Type /help to get started!*""",
+*Type /help to get started!*""",
         "help": """Sebastian provides access to OpenAI's *GPT-4-Turbo* and *DALL-E*. Its usage is pretty straightforward:
 
      *Just type any message to chat with GPT-4-Turbo.*
