@@ -9,11 +9,11 @@ import base64
 import tiktoken
 import openai
 import cairosvg
+import urllib.parse
 
 from mimetypes import guess_type
 from dotenv import load_dotenv
 from os import getenv
-import urllib.parse
 from PIL import Image
 from openai import AsyncOpenAI, OpenAIError
 
@@ -123,7 +123,6 @@ async def send_markdown(chat_id, text, reply_markup=None):
         lines = "\n".join([elem for elem in lines if elem])
         markdown_text = (
             lines.replace("$$", "*")
-            .replace("$", "*")
             .replace("\[", "*")
             .replace("\]", "*")
             .replace("\(", "*")
@@ -147,6 +146,8 @@ async def send_markdown(chat_id, text, reply_markup=None):
             .replace(".", "\\.")
             .replace("!", "\\!")
         )
+        if markdown_text.find("$") != markdown_text.rfind("$"):
+            markdown_text = markdown_text.replace("$", "*")
         if markdown_text.replace("\n", ""):
             await bot.send_message(
                 chat_id=chat_id, text=markdown_text, reply_markup=reply_markup
@@ -262,7 +263,7 @@ async def generate_completion(message, data):
                             image_url = (
                                 "https://math.vercel.app?from="
                                 + urllib.parse.quote(
-                                    translited(formula).replace("\\\\", ";\,")
+                                    translited(formula.lower()).replace("\\\\", ";\,")
                                 ).replace(" ", "\,\!")
                             )
                             svg_to_jpg(image_url, f"photos/{chat_id}.jpg")
@@ -289,7 +290,7 @@ async def generate_completion(message, data):
                         image_url = (
                             "https://math.vercel.app?from="
                             + urllib.parse.quote(
-                                translited(formula).replace("\\\\", ";\,")
+                                translited(formula.lower()).replace("\\\\", ";\,")
                             ).replace(" ", "\,\!")
                         )
                         svg_to_jpg(image_url, f"photos/{chat_id}.jpg")
