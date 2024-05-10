@@ -155,7 +155,7 @@ async def format(text, latex=True, defects=True, markdown=True):
     return text
 
 
-async def send_latex_formula(message, f):
+async def send_latex_formula(message, formula):
     builder = InlineKeyboardBuilder()
     lang = await get_lang(message)
     builder.add(
@@ -163,18 +163,22 @@ async def send_latex_formula(message, f):
             text=templates[lang]["latex-original"], callback_data="latex-original"
         ),
     )
-    u = f[2].replace("\n", "").replace("&", "").replace("\\\\", ";\,")
-    u = " ".join([elem for elem in u.split(" ") if elem]).replace(" ", "\,\!")
-    u = "https://math.vercel.app?from=" + urllib.parse.quote(u.replace(" ", "\,\!"))
+    image_url = formula[2].replace("\n", "").replace("&", "").replace("\\\\", ";\,")
+    image_url = " ".join([elem for elem in image_url.split(" ") if elem]).replace(
+        " ", "\,\!"
+    )
+    image_url = "https://math.vercel.app?from=" + urllib.parse.quote(
+        image_url.replace(" ", "\,\!")
+    )
     path = f"photos/{message.from_user.username}.jpg"
-    svg_to_jpg(u, path)
+    svg_to_jpg(image_url, path)
     photo = FSInputFile(path)
     sent_message = await bot.send_photo(
         message.chat.id, photo, reply_markup=builder.as_markup()
     )
-    data = read_data(message.from_user.username)
-    data["latex"][sent_message.message_id] = f[3][0] + f[2] + f[3][1]
-    write_data(message.from_user.username, data)
+    data = await read_data(message.from_user.username)
+    data["latex"][sent_message.message_id] = formula[3][0] + formula[2] + formula[3][1]
+    await write_data(message.from_user.username, data)
 
 
 def latex_type(text):
@@ -229,18 +233,25 @@ def latex_math_found(text):
     math_found = []
     for delim in delims:
         from_idx = 0
-        l = text.find(delim[0], from_idx)
-        r = text.find(delim[1], l + len(delim[0]))
-        while l != -1 and r != -1:
+        start_idx = text.find(delim[0], from_idx)
+        end_idx = text.find(delim[1], start_idx + len(delim[0]))
+        while start_idx != -1 and end_idx != -1:
             if (
-                r - l - len(delim[0]) >= LATEX_MIN_LEN
-                or text[l + len(delim[0]) : r].count("\\") > 2
+                end_idx - start_idx - len(delim[0]) >= LATEX_MIN_LEN
+                or text[start_idx + len(delim[0]) : end_idx].count("\\") > 2
                 or "begin" in delim[0]
             ):
-                math_found.append([l, r, text[l + len(delim[0]) : r], delim])
-            from_idx = r + len(delim[1])
-            l = text.find(delim[0], from_idx)
-            r = text.find(delim[1], l + len(delim[0]))
+                math_found.append(
+                    [
+                        start_idx,
+                        end_idx,
+                        text[start_idx + len(delim[0]) : end_idx],
+                        delim,
+                    ]
+                )
+            from_idx = end_idx + len(delim[1])
+            start_idx = text.find(delim[0], from_idx)
+            end_idx = text.find(delim[1], start_idx + len(delim[0]))
     return sorted(math_found, key=lambda x: x[0])
 
 
@@ -260,7 +271,7 @@ async def process_delim(delim, par, message, response):
 
 
 async def generate_completion(message):
-    data = read_data(message.from_user.username)
+    data = await read_data(message.from_user.username)
     stream = await client.chat.completions.create(
         model=GPT_MODEL, messages=data["messages"], temperature=0.5, stream=True
     )
@@ -312,32 +323,32 @@ async def generate_completion(message):
     return response
 
 
-def read_data(username) -> None:
+async def read_data(username) -> None:
     with open(f"data/{username}.json", "r") as f:
         data = json.load(f)
     return data
 
 
-def write_data(username, data) -> None:
+async def write_data(username, data) -> None:
     with open(f"data/{username}.json", "w") as f:
         json.dump(data, f)
 
 
 async def lock(username):
-    data = read_data(username)
+    data = await read_data(username)
     data["lock"] = True
-    write_data(username, data)
+    await write_data(username, data)
     await asyncio.sleep(0.6)
-    data = read_data(username)
+    data = await read_data(username)
     data["lock"] = False
-    write_data(username, data)
+    await write_data(username, data)
 
 
-async def updated_data(message) -> bool:
+async def update_user_data(message) -> bool:
     username = message.from_user.username
-    data = read_data(username)
+    data = await read_data(username)
     if data["balance"] < 0.001:
-        await answer(message, "empty")
+        await send_template_answer(message, "empty")
         alert = await format(
             f"*WARNING: @{username} has tried to use GPT with empty balance.*"
         )
@@ -379,7 +390,7 @@ async def updated_data(message) -> bool:
     if len(data["timestamps"]) > GPT_MEMORY_MSG:
         data["timestamps"] = data["timestamps"][-GPT_MEMORY_MSG:]
         data["messages"] = data["messages"][-GPT_MEMORY_MSG:]
-    write_data(username, data)
+    await write_data(username, data)
     if not data["lock"]:
         return True
     else:
@@ -393,7 +404,7 @@ async def get_lang(message):
     return lang
 
 
-async def answer(message, template, *args, reply_markup=None):
+async def send_template_answer(message, template, *args, reply_markup=None):
     lang = await get_lang(message)
     text = templates[lang][template]
     if len(args) != 0:
@@ -406,7 +417,9 @@ async def answer(message, template, *args, reply_markup=None):
 
 async def authorized(message):
     if message.from_user.username not in BOT_USERS:
-        await answer(message, "auth", reply_markup=keyboards.help_keyboard)
+        await send_template_answer(
+            message, "auth", reply_markup=keyboards.help_keyboard
+        )
         return False
     return True
 
@@ -420,7 +433,7 @@ async def start_handler(message: Message) -> None:
             for key, value in commands[lang].items()
         ]
     )
-    await answer(
+    await send_template_answer(
         message,
         "start",
         message.from_user.first_name,
@@ -437,28 +450,28 @@ async def help_handler(message: Message) -> None:
             text=templates[lang]["payment"], callback_data="payment"
         ),
     )
-    await answer(message, "help", reply_markup=builder.as_markup())
+    await send_template_answer(message, "help", reply_markup=builder.as_markup())
 
 
 @dp.message(Command("forget", "clear"))
 async def clear_handler(message: Message) -> None:
     username = message.from_user.username
     if await authorized(message):
-        data = read_data(username)
-        await answer(message, "forget")
+        data = await read_data(username)
+        await send_template_answer(message, "forget")
         data["messages"].clear()
         data["latex"].clear()
         data["timestamps"].clear()
         data["tokens"] = 0
-        write_data(username, data)
+        await write_data(username, data)
 
 
 @dp.message(Command("balance"))
 async def billing_handler(message: Message) -> None:
     if await authorized(message):
         username = message.from_user.username
-        data = read_data(username)
-        await answer(
+        data = await read_data(username)
+        await send_template_answer(
             message,
             "balance",
             round(data["balance"], 4),
@@ -472,9 +485,9 @@ async def add_handler(message: Message) -> None:
         if len(message.text.split()) == 3 and float(message.text.split()[2]) >= 0:
             _, username, balance = message.text.split()
             if username in BOT_USERS:
-                data = read_data(username)
+                data = await read_data(username)
                 data["balance"] += float(balance)
-                write_data(username, data)
+                await write_data(username, data)
                 return
             else:
                 init = {
@@ -510,12 +523,12 @@ async def delete_handler(message: Message) -> None:
 
 @dp.message(Command("draw"))
 async def image_generation_handler(message: Message) -> None:
-    if await authorized(message) and await updated_data(message):
+    if await authorized(message) and await update_user_data(message):
         try:
             username = message.from_user.username
             prompt = message.text.split("draw")[1].strip()
             if len(prompt) == 0:
-                await answer(message, "draw")
+                await send_template_answer(message, "draw")
                 return
             async with ChatActionSender.upload_photo(bot=bot, chat_id=message.chat.id):
                 image_url = await generate_image(prompt)
@@ -531,26 +544,26 @@ async def image_generation_handler(message: Message) -> None:
                 photo=image_url,
                 reply_markup=builder.as_markup(),
             )
-            data = read_data(username)
+            data = await read_data(username)
             data["balance"] -= FEE * DALLE3_OUTPUT
-            write_data(username, data)
+            await write_data(username, data)
         except (Exception, OpenAIError) as e:
             alert = await format(
                 f"*ERROR:* {e}\n\n*USER:* {message.from_user.username}\n\n*LAST PROMPT:* {message.text}",
                 latex=False,
             )
             await bot.send_message(OWNER_CHAT_ID, alert)
-            await answer(message, "block")
+            await send_template_answer(message, "block")
             await clear_handler(message)
 
 
 @dp.message()
 async def universal_handler(message: Message) -> None:
-    if await authorized(message) and await updated_data(message):
+    if await authorized(message) and await update_user_data(message):
         await lock(message.from_user.username)
         async with ChatActionSender.typing(bot=bot, chat_id=message.chat.id):
             response = await generate_completion(message)
-        data = read_data(message.from_user.username)
+        data = await read_data(message.from_user.username)
         data["timestamps"].append(time.time())
         data["messages"].append({"role": "system", "content": response})
         encoding = tiktoken.encoding_for_model("gpt-4-turbo")
@@ -558,7 +571,7 @@ async def universal_handler(message: Message) -> None:
         data["balance"] -= (
             len(encoding.encode(response)) * FEE * GPT4TURBO_OUTPUT_1K / 1000
         )
-        write_data(message.from_user.username, data)
+        await write_data(message.from_user.username, data)
 
 
 @dp.callback_query(F.data == "redraw")
@@ -570,19 +583,19 @@ async def redraw_handler(callback: types.CallbackQuery):
         await bot.download(message.photo[-1], destination=file_name + ".jpg")
         media = await variate_image(file_name)
     await bot.send_media_group(message.chat.id, media)
-    data = read_data(username)
+    data = await read_data(username)
     data["balance"] -= 2 * FEE * DALLE2_OUTPUT
-    write_data(username, data)
+    await write_data(username, data)
 
 
 @dp.callback_query(F.data == "error")
 async def error_message_handler(callback: types.CallbackQuery):
-    await answer(callback.message, "error")
+    await send_template_answer(callback.message, "error")
 
 
 @dp.callback_query(F.data == "payment")
 async def payment_redirection_handler(callback: types.CallbackQuery):
-    data = read_data(callback.from_user.username)
+    data = await read_data(callback.from_user.username)
     lang = callback.from_user.language_code
     text = templates[lang]["balance"]
     text = text.format(round(data["balance"], 4), round(94 * data["balance"], 2))
@@ -599,7 +612,7 @@ async def latex_handler(callback: types.CallbackQuery):
     builder.add(
         types.InlineKeyboardButton(text=templates[lang]["hide"], callback_data="hide"),
     )
-    data = read_data(callback.from_user.username)
+    data = await read_data(callback.from_user.username)
     text = data["latex"].get(str(message.message_id), templates[lang]["forgotten"])
     text = await format(text, latex=False)
     await bot.send_message(
