@@ -21,7 +21,7 @@ templates = {
       *Просто напишите любое сообщение, чтобы начать общение с GPT-4-Turbo.*
 
  Чтобы снизить время ожидания, *Себастиан разбивает свой ответ на абзацы и присылает их по готовности.* Вам не придется ждать окончания генерации всего ответа целиком. Технически, такие абзацы являются частью одного-единственного сообщения от GPT-4-Turbo, и запоминаются только последние 20 сообщений. *Длина отправляемых сообщений не ограничена!* Даже если ваше сообщение будет очень большим, и Телеграм разобъёт его на части, они будут восприняты как единое целое. Себастиан хранит сообщения на протяжении двух часов, а потом забывает. Вы можете ввести команду /forget, чтобы вручную отчистить память Себастиана.
- Помимо понимания обычных текстовых сообщений, доступно *распознавание изображений* - достаточно прикрепить к вашему сообщению любую картинку. Также *Себастиан способен компилировать формулы LaTeX в изображения*, поэтому с ним особенно приятно обсуждать вопросы, касающиеся математики. Если захотите, Себастиан скомпилирует и вашу формулу - просто попросите его об этом!
+ Помимо понимания обычных текстовых сообщений, *доступно распознавание изображений* - достаточно прикрепить к вашему сообщению любую картинку. *Также Себастиан способен компилировать формулы LaTeX в изображения*, поэтому с ним особенно приятно обсуждать вопросы, касающиеся математики. Если захотите, Себастиан скомпилирует и вашу формулу - просто попросите его об этом!
 
 `Примечание: крайне рекомендуется вводить команду /forget каждый раз, когда вы собираетесь сменить тему разговора, так как чем меньше памяти использует Себастиан, тем меньше стоимость общения с ним: хранящиеся в памяти сообщения можно воспринимать как "одно большое сообщение", которое каждый раз добавляется к новому сообщению, а потом отправляется на сервер OpenAI и обрабатывается вместе с ним.`
 
@@ -80,7 +80,7 @@ My name is *Sebastian*. I'm a bot powered by GPT-4-Turbo. Here is a short list o
      *Just type any message to chat with GPT-4-Turbo.*
 
  To reduce the waiting time, *Sebastian splits his speech into paragraphs and sends them as the are finished.* You don't need to wait for the generation of the entire response to finish. Technically, such paragraphs are part of a single message from GPT-4-Turbo, and only the last 20 messages of your conversation are stored. *The length of your messages is unlimited!* Even if your message is large and Telegram split it into pieces, they will be considered as a whole. Sebastian remembers them for 2 hours and then forgets. You may use /forget command to explicitly clear Sebastian's memory.
-Among regular text messages, *image recognition* is available - attach an image to your question and wait for a result. Sebastian also can *compile LaTeX formulas into images*, so he is exceptionally good at talking about math. He may compile your formula if you want to! 
+Among regular text messages, *image recognition is available* - attach an image to your question and wait for a result. *Sebastian also can compile LaTeX formulas into images*, so he is exceptionally good at talking about math. He may compile your formula if you want to! 
 
 `Note: it's recommended to run /forget when you want to change a topic of conversation because the less memory Sebastian uses, the cheaper your conversation is: stored messages can be considered as a "big single message" which is sent and processed together with each new message.`
 
