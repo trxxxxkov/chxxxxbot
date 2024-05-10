@@ -5,7 +5,7 @@ templates = {
 
 Меня зовут *Себастиан*. Я - бот под управлением GPT-4-Turbo. Вот краткий список моих возможностей:
 
- *Свободное общение*: начните разговор, просто написав мне любое сообщение.
+ *Свободное общение*: начните разговор, просто написав мне сообщение (любой длины!), и я отвечу, раздробив своё сообщение по абзацам, чтобы вам не пришлось ждать, пока я допишу.
 
  *Генерация (DALLE-3) и вариация (DALLE-2) изображений*: опишите свою идею и получите изображение, созданное по мотивам ваших слов.
 
@@ -20,7 +20,7 @@ templates = {
 
       *Просто напишите любое сообщение, чтобы начать общение с GPT-4-Turbo.*
 
- Запоминаются только последние 80 сообщений. Себастиан хранит их на протяжении двух часов, а потом забывает. Вы можете ввести команду /forget, чтобы вручную отчистить память Себастиана.
+ Чтобы снизить время ожидания, *Себастиан разбивает свой ответ на абзацы и присылает их по готовности.* Вам не придется ждать окончания генерации всего ответа целиком. Технически, такие абзацы являются частью одного-единственного сообщения от GPT-4-Turbo, и запоминаются только последние 20 сообщений. *Длина отправляемых сообщений не ограничена!* Даже если ваше сообщение будет очень большим, и Телеграм разобъёт его на части, они будут восприняты как единое целое. Себастиан хранит сообщения на протяжении двух часов, а потом забывает. Вы можете ввести команду /forget, чтобы вручную отчистить память Себастиана.
  Помимо понимания обычных текстовых сообщений, доступно *распознавание изображений* - достаточно прикрепить к вашему сообщению любую картинку. Также *Себастиан способен компилировать формулы LaTeX в изображения*, поэтому с ним особенно приятно обсуждать вопросы, касающиеся математики. Если захотите, Себастиан скомпилирует и вашу формулу - просто попросите его об этом!
 
 `Примечание: крайне рекомендуется вводить команду /forget каждый раз, когда вы собираетесь сменить тему разговора, так как чем меньше памяти использует Себастиан, тем меньше стоимость общения с ним: хранящиеся в памяти сообщения можно воспринимать как "одно большое сообщение", которое каждый раз добавляется к новому сообщению, а потом отправляется на сервер OpenAI и обрабатывается вместе с ним.`
@@ -64,7 +64,7 @@ OpenAI, модели которой используются этим ботом
 
 My name is *Sebastian*. I'm a bot powered by GPT-4-Turbo. Here is a short list of my skills:
 
- *Casual conversations*: type any message to start a conversation.
+ *Casual conversations*: type a message (of any length!) to start a conversation. I will reply with my message splitted into paragraphs so that you don't need to wait until I finish typing.
 
  *Image generation (DALLE-3) and variation (DALLE-2)*: describe your idea and generate an image based on it.
 
@@ -79,7 +79,7 @@ My name is *Sebastian*. I'm a bot powered by GPT-4-Turbo. Here is a short list o
 
      *Just type any message to chat with GPT-4-Turbo.*
 
- Only the last 80 messages of your conversation are stored. Sebastian remembers them for 2 hours and then forgets. You may use /forget command to explicitly clear Sebastian's memory.
+ To reduce the waiting time, *Sebastian splits his speech into paragraphs and sends them as the are finished.* You don't need to wait for the generation of the entire response to finish. Technically, such paragraphs are part of a single message from GPT-4-Turbo, and only the last 20 messages of your conversation are stored. *The length of your messages is unlimited!* Even if your message is large and Telegram split it into pieces, they will be considered as a whole. Sebastian remembers them for 2 hours and then forgets. You may use /forget command to explicitly clear Sebastian's memory.
 Among regular text messages, *image recognition* is available - attach an image to your question and wait for a result. Sebastian also can *compile LaTeX formulas into images*, so he is exceptionally good at talking about math. He may compile your formula if you want to! 
 
 `Note: it's recommended to run /forget when you want to change a topic of conversation because the less memory Sebastian uses, the cheaper your conversation is: stored messages can be considered as a "big single message" which is sent and processed together with each new message.`
