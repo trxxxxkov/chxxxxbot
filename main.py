@@ -33,7 +33,7 @@ load_dotenv()
 
 BOT_TOKEN = getenv("TG_BOT_TOKEN")
 BOT_USERS = getenv("TG_BOT_USERS").split(",")
-OWNER_ID = 791388236
+OWNER_CHAT_ID = 791388236
 OPENAI_KEY = getenv("OPENAI_API_KEY")
 # OPENAI API prices per 1K tokens
 FEE = 1.6
@@ -304,7 +304,7 @@ async def generate_completion(message):
                 text=templates[lang]["what"], callback_data="error"
             ),
         )
-        await bot.send_message(OWNER_ID, alert)
+        await bot.send_message(OWNER_CHAT_ID, alert)
         await bot.send_message(message.chat.id, alert, reply_markup=builder.as_markup())
         await clear_handler(message)
     finally:
@@ -323,6 +323,16 @@ def write_data(username, data) -> None:
         json.dump(data, f)
 
 
+async def lock(username):
+    data = read_data(username)
+    data["lock"] = True
+    write_data(username, data)
+    await asyncio.sleep(0.6)
+    data = read_data(username)
+    data["lock"] = False
+    write_data(username, data)
+
+
 async def updated_data(message) -> bool:
     username = message.from_user.username
     data = read_data(username)
@@ -331,7 +341,7 @@ async def updated_data(message) -> bool:
         alert = await format(
             f"*WARNING: @{username} has tried to use GPT with empty balance.*"
         )
-        await bot.send_message(OWNER_ID, alert)
+        await bot.send_message(OWNER_CHAT_ID, alert)
         return False
     now = time.time()
     data["timestamps"].append(now)
@@ -370,7 +380,10 @@ async def updated_data(message) -> bool:
         data["timestamps"] = data["timestamps"][-GPT_MEMORY_MSG:]
         data["messages"] = data["messages"][-GPT_MEMORY_MSG:]
     write_data(username, data)
-    return True
+    if not data["lock"]:
+        return True
+    else:
+        return False
 
 
 async def get_lang(message):
@@ -455,7 +468,7 @@ async def billing_handler(message: Message) -> None:
 
 @dp.message(Command("add"))
 async def add_handler(message: Message) -> None:
-    if await authorized(message) and message.chat.id == OWNER_ID:
+    if await authorized(message) and message.chat.id == OWNER_CHAT_ID:
         if len(message.text.split()) == 3 and float(message.text.split()[2]) >= 0:
             _, username, balance = message.text.split()
             if username in BOT_USERS:
@@ -479,12 +492,12 @@ async def add_handler(message: Message) -> None:
     alert = await format(
         f"*WARNING: @{message.from_user.username} has made an attempt to add another user.*"
     )
-    await bot.send_message(OWNER_ID, alert)
+    await bot.send_message(OWNER_CHAT_ID, alert)
 
 
 @dp.message(Command("rm", "remove", "delete"))
 async def delete_handler(message: Message) -> None:
-    if await authorized(message) and message.chat.id == OWNER_ID:
+    if await authorized(message) and message.chat.id == OWNER_CHAT_ID:
         if len(message.text.split()) == 2 and message.text.split()[1] in BOT_USERS:
             _, username = message.text.split()
             BOT_USERS.remove(username)
@@ -492,7 +505,7 @@ async def delete_handler(message: Message) -> None:
             os.remove(f"data/{username}.json")
             return
     alert = f"*WARNING: @{message.from_user.username} has made and attempt to delete another user.*"
-    await bot.send_message(OWNER_ID, alert)
+    await bot.send_message(OWNER_CHAT_ID, alert)
 
 
 @dp.message(Command("draw"))
@@ -526,24 +539,18 @@ async def image_generation_handler(message: Message) -> None:
                 f"*ERROR:* {e}\n\n*USER:* {message.from_user.username}\n\n*LAST PROMPT:* {message.text}",
                 latex=False,
             )
-            await bot.send_message(OWNER_ID, alert)
+            await bot.send_message(OWNER_CHAT_ID, alert)
             await answer(message, "block")
             await clear_handler(message)
 
 
-async def unknown_commands_handler(message: Message) -> None:
-    await answer(message, "unknown", reply_markup=keyboards.help_keyboard)
-
-
 @dp.message()
 async def universal_handler(message: Message) -> None:
-    if message.text and message.text[0] == "/":
-        await unknown_commands_handler(message)
-    elif await authorized(message) and await updated_data(message):
-        username = message.from_user.username
+    if await authorized(message) and await updated_data(message):
+        await lock(message.from_user.username)
         async with ChatActionSender.typing(bot=bot, chat_id=message.chat.id):
             response = await generate_completion(message)
-        data = read_data(username)
+        data = read_data(message.from_user.username)
         data["timestamps"].append(time.time())
         data["messages"].append({"role": "system", "content": response})
         encoding = tiktoken.encoding_for_model("gpt-4-turbo")
@@ -551,7 +558,7 @@ async def universal_handler(message: Message) -> None:
         data["balance"] -= (
             len(encoding.encode(response)) * FEE * GPT4TURBO_OUTPUT_1K / 1000
         )
-        write_data(username, data)
+        write_data(message.from_user.username, data)
 
 
 @dp.callback_query(F.data == "redraw")
