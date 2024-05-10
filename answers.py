@@ -52,7 +52,7 @@ OpenAI, модели которой используются этим ботом
         "latex-original": "Показать исходный код",
         "hide": "Скрыть",
         "old": "Сообщение может быть скрыто только если оно было отправлено менее 48 часов назад",
-        "forgotten": "[СООБЩЕНИЕ БЫЛО ЗАБЫТО]",
+        "forgotten": "*[СООБЩЕНИЕ БЫЛО ЗАБЫТО]*",
         "error": """Возникла непредвиденная ошибка. Для предотвращения повторного сбоя память Себастиана была автоматически отчищена, и теперь вы можете начать новый диалог. 
         
  *Не переживайте! Об этом инциденте уже сообщено, так что скоро проблема будет исправлена!*""",
@@ -113,7 +113,7 @@ For more details, type /balance""",
         "what": "What now?",
         "latex-original": "View the source code",
         "hide": "Hide",
-        "forgotten": "[THE MESSAGE WAS FORGOTTEN]",
+        "forgotten": "*[THE MESSAGE WAS FORGOTTEN]*",
         "old": "A message can only be hidden if it was sent less than 48 hours ago",
         "error": """An unexpected error has occurred. To prevent it from happening again, the Sebastian's memory has been automatically cleared, so you may start a new conversation with him. 
         

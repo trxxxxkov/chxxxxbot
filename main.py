@@ -112,16 +112,8 @@ async def variate_image(path):
     return media
 
 
-async def format(text, defects=True, latex=True, markdown=True):
-    if defects:
-        if text and text[0] == ",":
-            text = text[1:]
-        lines = text.split("\n")
-        for i in range(len(lines)):
-            if lines[i].strip() in ".,?!-:;":
-                lines[i] = ""
-        text = "\n".join([elem for elem in lines if elem])
-    if latex:
+async def format(text, latex=True, defects=True, markdown=True):
+    if latex and "`" not in text:
         text = (
             text.replace("$$", "*")
             .replace("\[", "*")
@@ -131,6 +123,14 @@ async def format(text, defects=True, latex=True, markdown=True):
         )
         if text.find("$") != text.rfind("$"):
             text = text.replace("$", "*")
+    if defects:
+        if text and text[0] == ",":
+            text = text[1:]
+        lines = text.split("\n")
+        for i in range(len(lines)):
+            if lines[i].strip() in ".,?!-:;":
+                lines[i] = ""
+        text = "\n".join([elem for elem in lines if elem])
     if markdown:
         text = (
             text.replace("**", "*")
@@ -155,7 +155,7 @@ async def format(text, defects=True, latex=True, markdown=True):
     return text
 
 
-async def send_latex(message, f):
+async def send_latex_formula(message, f):
     builder = InlineKeyboardBuilder()
     lang = await get_lang(message)
     builder.add(
@@ -163,11 +163,11 @@ async def send_latex(message, f):
             text=templates[lang]["latex-original"], callback_data="latex-original"
         ),
     )
-    url = "https://math.vercel.app?from=" + urllib.parse.quote(
-        translited(f[2].lower()).replace("\\\\", ";\,").replace(" ", "\,\!")
-    )
+    u = f[2].replace("\n", "").replace("&", "").replace("\\\\", ";\,")
+    u = " ".join([elem for elem in u.split(" ") if elem]).replace(" ", "\,\!")
+    u = "https://math.vercel.app?from=" + urllib.parse.quote(u.replace(" ", "\,\!"))
     path = f"photos/{message.from_user.username}.jpg"
-    svg_to_jpg(url, path)
+    svg_to_jpg(u, path)
     photo = FSInputFile(path)
     sent_message = await bot.send_photo(
         message.chat.id, photo, reply_markup=builder.as_markup()
@@ -177,15 +177,31 @@ async def send_latex(message, f):
     write_data(message.from_user.username, data)
 
 
+def latex_type(text):
+    document_flags = ["documentclass", "usepackage", "\\begin{document}"]
+    for flag in document_flags:
+        if flag in text:
+            return "document"
+    else:
+        if latex_math_found(text):
+            return "formulas"
+        else:
+            return None
+
+
 async def send(message, text, reply_markup=None):
     text = await format(text, latex=False, markdown=False)
     if not text:
-        return ""
-    formulas = latex_math_found(text)
-    if formulas:
+        return
+    if (latex_t := latex_type(text)) == "document":
+        text = await format(text, latex=False)
+        await bot.send_message(message.chat.id, text, reply_markup=reply_markup)
+    elif latex_t == "formulas":
+        text = text.replace("```latex", "").replace("```", "")
+        formulas = latex_math_found(text)
         for f in formulas:
             await send(message, text[: f[0]])
-            await send_latex(message, f)
+            await send_latex_formula(message, f)
         await send(message, text[formulas[-1][1] + len(formulas[-1][3][1]) :])
     else:
         text = await format(text)
@@ -193,10 +209,6 @@ async def send(message, text, reply_markup=None):
 
 
 def latex_math_found(text):
-    bad_delims = [
-        ["\\begin{document}", "\end{document}"],
-        ["usepackage", "usepackage"],
-    ]
     delims = [
         ["$", "$"],
         ["$$", "$$"],
@@ -215,9 +227,6 @@ def latex_math_found(text):
     ]
     from_idx = 0
     math_found = []
-    for bad_delim in bad_delims:
-        if text.find(bad_delim[0]) != text.find(bad_delim[1]):
-            return []
     for delim in delims:
         from_idx = 0
         l = text.find(delim[0], from_idx)
@@ -235,71 +244,9 @@ def latex_math_found(text):
     return sorted(math_found, key=lambda x: x[0])
 
 
-def translited(text):
-    GOST = {
-        "а": "a",
-        "б": "b",
-        "в": "v",
-        "г": "g",
-        "д": "d",
-        "е": "e",
-        "ё": "yo",
-        "ж": "zh",
-        "з": "z",
-        "и": "i",
-        "й": "j",
-        "к": "k",
-        "л": "l",
-        "м": "m",
-        "н": "n",
-        "о": "o",
-        "п": "p",
-        "р": "r",
-        "с": "s",
-        "т": "t",
-        "у": "u",
-        "ф": "f",
-        "х": "h",
-        "ц": "cz",
-        "ч": "ch",
-        "ш": "sh",
-        "щ": "shh",
-        "ъ": "",
-        "ы": "y",
-        "ь": "",
-        "э": "e",
-        "ю": "yu",
-        "я": "ya",
-    }
-    for key, value in GOST.items():
-        text = text.replace(key, value)
-    return text
-
-
-def islatex(text):
-    latex_flags = [
-        ["```latex", "```"],
-        ["$$", "$$"],
-        ["\[", "\]"],
-        ["\(", "\)"],
-        ["\\begin{", "\end{"],
-    ]
-    for flag in latex_flags:
-        if (
-            flag[0] in text
-            and flag[1] in text
-            and text.find(flag[0]) != text.rfind(flag[1])
-        ):
-            return True
-    else:
-        return False
-
-
 def paragraph_type(par):
     if par.find("```") == -1 or par.find("```") != par.rfind("```"):
         return "text"
-    elif islatex(par):
-        return "latex"
     else:
         return "code"
 
@@ -318,33 +265,33 @@ async def generate_completion(message):
         model=GPT_MODEL, messages=data["messages"], temperature=0.5, stream=True
     )
     response = ""
-    par = ""
-    par_type = "text"
+    paragraph = ""
+    curr_paragraph_type = "text"
     try:
         async for chunk in stream:
             if chunk.choices[0].delta.content is not None:
-                par += chunk.choices[0].delta.content
-                match par_type, paragraph_type(par):
+                paragraph += chunk.choices[0].delta.content
+                match curr_paragraph_type, paragraph_type(paragraph):
                     case "text", "text":
-                        if "\n\n" in par:
-                            delim = par.rfind("\n\n") + 2
-                            response, par = await process_delim(
-                                delim, par, message, response
+                        if "\n\n" in paragraph:
+                            delim = paragraph.rfind("\n\n") + 2
+                            response, paragraph = await process_delim(
+                                delim, paragraph, message, response
                             )
-                    case "text", t:
-                        par_type = t
-                        delim = par.rfind("```")
-                        response, par = await process_delim(
-                            delim, par, message, response
+                    case "text", "code":
+                        curr_paragraph_type = "code"
+                        delim = paragraph.rfind("```")
+                        response, paragraph = await process_delim(
+                            delim, paragraph, message, response
                         )
-                    case _, "text":
-                        par_type = "text"
-                        delim = par.rfind("```") + 3
-                        response, par = await process_delim(
-                            delim, par, message, response
+                    case "code", "text":
+                        curr_paragraph_type = "text"
+                        delim = paragraph.rfind("```") + 3
+                        response, paragraph = await process_delim(
+                            delim, paragraph, message, response
                         )
-        await send(message, par, keyboards.forget_keyboard)
-        response += par
+        await send(message, paragraph, keyboards.forget_keyboard)
+        response += paragraph
     except (Exception, OpenAIError) as e:
         alert = await format(
             f"*ERROR:* {e}\n\n*USER:* {message.from_user.username}\n\n*LAST PROMPT:* {message.text}\n\n*COLLECTED RESPONSE:* {response}",
