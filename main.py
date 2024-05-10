@@ -112,22 +112,28 @@ async def variate_image(path):
     return media
 
 
-async def send_markdown(chat_id, text, reply_markup=None):
-    if text.replace("\n", ""):
-        if text[0] == ",":
+async def format(text, defects=True, latex=True, markdown=True):
+    if defects:
+        if text and text[0] == ",":
             text = text[1:]
         lines = text.split("\n")
         for i in range(len(lines)):
             if lines[i].strip() in ".,?!-:;":
                 lines[i] = ""
-        lines = "\n".join([elem for elem in lines if elem])
-        markdown_text = (
-            lines.replace("$$", "*")
+        text = "\n".join([elem for elem in lines if elem])
+    if latex:
+        text = (
+            text.replace("$$", "*")
             .replace("\[", "*")
             .replace("\]", "*")
             .replace("\(", "*")
             .replace("\)", "*")
-            .replace("**", "*")
+        )
+        if text.find("$") != text.rfind("$"):
+            text = text.replace("$", "*")
+    if markdown:
+        text = (
+            text.replace("**", "*")
             .replace("\\", "\\\\")
             .replace("_", "\\_")
             .replace("[", "\\[")
@@ -146,15 +152,51 @@ async def send_markdown(chat_id, text, reply_markup=None):
             .replace(".", "\\.")
             .replace("!", "\\!")
         )
-        if markdown_text.find("$") != markdown_text.rfind("$"):
-            markdown_text = markdown_text.replace("$", "*")
-        if markdown_text.replace("\n", ""):
-            await bot.send_message(
-                chat_id=chat_id, text=markdown_text, reply_markup=reply_markup
-            )
+    return text
 
 
-def latex_detection(text):
+async def send_latex(message, f):
+    builder = InlineKeyboardBuilder()
+    lang = await get_lang(message)
+    builder.add(
+        types.InlineKeyboardButton(
+            text=templates[lang]["latex-original"], callback_data="latex-original"
+        ),
+    )
+    url = "https://math.vercel.app?from=" + urllib.parse.quote(
+        translited(f[2].lower()).replace("\\\\", ";\,").replace(" ", "\,\!")
+    )
+    path = f"photos/{message.from_user.username}.jpg"
+    svg_to_jpg(url, path)
+    photo = FSInputFile(path)
+    sent_message = await bot.send_photo(
+        message.chat.id, photo, reply_markup=builder.as_markup()
+    )
+    data = read_data(message.from_user.username)
+    data["latex"][sent_message.message_id] = f[3][0] + f[2] + f[3][1]
+    write_data(message.from_user.username, data)
+
+
+async def send(message, text, reply_markup=None):
+    text = await format(text, latex=False, markdown=False)
+    if not text:
+        return ""
+    formulas = latex_math_found(text)
+    if formulas:
+        for f in formulas:
+            await send(message, text[: f[0]])
+            await send_latex(message, f)
+        await send(message, text[formulas[-1][1] + len(formulas[-1][3][1]) :])
+    else:
+        text = await format(text)
+        await bot.send_message(message.chat.id, text, reply_markup=reply_markup)
+
+
+def latex_math_found(text):
+    bad_delims = [
+        ["\\begin{document}", "\end{document}"],
+        ["usepackage", "usepackage"],
+    ]
     delims = [
         ["$", "$"],
         ["$$", "$$"],
@@ -173,6 +215,9 @@ def latex_detection(text):
     ]
     from_idx = 0
     math_found = []
+    for bad_delim in bad_delims:
+        if text.find(bad_delim[0]) != text.find(bad_delim[1]):
+            return []
     for delim in delims:
         from_idx = 0
         l = text.find(delim[0], from_idx)
@@ -183,7 +228,7 @@ def latex_detection(text):
                 or text[l + len(delim[0]) : r].count("\\") > 2
                 or "begin" in delim[0]
             ):
-                math_found.append([l, r, delim])
+                math_found.append([l, r, text[l + len(delim[0]) : r], delim])
             from_idx = r + len(delim[1])
             l = text.find(delim[0], from_idx)
             r = text.find(delim[1], l + len(delim[0]))
@@ -231,11 +276,47 @@ def translited(text):
     return text
 
 
-async def generate_completion(message, data):
+def islatex(text):
+    latex_flags = [
+        ["```latex", "```"],
+        ["$$", "$$"],
+        ["\[", "\]"],
+        ["\(", "\)"],
+        ["\\begin{", "\end{"],
+    ]
+    for flag in latex_flags:
+        if (
+            flag[0] in text
+            and flag[1] in text
+            and text.find(flag[0]) != text.rfind(flag[1])
+        ):
+            return True
+    else:
+        return False
+
+
+def paragraph_type(par):
+    if par.find("```") == -1 or par.find("```") != par.rfind("```"):
+        return "text"
+    elif islatex(par):
+        return "latex"
+    else:
+        return "code"
+
+
+async def process_delim(delim, par, message, response):
+    await send(message, par[:delim])
+    await bot.send_chat_action(message.chat.id, ChatAction.TYPING)
+    response += par[:delim]
+    par = par[delim:]
+    return response, par
+
+
+async def generate_completion(message):
+    data = read_data(message.from_user.username)
     stream = await client.chat.completions.create(
-        model=GPT_MODEL, messages=data["messages"], temperature=0.4, stream=True
+        model=GPT_MODEL, messages=data["messages"], temperature=0.5, stream=True
     )
-    chat_id = message.chat.id
     response = ""
     par = ""
     par_type = "text"
@@ -243,91 +324,32 @@ async def generate_completion(message, data):
         async for chunk in stream:
             if chunk.choices[0].delta.content is not None:
                 par += chunk.choices[0].delta.content
-                if par.find("```") == -1 or par.find("```") != par.rfind(
-                    "```"
-                ):  # "```" is absent or has a pair
-                    if par_type == "code":
-                        await send_markdown(chat_id, par[: par.rfind("```") + 3])
-                        await bot.send_chat_action(chat_id, ChatAction.TYPING)
-                        response += par[: par.rfind("```") + 3]
-                        par = par[par.rfind("```") + 3 :]
-                    elif par_type == "latex":
-                        latex_found = latex_detection(par)
-                        for f in latex_found:
-                            formula = (
-                                par[f[0] + len(f[2][0]) : f[1]]
-                                .replace("если", "if")
-                                .replace("для", "for")
-                                .replace("всех", "all")
+                match par_type, paragraph_type(par):
+                    case "text", "text":
+                        if "\n\n" in par:
+                            delim = par.rfind("\n\n") + 2
+                            response, par = await process_delim(
+                                delim, par, message, response
                             )
-                            image_url = (
-                                "https://math.vercel.app?from="
-                                + urllib.parse.quote(
-                                    translited(formula.lower()).replace("\\\\", ";\,")
-                                ).replace(" ", "\,\!")
-                            )
-                            svg_to_jpg(image_url, f"photos/{chat_id}.jpg")
-                            photo = FSInputFile(f"photos/{chat_id}.jpg")
-                            await bot.send_photo(chat_id=chat_id, photo=photo)
-                            await bot.send_chat_action(chat_id, ChatAction.TYPING)
-                        if not latex_found:
-                            await send_markdown(
-                                chat_id,
-                                par[
-                                    par.lower().find("```latex") + 8 : par.rfind("```")
-                                ],
-                            )
-                            await bot.send_chat_action(chat_id, ChatAction.TYPING)
-                        response += par[: par.rfind("```") + 3]
-                        par = par[par.rfind("```") + 3 :]
-                    par_type = "text"
-                    latex_found = latex_detection(par)
-                    char_processed = 0
-                    for f in latex_found:
-                        formula = par[
-                            f[0] + len(f[2][0]) - char_processed : f[1] - char_processed
-                        ]
-                        image_url = (
-                            "https://math.vercel.app?from="
-                            + urllib.parse.quote(
-                                translited(formula.lower()).replace("\\\\", ";\,")
-                            ).replace(" ", "\,\!")
+                    case "text", t:
+                        par_type = t
+                        delim = par.rfind("```")
+                        response, par = await process_delim(
+                            delim, par, message, response
                         )
-                        svg_to_jpg(image_url, f"photos/{chat_id}.jpg")
-                        photo = FSInputFile(f"photos/{chat_id}.jpg")
-                        await send_markdown(chat_id, par[: f[0] - char_processed])
-                        await bot.send_photo(chat_id=chat_id, photo=photo)
-                        await bot.send_chat_action(chat_id, ChatAction.TYPING)
-                        response += par[: f[1]]
-                        par = par[f[1] + len(f[2][1]) - char_processed :]
-                        char_processed = f[1] + len(f[2][1])
-                    if "\n\n" in par:
-                        await send_markdown(chat_id, par[: par.rfind("\n\n") + 4])
-                        await bot.send_chat_action(chat_id, ChatAction.TYPING)
-                        response += par[: par.rfind("\n\n") + 4]
-                        par = par[par.rfind("\n\n") + 4 :]
-                elif "```latex" in par.lower():
-                    par_type = "latex"
-                else:
-                    if par_type == "text":
-                        await send_markdown(chat_id, par[: par.rfind("```")])
-                        await bot.send_chat_action(chat_id, ChatAction.TYPING)
-                        response += par[: par.rfind("```")]
-                        par = par[par.rfind("```") :]
-                    par_type = "code"
+                    case _, "text":
+                        par_type = "text"
+                        delim = par.rfind("```") + 3
+                        response, par = await process_delim(
+                            delim, par, message, response
+                        )
+        await send(message, par, keyboards.forget_keyboard)
+        response += par
     except (Exception, OpenAIError) as e:
-        data = read_data(message.from_user.username)
-        await bot.send_message(
-            OWNER_ID,
-            f"<b>ERROR:</b> {e}\n\n<b>User:</b> {message.from_user.username}\n\n<b>Last prompt:</b> "
-            + data["messages"][-1]["content"]
-            + f"\n\n<b>Collected response:</b> {response}",
-            parse_mode=ParseMode.HTML,
+        alert = await format(
+            f"*ERROR:* {e}\n\n*USER:* {message.from_user.username}\n\n*LAST PROMPT:* {message.text}\n\n*COLLECTED RESPONSE:* {response}",
+            latex=False,
         )
-        data["messages"].clear()
-        data["timestamps"].clear()
-        data["tokens"] = 0
-        write_data(message.from_user.username, data)
         builder = InlineKeyboardBuilder()
         lang = await get_lang(message)
         builder.add(
@@ -335,16 +357,11 @@ async def generate_completion(message, data):
                 text=templates[lang]["what"], callback_data="error"
             ),
         )
-        await bot.send_message(
-            message.chat.id,
-            f"<b>ERROR:</b> {e}",
-            reply_markup=builder.as_markup(),
-            parse_mode=ParseMode.HTML,
-        )
+        await bot.send_message(OWNER_ID, alert)
+        await bot.send_message(message.chat.id, alert, reply_markup=builder.as_markup())
+        await clear_handler(message)
     finally:
         await stream.close()
-    await send_markdown(chat_id, par, reply_markup=keyboards.forget_keyboard)
-    response += par
     return response
 
 
@@ -364,10 +381,10 @@ async def updated_data(message) -> bool:
     data = read_data(username)
     if data["balance"] < 0.001:
         await answer(message, "empty")
-        await send_markdown(
-            OWNER_ID,
-            "*WARNING: @{} has tried to use GPT with empty balance.*".format(username),
+        alert = await format(
+            f"*WARNING: @{username} has tried to use GPT with empty balance.*"
         )
+        await bot.send_message(OWNER_ID, alert)
         return False
     now = time.time()
     data["timestamps"].append(now)
@@ -435,7 +452,7 @@ async def authorized(message):
 
 
 @dp.message(Command("start"))
-async def command_start_handler(message: Message) -> None:
+async def start_handler(message: Message) -> None:
     lang = await get_lang(message)
     await bot.set_my_commands(
         [
@@ -464,12 +481,13 @@ async def help_handler(message: Message) -> None:
 
 
 @dp.message(Command("forget", "clear"))
-async def command_start_handler(message: Message) -> None:
+async def clear_handler(message: Message) -> None:
     username = message.from_user.username
     if await authorized(message):
         data = read_data(username)
         await answer(message, "forget")
         data["messages"].clear()
+        data["latex"].clear()
         data["timestamps"].clear()
         data["tokens"] = 0
         write_data(username, data)
@@ -501,6 +519,7 @@ async def add_handler(message: Message) -> None:
             else:
                 init = {
                     "messages": [],
+                    "latex": {},
                     "timestamps": [],
                     "tokens": 0,
                     "balance": float(balance),
@@ -510,12 +529,10 @@ async def add_handler(message: Message) -> None:
                 BOT_USERS.append(username)
                 os.system(f"dotenv set TG_BOT_USERS {','.join(BOT_USERS)}")
                 return
-    await send_markdown(
-        OWNER_ID,
-        "*WARNING: @{} has made an attempt to add another user.*".format(
-            message.from_user.username
-        ),
+    alert = await format(
+        f"*WARNING: @{message.from_user.username} has made an attempt to add another user.*"
     )
+    await bot.send_message(OWNER_ID, alert)
 
 
 @dp.message(Command("rm", "remove", "delete"))
@@ -527,12 +544,8 @@ async def delete_handler(message: Message) -> None:
             os.system(f"dotenv set TG_BOT_USERS {','.join(BOT_USERS)}")
             os.remove(f"data/{username}.json")
             return
-    await send_markdown(
-        OWNER_ID,
-        "*WARNING: @{} has made and attempt to delete another user.*".format(
-            message.from_user.username
-        ),
-    )
+    alert = f"*WARNING: @{message.from_user.username} has made and attempt to delete another user.*"
+    await bot.send_message(OWNER_ID, alert)
 
 
 @dp.message(Command("draw"))
@@ -562,18 +575,13 @@ async def image_generation_handler(message: Message) -> None:
             data["balance"] -= FEE * DALLE3_OUTPUT
             write_data(username, data)
         except (Exception, OpenAIError) as e:
-            data = read_data(username)
-            await bot.send_message(
-                OWNER_ID,
-                f"<b>ERROR:</b> {e}\n\n<b>User:</b> {message.from_user.username}\n\n<b>Last prompt:</b>\n"
-                + data["messages"][-1]["content"],
-                parse_mode=ParseMode.HTML,
+            alert = await format(
+                f"*ERROR:* {e}\n\n*USER:* {message.from_user.username}\n\n*LAST PROMPT:* {message.text}",
+                latex=False,
             )
-            data["messages"].clear()
-            data["timestamps"].clear()
-            data["tokens"] = 0
-            write_data(message.from_user.username, data)
+            await bot.send_message(OWNER_ID, alert)
             await answer(message, "block")
+            await clear_handler(message)
 
 
 async def unknown_commands_handler(message: Message) -> None:
@@ -586,9 +594,9 @@ async def universal_handler(message: Message) -> None:
         await unknown_commands_handler(message)
     elif await authorized(message) and await updated_data(message):
         username = message.from_user.username
-        data = read_data(username)
         async with ChatActionSender.typing(bot=bot, chat_id=message.chat.id):
-            response = await generate_completion(message, data)
+            response = await generate_completion(message)
+        data = read_data(username)
         data["timestamps"].append(time.time())
         data["messages"].append({"role": "system", "content": response})
         encoding = tiktoken.encoding_for_model("gpt-4-turbo")
@@ -627,6 +635,37 @@ async def payment_redirection_handler(callback: types.CallbackQuery):
     await callback.message.answer(
         re.sub(r"[_[\]()~>#\+\-=|{}.!]", lambda x: "\\" + x.group(), text)
     )
+
+
+@dp.callback_query(F.data == "latex-original")
+async def latex_handler(callback: types.CallbackQuery):
+    message = callback.message
+    builder = InlineKeyboardBuilder()
+    lang = await get_lang(message)
+    builder.add(
+        types.InlineKeyboardButton(text=templates[lang]["hide"], callback_data="hide"),
+    )
+    data = read_data(callback.from_user.username)
+    text = data["latex"].get(str(message.message_id), templates[lang]["forgotten"])
+    text = await format(text, latex=False)
+    await bot.send_message(
+        message.chat.id,
+        text,
+        reply_to_message_id=message.message_id,
+        reply_markup=builder.as_markup(),
+    )
+
+
+@dp.callback_query(F.data == "hide")
+async def hide_handler(callback: types.CallbackQuery):
+    message = callback.message
+    deleted = await bot.delete_message(message.chat.id, message.message_id)
+    if not deleted:
+        lang = await get_lang(callback)
+        text = await format(templates[lang]["old"])
+        await bot.send_message(
+            message.chat.id, text, reply_to_message_id=message.message_id
+        )
 
 
 async def main() -> None:
