@@ -56,7 +56,6 @@ OpenAI, модели которой используются этим ботом
         "error": """Возникла непредвиденная ошибка. Для предотвращения повторного сбоя память Себастиана была автоматически отчищена, и теперь вы можете начать новый диалог. 
         
  *Не переживайте! Об этом инциденте уже сообщено, так что скоро проблема будет исправлена!*""",
-        "unknown": "*Команда не найдена.* Введите /help, чтобы узнать информацию о доступных командах.",
         "block": "*Ваш запрос был отклонён сервером OpenAI, так как в нём содержится запрещённая информация.* Попробуйте изменить формулировку и использовать другие слова!",
     },
     "en": {
@@ -118,7 +117,6 @@ For more details, type /balance""",
         "error": """An unexpected error has occurred. To prevent it from happening again, the Sebastian's memory has been automatically cleared, so you may start a new conversation with him. 
         
  *Don't worry! This incident has been reported and the problem will be fixed soon!*""",
-        "unknown": "*Command not found.* Type /help to find out information about usage.",
         "block": "*The response has been blocked by OpenAI because your prompt violates its content policy.* Consider using other words in your prompt!",
     },
 }
