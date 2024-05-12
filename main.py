@@ -157,10 +157,10 @@ async def format(text, latex=True, defects=True, markdown=True):
 
 async def send_latex_formula(message, formula):
     builder = InlineKeyboardBuilder()
-    lang = await get_lang(message)
     builder.add(
         types.InlineKeyboardButton(
-            text=templates[lang]["latex-original"], callback_data="latex-original"
+            text=templates[language(message)]["latex-original"],
+            callback_data="latex-original",
         ),
     )
     image_url = formula[2].replace("\n", "").replace("&", "").replace("\\\\", ";\,")
@@ -309,10 +309,9 @@ async def generate_completion(message):
             latex=False,
         )
         builder = InlineKeyboardBuilder()
-        lang = await get_lang(message)
         builder.add(
             types.InlineKeyboardButton(
-                text=templates[lang]["what"], callback_data="error"
+                text=templates[language(message)]["what"], callback_data="error"
             ),
         )
         await bot.send_message(OWNER_CHAT_ID, alert)
@@ -397,7 +396,7 @@ async def update_user_data(message) -> bool:
         return False
 
 
-async def get_lang(message):
+def language(message):
     lang = message.from_user.language_code
     if lang != "ru":
         lang = "en"
@@ -405,14 +404,10 @@ async def get_lang(message):
 
 
 async def send_template_answer(message, template, *args, reply_markup=None):
-    lang = await get_lang(message)
-    text = templates[lang][template]
+    text = templates[language(message)][template]
     if len(args) != 0:
         text = text.format(*args)
-    await message.answer(
-        re.sub(r"[_[\]()~>#\+\-=|{}.!]", lambda x: "\\" + x.group(), text),
-        reply_markup=reply_markup,
-    )
+    await send(message, text, reply_markup)
 
 
 async def authorized(message):
@@ -426,11 +421,10 @@ async def authorized(message):
 
 @dp.message(Command("start"))
 async def start_handler(message: Message) -> None:
-    lang = await get_lang(message)
     await bot.set_my_commands(
         [
             types.BotCommand(command=key, description=value)
-            for key, value in commands[lang].items()
+            for key, value in commands[language(message)].items()
         ]
     )
     await send_template_answer(
@@ -444,10 +438,9 @@ async def start_handler(message: Message) -> None:
 @dp.message(Command("help"))
 async def help_handler(message: Message) -> None:
     builder = InlineKeyboardBuilder()
-    lang = await get_lang(message)
     builder.add(
         types.InlineKeyboardButton(
-            text=templates[lang]["payment"], callback_data="payment"
+            text=templates[language(message)]["payment"], callback_data="payment"
         ),
     )
     await send_template_answer(message, "help", reply_markup=builder.as_markup())
@@ -491,6 +484,7 @@ async def add_handler(message: Message) -> None:
                 return
             else:
                 init = {
+                    "lock": False,
                     "messages": [],
                     "latex": {},
                     "timestamps": [],
@@ -502,10 +496,6 @@ async def add_handler(message: Message) -> None:
                 BOT_USERS.append(username)
                 os.system(f"dotenv set TG_BOT_USERS {','.join(BOT_USERS)}")
                 return
-    alert = await format(
-        f"*WARNING: @{message.from_user.username} has made an attempt to add another user.*"
-    )
-    await bot.send_message(OWNER_CHAT_ID, alert)
 
 
 @dp.message(Command("rm", "remove", "delete"))
@@ -517,8 +507,6 @@ async def delete_handler(message: Message) -> None:
             os.system(f"dotenv set TG_BOT_USERS {','.join(BOT_USERS)}")
             os.remove(f"data/{username}.json")
             return
-    alert = f"*WARNING: @{message.from_user.username} has made and attempt to delete another user.*"
-    await bot.send_message(OWNER_CHAT_ID, alert)
 
 
 @dp.message(Command("draw"))
@@ -533,10 +521,9 @@ async def image_generation_handler(message: Message) -> None:
             async with ChatActionSender.upload_photo(bot=bot, chat_id=message.chat.id):
                 image_url = await generate_image(prompt)
             builder = InlineKeyboardBuilder()
-            lang = await get_lang(message)
             builder.add(
                 types.InlineKeyboardButton(
-                    text=templates[lang]["redraw"], callback_data="redraw"
+                    text=templates[language(message)]["redraw"], callback_data="redraw"
                 ),
             )
             await bot.send_photo(
@@ -548,11 +535,6 @@ async def image_generation_handler(message: Message) -> None:
             data["balance"] -= FEE * DALLE3_OUTPUT
             await write_data(username, data)
         except (Exception, OpenAIError) as e:
-            alert = await format(
-                f"*ERROR:* {e}\n\n*USER:* {message.from_user.username}\n\n*LAST PROMPT:* {message.text}",
-                latex=False,
-            )
-            await bot.send_message(OWNER_CHAT_ID, alert)
             await send_template_answer(message, "block")
             await clear_handler(message)
 
@@ -608,12 +590,15 @@ async def payment_redirection_handler(callback: types.CallbackQuery):
 async def latex_handler(callback: types.CallbackQuery):
     message = callback.message
     builder = InlineKeyboardBuilder()
-    lang = await get_lang(message)
     builder.add(
-        types.InlineKeyboardButton(text=templates[lang]["hide"], callback_data="hide"),
+        types.InlineKeyboardButton(
+            text=templates[language(message)]["hide"], callback_data="hide"
+        ),
     )
     data = await read_data(callback.from_user.username)
-    text = data["latex"].get(str(message.message_id), templates[lang]["forgotten"])
+    text = data["latex"].get(
+        str(message.message_id), templates[language(message)]["forgotten"]
+    )
     text = await format(text, latex=False)
     await bot.send_message(
         message.chat.id,
@@ -628,8 +613,7 @@ async def hide_handler(callback: types.CallbackQuery):
     message = callback.message
     deleted = await bot.delete_message(message.chat.id, message.message_id)
     if not deleted:
-        lang = await get_lang(callback)
-        text = await format(templates[lang]["old"])
+        text = await format(templates[language(callback)]["old"])
         await bot.send_message(
             message.chat.id, text, reply_to_message_id=message.message_id
         )
