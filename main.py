@@ -26,8 +26,10 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import Message, InputMediaPhoto, FSInputFile
 
 import keyboards
-from answers import templates
+from dialogues import dialogues
 from commands import commands
+from gifs import gifs
+from buttons import buttons
 
 load_dotenv()
 
@@ -159,7 +161,7 @@ async def send_latex_formula(message, formula):
     builder = InlineKeyboardBuilder()
     builder.add(
         types.InlineKeyboardButton(
-            text=templates[language(message)]["latex-original"],
+            text=buttons[language(message)]["latex-original"],
             callback_data="latex-original",
         ),
     )
@@ -311,7 +313,7 @@ async def generate_completion(message):
         builder = InlineKeyboardBuilder()
         builder.add(
             types.InlineKeyboardButton(
-                text=templates[language(message)]["what"], callback_data="error"
+                text=buttons[language(message)]["error"], callback_data="error"
             ),
         )
         await bot.send_message(OWNER_CHAT_ID, alert)
@@ -404,7 +406,7 @@ def language(message):
 
 
 async def send_template_answer(message, template, *args, reply_markup=None):
-    text = templates[language(message)][template]
+    text = dialogues[language(message)][template]
     if len(args) != 0:
         text = text.format(*args)
     await send(message, text, reply_markup)
@@ -440,10 +442,19 @@ async def help_handler(message: Message) -> None:
     builder = InlineKeyboardBuilder()
     builder.add(
         types.InlineKeyboardButton(
-            text=templates[language(message)]["payment"], callback_data="payment"
+            text=buttons[language(message)]["payment"], callback_data="payment"
+        ),
+        types.InlineKeyboardButton(
+            text=buttons[language(message)]["help"][1] + " ->", callback_data="help-1"
         ),
     )
-    await send_template_answer(message, "help", reply_markup=builder.as_markup())
+    text = await format(dialogues[language(message)]["help"][0])
+    await bot.send_animation(
+        message.chat.id,
+        gifs["help"][0],
+        caption=text,
+        reply_markup=builder.as_markup(),
+    )
 
 
 @dp.message(Command("forget", "clear"))
@@ -470,6 +481,13 @@ async def billing_handler(message: Message) -> None:
             round(data["balance"], 4),
             round(94 * data["balance"], 2),
         )
+
+
+@dp.message(Command("get_id"))
+async def file_id_handler(message: Message) -> None:
+    # file_id = message.animation.file_id
+    file_id = message.video.file_id
+    await send(message, file_id)
 
 
 @dp.message(Command("add"))
@@ -523,7 +541,7 @@ async def image_generation_handler(message: Message) -> None:
             builder = InlineKeyboardBuilder()
             builder.add(
                 types.InlineKeyboardButton(
-                    text=templates[language(message)]["redraw"], callback_data="redraw"
+                    text=buttons[language(message)]["redraw"], callback_data="redraw"
                 ),
             )
             await bot.send_photo(
@@ -577,12 +595,47 @@ async def error_message_handler(callback: types.CallbackQuery):
 
 @dp.callback_query(F.data == "payment")
 async def payment_redirection_handler(callback: types.CallbackQuery):
-    data = await read_data(callback.from_user.username)
-    lang = callback.from_user.language_code
-    text = templates[lang]["balance"]
-    text = text.format(round(data["balance"], 4), round(94 * data["balance"], 2))
-    await callback.message.answer(
-        re.sub(r"[_[\]()~>#\+\-=|{}.!]", lambda x: "\\" + x.group(), text)
+    username = callback.from_user.username
+    data = await read_data(username)
+    await send_template_answer(
+        callback.message,
+        "balance",
+        round(data["balance"], 4),
+        round(94 * data["balance"], 2),
+    )
+
+
+@dp.callback_query(F.data.startswith("help-"))
+async def help_handler(callback: types.CallbackQuery):
+    message = callback.message
+    h_idx = int(callback.data.split("-")[1])
+    payment_button = types.InlineKeyboardButton(
+        text=buttons[language(message)]["payment"], callback_data="payment"
+    )
+    if h_idx == 0:
+        l_button = payment_button
+    else:
+        l_button = types.InlineKeyboardButton(
+            text="<- " + buttons[language(message)]["help"][h_idx - 1],
+            callback_data=f"help-{h_idx-1}",
+        )
+    if h_idx == len(buttons[language(message)]["help"]) - 1:
+        r_button = payment_button
+    else:
+        r_button = types.InlineKeyboardButton(
+            text=buttons[language(message)]["help"][h_idx + 1] + " ->",
+            callback_data=f"help-{h_idx+1}",
+        )
+    builder = InlineKeyboardBuilder()
+    builder.add(l_button, r_button)
+    text = await format(dialogues[language(callback)]["help"][h_idx])
+    await bot.edit_message_media(
+        types.InputMediaAnimation(
+            type=InputMediaType.ANIMATION, media=gifs["help"][h_idx], caption=text
+        ),
+        message.chat.id,
+        message.message_id,
+        reply_markup=builder.as_markup(),
     )
 
 
@@ -592,12 +645,12 @@ async def latex_handler(callback: types.CallbackQuery):
     builder = InlineKeyboardBuilder()
     builder.add(
         types.InlineKeyboardButton(
-            text=templates[language(message)]["hide"], callback_data="hide"
+            text=buttons[language(message)]["hide"], callback_data="hide"
         ),
     )
     data = await read_data(callback.from_user.username)
     text = data["latex"].get(
-        str(message.message_id), templates[language(message)]["forgotten"]
+        str(message.message_id), dialogues[language(message)]["forgotten"]
     )
     text = await format(text, latex=False)
     await bot.send_message(
@@ -613,7 +666,7 @@ async def hide_handler(callback: types.CallbackQuery):
     message = callback.message
     deleted = await bot.delete_message(message.chat.id, message.message_id)
     if not deleted:
-        text = await format(templates[language(callback)]["old"])
+        text = await format(dialogues[language(callback)]["old"])
         await bot.send_message(
             message.chat.id, text, reply_to_message_id=message.message_id
         )
