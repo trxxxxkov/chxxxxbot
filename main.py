@@ -137,7 +137,7 @@ async def format(text, latex=True, defects=True, markdown=True):
         text = (
             text.replace("**", "*")
             .replace("\\", "\\\\")
-            .replace("_", "\\_")
+            # .replace("_", "\\_")
             .replace("[", "\\[")
             .replace("]", "\\]")
             .replace("(", "\\(")

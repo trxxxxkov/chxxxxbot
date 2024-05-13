@@ -35,7 +35,7 @@ OpenAI, модели которой используются этим ботом
 
 Если у вас есть предложения касательно добавления нового функционала, вы хотите поделиться доступом к боту с другом или вы столкнулись с ошибкой при взаимодействии с ботом, пожалуйста, свяжитесь с @trxxxxkov.""",
         ],
-        "forget": "Все предыдущие сообщения были забыты!",
+        "forget": "_Все предыдущие сообщения были забыты!_",
         "balance": """*Ваш баланс: ${} \u2248 {}*\u20bd.
 
 *Обратите внимание, что если на вашем балансе будет недостаточно средств для совершения запроса, доступ к GPT-4-Turbo и DALLE-3 будет приостановлен до тех пор, пока вы не пополните счёт.*
@@ -88,7 +88,7 @@ If you type /draw command and provide a description, Sebastian will use DALLE-3 
 OpenAI, whose models are used by this bot, charges processing of your messages so you should cover expenses if you want to preserve access, which means that you have to pay for all tokens that you used. *There isn't any subscription or annual payment.* You may find details about pricing, payment and your current expenses by typing /balance command.""",
             """If you have any wishes for adding new features, want to share this bot with your friends or encountered an error, please contact @trxxxxkov.""",
         ],
-        "forget": "All previous messages have been forgotten!",
+        "forget": "_All previous messages have been forgotten!_",
         "balance": """You balance: ${} \u2248 {}\u20bd. 
 
 Note that if your balance is empty, your access to GPT-4-Turbo will be paused until you add funds.
