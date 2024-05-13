@@ -36,7 +36,7 @@ OpenAI, модели которой используются этим ботом
 Если у вас есть предложения касательно добавления нового функционала, вы хотите поделиться доступом к боту с другом или вы столкнулись с ошибкой при взаимодействии с ботом, пожалуйста, свяжитесь с @trxxxxkov.""",
         ],
         "forget": "_Все предыдущие сообщения были забыты!_",
-        "balance": """*Ваш баланс: ${} \u2248 {}*\u20bd.
+        "balance": """*Ваш баланс: ${} \u2248 {}*\u20bd \u2248 {} токенов.
 
 *Обратите внимание, что если на вашем балансе будет недостаточно средств для совершения запроса, доступ к GPT-4-Turbo и DALLE-3 будет приостановлен до тех пор, пока вы не пополните счёт.*
 Предпочитаемый способ оплаты: Тиньков, +7-900-656-08-59.
@@ -89,7 +89,7 @@ OpenAI, whose models are used by this bot, charges processing of your messages s
             """If you have any wishes for adding new features, want to share this bot with your friends or encountered an error, please contact @trxxxxkov.""",
         ],
         "forget": "_All previous messages have been forgotten!_",
-        "balance": """You balance: ${} \u2248 {}\u20bd. 
+        "balance": """You balance: ${} \u2248 {}\u20bd \u2248 {} tokens. 
 
 Note that if your balance is empty, your access to GPT-4-Turbo will be paused until you add funds.
 Preferred payment method: Tinkoff, +7-900-656-08-59. 

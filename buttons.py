@@ -1,7 +1,7 @@
 buttons = {
     "ru": {
         "help": [
-            "Текстовые запросы ",
+            "Текстовые запросы",
             "Распознавание изображений",
             "Генерация изображений",
             "Работа с LaTeX",
@@ -20,7 +20,7 @@ buttons = {
             "LaTeX compilation",
         ],
         "redraw": "Draw similar images",
-        "payment": "More about payment",
+        "payment": "About payment",
         "error": "What now?",
         "latex-original": "View the source code",
         "hide": "Hide",

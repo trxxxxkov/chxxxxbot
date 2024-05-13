@@ -114,7 +114,7 @@ async def variate_image(path):
     return media
 
 
-async def format(text, latex=True, defects=True, markdown=True):
+async def format(text, latex=True, defects=True, markdown=True, keep=None):
     if latex and "`" not in text:
         text = (
             text.replace("$$", "*")
@@ -137,7 +137,7 @@ async def format(text, latex=True, defects=True, markdown=True):
         text = (
             text.replace("**", "*")
             .replace("\\", "\\\\")
-            # .replace("_", "\\_")
+            .replace("_", "\\_")
             .replace("[", "\\[")
             .replace("]", "\\]")
             .replace("(", "\\(")
@@ -154,6 +154,9 @@ async def format(text, latex=True, defects=True, markdown=True):
             .replace(".", "\\.")
             .replace("!", "\\!")
         )
+    if keep:
+        for elem in keep:
+            text = text.replace(f"\\{elem}", elem)
     return text
 
 
@@ -195,7 +198,7 @@ def latex_type(text):
             return None
 
 
-async def send(message, text, reply_markup=None):
+async def send(message, text, reply_markup=None, keep=None):
     text = await format(text, latex=False, markdown=False)
     if not text:
         return
@@ -210,7 +213,7 @@ async def send(message, text, reply_markup=None):
             await send_latex_formula(message, f)
         await send(message, text[formulas[-1][1] + len(formulas[-1][3][1]) :])
     else:
-        text = await format(text)
+        text = await format(text, keep=keep)
         await bot.send_message(message.chat.id, text, reply_markup=reply_markup)
 
 
@@ -405,11 +408,11 @@ def language(message):
     return lang
 
 
-async def send_template_answer(message, template, *args, reply_markup=None):
+async def send_template_answer(message, template, *args, reply_markup=None, keep=None):
     text = dialogues[language(message)][template]
     if len(args) != 0:
         text = text.format(*args)
-    await send(message, text, reply_markup)
+    await send(message, text, reply_markup, keep=keep)
 
 
 async def authorized(message):
@@ -462,7 +465,7 @@ async def clear_handler(message: Message) -> None:
     username = message.from_user.username
     if await authorized(message):
         data = await read_data(username)
-        await send_template_answer(message, "forget")
+        await send_template_answer(message, "forget", keep="_")
         data["messages"].clear()
         data["latex"].clear()
         data["timestamps"].clear()
@@ -475,12 +478,14 @@ async def billing_handler(message: Message) -> None:
     if await authorized(message):
         username = message.from_user.username
         data = await read_data(username)
-        await send_template_answer(
-            message,
-            "balance",
-            round(data["balance"], 4),
-            round(94 * data["balance"], 2),
+        text = await format(
+            dialogues[language(message)]["balance"].format(
+                round(data["balance"], 4),
+                round(94 * data["balance"], 2),
+                round(data["balance"] / GPT4TURBO_OUTPUT_1K * 1000),
+            )
         )
+        await bot.send_animation(message.chat.id, gifs["balance"], caption=text)
 
 
 @dp.message(Command("get_id"))
