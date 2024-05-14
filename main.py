@@ -41,12 +41,12 @@ OPENAI_KEY = getenv("OPENAI_API_KEY")
 FEE = 1.6
 GPT_MEMORY_SEC = 7200
 GPT_MEMORY_MSG = 20
-GPT_MODEL = "gpt-4-turbo"
-GPT4TURBO_INPUT_1K = 0.01
-GPT4TURBO_OUTPUT_1K = 0.03
+GPT_MODEL = "gpt-4o"
+GPT4O_INPUT_1K = 0.005
+GPT4O_OUTPUT_1K = 0.015
+GPT4VISION_INPUT = 0.005
 DALLE3_OUTPUT = 0.08
 DALLE2_OUTPUT = 0.02
-GPT4VISION_INPUT = 0.01
 
 LATEX_MIN_LEN = 20
 
@@ -178,6 +178,7 @@ async def send_latex_formula(message, formula):
     path = f"photos/{message.from_user.username}.jpg"
     svg_to_jpg(image_url, path)
     photo = FSInputFile(path)
+    asyncio.sleep(0.05)
     sent_message = await bot.send_photo(
         message.chat.id, photo, reply_markup=builder.as_markup()
     )
@@ -383,7 +384,7 @@ async def update_user_data(message) -> bool:
     else:
         data["messages"].append({"role": "user", "content": message.text})
         data["tokens"] += len(encoding.encode(message.text))
-    data["balance"] -= data["tokens"] * FEE * GPT4TURBO_INPUT_1K / 1000
+    data["balance"] -= data["tokens"] * FEE * GPT4O_INPUT_1K / 1000
     # Remove outdated messages from the chat history
     for i in range(len(data["timestamps"])):
         if now - data["timestamps"][i] < GPT_MEMORY_SEC:
@@ -476,16 +477,28 @@ async def clear_handler(message: Message) -> None:
 @dp.message(Command("balance"))
 async def billing_handler(message: Message) -> None:
     if await authorized(message):
+        builder = InlineKeyboardBuilder()
+        builder.add(
+            types.InlineKeyboardButton(
+                text=buttons[language(message)]["tokens"],
+                callback_data="tokens",
+            ),
+        )
         username = message.from_user.username
         data = await read_data(username)
         text = await format(
             dialogues[language(message)]["balance"].format(
                 round(data["balance"], 4),
                 round(94 * data["balance"], 2),
-                round(data["balance"] / GPT4TURBO_OUTPUT_1K * 1000),
+                round(data["balance"] / GPT4O_OUTPUT_1K * 1000),
             )
         )
-        await bot.send_animation(message.chat.id, gifs["balance"], caption=text)
+        await bot.send_animation(
+            message.chat.id,
+            gifs["balance"],
+            caption=text,
+            reply_markup=builder.as_markup(),
+        )
 
 
 @dp.message(Command("get_id"))
@@ -573,9 +586,7 @@ async def universal_handler(message: Message) -> None:
         data["messages"].append({"role": "system", "content": response})
         encoding = tiktoken.encoding_for_model("gpt-4-turbo")
         data["tokens"] += len(encoding.encode(response))
-        data["balance"] -= (
-            len(encoding.encode(response)) * FEE * GPT4TURBO_OUTPUT_1K / 1000
-        )
+        data["balance"] -= len(encoding.encode(response)) * FEE * GPT4O_OUTPUT_1K / 1000
         await write_data(message.from_user.username, data)
 
 
@@ -600,13 +611,82 @@ async def error_message_handler(callback: types.CallbackQuery):
 
 @dp.callback_query(F.data == "payment")
 async def payment_redirection_handler(callback: types.CallbackQuery):
+    message = callback.message
+    builder = InlineKeyboardBuilder()
+    builder.add(
+        types.InlineKeyboardButton(
+            text=buttons[language(message)]["tokens"],
+            callback_data="tokens",
+        ),
+    )
     username = callback.from_user.username
     data = await read_data(username)
-    await send_template_answer(
-        callback.message,
-        "balance",
-        round(data["balance"], 4),
-        round(94 * data["balance"], 2),
+    text = await format(
+        dialogues[language(message)]["balance"].format(
+            round(data["balance"], 4),
+            round(94 * data["balance"], 2),
+            round(data["balance"] / GPT4O_OUTPUT_1K * 1000),
+        )
+    )
+    await bot.send_animation(
+        message.chat.id,
+        gifs["balance"],
+        caption=text,
+        reply_markup=builder.as_markup(),
+    )
+
+
+@dp.callback_query(F.data == "tokens")
+async def tokens_description_handler(callback: types.CallbackQuery):
+    message = callback.message
+    builder = InlineKeyboardBuilder()
+    builder.add(
+        types.InlineKeyboardButton(
+            text=buttons[language(message)]["back-to-payment"],
+            callback_data="back-to-payment",
+        ),
+    )
+    text = await format(dialogues[language(callback)]["tokens"])
+    await bot.edit_message_media(
+        types.InputMediaAnimation(
+            type=InputMediaType.ANIMATION,
+            media=gifs["tokens"],
+            caption=text,
+        ),
+        message.chat.id,
+        message.message_id,
+        reply_markup=builder.as_markup(),
+    )
+
+
+@dp.callback_query(F.data == "back-to-payment")
+async def back_to_payment_handler(callback: types.CallbackQuery):
+    message = callback.message
+    builder = InlineKeyboardBuilder()
+    builder.add(
+        types.InlineKeyboardButton(
+            text=buttons[language(message)]["tokens"],
+            callback_data="tokens",
+        ),
+    )
+    username = callback.from_user.username
+    data = await read_data(username)
+    text = await format(
+        dialogues[language(message)]["balance"].format(
+            round(data["balance"], 4),
+            round(94 * data["balance"], 2),
+            round(data["balance"] / GPT4O_OUTPUT_1K * 1000),
+        )
+    )
+    await bot.edit_message_media(
+        types.InputMediaAnimation(
+            type=InputMediaType.ANIMATION,
+            media=gifs["tokens"],
+            caption=text,
+        ),
+        message.chat.id,
+        message.message_id,
+        reply_markup=builder.as_markup(),
     )
 
 

@@ -11,6 +11,8 @@ buttons = {
         "error": "Что теперь?",
         "latex-original": "Показать исходный код",
         "hide": "Скрыть",
+        "tokens": "Что такое токены?",
+        "back-to-payment": "К предыдущей странице",
     },
     "en": {
         "help": [
@@ -24,5 +26,7 @@ buttons = {
         "error": "What now?",
         "latex-original": "View the source code",
         "hide": "Hide",
+        "tokens": "What are tokens?",
+        "back-to-payment": "To the previous menu",
     },
 }

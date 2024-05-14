@@ -35,6 +35,7 @@ OpenAI, модели которой используются этим ботом
 
 Если у вас есть предложения касательно добавления нового функционала, вы хотите поделиться доступом к боту с другом или вы столкнулись с ошибкой при взаимодействии с ботом, пожалуйста, свяжитесь с @trxxxxkov.""",
         ],
+        "tokens": "Токены - это круто!",
         "forget": "_Все предыдущие сообщения были забыты!_",
         "balance": """*Ваш баланс: ${} \u2248 {}*\u20bd \u2248 {} токенов.
 
@@ -88,6 +89,7 @@ If you type /draw command and provide a description, Sebastian will use DALLE-3 
 OpenAI, whose models are used by this bot, charges processing of your messages so you should cover expenses if you want to preserve access, which means that you have to pay for all tokens that you used. *There isn't any subscription or annual payment.* You may find details about pricing, payment and your current expenses by typing /balance command.""",
             """If you have any wishes for adding new features, want to share this bot with your friends or encountered an error, please contact @trxxxxkov.""",
         ],
+        "tokens": "Tokens are cool!",
         "forget": "_All previous messages have been forgotten!_",
         "balance": """You balance: ${} \u2248 {}\u20bd \u2248 {} tokens. 
 
