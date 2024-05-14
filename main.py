@@ -114,26 +114,8 @@ async def variate_image(path):
     return media
 
 
-async def format(text, latex=True, defects=True, markdown=True, keep=None):
-    if latex and "`" not in text:
-        text = (
-            text.replace("$$", "*")
-            .replace("\[", "*")
-            .replace("\]", "*")
-            .replace("\(", "*")
-            .replace("\)", "*")
-        )
-        if text.find("$") != text.rfind("$"):
-            text = text.replace("$", "*")
-    if defects:
-        if text and text[0] == ",":
-            text = text[1:]
-        lines = text.split("\n")
-        for i in range(len(lines)):
-            if lines[i].strip() in ".,?!-:;":
-                lines[i] = ""
-        text = "\n".join([elem for elem in lines if elem])
-    if markdown:
+async def format_markdown(text, keep="_*"):
+    if text:
         if (l_idx := text.find("###")) != -1:
             if (r_idx := text.find("\n", l_idx)) != -1:
                 text = text.replace(
@@ -145,6 +127,7 @@ async def format(text, latex=True, defects=True, markdown=True, keep=None):
             text.replace("**", "*")
             .replace("\\", "\\\\")
             .replace("_", "\\_")
+            .replace("*", "\\*")
             .replace("[", "\\[")
             .replace("]", "\\]")
             .replace("(", "\\(")
@@ -161,9 +144,39 @@ async def format(text, latex=True, defects=True, markdown=True, keep=None):
             .replace(".", "\\.")
             .replace("!", "\\!")
         )
-    if keep:
-        for elem in keep:
-            text = text.replace(f"\\{elem}", elem)
+        if keep:
+            for char in keep:
+                text = text.replace(f"\\{char}", char)
+    return text
+
+
+async def format_latex(text):
+    if text:
+        text = (
+            text.replace("$$", "*")
+            .replace("\[", "*")
+            .replace("\]", "*")
+            .replace("\(", "*")
+            .replace("\)", "*")
+        )
+        if text.count("$") % 2 == 0:
+            text = text.replace("$", "*")
+    return text
+
+
+async def format(text, latex=True, defects=True, markdown=True, keep="_*"):
+    if latex and "`" not in text:
+        text = await format_latex(text)
+    if defects:
+        if text and text[0] == ",":
+            text = text[1:]
+        lines = text.split("\n")
+        for i in range(len(lines)):
+            if lines[i].strip() in ".,?!-:;":
+                lines[i] = ""
+        text = "\n".join([elem for elem in lines if elem])
+    if markdown:
+        text = await format_markdown(text, keep)
     return text
 
 
@@ -205,12 +218,12 @@ def latex_type(text):
             return None
 
 
-async def send(message, text, reply_markup=None, keep=None):
+async def send(message, text, reply_markup=None, keep="_*"):
     text = await format(text, latex=False, markdown=False)
     if not text:
         return
     if (latex_t := latex_type(text)) == "document":
-        text = await format(text, latex=False)
+        text = await format_markdown(text, keep=None)
         await bot.send_message(message.chat.id, text, reply_markup=reply_markup)
     elif latex_t == "formulas":
         text = text.replace("```latex", "").replace("```", "")
@@ -226,7 +239,7 @@ async def send(message, text, reply_markup=None, keep=None):
             await send_latex_formula(message, f)
         await send(message, text[formulas[-1][1] + len(formulas[-1][3][1]) :])
     else:
-        text = await format(text, keep=keep)
+        text = await format(text, keep)
         await bot.send_message(message.chat.id, text, reply_markup=reply_markup)
 
 
@@ -322,9 +335,8 @@ async def generate_completion(message):
         await send(message, paragraph, keyboards.forget_keyboard)
         response += paragraph
     except (Exception, OpenAIError) as e:
-        alert = await format(
-            f"*ERROR:* {e}\n\n*USER:* {message.from_user.username}\n\n*LAST PROMPT:* {message.text}\n\n*COLLECTED RESPONSE:* {response}",
-            latex=False,
+        alert = await format_markdown(
+            f"*ERROR:* {e}\n\n*USER:* {message.from_user.username}\n\n*LAST PROMPT:* {message.text}\n\n*COLLECTED RESPONSE:* {response}"
         )
         builder = InlineKeyboardBuilder()
         builder.add(
@@ -366,7 +378,7 @@ async def update_user_data(message) -> bool:
     data = await read_data(username)
     if data["balance"] < 0.001:
         await send_template_answer(message, "empty")
-        alert = await format(
+        alert = await format_markdown(
             f"*WARNING: @{username} has tried to use GPT with empty balance.*"
         )
         await bot.send_message(OWNER_CHAT_ID, alert)
@@ -421,11 +433,11 @@ def language(message):
     return lang
 
 
-async def send_template_answer(message, template, *args, reply_markup=None, keep=None):
+async def send_template_answer(message, template, *args, reply_markup=None, keep="_*"):
     text = dialogues[language(message)][template]
     if len(args) != 0:
         text = text.format(*args)
-    text = await format(text, defects=False, keep=keep)
+    text = await format_markdown(text, keep=keep)
     await bot.send_message(message.chat.id, text, reply_markup=reply_markup)
 
 
@@ -465,7 +477,7 @@ async def help_handler(message: Message) -> None:
             text=buttons[language(message)]["help"][1] + " ->", callback_data="help-1"
         ),
     )
-    text = await format(dialogues[language(message)]["help"][0])
+    text = await format_markdown(dialogues[language(message)]["help"][0])
     await bot.send_animation(
         message.chat.id,
         gifs["help"][0],
@@ -503,7 +515,7 @@ async def billing_handler(message: Message) -> None:
         )
         username = message.from_user.username
         data = await read_data(username)
-        text = await format(
+        text = await format_markdown(
             dialogues[language(message)]["balance"].format(
                 round(data["balance"], 4),
                 round(94 * data["balance"], 2),
@@ -623,7 +635,7 @@ async def redraw_handler(callback: types.CallbackQuery):
 
 @dp.callback_query(F.data == "error")
 async def error_message_handler(callback: types.CallbackQuery):
-    text = dialogues[language(callback)]["error"]
+    text = format_markdown(dialogues[language(callback)]["error"])
     await bot.send_message(callback.message.chat.id, text)
 
 
@@ -642,7 +654,7 @@ async def payment_redirection_handler(callback: types.CallbackQuery):
         ),
     )
     data = await read_data(callback.from_user.username)
-    text = await format(
+    text = await format_markdown(
         dialogues[language(callback)]["balance"].format(
             round(data["balance"], 4),
             round(94 * data["balance"], 2),
@@ -671,7 +683,7 @@ async def tokens_description_handler(callback: types.CallbackQuery):
             callback_data="back-to-balance",
         ),
     )
-    text = await format(dialogues[language(callback)]["tokens"])
+    text = await format_markdown(dialogues[language(callback)]["tokens"])
     await bot.edit_message_media(
         types.InputMediaAnimation(
             type=InputMediaType.ANIMATION,
@@ -699,12 +711,12 @@ async def back_to_payment_handler(callback: types.CallbackQuery):
         ),
     )
     data = await read_data(callback.from_user.username)
-    text = await format(
+    text = await format_markdown(
         dialogues[language(callback)]["balance"].format(
             round(data["balance"], 4),
             round(94 * data["balance"], 2),
             round(data["balance"] / GPT4O_OUTPUT_1K * 1000),
-        )
+        ),
     )
     await bot.edit_message_media(
         types.InputMediaAnimation(
@@ -741,7 +753,9 @@ async def help_handler(callback: types.CallbackQuery):
         )
     builder = InlineKeyboardBuilder()
     builder.add(l_button, r_button)
-    text = await format(dialogues[language(callback)]["help"][h_idx])
+    text = await format_markdown(
+        dialogues[language(callback)]["help"][h_idx],
+    )
     await bot.edit_message_media(
         types.InputMediaAnimation(
             type=InputMediaType.ANIMATION, media=gifs["help"][h_idx], caption=text
@@ -765,7 +779,7 @@ async def latex_handler(callback: types.CallbackQuery):
     text = data["latex"].get(
         str(message.message_id), dialogues[language(callback)]["forgotten"]
     )
-    text = await format(text, latex=False, keep="_")
+    text = await format_markdown(text)
     await bot.send_message(
         message.chat.id,
         text,
@@ -779,7 +793,7 @@ async def hide_handler(callback: types.CallbackQuery):
     message = callback.message
     deleted = await bot.delete_message(message.chat.id, message.message_id)
     if not deleted:
-        text = await format(dialogues[language(callback)]["old"])
+        text = await format_markdown(dialogues[language(callback)]["old"])
         await bot.send_message(
             message.chat.id, text, reply_to_message_id=message.message_id
         )

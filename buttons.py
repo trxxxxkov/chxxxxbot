@@ -2,9 +2,9 @@ buttons = {
     "ru": {
         "help": [
             "Текстовые запросы",
-            "Распознавание изображений",
-            "Генерация изображений",
-            "Работа с LaTeX",
+            "Распознавание",
+            "Генерация",
+            "LaTeX",
         ],
         "redraw": "Нарисовать похожие изображения",
         "balance": "Цены и баланс",
@@ -17,10 +17,10 @@ buttons = {
     },
     "en": {
         "help": [
-            "Text prompts",
-            "Image recognition",
-            "Image generation",
-            "LaTeX compilation",
+            "Prompts",
+            "Recognition",
+            "Generation",
+            "LaTeX",
         ],
         "redraw": "Draw similar images",
         "balance": "Your balance & prices",
