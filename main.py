@@ -493,6 +493,10 @@ async def billing_handler(message: Message) -> None:
         builder = InlineKeyboardBuilder()
         builder.add(
             types.InlineKeyboardButton(
+                text=buttons[language(message)]["back-to-help"],
+                callback_data="help-0",
+            ),
+            types.InlineKeyboardButton(
                 text=buttons[language(message)]["tokens"],
                 callback_data="tokens",
             ),
@@ -629,6 +633,10 @@ async def payment_redirection_handler(callback: types.CallbackQuery):
     builder = InlineKeyboardBuilder()
     builder.add(
         types.InlineKeyboardButton(
+            text=buttons[language(callback)]["back-to-help"],
+            callback_data="help-0",
+        ),
+        types.InlineKeyboardButton(
             text=buttons[language(callback)]["tokens"],
             callback_data="tokens",
         ),
@@ -641,10 +649,14 @@ async def payment_redirection_handler(callback: types.CallbackQuery):
             round(data["balance"] / GPT4O_OUTPUT_1K * 1000),
         )
     )
-    await bot.send_animation(
+    await bot.edit_message_media(
+        types.InputMediaAnimation(
+            type=InputMediaType.ANIMATION,
+            media=gifs["balance"],
+            caption=text,
+        ),
         message.chat.id,
-        gifs["balance"],
-        caption=text,
+        message.message_id,
         reply_markup=builder.as_markup(),
     )
 
@@ -655,7 +667,7 @@ async def tokens_description_handler(callback: types.CallbackQuery):
     builder = InlineKeyboardBuilder()
     builder.add(
         types.InlineKeyboardButton(
-            text=buttons[language(callback)]["back-to-balance"],
+            text="<- " + buttons[language(callback)]["back-to-balance"],
             callback_data="back-to-balance",
         ),
     )
@@ -677,6 +689,10 @@ async def back_to_payment_handler(callback: types.CallbackQuery):
     message = callback.message
     builder = InlineKeyboardBuilder()
     builder.add(
+        types.InlineKeyboardButton(
+            text=buttons[language(callback)]["back-to-help"],
+            callback_data="help-0",
+        ),
         types.InlineKeyboardButton(
             text=buttons[language(callback)]["tokens"],
             callback_data="tokens",

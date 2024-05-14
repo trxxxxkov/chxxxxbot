@@ -46,8 +46,9 @@ OpenAI, модели которой используются этим ботом
 При использовании Себастиана стоимость каждого отправленного и полученного сообщения считается отдельно (со стоимостью токенов OpenAI можно ознакомиться здесь: https://openai.com/pricing) и умножается в ~1.6 раз для компенсации комиссий сервисов, предоставляющих иностранные карты (20-30%) и налогов (VAT \u2248 19%).
 *Этот коэффициент может быть снижен, если вы предоставите информацию о способе пополнения счёта в OpenAI с меньшей комиссией. Пожалуйста, свяжитесь с @trxxxxkov, если у вас есть такая информация!*""",
         "empty": """*Недостаточно средств для оплаты вашего запроса. Доступ к моделям OpenAI приостановлен до тех пор, пока счёт не будет пополнен.* Для получения информации о расценках и способах оплаты, введите команду /balance""",
-        "draw": """Введите команду /draw и опишите изображение, которое желаете получить, например:```
-/draw Теннисные мячики небес, которые соединяют и лупят, как захотят```""",
+        "draw": """Введите команду /draw и опишите изображение, которое желаете получить, например:`
+        
+ /draw Теннисные мячики небес, которые соединяют и лупят, как захотят`""",
         "old": "Сообщение может быть скрыто только если оно было отправлено менее 48 часов назад",
         "forgotten": "_СООБЩЕНИЕ БЫЛО ЗАБЫТО_",
         "error": """Возникла непредвиденная ошибка. Для предотвращения повторного сбоя память Себастиана была автоматически отчищена, и теперь вы можете начать новый диалог. 
@@ -102,8 +103,9 @@ The coefficient will be decreased if you share a payment method with less fee. C
         "empty": """*Your access is paused because your balance is empty.*
 You have to add funds to continue using this bot. 
 For more details, type /balance""",
-        "draw": """Describe the image you want to get after /draw command, for example:```
-/draw The stars tennis-balls, struck and bandied which way please them```""",
+        "draw": """Describe the image you want to get after /draw command, for example:
+        
+ `/draw The stars tennis-balls, struck and bandied which way please them`""",
         "forgotten": "_THE MESSAGE WAS FORGOTTEN_",
         "old": "A message can only be hidden if it was sent less than 48 hours ago",
         "error": """An unexpected error has occurred. To prevent it from happening again, the Sebastian's memory has been automatically cleared, so you may start a new conversation with him. 
