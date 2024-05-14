@@ -154,6 +154,9 @@ async def format(text, latex=True, defects=True, markdown=True, keep=None):
             .replace(".", "\\.")
             .replace("!", "\\!")
         )
+        if l_idx := text.find("###") != -1:
+            r_idx = text.find("\n", l_idx)
+            text = text.replace(text[l_idx:r_idx], "*" + text[l_idx + 3 : r_idx] + "*")
     if keep:
         for elem in keep:
             text = text.replace(f"\\{elem}", elem)
@@ -178,7 +181,6 @@ async def send_latex_formula(message, formula):
     path = f"photos/{message.from_user.username}.jpg"
     svg_to_jpg(image_url, path)
     photo = FSInputFile(path)
-    asyncio.sleep(0.05)
     sent_message = await bot.send_photo(
         message.chat.id, photo, reply_markup=builder.as_markup()
     )
@@ -209,8 +211,14 @@ async def send(message, text, reply_markup=None, keep=None):
     elif latex_t == "formulas":
         text = text.replace("```latex", "").replace("```", "")
         formulas = latex_math_found(text)
-        for f in formulas:
-            await send(message, text[: f[0]])
+        for idx, f in enumerate(formulas):
+            if idx:
+                await send(
+                    message,
+                    text[formulas[idx - 1][1] + len(formulas[idx - 1][3][1]) : f[0]],
+                )
+            else:
+                await send(message, text[: f[0]])
             await send_latex_formula(message, f)
         await send(message, text[formulas[-1][1] + len(formulas[-1][3][1]) :])
     else:
