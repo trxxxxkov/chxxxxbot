@@ -134,6 +134,13 @@ async def format(text, latex=True, defects=True, markdown=True, keep=None):
                 lines[i] = ""
         text = "\n".join([elem for elem in lines if elem])
     if markdown:
+        if (l_idx := text.find("###")) != -1:
+            if (r_idx := text.find("\n", l_idx)) != -1:
+                text = text.replace(
+                    text[l_idx:r_idx], "*" + text[l_idx + 3 : r_idx] + "*"
+                )
+            else:
+                text = text.replace(text[l_idx:], "*" + text[l_idx + 3 :] + "*")
         text = (
             text.replace("**", "*")
             .replace("\\", "\\\\")
@@ -154,9 +161,6 @@ async def format(text, latex=True, defects=True, markdown=True, keep=None):
             .replace(".", "\\.")
             .replace("!", "\\!")
         )
-        if l_idx := text.find("###") != -1:
-            r_idx = text.find("\n", l_idx)
-            text = text.replace(text[l_idx:r_idx], "*" + text[l_idx + 3 : r_idx] + "*")
     if keep:
         for elem in keep:
             text = text.replace(f"\\{elem}", elem)
@@ -369,7 +373,7 @@ async def update_user_data(message) -> bool:
         return False
     now = time.time()
     data["timestamps"].append(now)
-    encoding = tiktoken.encoding_for_model("gpt-4-turbo")
+    encoding = tiktoken.encoding_for_model("gpt-4o")
     if message.photo:
         image_path = f"photos/{username}.jpg"
         await bot.download(message.photo[-1], destination=image_path)
@@ -412,7 +416,7 @@ async def update_user_data(message) -> bool:
 
 def language(message):
     lang = message.from_user.language_code
-    if lang != "ru":
+    if lang is None or lang != "ru":
         lang = "en"
     return lang
 
@@ -421,7 +425,8 @@ async def send_template_answer(message, template, *args, reply_markup=None, keep
     text = dialogues[language(message)][template]
     if len(args) != 0:
         text = text.format(*args)
-    await send(message, text, reply_markup, keep=keep)
+    text = await format(text, defects=False, keep=keep)
+    await bot.send_message(message.chat.id, text, reply_markup=reply_markup)
 
 
 async def authorized(message):
@@ -454,7 +459,7 @@ async def help_handler(message: Message) -> None:
     builder = InlineKeyboardBuilder()
     builder.add(
         types.InlineKeyboardButton(
-            text=buttons[language(message)]["payment"], callback_data="payment"
+            text=buttons[language(message)]["balance"], callback_data="balance"
         ),
         types.InlineKeyboardButton(
             text=buttons[language(message)]["help"][1] + " ->", callback_data="help-1"
@@ -592,7 +597,7 @@ async def universal_handler(message: Message) -> None:
         data = await read_data(message.from_user.username)
         data["timestamps"].append(time.time())
         data["messages"].append({"role": "system", "content": response})
-        encoding = tiktoken.encoding_for_model("gpt-4-turbo")
+        encoding = tiktoken.encoding_for_model("gpt-4o")
         data["tokens"] += len(encoding.encode(response))
         data["balance"] -= len(encoding.encode(response)) * FEE * GPT4O_OUTPUT_1K / 1000
         await write_data(message.from_user.username, data)
@@ -614,23 +619,23 @@ async def redraw_handler(callback: types.CallbackQuery):
 
 @dp.callback_query(F.data == "error")
 async def error_message_handler(callback: types.CallbackQuery):
-    await send_template_answer(callback.message, "error")
+    text = dialogues[language(callback)]["error"]
+    await bot.send_message(callback.message.chat.id, text)
 
 
-@dp.callback_query(F.data == "payment")
+@dp.callback_query(F.data == "balance")
 async def payment_redirection_handler(callback: types.CallbackQuery):
     message = callback.message
     builder = InlineKeyboardBuilder()
     builder.add(
         types.InlineKeyboardButton(
-            text=buttons[language(message)]["tokens"],
+            text=buttons[language(callback)]["tokens"],
             callback_data="tokens",
         ),
     )
-    username = callback.from_user.username
-    data = await read_data(username)
+    data = await read_data(callback.from_user.username)
     text = await format(
-        dialogues[language(message)]["balance"].format(
+        dialogues[language(callback)]["balance"].format(
             round(data["balance"], 4),
             round(94 * data["balance"], 2),
             round(data["balance"] / GPT4O_OUTPUT_1K * 1000),
@@ -650,8 +655,8 @@ async def tokens_description_handler(callback: types.CallbackQuery):
     builder = InlineKeyboardBuilder()
     builder.add(
         types.InlineKeyboardButton(
-            text=buttons[language(message)]["back-to-payment"],
-            callback_data="back-to-payment",
+            text=buttons[language(callback)]["back-to-balance"],
+            callback_data="back-to-balance",
         ),
     )
     text = await format(dialogues[language(callback)]["tokens"])
@@ -667,20 +672,19 @@ async def tokens_description_handler(callback: types.CallbackQuery):
     )
 
 
-@dp.callback_query(F.data == "back-to-payment")
+@dp.callback_query(F.data == "back-to-balance")
 async def back_to_payment_handler(callback: types.CallbackQuery):
     message = callback.message
     builder = InlineKeyboardBuilder()
     builder.add(
         types.InlineKeyboardButton(
-            text=buttons[language(message)]["tokens"],
+            text=buttons[language(callback)]["tokens"],
             callback_data="tokens",
         ),
     )
-    username = callback.from_user.username
-    data = await read_data(username)
+    data = await read_data(callback.from_user.username)
     text = await format(
-        dialogues[language(message)]["balance"].format(
+        dialogues[language(callback)]["balance"].format(
             round(data["balance"], 4),
             round(94 * data["balance"], 2),
             round(data["balance"] / GPT4O_OUTPUT_1K * 1000),
@@ -689,7 +693,7 @@ async def back_to_payment_handler(callback: types.CallbackQuery):
     await bot.edit_message_media(
         types.InputMediaAnimation(
             type=InputMediaType.ANIMATION,
-            media=gifs["tokens"],
+            media=gifs["balance"],
             caption=text,
         ),
         message.chat.id,
@@ -703,20 +707,20 @@ async def help_handler(callback: types.CallbackQuery):
     message = callback.message
     h_idx = int(callback.data.split("-")[1])
     payment_button = types.InlineKeyboardButton(
-        text=buttons[language(message)]["payment"], callback_data="payment"
+        text=buttons[language(callback)]["balance"], callback_data="balance"
     )
     if h_idx == 0:
         l_button = payment_button
     else:
         l_button = types.InlineKeyboardButton(
-            text="<- " + buttons[language(message)]["help"][h_idx - 1],
+            text="<- " + buttons[language(callback)]["help"][h_idx - 1],
             callback_data=f"help-{h_idx-1}",
         )
-    if h_idx == len(buttons[language(message)]["help"]) - 1:
+    if h_idx == len(buttons[language(callback)]["help"]) - 1:
         r_button = payment_button
     else:
         r_button = types.InlineKeyboardButton(
-            text=buttons[language(message)]["help"][h_idx + 1] + " ->",
+            text=buttons[language(callback)]["help"][h_idx + 1] + " ->",
             callback_data=f"help-{h_idx+1}",
         )
     builder = InlineKeyboardBuilder()
@@ -738,14 +742,14 @@ async def latex_handler(callback: types.CallbackQuery):
     builder = InlineKeyboardBuilder()
     builder.add(
         types.InlineKeyboardButton(
-            text=buttons[language(message)]["hide"], callback_data="hide"
+            text=buttons[language(callback)]["hide"], callback_data="hide"
         ),
     )
     data = await read_data(callback.from_user.username)
     text = data["latex"].get(
-        str(message.message_id), dialogues[language(message)]["forgotten"]
+        str(message.message_id), dialogues[language(callback)]["forgotten"]
     )
-    text = await format(text, latex=False)
+    text = await format(text, latex=False, keep="_")
     await bot.send_message(
         message.chat.id,
         text,

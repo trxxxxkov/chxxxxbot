@@ -7,12 +7,12 @@ buttons = {
             "Работа с LaTeX",
         ],
         "redraw": "Нарисовать похожие изображения",
-        "payment": "Информация о ценах",
+        "balance": "Информация о ценах",
         "error": "Что теперь?",
         "latex-original": "Показать исходный код",
         "hide": "Скрыть",
         "tokens": "Что такое токены?",
-        "back-to-payment": "К предыдущей странице",
+        "back-to-balance": "К предыдущей странице",
     },
     "en": {
         "help": [
@@ -22,11 +22,11 @@ buttons = {
             "LaTeX compilation",
         ],
         "redraw": "Draw similar images",
-        "payment": "About payment",
+        "balance": "About payment",
         "error": "What now?",
         "latex-original": "View the source code",
         "hide": "Hide",
         "tokens": "What are tokens?",
-        "back-to-payment": "To the previous menu",
+        "back-to-balance": "To the previous menu",
     },
 }

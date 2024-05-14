@@ -49,7 +49,7 @@ OpenAI, модели которой используются этим ботом
         "draw": """Введите команду /draw и опишите изображение, которое желаете получить, например:```
 /draw Теннисные мячики небес, которые соединяют и лупят, как захотят```""",
         "old": "Сообщение может быть скрыто только если оно было отправлено менее 48 часов назад",
-        "forgotten": "*[СООБЩЕНИЕ БЫЛО ЗАБЫТО]*",
+        "forgotten": "_СООБЩЕНИЕ БЫЛО ЗАБЫТО_",
         "error": """Возникла непредвиденная ошибка. Для предотвращения повторного сбоя память Себастиана была автоматически отчищена, и теперь вы можете начать новый диалог. 
         
  *Не переживайте! Об этом инциденте уже сообщено, так что скоро проблема будет исправлена!*""",
@@ -66,7 +66,7 @@ My name is *Sebastian*. I'm a bot powered by GPT-4-Turbo. Here is a short list o
  *Image generation (DALLE-3) and variation (DALLE-2)*: describe your idea and generate an image based on it.
 
  *Image recognition*: attach an image to your message and ask any questions about it.
-        
+
  *Automatic compilation of LaTeX formulas*: discuss math problems with comfort! All formulas will be compiled and sent as images.
 
  *No subscription or annual payments*: you should only pay for the tokens that you used. No usage - no payment.
@@ -104,7 +104,7 @@ You have to add funds to continue using this bot.
 For more details, type /balance""",
         "draw": """Describe the image you want to get after /draw command, for example:```
 /draw The stars tennis-balls, struck and bandied which way please them```""",
-        "forgotten": "*[THE MESSAGE WAS FORGOTTEN]*",
+        "forgotten": "_THE MESSAGE WAS FORGOTTEN_",
         "old": "A message can only be hidden if it was sent less than 48 hours ago",
         "error": """An unexpected error has occurred. To prevent it from happening again, the Sebastian's memory has been automatically cleared, so you may start a new conversation with him. 
         
