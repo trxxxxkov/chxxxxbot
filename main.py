@@ -3,11 +3,9 @@ import logging
 import sys
 import json
 import time
-import re
 import os
 import base64
 import tiktoken
-import openai
 import cairosvg
 import urllib.parse
 
@@ -33,9 +31,8 @@ from buttons import buttons
 
 load_dotenv()
 
-BOT_TOKEN = getenv("TG_BOT_TOKEN")
-BOT_USERS = getenv("TG_BOT_USERS").split(",")
 OWNER_CHAT_ID = 791388236
+BOT_TOKEN = getenv("TG_BOT_TOKEN")
 OPENAI_KEY = getenv("OPENAI_API_KEY")
 # OPENAI API prices per 1K tokens
 FEE = 1.6
@@ -49,6 +46,15 @@ DALLE3_OUTPUT = 0.08
 DALLE2_OUTPUT = 0.02
 
 LATEX_MIN_LEN = 20
+
+INITIAL_USER_DATA = {
+    "lock": False,
+    "messages": [],
+    "latex": {},
+    "timestamps": [],
+    "tokens": 0,
+    "balance": 0,
+}
 
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 dp = Dispatcher()
@@ -85,6 +91,17 @@ def svg_to_jpg(svg_file_path, output_file_path):
     )
 
 
+def inline_keyboard(keys, lang="en"):
+    keyboard = InlineKeyboardBuilder()
+    for button, callback in keys.items():
+        keyboard.add(
+            types.InlineKeyboardButton(
+                text=buttons[lang][button], callback_data=callback
+            ),
+        )
+    return keyboard.as_markup()
+
+
 async def generate_image(prompt):
     response = await client.images.generate(
         prompt=prompt,
@@ -97,12 +114,12 @@ async def generate_image(prompt):
     return response.data[0].url
 
 
-async def variate_image(path):
-    img = Image.open(f"{path}.jpg")
-    img.save(f"{path}.png")
-    os.remove(f"{path}.jpg")
+async def variate_image(path_to_image):
+    img = Image.open(f"{path_to_image}.jpg")
+    img.save(f"{path_to_image}.png")
+    os.remove(f"{path_to_image}.jpg")
     response = await client.images.create_variation(
-        image=open(f"{path}.png", "rb"),
+        image=open(f"{path_to_image}.png", "rb"),
         n=2,
         size="1024x1024",
         model="dall-e-2",
@@ -114,39 +131,23 @@ async def variate_image(path):
     return media
 
 
-async def format_markdown(text, keep="_*"):
-    if text:
-        if (l_idx := text.find("###")) != -1:
-            if (r_idx := text.find("\n", l_idx)) != -1:
-                text = text.replace(
-                    text[l_idx:r_idx], "*" + text[l_idx + 3 : r_idx] + "*"
-                )
-            else:
-                text = text.replace(text[l_idx:], "*" + text[l_idx + 3 :] + "*")
+async def format_markdown(text, keep=""):
+    if not text:
+        return text
+    special_chars = "\\_*][)(~>#+-=|}{.!"
+    l_bound = text.find("```")
+    r_bound = text.rfind("```")
+    for char in special_chars:
+        if char not in keep or l_bound != r_bound:
+            text = text.replace(char, f"\\{char}")
+    if l_bound != r_bound:
         text = (
-            text.replace("**", "*")
-            .replace("\\", "\\\\")
-            .replace("_", "\\_")
-            .replace("*", "\\*")
-            .replace("[", "\\[")
-            .replace("]", "\\]")
-            .replace("(", "\\(")
-            .replace(")", "\\)")
-            .replace("~", "\\~")
-            .replace(">", "\\>")
-            .replace("#", "\\#")
-            .replace("+", "\\+")
-            .replace("-", "\\-")
-            .replace("=", "\\=")
-            .replace("|", "\\|")
-            .replace("{", "\\{")
-            .replace("}", "\\}")
-            .replace(".", "\\.")
-            .replace("!", "\\!")
+            text[: l_bound + 3]
+            + text[l_bound + 3 : r_bound].replace("`", "\\`")
+            + text[r_bound:]
         )
-        if keep:
-            for char in keep:
-                text = text.replace(f"\\{char}", char)
+    for char in keep:
+        text = text.replace(f"\\\\{char}", f"\\{char}")
     return text
 
 
@@ -164,30 +165,28 @@ async def format_latex(text):
     return text
 
 
-async def format(text, latex=True, defects=True, markdown=True, keep="_*"):
+async def format_gpt(text):
+    if text and text[0] == ",":
+        text = text[1:]
+    lines = text.replace("**", "*").split("\n")
+    for i in range(len(lines)):
+        if lines[i].strip() in ".,?!-:;":
+            lines[i] = ""
+    text = "\n".join([elem for elem in lines if elem])
+    return text
+
+
+async def format(text, keep="", *, latex=True, gpt=True, markdown=True):
     if latex and "`" not in text:
         text = await format_latex(text)
-    if defects:
-        if text and text[0] == ",":
-            text = text[1:]
-        lines = text.split("\n")
-        for i in range(len(lines)):
-            if lines[i].strip() in ".,?!-:;":
-                lines[i] = ""
-        text = "\n".join([elem for elem in lines if elem])
+    if gpt:
+        text = await format_gpt(text)
     if markdown:
         text = await format_markdown(text, keep)
     return text
 
 
 async def send_latex_formula(message, formula):
-    builder = InlineKeyboardBuilder()
-    builder.add(
-        types.InlineKeyboardButton(
-            text=buttons[language(message)]["latex-original"],
-            callback_data="latex-original",
-        ),
-    )
     image_url = formula[2].replace("\n", "").replace("&", "").replace("\\\\", ";\,")
     image_url = " ".join([elem for elem in image_url.split(" ") if elem]).replace(
         " ", "\,\!"
@@ -195,15 +194,14 @@ async def send_latex_formula(message, formula):
     image_url = "https://math.vercel.app?from=" + urllib.parse.quote(
         image_url.replace(" ", "\,\!")
     )
-    path = f"photos/{message.from_user.username}.jpg"
+    path = f"photos/{message.from_user.id}.jpg"
     svg_to_jpg(image_url, path)
     photo = FSInputFile(path)
-    sent_message = await bot.send_photo(
-        message.chat.id, photo, reply_markup=builder.as_markup()
-    )
-    data = await read_data(message.from_user.username)
+    inline = inline_keyboard({"latex-original": "latex-original"}, language(message))
+    sent_message = await bot.send_photo(message.chat.id, photo, reply_markup=inline)
+    data = await read_user_data(message.from_user.id)
     data["latex"][sent_message.message_id] = formula[3][0] + formula[2] + formula[3][1]
-    await write_data(message.from_user.username, data)
+    await write_user_data(message.from_user.id, data)
 
 
 def latex_type(text):
@@ -218,12 +216,12 @@ def latex_type(text):
             return None
 
 
-async def send(message, text, reply_markup=None, keep="_*"):
+async def send(message, text, reply_markup=None):
     text = await format(text, latex=False, markdown=False)
     if not text:
         return
     if (latex_t := latex_type(text)) == "document":
-        text = await format_markdown(text, keep=None)
+        text = await format_markdown(text)
         await bot.send_message(message.chat.id, text, reply_markup=reply_markup)
     elif latex_t == "formulas":
         text = text.replace("```latex", "").replace("```", "")
@@ -239,7 +237,7 @@ async def send(message, text, reply_markup=None, keep="_*"):
             await send_latex_formula(message, f)
         await send(message, text[formulas[-1][1] + len(formulas[-1][3][1]) :])
     else:
-        text = await format(text, keep)
+        text = await format(text, keep="_*")
         await bot.send_message(message.chat.id, text, reply_markup=reply_markup)
 
 
@@ -302,7 +300,7 @@ async def process_delim(delim, par, message, response):
 
 
 async def generate_completion(message):
-    data = await read_data(message.from_user.username)
+    data = await read_user_data(message.from_user.id)
     stream = await client.chat.completions.create(
         model=GPT_MODEL, messages=data["messages"], temperature=0.5, stream=True
     )
@@ -338,56 +336,57 @@ async def generate_completion(message):
         alert = await format_markdown(
             f"*ERROR:* {e}\n\n*USER:* {message.from_user.username}\n\n*LAST PROMPT:* {message.text}\n\n*COLLECTED RESPONSE:* {response}"
         )
-        builder = InlineKeyboardBuilder()
-        builder.add(
-            types.InlineKeyboardButton(
-                text=buttons[language(message)]["error"], callback_data="error"
-            ),
-        )
         await bot.send_message(OWNER_CHAT_ID, alert)
-        await bot.send_message(message.chat.id, alert, reply_markup=builder.as_markup())
+        inline = inline_keyboard({"error": "error"}, language(message))
+        await bot.send_message(message.chat.id, alert, reply_markup=inline)
         await clear_handler(message)
     finally:
         await stream.close()
     return response
 
 
-async def read_data(username) -> None:
-    with open(f"data/{username}.json", "r") as f:
+async def read_user_data(user_id) -> None:
+    with open(f"data/{user_id}.json", "r") as f:
         data = json.load(f)
     return data
 
 
-async def write_data(username, data) -> None:
-    with open(f"data/{username}.json", "w") as f:
+async def add_user(user_id):
+    with open("bot_users.json", "r") as f:
+        bot_users = json.load(f)
+    if user_id not in bot_users:
+        bot_users.append(user_id)
+        with open("bot_users.json", "w") as f:
+            json.dump(bot_users, f)
+        with open(f"data/{user_id}.json", "w") as f:
+            json.dump(INITIAL_USER_DATA, f)
+
+
+async def write_user_data(user_id, data) -> None:
+    with open(f"data/{user_id}.json", "w") as f:
         json.dump(data, f)
 
 
-async def lock(username):
-    data = await read_data(username)
+async def lock(user_id):
+    data = await read_user_data(user_id)
     data["lock"] = True
-    await write_data(username, data)
+    await write_user_data(user_id, data)
     await asyncio.sleep(0.6)
-    data = await read_data(username)
+    data = await read_user_data(user_id)
     data["lock"] = False
-    await write_data(username, data)
+    await write_user_data(user_id, data)
 
 
 async def update_user_data(message) -> bool:
-    username = message.from_user.username
-    data = await read_data(username)
+    data = await read_user_data(message.from_user.id)
     if data["balance"] < 0.001:
         await send_template_answer(message, "empty")
-        alert = await format_markdown(
-            f"*WARNING: @{username} has tried to use GPT with empty balance.*"
-        )
-        await bot.send_message(OWNER_CHAT_ID, alert)
         return False
     now = time.time()
     data["timestamps"].append(now)
     encoding = tiktoken.encoding_for_model("gpt-4o")
     if message.photo:
-        image_path = f"photos/{username}.jpg"
+        image_path = f"photos/{message.from_user.id}.jpg"
         await bot.download(message.photo[-1], destination=image_path)
         data_url = local_image_to_data_url(image_path)
         text = message.caption if message.caption else "What do you think about it?"
@@ -419,7 +418,7 @@ async def update_user_data(message) -> bool:
     if len(data["timestamps"]) > GPT_MEMORY_MSG:
         data["timestamps"] = data["timestamps"][-GPT_MEMORY_MSG:]
         data["messages"] = data["messages"][-GPT_MEMORY_MSG:]
-    await write_data(username, data)
+    await write_user_data(message.from_user.id, data)
     if not data["lock"]:
         return True
     else:
@@ -437,17 +436,8 @@ async def send_template_answer(message, template, *args, reply_markup=None, keep
     text = dialogues[language(message)][template]
     if len(args) != 0:
         text = text.format(*args)
-    text = await format_markdown(text, keep=keep)
+    text = await format_markdown(text, keep)
     await bot.send_message(message.chat.id, text, reply_markup=reply_markup)
-
-
-async def authorized(message):
-    if message.from_user.username not in BOT_USERS:
-        await send_template_answer(
-            message, "auth", reply_markup=keyboards.help_keyboard
-        )
-        return False
-    return True
 
 
 @dp.message(Command("start"))
@@ -458,6 +448,8 @@ async def start_handler(message: Message) -> None:
             for key, value in commands[language(message)].items()
         ]
     )
+    new_user = message.from_user.id
+    await add_user(new_user)
     await send_template_answer(
         message,
         "start",
@@ -477,7 +469,7 @@ async def help_handler(message: Message) -> None:
             text=buttons[language(message)]["help"][1] + " ->", callback_data="help-1"
         ),
     )
-    text = await format_markdown(dialogues[language(message)]["help"][0])
+    text = await format_markdown(dialogues[language(message)]["help"][0], keep="_*")
     await bot.send_animation(
         message.chat.id,
         gifs["help"][0],
@@ -488,117 +480,55 @@ async def help_handler(message: Message) -> None:
 
 @dp.message(Command("forget", "clear"))
 async def clear_handler(message: Message) -> None:
-    username = message.from_user.username
-    if await authorized(message):
-        data = await read_data(username)
-        await send_template_answer(message, "forget", keep="_")
-        data["messages"].clear()
-        data["latex"].clear()
-        data["timestamps"].clear()
-        data["tokens"] = 0
-        await write_data(username, data)
+    data = await read_user_data(message.from_user.id)
+    await send_template_answer(message, "forget", keep="_")
+    data["messages"].clear()
+    data["latex"].clear()
+    data["timestamps"].clear()
+    data["tokens"] = 0
+    await write_user_data(message.from_user.id, data)
 
 
 @dp.message(Command("balance"))
 async def billing_handler(message: Message) -> None:
-    if await authorized(message):
-        builder = InlineKeyboardBuilder()
-        builder.add(
-            types.InlineKeyboardButton(
-                text=buttons[language(message)]["back-to-help"],
-                callback_data="help-0",
-            ),
-            types.InlineKeyboardButton(
-                text=buttons[language(message)]["tokens"],
-                callback_data="tokens",
-            ),
-        )
-        username = message.from_user.username
-        data = await read_data(username)
-        text = await format_markdown(
-            dialogues[language(message)]["balance"].format(
-                round(data["balance"], 4),
-                round(94 * data["balance"], 2),
-                round(data["balance"] / GPT4O_OUTPUT_1K * 1000),
-            )
-        )
-        await bot.send_animation(
-            message.chat.id,
-            gifs["balance"],
-            caption=text,
-            reply_markup=builder.as_markup(),
-        )
-
-
-@dp.message(Command("get_id"))
-async def file_id_handler(message: Message) -> None:
-    # file_id = message.animation.file_id
-    file_id = message.video.file_id
-    await send(message, file_id)
-
-
-@dp.message(Command("add"))
-async def add_handler(message: Message) -> None:
-    if await authorized(message) and message.chat.id == OWNER_CHAT_ID:
-        if len(message.text.split()) == 3 and float(message.text.split()[2]) >= 0:
-            _, username, balance = message.text.split()
-            if username in BOT_USERS:
-                data = await read_data(username)
-                data["balance"] += float(balance)
-                await write_data(username, data)
-                return
-            else:
-                init = {
-                    "lock": False,
-                    "messages": [],
-                    "latex": {},
-                    "timestamps": [],
-                    "tokens": 0,
-                    "balance": float(balance),
-                }
-                with open(f"data/{username}.json", "w") as f:
-                    json.dump(init, f)
-                BOT_USERS.append(username)
-                os.system(f"dotenv set TG_BOT_USERS {','.join(BOT_USERS)}")
-                return
-
-
-@dp.message(Command("rm", "remove", "delete"))
-async def delete_handler(message: Message) -> None:
-    if await authorized(message) and message.chat.id == OWNER_CHAT_ID:
-        if len(message.text.split()) == 2 and message.text.split()[1] in BOT_USERS:
-            _, username = message.text.split()
-            BOT_USERS.remove(username)
-            os.system(f"dotenv set TG_BOT_USERS {','.join(BOT_USERS)}")
-            os.remove(f"data/{username}.json")
-            return
+    markup = inline_keyboard(
+        {"back-to-help": "help-0", "tokens": "tokens"}, language(message)
+    )
+    data = await read_user_data(message.from_user.id)
+    text = await format_markdown(
+        dialogues[language(message)]["balance"].format(
+            round(data["balance"], 4),
+            round(94 * data["balance"], 2),
+            round(data["balance"] / GPT4O_OUTPUT_1K * 1000),
+        ),
+        keep="_*",
+    )
+    text += await format_markdown(
+        dialogues[language(message)]["payment"].format(FEE), keep="_*"
+    )
+    await bot.send_animation(
+        message.chat.id,
+        gifs["balance"],
+        caption=text,
+        reply_markup=markup,  # builder.as_markup(),
+    )
 
 
 @dp.message(Command("draw"))
 async def image_generation_handler(message: Message) -> None:
-    if await authorized(message) and await update_user_data(message):
+    if await update_user_data(message):
         try:
-            username = message.from_user.username
             prompt = message.text.split("draw")[1].strip()
             if len(prompt) == 0:
                 await send_template_answer(message, "draw")
                 return
-            async with ChatActionSender.upload_photo(bot=bot, chat_id=message.chat.id):
+            async with ChatActionSender.upload_photo(message.chat.id, bot):
                 image_url = await generate_image(prompt)
-            builder = InlineKeyboardBuilder()
-            builder.add(
-                types.InlineKeyboardButton(
-                    text=buttons[language(message)]["redraw"], callback_data="redraw"
-                ),
-            )
-            await bot.send_photo(
-                chat_id=message.chat.id,
-                photo=image_url,
-                reply_markup=builder.as_markup(),
-            )
-            data = await read_data(username)
+            inline = inline_keyboard({"redraw": "redraw"}, language(message))
+            await bot.send_photo(message.chat.id, image_url, reply_markup=inline)
+            data = await read_user_data(message.from_user.id)
             data["balance"] -= FEE * DALLE3_OUTPUT
-            await write_data(username, data)
+            await write_user_data(message.from_user.id, data)
         except (Exception, OpenAIError) as e:
             await send_template_answer(message, "block")
             await clear_handler(message)
@@ -606,60 +536,55 @@ async def image_generation_handler(message: Message) -> None:
 
 @dp.message()
 async def universal_handler(message: Message) -> None:
-    if await authorized(message) and await update_user_data(message):
-        await lock(message.from_user.username)
+    if await update_user_data(message):
+        await lock(message.from_user.id)
         async with ChatActionSender.typing(bot=bot, chat_id=message.chat.id):
             response = await generate_completion(message)
-        data = await read_data(message.from_user.username)
+        data = await read_user_data(message.from_user.id)
         data["timestamps"].append(time.time())
         data["messages"].append({"role": "system", "content": response})
         encoding = tiktoken.encoding_for_model("gpt-4o")
         data["tokens"] += len(encoding.encode(response))
         data["balance"] -= len(encoding.encode(response)) * FEE * GPT4O_OUTPUT_1K / 1000
-        await write_data(message.from_user.username, data)
+        await write_user_data(message.from_user.id, data)
 
 
 @dp.callback_query(F.data == "redraw")
 async def redraw_handler(callback: types.CallbackQuery):
-    username = callback.from_user.username
     message = callback.message
-    file_name = f"photos/{username}"
+    file_name = f"photos/{callback.from_user.id}"
     async with ChatActionSender.upload_photo(bot=bot, chat_id=message.chat.id):
         await bot.download(message.photo[-1], destination=file_name + ".jpg")
         media = await variate_image(file_name)
     await bot.send_media_group(message.chat.id, media)
-    data = await read_data(username)
+    data = await read_user_data(callback.from_user.id)
     data["balance"] -= 2 * FEE * DALLE2_OUTPUT
-    await write_data(username, data)
+    await write_user_data(callback.from_user.id, data)
 
 
 @dp.callback_query(F.data == "error")
 async def error_message_handler(callback: types.CallbackQuery):
-    text = format_markdown(dialogues[language(callback)]["error"])
+    text = await format_markdown(dialogues[language(callback)]["error"], keep="_*")
     await bot.send_message(callback.message.chat.id, text)
 
 
 @dp.callback_query(F.data == "balance")
 async def payment_redirection_handler(callback: types.CallbackQuery):
     message = callback.message
-    builder = InlineKeyboardBuilder()
-    builder.add(
-        types.InlineKeyboardButton(
-            text=buttons[language(callback)]["back-to-help"],
-            callback_data="help-0",
-        ),
-        types.InlineKeyboardButton(
-            text=buttons[language(callback)]["tokens"],
-            callback_data="tokens",
-        ),
-    )
-    data = await read_data(callback.from_user.username)
+    data = await read_user_data(callback.from_user.id)
     text = await format_markdown(
         dialogues[language(callback)]["balance"].format(
             round(data["balance"], 4),
             round(94 * data["balance"], 2),
             round(data["balance"] / GPT4O_OUTPUT_1K * 1000),
+            keep="_*",
         )
+    )
+    text += await format_markdown(
+        dialogues[language(message)]["payment"].format(FEE), keep="_*"
+    )
+    inline = inline_keyboard(
+        {"back-to-help": "help-0", "tokens": "tokens"}, language(message)
     )
     await bot.edit_message_media(
         types.InputMediaAnimation(
@@ -669,21 +594,15 @@ async def payment_redirection_handler(callback: types.CallbackQuery):
         ),
         message.chat.id,
         message.message_id,
-        reply_markup=builder.as_markup(),
+        reply_markup=inline,
     )
 
 
 @dp.callback_query(F.data == "tokens")
 async def tokens_description_handler(callback: types.CallbackQuery):
     message = callback.message
-    builder = InlineKeyboardBuilder()
-    builder.add(
-        types.InlineKeyboardButton(
-            text="<- " + buttons[language(callback)]["back-to-balance"],
-            callback_data="back-to-balance",
-        ),
-    )
-    text = await format_markdown(dialogues[language(callback)]["tokens"])
+    text = await format_markdown(dialogues[language(callback)]["tokens"], keep="_*")
+    inline = inline_keyboard({"balance": "balance"}, language(message))
     await bot.edit_message_media(
         types.InputMediaAnimation(
             type=InputMediaType.ANIMATION,
@@ -692,41 +611,7 @@ async def tokens_description_handler(callback: types.CallbackQuery):
         ),
         message.chat.id,
         message.message_id,
-        reply_markup=builder.as_markup(),
-    )
-
-
-@dp.callback_query(F.data == "back-to-balance")
-async def back_to_payment_handler(callback: types.CallbackQuery):
-    message = callback.message
-    builder = InlineKeyboardBuilder()
-    builder.add(
-        types.InlineKeyboardButton(
-            text=buttons[language(callback)]["back-to-help"],
-            callback_data="help-0",
-        ),
-        types.InlineKeyboardButton(
-            text=buttons[language(callback)]["tokens"],
-            callback_data="tokens",
-        ),
-    )
-    data = await read_data(callback.from_user.username)
-    text = await format_markdown(
-        dialogues[language(callback)]["balance"].format(
-            round(data["balance"], 4),
-            round(94 * data["balance"], 2),
-            round(data["balance"] / GPT4O_OUTPUT_1K * 1000),
-        ),
-    )
-    await bot.edit_message_media(
-        types.InputMediaAnimation(
-            type=InputMediaType.ANIMATION,
-            media=gifs["balance"],
-            caption=text,
-        ),
-        message.chat.id,
-        message.message_id,
-        reply_markup=builder.as_markup(),
+        reply_markup=inline,
     )
 
 
@@ -754,7 +639,7 @@ async def help_handler(callback: types.CallbackQuery):
     builder = InlineKeyboardBuilder()
     builder.add(l_button, r_button)
     text = await format_markdown(
-        dialogues[language(callback)]["help"][h_idx],
+        dialogues[language(callback)]["help"][h_idx], keep="_*"
     )
     await bot.edit_message_media(
         types.InputMediaAnimation(
@@ -769,22 +654,17 @@ async def help_handler(callback: types.CallbackQuery):
 @dp.callback_query(F.data == "latex-original")
 async def latex_handler(callback: types.CallbackQuery):
     message = callback.message
-    builder = InlineKeyboardBuilder()
-    builder.add(
-        types.InlineKeyboardButton(
-            text=buttons[language(callback)]["hide"], callback_data="hide"
-        ),
-    )
-    data = await read_data(callback.from_user.username)
+    data = await read_user_data(callback.from_user.id)
     text = data["latex"].get(
         str(message.message_id), dialogues[language(callback)]["forgotten"]
     )
-    text = await format_markdown(text)
+    text = await format_markdown(text, keep="_*")
+    inline = inline_keyboard({"hide": "hide"}, language(callback))
     await bot.send_message(
         message.chat.id,
         text,
         reply_to_message_id=message.message_id,
-        reply_markup=builder.as_markup(),
+        reply_markup=inline,
     )
 
 
@@ -793,7 +673,7 @@ async def hide_handler(callback: types.CallbackQuery):
     message = callback.message
     deleted = await bot.delete_message(message.chat.id, message.message_id)
     if not deleted:
-        text = await format_markdown(dialogues[language(callback)]["old"])
+        text = await format_markdown(dialogues[language(callback)]["old"], keep="_*")
         await bot.send_message(
             message.chat.id, text, reply_to_message_id=message.message_id
         )
