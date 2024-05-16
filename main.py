@@ -457,6 +457,58 @@ async def send_template_answer(message, template, *args, reply_markup=None, keep
     await bot.send_message(message.chat.id, text, reply_markup=reply_markup)
 
 
+async def authorized(message):
+    if message.from_user.id == OWNER_CHAT_ID:
+        return True
+    else:
+        await send_template_answer(message, "root")
+        return False
+
+
+@dp.message(Command("add"))
+async def top_up_handler(message: Message) -> None:
+    if await authorized(message):
+        if len(message.text.split()) != 3:
+            await bot.send_message(
+                message.chat.id,
+                await format(
+                    f"_Error: the command must have following syntax: `/add USER_ID [+/-]FUNDS`._",
+                    keep="_*",
+                ),
+            )
+            return
+        add_cmd, user, funds = message.text.split()
+        user = int(user)
+        with open("bot_users.json", "r") as f:
+            bot_users = json.load(f)
+        if user in bot_users:
+            user_data = await read_user_data(user)
+            if funds.startswith(("+", "-")) and funds[1:].isnumeric():
+                user_data["balance"] += float(funds)
+                await write_user_data(user, user_data)
+                await bot.send_message(
+                    message.chat.id, await format("_Done._", keep="_*")
+                )
+            elif funds.isnumeric():
+                user_data["balance"] = float(funds)
+                await write_user_data(user, user_data)
+                await bot.send_message(
+                    message.chat.id, await format("_Done._", keep="_*")
+                )
+            else:
+                await bot.send_message(
+                    message.chat.id,
+                    await format(
+                        f"_Error: {funds} is not a valid numeric data._", keep="_*"
+                    ),
+                )
+        else:
+            await bot.send_message(
+                message.chat.id,
+                await format(f"_Error: the user {user} does not exist._", keep="_*"),
+            )
+
+
 @dp.message(Command("start"))
 async def start_handler(message: Message) -> None:
     await bot.set_my_commands(
