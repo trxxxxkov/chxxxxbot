@@ -22,6 +22,7 @@ from aiogram.filters import Command
 from aiogram.utils.chat_action import ChatActionSender
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import Message, InputMediaPhoto, FSInputFile
+from aiogram.exceptions import TelegramBadRequest
 
 import keyboards
 from dialogues import dialogues
@@ -237,8 +238,13 @@ async def send(message, text, reply_markup=None):
             await send_latex_formula(message, f)
         await send(message, text[formulas[-1][1] + len(formulas[-1][3][1]) :])
     else:
-        text = await format(text, keep="_*")
-        await bot.send_message(message.chat.id, text, reply_markup=reply_markup)
+        try:
+            text = await format(text, keep="_*")
+            await bot.send_message(message.chat.id, text, reply_markup=reply_markup)
+        except TelegramBadRequest as e:
+            print(e)
+            text = await format(text)
+            await bot.send_message(message.chat.id, text, reply_markup=reply_markup)
 
 
 def latex_math_found(text):
@@ -285,7 +291,11 @@ def latex_math_found(text):
 
 
 def paragraph_type(par):
-    if par.find("```") == -1 or par.find("```") != par.rfind("```"):
+    if (
+        par.find("```") == -1
+        or (par.find("```") != par.rfind("```"))
+        and par[par.rfind("```") - 1] == "\n"
+    ):
         return "text"
     else:
         return "code"
@@ -377,19 +387,32 @@ async def lock(user_id):
     await write_user_data(user_id, data)
 
 
-async def update_user_data(message) -> bool:
+async def cost(message):
+    price = 0
+    encoding = tiktoken.encoding_for_model("gpt-4o")
     data = await read_user_data(message.from_user.id)
-    if data["balance"] < 0.001:
+    if message.photo:
+        text = message.caption if message.caption else "What do you think about it?"
+        price += FEE * GPT4VISION_INPUT
+    else:
+        text = message.text
+    tokens = data["tokens"] + len(encoding.encode(text))
+    price += tokens * FEE * GPT4O_INPUT_1K / 1000
+    return price, tokens, text
+
+
+async def update_user_data(message) -> bool:
+    message_cost, tokens, text = cost(message)
+    data = await read_user_data(message.from_user.id)
+    if data["balance"] - message_cost < 0:
         await send_template_answer(message, "empty")
         return False
     now = time.time()
     data["timestamps"].append(now)
-    encoding = tiktoken.encoding_for_model("gpt-4o")
     if message.photo:
         image_path = f"photos/{message.from_user.id}.jpg"
         await bot.download(message.photo[-1], destination=image_path)
         data_url = local_image_to_data_url(image_path)
-        text = message.caption if message.caption else "What do you think about it?"
         data["messages"].append(
             {
                 "role": "user",
@@ -402,22 +425,16 @@ async def update_user_data(message) -> bool:
                 ],
             }
         )
-        data["tokens"] += len(encoding.encode(text))
-        data["balance"] -= FEE * GPT4VISION_INPUT
     else:
         data["messages"].append({"role": "user", "content": message.text})
-        data["tokens"] += len(encoding.encode(message.text))
-    data["balance"] -= data["tokens"] * FEE * GPT4O_INPUT_1K / 1000
+    data["tokens"] = tokens
+    data["balance"] -= message_cost
     # Remove outdated messages from the chat history
     for i in range(len(data["timestamps"])):
         if now - data["timestamps"][i] < GPT_MEMORY_SEC:
             data["timestamps"] = data["timestamps"][i:]
             data["messages"] = data["messages"][i:]
             break
-    # Cut off last GPT_MEMORY_MSH messages
-    if len(data["timestamps"]) > GPT_MEMORY_MSG:
-        data["timestamps"] = data["timestamps"][-GPT_MEMORY_MSG:]
-        data["messages"] = data["messages"][-GPT_MEMORY_MSG:]
     await write_user_data(message.from_user.id, data)
     if not data["lock"]:
         return True
@@ -577,8 +594,8 @@ async def payment_redirection_handler(callback: types.CallbackQuery):
             round(data["balance"], 4),
             round(94 * data["balance"], 2),
             round(data["balance"] / GPT4O_OUTPUT_1K * 1000),
-            keep="_*",
-        )
+        ),
+        keep="_*",
     )
     text += await format_markdown(
         dialogues[language(message)]["payment"].format(FEE), keep="_*"

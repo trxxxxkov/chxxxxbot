@@ -29,7 +29,7 @@ you should only pay for the tokens that you used. No usage - no payment.
   *Just type any message to chat with GPT-4o!*
 
   To reduce the waiting time, Sebastian splits his speech into paragraphs and sends them when ready - you don't need to wait for the generation of the entire response to finish.
-  *Only the last 20 messages of your conversation are stored. Sebastian remembers them for 2 hours and then forgets. You may use /forget command to explicitly clear the Sebastian's memory.*
+  *Only the last messages of your conversation are stored. Sebastian remembers them for 2 hours and then forgets. You may use /forget command to explicitly clear the Sebastian's memory.*
   
   `Note: the length of your messages is almost unlimited! Even if your message is so large that Telegram splits it into pieces, don't worry: Sebastian will consider them as a whole anyway.`""",
             """
@@ -146,7 +146,7 @@ Describe the image you want to get after /draw command, for example:
   *Просто напишите любое сообщение, чтобы начать общение с GPT-4o!*
 
   Чтобы снизить время ожидания, Себастиан разбивает своё сообщение на абзацы и присылает их по мере готовности. Вам не придется ждать окончания генерации всего ответа целиком.     
-  *Запоминаются только последние 20 сообщений. Себастиан хранит их в течение двух часов, а потом забывает. Вы можете ввести команду /forget, чтобы вручную отчистить его память.*
+  *Запоминаются только последние сообщения. Себастиан хранит их в течение двух часов, после чего забывает. Вы можете ввести команду /forget, чтобы вручную отчистить его память.*
 
   `Примечание: длина исходящий сообщений практически неограничена! Если ваше сообщение будет очень длинным, и Telegram автоматически разделит его и отправит по частям, не переживайте: Себастиан поймёт, что произошло, и ответит на все части вместе, как на одно-единственное сообщение.`
  """,
