@@ -408,7 +408,8 @@ async def cost(message):
     encoding = tiktoken.encoding_for_model("gpt-4o")
     data = await read_user_data(message.from_user.id)
     if message.photo:
-        text = message.caption if message.caption else "What do you think about it?"
+        pre_prompt = dialogues[language(message)]["vision-pre-prompt"]
+        text = message.caption if message.caption else pre_prompt
         price += FEE * GPT4VISION_INPUT
     else:
         text = message.text
