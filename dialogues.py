@@ -47,9 +47,9 @@ you should only pay for the tokens that you used. No usage - no payment.
 *Sebastian has image generation feature using DALLE-3.*
   To generate an image send him a message like this:
 
-  `/draw YOUR\\_PROMPT`,
+  `/draw YOUR_PROMPT`,
 
-where `YOUR\\_PROMPT` - is a description of an image you want.
+where `YOUR_PROMPT` - is a description of an image you want.
   Notice that completely different models are used for an image generation and text prompts. They don't know about each other's presence, which means *the message that contains the /draw command exists outside of the context of the rest of the conversation.*
   
   There is a button "Draw similar images" under the generated picture, which let you generate two variations of the original image using DALLE-2.
@@ -80,10 +80,10 @@ where `YOUR\\_PROMPT` - is a description of an image you want.
   The usage cost is determined by amount of tokens you used. So, *there isn't any subscription or annual payment. No usage - no payment.*
   The cost of each token is tied to OpenAI's pricing and can be calculated as following:
 
-  `SEBASTIAN\\_TOKEN\\_PRICE = FEE \\* OPENAI\\_TOKEN\\_PRICE`,
+  `SEBASTIAN_TOKEN_PRICE = FEE * OPENAI_TOKEN_PRICE`,
   
   `FEE` - is currently equal to {},
-  `OPENAI\\_TOKEN\\_PRICE` - can be found here: https://openai.com/pricing (prices per 1,000,000 tokens).
+  `OPENAI_TOKEN_PRICE` - can be found here: https://openai.com/pricing (prices per 1,000,000 tokens).
 
   *You may use GPT-4o and DALLE-3 only after you top up you balance.*
   Payment methods: Tinkoff/Sberbank, +7-900-65-60-859. *Contact @trxxxxkov to inform about your payment.*""",
@@ -165,9 +165,9 @@ Describe the image you want to get after /draw command, for example:
 *Себастиан способен генерировать изображения, используя DALLE-3.*
   Чтобы сгенерировать изображение, отправьте Себастиану сообщение следующего вида:
   
-  `/draw ВАШ\\_ЗАПРОС`,
+  `/draw ВАШ_ЗАПРОС`,
   
-где `ВАШ\\_ЗАПРОС` - описание изображения, которое вы хотите получить. 
+где `ВАШ_ЗАПРОС` - описание изображения, которое вы хотите получить. 
   Обратите внимание, что для создания изображений и текстовых запросов используются разные модели, не знающие друг о друге! Это означает, что *сообщение с командой /draw существует вне контекста остального разговора с Себастианом.*
   
   Кнопка "Нарисовать похожие изображения" под сгенерированной картинкой создать две вариации исходной картинки посредством DALLE-2.
@@ -199,10 +199,10 @@ Describe the image you want to get after /draw command, for example:
   Цена определяется только количеством использованных вами токенов, то есть *никаких подписок и регулярных платежей нет. Ничего не использовали - ничего не платите.*
   Цена каждого токена жёстко связана с тарифами OpenAI, и вычисляется следующим образом:
 
-  `ЦЕНА\\_ТОКЕНА\\_СЕБАСТИАНА = FEE \\* ЦЕНА\\_ТОКЕНА\\_OPENAI`,
+  `ЦЕНА_ТОКЕНА_СЕБАСТИАНА = FEE * ЦЕНА_ТОКЕНА_OPENAI`,
 
   `FEE` - комиссия, в данный момент равная {},
-  `ЦЕНА\\_ТОКЕНА\\_OPENAI` - доступно здесь: https://openai.com/pricing (цены указаны за 1,000,000 токенов).
+  `ЦЕНА_ТОКЕНА_OPENAI` - доступна здесь: https://openai.com/pricing (цены указаны за 1,000,000 токенов).
 
   *Вы можете использовать GPT-4o и DALLE-3 только после пополнения баланса.*
   Способ оплаты: Тиньков/Сбербанк, +7-900-656-08-59. *Чтобы сообщить о вашем платеже, свяжитесь с @trxxxxkov.*""",
