@@ -47,6 +47,7 @@ DALLE3_OUTPUT = 0.08
 DALLE2_OUTPUT = 0.02
 
 LATEX_MIN_LEN = 20
+PAR_MIN_LEN = 150
 
 INITIAL_USER_DATA = {
     "lock": False,
@@ -239,7 +240,12 @@ async def send(message, text, reply_markup=None):
     if (latex_t := latex_type(text)) == "document":
         text = format(text, latex=False, gpt=False)
         if text:
-            await bot.send_message(message.chat.id, text, reply_markup=reply_markup)
+            await bot.send_message(
+                message.chat.id,
+                text,
+                reply_markup=reply_markup,
+                disable_web_page_preview=True,
+            )
     elif latex_t == "formulas":
         text = text.replace("```latex", "").replace("```", "")
         formulas = latex_math_found(text)
@@ -256,12 +262,17 @@ async def send(message, text, reply_markup=None):
     else:
         text = format(text)
         if text:
-            await bot.send_message(message.chat.id, text, reply_markup=reply_markup)
+            await bot.send_message(
+                message.chat.id,
+                text,
+                reply_markup=reply_markup,
+                disable_web_page_preview=True,
+            )
 
 
 def latex_math_found(text):
     delims = [
-        ["$", "$"],
+        # ["$", "$"],
         ["$$", "$$"],
         ["\[", "\]"],
         ["\(", "\)"],
@@ -303,6 +314,7 @@ def latex_math_found(text):
 
 
 def paragraph_type(par):
+    par = par.replace(" ", "")
     if (
         par.startswith("```")
         and par.count("\n```") == 0
@@ -328,36 +340,37 @@ async def generate_completion(message):
         model=GPT_MODEL, messages=data["messages"], temperature=0.5, stream=True
     )
     response = ""
-    paragraph = ""
-    curr_paragraph_type = "text"
+    par = ""
+    cur_par_type = "text"
     try:
         async for chunk in stream:
             if chunk.choices[0].delta.content is not None:
-                paragraph += chunk.choices[0].delta.content
-                match curr_paragraph_type, paragraph_type(paragraph):
+                par += chunk.choices[0].delta.content
+                match cur_par_type, paragraph_type(par):
                     case "text", "text":
                         if (
-                            "\n\n" in paragraph
-                            and paragraph[paragraph.rfind("\n\n") - 1] != "`"
+                            "\n\n" in par
+                            and len(par[: par.rfind("\n\n")]) > PAR_MIN_LEN
+                            and par[par.rfind("\n\n") - 1] != "`"
                         ):
-                            delim = paragraph.rfind("\n\n") + 2
-                            response, paragraph = await process_delim(
-                                delim, paragraph, message, response
+                            delim = par.rfind("\n\n") + 2
+                            response, par = await process_delim(
+                                delim, par, message, response
                             )
                     case "text", "code":
-                        curr_paragraph_type = "code"
-                        delim = paragraph.rfind("```")
-                        response, paragraph = await process_delim(
-                            delim, paragraph, message, response
+                        cur_par_type = "code"
+                        delim = par.rfind("```")
+                        response, par = await process_delim(
+                            delim, par, message, response
                         )
                     case "code", "text":
-                        curr_paragraph_type = "text"
-                        delim = paragraph.rfind("```") + 3
-                        response, paragraph = await process_delim(
-                            delim, paragraph, message, response
+                        cur_par_type = "text"
+                        delim = par.rfind("```") + 3
+                        response, par = await process_delim(
+                            delim, par, message, response
                         )
-        await send(message, paragraph, keyboards.forget_keyboard)
-        response += paragraph
+        await send(message, par, keyboards.forget_keyboard)
+        response += par
     except (Exception, OpenAIError) as e:
         alert = format(
             f"*ERROR:* {e}\n\n*USER:* {message.from_user.username}\n\n*LAST PROMPT:* {message.text}\n\n*COLLECTED RESPONSE:* {response}"
