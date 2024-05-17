@@ -498,7 +498,7 @@ async def authorized(message):
 async def top_up_handler(message: Message) -> None:
     if await authorized(message):
         if len(message.text.split()) != 3:
-            text = "_Error: the command must have following syntax: `/add USER_ID [+/-]FUNDS`._"
+            text = "_Error: the command must have following syntax:_ `/add USER_ID [+/-]FUNDS`."
             await send(message, text)
             return
         add_cmd, user, funds = message.text.split()
@@ -516,10 +516,10 @@ async def top_up_handler(message: Message) -> None:
                 await write_user_data(user, user_data)
                 await send(message, "_Done._")
             else:
-                text = f"_Error: {funds} is not a valid numeric data._"
+                text = f"_Error:_ {funds} _is not a valid numeric data._"
                 await send(message, text)
         else:
-            text = f"_Error: the user {user} does not exist._"
+            text = f"_Error: the user_ {user} _does not exist._"
             await send(message, text)
 
 
