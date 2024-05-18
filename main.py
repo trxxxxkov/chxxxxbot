@@ -135,7 +135,7 @@ async def variate_image(path_to_image):
 
 def format_markdown(text, code_entity=False, strict=False):
     if strict:
-        strict_escape = "\\_*[]()`*>#+-=|}{.!"
+        strict_escape = "\\_*[]()`~>#+-=|}{.!"
         for char in strict_escape:
             text = text.replace(char, f"\\{char}")
     elif code_entity:
@@ -168,21 +168,45 @@ def format_markdown(text, code_entity=False, strict=False):
                 for char in must_escape:
                     text = text.replace(char, f"\\{char}")
                 for char in may_escape:
-                    if text.count(char) % 2 != 0:
-                        text = text.replace(char, f"\\{char}")
+                    if (text.count(char) - text.count(f"\r{char}")) % 2 != 0:
+                        text = text.replace(f"\r{char}", char).replace(
+                            char, f"\\{char}"
+                        )
+                    else:
+                        text = text.replace(f"\r{char}", f"\\{char}")
     return text
 
 
+def inline_latex_found(text):
+    delims = [
+        ["$$", "$$"],
+        ["\\[", "\\]"],
+        ["\\(", "\\)"],
+    ]
+    delims_idx = []
+    for delim in delims:
+        l = text.find(delim[0])
+        r = text.find(delim[1], l)
+        while l != -1 and r != -1:
+            delims_idx.append([l, r])
+            l = text.find(delim[0], r + 2)
+            r = text.find(delim[1], l)
+    return delims_idx
+
+
 def format_latex(text):
-    text = (
-        text.replace("$$", "*")
-        .replace("\[", "*")
-        .replace("\]", "*")
-        .replace("\(", "*")
-        .replace("\)", "*")
-    )
-    if text.count("$") % 2 == 0:
-        text = text.replace("$", "*")
+    delim_idx = inline_latex_found(text)
+    text = list(text)
+    for char in "_*":
+        char_idx = [i for i in range(len(text)) if text[i] == char]
+        for ci in char_idx:
+            for di in delim_idx:
+                if ci in range(*di):
+                    text[ci] = f"\r{char}"
+                    break
+    text = "".join(text)
+    for delim in ["$$", "\\[", "\\]", "\\(", "\\)"]:
+        text = text.replace(delim, "*")
     return text
 
 
@@ -210,14 +234,19 @@ def format(text, *, latex=True, gpt=True, markdown=True, strict=False):
     return text
 
 
+def get_latex_image_url(formula):
+    image_url = formula[2].replace("\n", "").replace("&", ",").replace("\\\\", ";\,")
+    image_url = (
+        " ".join([elem for elem in image_url.split(" ") if elem])
+        .replace(" ", "\,\!")
+        .replace(" ", "\,\!")
+    )
+    image_url = "https://math.vercel.app?from=" + urllib.parse.quote(image_url)
+    return image_url
+
+
 async def send_latex_formula(message, formula):
-    image_url = formula[2].replace("\n", "").replace("&", "").replace("\\\\", ";\,")
-    image_url = " ".join([elem for elem in image_url.split(" ") if elem]).replace(
-        " ", "\,\!"
-    )
-    image_url = "https://math.vercel.app?from=" + urllib.parse.quote(
-        image_url.replace(" ", "\,\!")
-    )
+    image_url = get_latex_image_url(formula)
     path = f"photos/{message.from_user.id}.jpg"
     svg_to_jpg(image_url, path)
     photo = FSInputFile(path)
@@ -278,8 +307,8 @@ def latex_math_found(text):
     delims = [
         # ["$", "$"],
         ["$$", "$$"],
-        ["\[", "\]"],
-        ["\(", "\)"],
+        ["\\[", "\\]"],
+        ["\\(", "\\)"],
         ["\\begin{equation}", "\end{equation}"],
         ["\\begin{align}", "\end{align}"],
         ["\\begin{gather}", "\end{gather}"],
@@ -739,7 +768,7 @@ async def latex_handler(callback: types.CallbackQuery):
     text = data["latex"].get(
         str(message.message_id), dialogues[language(callback)]["forgotten"]
     )
-    text = format(text, strict=True)
+    text = format(text, latex=False)
     inline = inline_keyboard({"hide": "hide"}, language(callback))
     await bot.send_message(
         message.chat.id,
