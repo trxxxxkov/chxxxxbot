@@ -370,7 +370,7 @@ async def process_delim(delim, par, message, response):
 async def generate_completion(message):
     data = await read_user_data(message.from_user.id)
     stream = await client.chat.completions.create(
-        model=GPT_MODEL, messages=data["messages"], temperature=0.5, stream=True
+        model=GPT_MODEL, messages=data["messages"], temperature=0.2, stream=True
     )
     response = ""
     par = ""
