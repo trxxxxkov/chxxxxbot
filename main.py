@@ -133,8 +133,12 @@ async def variate_image(path_to_image):
     return media
 
 
-def format_markdown(text, code_entity=False):
-    if code_entity:
+def format_markdown(text, code_entity=False, strict=False):
+    if strict:
+        strict_escape = "\\_*[]()`*>#+-=|}{.!"
+        for char in strict_escape:
+            text = text.replace(char, f"\\{char}")
+    elif code_entity:
         code_entity_escape = "\\`"
         for char in code_entity_escape:
             text = text.replace(char, f"\\{char}")
@@ -196,13 +200,13 @@ def format_gpt(text):
         return ""
 
 
-def format(text, *, latex=True, gpt=True, markdown=True):
-    if text and latex and "`" not in text:
+def format(text, *, latex=True, gpt=True, markdown=True, strict=False):
+    if text and latex and not strict and "`" not in text:
         text = format_latex(text)
-    if text and gpt:
+    if text and gpt and not strict:
         text = format_gpt(text)
     if text and markdown:
-        text = format_markdown(text)
+        text = format_markdown(text, strict=strict)
     return text
 
 
@@ -516,11 +520,13 @@ async def top_up_handler(message: Message) -> None:
                 await write_user_data(user, user_data)
                 await send(message, "_Done._")
             else:
-                text = f"_Error:_ {funds} _is not a valid numeric data._"
+                text = f"_Error: {funds} is not a valid numeric data._"
                 await send(message, text)
         else:
-            text = f"_Error: the user_ {user} _does not exist._"
+            await add_user(user)
+            text = f"_The user *{user}* was added._"
             await send(message, text)
+            await top_up_handler(message)
 
 
 @dp.message(Command("start"))
@@ -733,7 +739,7 @@ async def latex_handler(callback: types.CallbackQuery):
     text = data["latex"].get(
         str(message.message_id), dialogues[language(callback)]["forgotten"]
     )
-    text = format(text)
+    text = format(text, strict=True)
     inline = inline_keyboard({"hide": "hide"}, language(callback))
     await bot.send_message(
         message.chat.id,

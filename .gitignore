@@ -1,6 +1,7 @@
 .env
 .venv
 .vscode
+bot_users.json
 test.py
 data/
 photos/
