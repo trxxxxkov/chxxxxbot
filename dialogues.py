@@ -91,7 +91,7 @@ where `YOUR_PROMPT` - is a description of an image you want.
 OpenAI's models process text as a set of *tokens*. 
   Tokens - are common sequences of characters found in text. You can think of tokens as pieces of words, where 1,000 tokens is about 750 words.
         
-  Input tokens and output tokens have different costs. Although tokens in user's messages are usually cheaper, they are used for sending context - information about all previous messages. 
+  Input tokens (what you send to a model) and output tokens (what the model returns) have different costs. Although input tokens are cheaper, they are used for sending context - information about all previous messages. 
   *The GPT models do not remember what you've been talking about. Instead, all previous messages are send together with a new one.* For this reason, it's recommended to clear Sebastian's memory by using /forget command once you've changed a subject of your conversation. Example:
   `
   USER: sends a message A; (of 10 tokens long)
@@ -208,10 +208,10 @@ Describe the image you want to get after /draw command, for example:
   *Вы можете использовать GPT-4o и DALLE-3 только после пополнения баланса.*
   Способ оплаты: Тиньков/Сбербанк, +7-900-656-08-59. *Чтобы сообщить о вашем платеже, свяжитесь с @trxxxxkov.*""",
         "tokens": """
-Модели OpenAI анализируют текст, воспринимая его частями, называемые *токенами*.
+Модели OpenAI анализируют текст, воспринимая его частями, называемыми *токенами*.
   Токены - это просто последовательность из ~4 символов. Можно думать о токенах как о кусочках слов, на которые разбивается каждый текст. 
 
-  Токены в сообщениях бота и пользователя имеют разную цену. Токены в сообщениях пользователя дешевле, но они используются для отправки информации о всех прошлых сообщениях. 
+  Цены на входящие (то, что вы отправляете в модель) и исходящие (то, что модель возвращает) токены отличаются. Цены на входящие токены ниже, но они используются для отправки информации о всех прошлых сообщениях. 
   *Модели не запоминают ваш разговор, вместо этого каждый раз, когда вы пишете новое сообщение, вместе с ним на сервер отправляются и все предыдущие сообщения.* Поэтому при смене темы разговора рекомендуется использовать команду /forget для удаления предыдущих сообщений из памяти Себастиана. Пример:
   `
   ПОЛЬЗОВАТЕЛЬ: отправляет сообщение А; (длиной 10 токенов)
