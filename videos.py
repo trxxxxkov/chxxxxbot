@@ -1,4 +1,4 @@
-gifs = {
+videos = {
     "help": [
         "BAACAgIAAxkBAAIOpGZCFuSTTzZX10j0qgo9_uOpaBNMAAKlTwACsQsRSroS6No7wGgFNQQ",
         "BAACAgIAAxkBAAIOsGZCGBWtUXSpASBpkdTCSAkYjAABawACtU8AArELEUqPoxQ6Aj8d7DUE",

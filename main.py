@@ -27,7 +27,7 @@ from aiogram.exceptions import TelegramBadRequest
 import keyboards
 from dialogues import dialogues
 from commands import commands
-from gifs import gifs
+from videos import videos
 from buttons import buttons
 
 load_dotenv()
@@ -590,7 +590,7 @@ async def help_handler(message: Message) -> None:
     text = format(dialogues[language(message)]["help"][0])
     await bot.send_animation(
         message.chat.id,
-        gifs["help"][0],
+        videos["help"][0],
         caption=text,
         reply_markup=builder.as_markup(),
     )
@@ -623,7 +623,7 @@ async def billing_handler(message: Message) -> None:
     text += format(dialogues[language(message)]["payment"].format(FEE))
     await bot.send_animation(
         message.chat.id,
-        gifs["balance"],
+        videos["balance"],
         caption=text,
         reply_markup=markup,  # builder.as_markup(),
     )
@@ -701,7 +701,7 @@ async def payment_redirection_handler(callback: types.CallbackQuery):
     await bot.edit_message_media(
         types.InputMediaAnimation(
             type=InputMediaType.ANIMATION,
-            media=gifs["balance"],
+            media=videos["balance"],
             caption=text,
         ),
         message.chat.id,
@@ -718,7 +718,7 @@ async def tokens_description_handler(callback: types.CallbackQuery):
     await bot.edit_message_media(
         types.InputMediaAnimation(
             type=InputMediaType.ANIMATION,
-            media=gifs["tokens"],
+            media=videos["tokens"],
             caption=text,
         ),
         message.chat.id,
@@ -753,7 +753,7 @@ async def help_handler(callback: types.CallbackQuery):
     text = format(dialogues[language(callback)]["help"][h_idx])
     await bot.edit_message_media(
         types.InputMediaAnimation(
-            type=InputMediaType.ANIMATION, media=gifs["help"][h_idx], caption=text
+            type=InputMediaType.ANIMATION, media=videos["help"][h_idx], caption=text
         ),
         message.chat.id,
         message.message_id,
