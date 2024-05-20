@@ -46,7 +46,6 @@ GPT4VISION_INPUT = 0.005
 DALLE3_OUTPUT = 0.08
 DALLE2_OUTPUT = 0.02
 
-LATEX_MIN_LEN = 20
 PAR_MIN_LEN = 150
 
 INITIAL_USER_DATA = {
@@ -328,8 +327,7 @@ def latex_math_found(text):
         end_idx = text.find(delim[1], start_idx + len(delim[0]))
         while start_idx != -1 and end_idx != -1:
             if (
-                end_idx - start_idx - len(delim[0]) >= LATEX_MIN_LEN
-                or text[start_idx + len(delim[0]) : end_idx].count("\\") > 2
+                text[start_idx + len(delim[0]) : end_idx].count("\\") > 2
                 or "begin" in delim[0]
             ):
                 math_found.append(
