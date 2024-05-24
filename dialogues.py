@@ -50,7 +50,7 @@ you should only pay for the tokens that you used. No usage - no payment.
   `/draw YOUR_PROMPT`,
 
 where `YOUR_PROMPT` - is a description of an image you want.
-  Notice that completely different models are used for an image generation and text prompts. They don't know about each other's presence, which means *the message that contains the /draw command exists outside of the context of the rest of the conversation.*
+  Notice that completely different models are used for an image generation and text prompts. DALLE-3, which is in charge of image generation, doesn't know about GPT-4o's presence, which means *the message that contains the /draw command exists outside of the context of the rest of the conversation.*
   
   There is a button "Draw similar images" under the generated picture, which let you generate two variations of the original image using DALLE-2.
 
@@ -169,7 +169,7 @@ Describe the image you want to get after /draw command, for example:
   `/draw ВАШ_ЗАПРОС`,
   
 где `ВАШ_ЗАПРОС` - описание изображения, которое вы хотите получить. 
-  Обратите внимание, что для создания изображений и текстовых запросов используются разные модели, не знающие друг о друге! Это означает, что *сообщение с командой /draw существует вне контекста остального разговора с Себастианом.*
+  Обратите внимание, что для создания изображений и текстовых запросов используются разные модели. DALLE-3, отвечающая за создание изображений, не знает осуществовании GPT-4o. Это означает, что *сообщение с командой /draw существует вне контекста остального разговора с Себастианом.*
   
   Кнопка "Нарисовать похожие изображения" под сгенерированной картинкой создать две вариации исходной картинки посредством DALLE-2.
 
