@@ -22,7 +22,6 @@ from aiogram.filters import Command
 from aiogram.utils.chat_action import ChatActionSender
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import Message, InputMediaPhoto, FSInputFile
-from aiogram.exceptions import TelegramBadRequest
 
 import keyboards
 from dialogues import dialogues
@@ -42,7 +41,7 @@ GPT_MEMORY_MSG = 20
 GPT_MODEL = "gpt-4o"
 GPT4O_INPUT_1K = 0.005
 GPT4O_OUTPUT_1K = 0.015
-GPT4VISION_INPUT = 0.005
+GPT4VISION_TOKENS = 1000
 DALLE3_OUTPUT = 0.08
 DALLE2_OUTPUT = 0.02
 
@@ -454,7 +453,7 @@ async def cost(message):
     if message.photo:
         pre_prompt = dialogues[language(message)]["vision-pre-prompt"]
         text = message.caption if message.caption else pre_prompt
-        price += FEE * GPT4VISION_INPUT
+        price += FEE * GPT4VISION_TOKENS * GPT4O_INPUT_1K / 1000
     else:
         text = message.text
     tokens = data["tokens"] + len(encoding.encode(text))
@@ -640,6 +639,18 @@ async def image_generation_handler(message: Message) -> None:
             inline = inline_keyboard({"redraw": "redraw"}, language(message))
             await bot.send_photo(message.chat.id, image_url, reply_markup=inline)
             data = await read_user_data(message.from_user.id)
+            data["messages"].append(
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": image_url, "detail": "high"},
+                        },
+                    ],
+                }
+            )
+            data["tokens"] += GPT4VISION_TOKENS
             data["balance"] -= FEE * DALLE3_OUTPUT
             await write_user_data(message.from_user.id, data)
         except (Exception, OpenAIError) as e:
