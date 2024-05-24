@@ -1,5 +1,5 @@
 [Unit]
-Description = @chxxxxbot's background service 
+Description = @chxxxxbot's background systemd service 
 After = network.target 
  
 [Service]

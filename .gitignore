@@ -3,6 +3,7 @@
 .vscode
 bot_users.json
 test.py
+videos.py
 data/
 photos/
 __pycache__/
