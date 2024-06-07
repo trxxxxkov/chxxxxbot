@@ -37,23 +37,20 @@ OPENAI_KEY = getenv("OPENAI_API_KEY")
 # OPENAI API prices per 1K tokens
 FEE = 1.6
 GPT_MEMORY_SEC = 7200
-GPT_MEMORY_MSG = 20
 GPT_MODEL = "gpt-4o"
 GPT4O_INPUT_1K = 0.005
 GPT4O_OUTPUT_1K = 0.015
-GPT4VISION_TOKENS = 1000
 DALLE3_OUTPUT = 0.08
 DALLE2_OUTPUT = 0.02
 
 PAR_MIN_LEN = 150
 
 INITIAL_USER_DATA = {
-    "lock": False,
-    "messages": [],
-    "latex": {},
-    "timestamps": [],
-    "tokens": 0,
     "balance": 0,
+    "lock": False,
+    "timestamps": [],
+    "latex": {},
+    "messages": [],
 }
 
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
@@ -367,14 +364,19 @@ async def process_delim(delim, par, message, response):
 async def generate_completion(message):
     data = await read_user_data(message.from_user.id)
     stream = await client.chat.completions.create(
-        model=GPT_MODEL, messages=data["messages"], temperature=0.2, stream=True
+        model=GPT_MODEL,
+        messages=data["messages"],
+        temperature=0.2,
+        stream=True,
+        stream_options={"include_usage": True},
     )
     response = ""
     par = ""
     cur_par_type = "text"
     try:
         async for chunk in stream:
-            if chunk.choices[0].delta.content is not None:
+            usage = chunk.usage
+            if chunk.choices and chunk.choices[0].delta.content is not None:
                 par += chunk.choices[0].delta.content
                 match cur_par_type, paragraph_type(par):
                     case "text", "text":
@@ -411,7 +413,7 @@ async def generate_completion(message):
         await clear_handler(message)
     finally:
         await stream.close()
-    return response
+    return response, usage
 
 
 async def read_user_data(user_id) -> None:
@@ -446,55 +448,63 @@ async def lock(user_id):
     await write_user_data(user_id, data)
 
 
-async def cost(message):
-    price = 0
+async def balance_is_sufficient(message) -> bool:
+    message_cost = 0
     encoding = tiktoken.encoding_for_model("gpt-4o")
     data = await read_user_data(message.from_user.id)
     if message.photo:
         pre_prompt = dialogues[language(message)]["vision-pre-prompt"]
         text = message.caption if message.caption else pre_prompt
-        price += FEE * GPT4VISION_TOKENS * GPT4O_INPUT_1K / 1000
+        message_cost += FEE * GPT4O_INPUT_1K
     else:
         text = message.text
     tokens = data["tokens"] + len(encoding.encode(text))
-    price += tokens * FEE * GPT4O_INPUT_1K / 1000
-    return price, tokens, text
+    message_cost += tokens * FEE * GPT4O_INPUT_1K / 1000
+    return message_cost < data["balance"]
 
 
-async def update_user_data(message) -> bool:
-    message_cost, tokens, text = await cost(message)
+async def forget_outdated_messages(message):
     data = await read_user_data(message.from_user.id)
-    if data["balance"] - message_cost < 0:
+    now = time.time()
+    for i in range(len(data["timestamps"])):
+        if now - data["timestamps"][i] < GPT_MEMORY_SEC:
+            data["timestamps"] = data["timestamps"][i:]
+            data["messages"] = data["messages"][i:]
+            break
+    await write_user_data(message.from_user.id, data)
+
+
+async def prompt_is_accepted(message) -> bool:
+    if not await balance_is_sufficient(message):
         await send_template_answer(message, "empty")
         return False
+    await forget_outdated_messages(message)
+    data = await read_user_data(message.from_user.id)
     now = time.time()
     data["timestamps"].append(now)
     if message.photo:
         image_path = f"photos/{message.from_user.id}.jpg"
         await bot.download(message.photo[-1], destination=image_path)
-        data_url = local_image_to_data_url(image_path)
+        image_url = local_image_to_data_url(image_path)
+        image_caption = (
+            message.caption
+            if message.caption
+            else dialogues[language(message)]["vision-pre-prompt"]
+        )
         data["messages"].append(
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": text},
+                    {"type": "text", "text": image_caption},
                     {
                         "type": "image_url",
-                        "image_url": {"url": data_url, "detail": "high"},
+                        "image_url": {"url": image_url, "detail": "high"},
                     },
                 ],
             }
         )
     else:
         data["messages"].append({"role": "user", "content": message.text})
-    data["tokens"] = tokens
-    data["balance"] -= message_cost
-    # Remove outdated messages from the chat history
-    for i in range(len(data["timestamps"])):
-        if now - data["timestamps"][i] < GPT_MEMORY_SEC:
-            data["timestamps"] = data["timestamps"][i:]
-            data["messages"] = data["messages"][i:]
-            break
     await write_user_data(message.from_user.id, data)
     if not data["lock"]:
         return True
@@ -600,7 +610,6 @@ async def clear_handler(message: Message) -> None:
     data["messages"].clear()
     data["latex"].clear()
     data["timestamps"].clear()
-    data["tokens"] = 0
     await write_user_data(message.from_user.id, data)
 
 
@@ -622,13 +631,13 @@ async def billing_handler(message: Message) -> None:
         message.chat.id,
         videos["balance"],
         caption=text,
-        reply_markup=markup,  # builder.as_markup(),
+        reply_markup=markup,
     )
 
 
 @dp.message(Command("draw"))
 async def image_generation_handler(message: Message) -> None:
-    if await update_user_data(message):
+    if await prompt_is_accepted(message):
         try:
             prompt = message.text.split("draw")[1].strip()
             if len(prompt) == 0:
@@ -650,7 +659,6 @@ async def image_generation_handler(message: Message) -> None:
                     ],
                 }
             )
-            data["tokens"] += GPT4VISION_TOKENS
             data["balance"] -= FEE * DALLE3_OUTPUT
             await write_user_data(message.from_user.id, data)
         except (Exception, OpenAIError) as e:
@@ -660,16 +668,21 @@ async def image_generation_handler(message: Message) -> None:
 
 @dp.message()
 async def universal_handler(message: Message) -> None:
-    if await update_user_data(message):
+    if await prompt_is_accepted(message):
         await lock(message.from_user.id)
         async with ChatActionSender.typing(message.chat.id, bot):
-            response = await generate_completion(message)
+            response, usage = await generate_completion(message)
         data = await read_user_data(message.from_user.id)
         data["timestamps"].append(time.time())
         data["messages"].append({"role": "system", "content": response})
-        encoding = tiktoken.encoding_for_model("gpt-4o")
-        data["tokens"] += len(encoding.encode(response))
-        data["balance"] -= len(encoding.encode(response)) * FEE * GPT4O_OUTPUT_1K / 1000
+        data["balance"] -= (
+            (
+                GPT4O_INPUT_1K * usage.prompt_tokens
+                + GPT4O_OUTPUT_1K * usage.completion_tokens
+            )
+            * FEE
+            / 1000
+        )
         await write_user_data(message.from_user.id, data)
 
 
