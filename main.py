@@ -537,11 +537,11 @@ async def top_up_handler(message: Message) -> None:
             bot_users = json.load(f)
         if user in bot_users:
             user_data = await read_user_data(user)
-            if funds.startswith(("+", "-")) and funds[1:].isnumeric():
+            if funds.startswith(("+", "-")) and funds[1:].replace(".", "", 1).isdigit():
                 user_data["balance"] += float(funds)
                 await write_user_data(user, user_data)
                 await send(message, "_Done._")
-            elif funds.isnumeric():
+            elif funds.replace(".", "", 1).isdigit():
                 user_data["balance"] = float(funds)
                 await write_user_data(user, user_data)
                 await send(message, "_Done._")
