@@ -43,7 +43,8 @@ GPT4O_OUTPUT_1K = 0.015
 DALLE3_OUTPUT = 0.08
 DALLE2_OUTPUT = 0.02
 
-PAR_MIN_LEN = 150
+PAR_MIN_LEN = 250
+PAR_MAX_LEN = 3950
 
 INITIAL_USER_DATA = {
     "balance": 0,
@@ -128,102 +129,52 @@ async def variate_image(path_to_image):
     return media
 
 
-def format_markdown(text, code_entity=False, strict=False):
+def format_markdown(text, code=False, strict=False):
     if strict:
         strict_escape = "\\_*[]()`~>#+-=|}{.!"
         for char in strict_escape:
             text = text.replace(char, f"\\{char}")
-    elif code_entity:
-        code_entity_escape = "\\`"
-        for char in code_entity_escape:
+    elif code:
+        code_escape = "\\`"
+        for char in code_escape:
             text = text.replace(char, f"\\{char}")
     else:
-        code_l = text.find("```")
-        code_r = text.rfind("```")
-        if code_l != code_r:
-            formatted_l = format_markdown(text[:code_l])
-            formatted_r = format_markdown(text[code_r + 3 :])
-            formatted_code = format_markdown(
-                text[code_l + 3 : code_r], code_entity=True
+        if text.startswith("```"):
+            code_l = 0
+        else:
+            code_l = text.find("\n```") + 1
+        code_r = text.find("\n```", code_l + 1) + 1
+        if code_r:
+            text = (
+                format_markdown(text[:code_l])
+                + "```"
+                + format_markdown(text[code_l + 3 : code_r], code=True)
+                + "\n```"
+                + format_markdown(text[code_r + 3 :])
             )
-            text = formatted_l + "```" + formatted_code + "```" + formatted_r
         else:
             pre_l = text.find("`")
             pre_r = text.find("`", pre_l + 1)
-            if pre_l != pre_r and text.count("`") % 2 == 0:
-                formatted_l = format_markdown(text[:pre_l])
-                formatted_r = format_markdown(text[pre_r + 1 :])
-                formatted_pre = format_markdown(
-                    text[pre_l + 1 : pre_r], code_entity=True
+            if pre_r != -1:
+                text = (
+                    format_markdown(text[:pre_l])
+                    + "`"
+                    + format_markdown(text[pre_l + 1 : pre_r], code=True)
+                    + "`"
+                    + format_markdown(text[pre_r + 1 :])
                 )
-                text = formatted_l + "`" + formatted_pre + "`" + formatted_r
             else:
                 must_escape = "\\[]()`>#+-=|}{.!"
                 may_escape = "_*~"
                 for char in must_escape:
                     text = text.replace(char, f"\\{char}")
                 for char in may_escape:
-                    if (text.count(char) - text.count(f"\r{char}")) % 2 != 0:
-                        text = text.replace(f"\r{char}", char).replace(
-                            char, f"\\{char}"
-                        )
-                    else:
-                        text = text.replace(f"\r{char}", f"\\{char}")
+                    if text.count(char) % 2 != 0:
+                        text = text.replace(char, f"\\{char}")
     return text
-
-
-def inline_latex_found(text):
-    delims = [
-        ["$$", "$$"],
-        ["\\[", "\\]"],
-        ["\\(", "\\)"],
-    ]
-    delims_idx = []
-    for delim in delims:
-        l = text.find(delim[0])
-        r = text.find(delim[1], l)
-        while l != -1 and r != -1:
-            delims_idx.append([l, r])
-            l = text.find(delim[0], r + 2)
-            r = text.find(delim[1], l)
-    return delims_idx
-
-
-def format_latex(text):
-    delim_idx = inline_latex_found(text)
-    text = list(text)
-    for char in "_*":
-        char_idx = [i for i in range(len(text)) if text[i] == char]
-        for ci in char_idx:
-            for di in delim_idx:
-                if ci in range(*di):
-                    text[ci] = f"\r{char}"
-                    break
-    text = "".join(text)
-    for delim in ["$$", "\\[", "\\]", "\\(", "\\)"]:
-        text = text.replace(delim, "*")
-    return text
-
-
-def format_gpt(text):
-    if text[0] == ",":
-        text = text[1:]
-    lines = text.replace("**", "*").split("\n")
-    for i in range(len(lines)):
-        if lines[i].strip() in ".,?!-:;":
-            lines[i] = ""
-    text = "\n".join([elem for elem in lines])
-    if text.replace("\n", ""):
-        return text
-    else:
-        return ""
 
 
 def format(text, *, latex=True, gpt=True, markdown=True, strict=False):
-    if text and latex and not strict and "`" not in text:
-        text = format_latex(text)
-    if text and gpt and not strict:
-        text = format_gpt(text)
     if text and markdown:
         text = format_markdown(text, strict=strict)
     return text
@@ -252,115 +203,74 @@ async def send_latex_formula(message, formula):
     await write_user_data(message.from_user.id, data)
 
 
-def latex_type(text):
-    document_flags = ["documentclass", "usepackage", "\\begin{document}"]
-    for flag in document_flags:
-        if flag in text:
-            return "document"
-    else:
-        if latex_math_found(text):
-            return "formulas"
-        else:
-            return None
-
-
 async def send(message, text, reply_markup=None):
-    if (latex_t := latex_type(text)) == "document":
-        text = format(text, latex=False, gpt=False)
-        if text:
-            await bot.send_message(
-                message.chat.id,
-                text,
-                reply_markup=reply_markup,
-                disable_web_page_preview=True,
+    text = format(text)
+    if text:
+        await bot.send_message(
+            message.chat.id,
+            text,
+            reply_markup=reply_markup,
+            disable_web_page_preview=True,
+        )
+
+
+def logged(f):
+    def wrapper(*args, **kwargs):
+        try:
+            return f(*args, **kwargs)
+        except (Exception, OpenAIError) as e:
+            alert = format(
+                f"*Error:* {e};\n\n*function name =* {f.__name__};\n\n*args =* {args};\n\n*kwargs =* {kwargs};"
             )
-    elif latex_t == "formulas":
-        text = text.replace("```latex", "").replace("```", "")
-        formulas = latex_math_found(text)
-        for idx, f in enumerate(formulas):
-            if idx:
-                await send(
-                    message,
-                    text[formulas[idx - 1][1] + len(formulas[idx - 1][3][1]) : f[0]],
-                )
-            else:
-                await send(message, text[: f[0]])
-            await send_latex_formula(message, f)
-        await send(message, text[formulas[-1][1] + len(formulas[-1][3][1]) :])
-    else:
-        text = format(text)
-        if text:
-            await bot.send_message(
-                message.chat.id,
-                text,
-                reply_markup=reply_markup,
-                disable_web_page_preview=True,
-            )
+            bot.send_message(OWNER_CHAT_ID, alert)
+            # inline = inline_keyboard({"error": "error"}, language(message))
+            # await bot.send_message(message.chat.id, alert, reply_markup=inline)
+            # await clear_handler(message)
+
+    return wrapper
 
 
-def latex_math_found(text):
-    delims = [
-        # ["$", "$"],
-        ["$$", "$$"],
-        ["\\[", "\\]"],
-        ["\\(", "\\)"],
-        ["\\begin{equation}", "\end{equation}"],
-        ["\\begin{align}", "\end{align}"],
-        ["\\begin{gather}", "\end{gather}"],
-        ["\\begin{multiline}", "\end{multiline}"],
-        ["\\begin{cases}", "\end{cases}"],
-        ["\\begin{equation*}", "\end{equation*}"],
-        ["\\begin{align*}", "\end{align*}"],
-        ["\\begin{gather*}", "\end{gather*}"],
-        ["\\begin{multiline*}", "\end{multiline*}"],
-        ["\\begin{cases*}", "\end{cases*}"],
-    ]
-    from_idx = 0
-    math_found = []
-    for delim in delims:
-        from_idx = 0
-        start_idx = text.find(delim[0], from_idx)
-        end_idx = text.find(delim[1], start_idx + len(delim[0]))
-        while start_idx != -1 and end_idx != -1:
-            if (
-                text[start_idx + len(delim[0]) : end_idx].count("\\") > 2
-                or "begin" in delim[0]
-            ):
-                math_found.append(
-                    [
-                        start_idx,
-                        end_idx,
-                        text[start_idx + len(delim[0]) : end_idx],
-                        delim,
-                    ]
-                )
-            from_idx = end_idx + len(delim[1])
-            start_idx = text.find(delim[0], from_idx)
-            end_idx = text.find(delim[1], start_idx + len(delim[0]))
-    return sorted(math_found, key=lambda x: x[0])
-
-
-def paragraph_type(par):
+def is_incomplete(par):
     par = par.replace(" ", "")
-    if (
+    return (
         par.startswith("```")
-        and par.count("\n```") == 0
+        and par.count("\n```") % 2 == 0
         or not par.startswith("```")
-        and par.count("\n```") == 1
-    ):
-        return "code"
+        and par.count("\n```") % 2 != 0
+    )
+
+
+def cut(text):
+    if is_incomplete(text) and len(text) > PAR_MAX_LEN:
+        if "\n\n" in text:
+            delim = text.rfind("\n\n")
+            delim_len = 2
+        else:
+            delim = text.rfind("\n")
+            delim_len = 1
+        if text.startswith("```"):
+            cblock_begin = text[: text.find("\n") + 1]
+        else:
+            tmp = text[:delim].rfind("\n```")
+            cblock_begin = text[tmp + 1 : text.find("\n", tmp + 1) + 1]
+        cblock_end = "\n```"
+        head = text[:delim] + cblock_end
+        tail = cblock_begin + text[delim + delim_len :]
+    elif not is_incomplete(text) and len(text) > PAR_MAX_LEN:
+        delim = text.rfind("\n")
+        head = text[:delim]
+        tail = text[delim + 1 :]
+    elif not is_incomplete(text) and len(text) > PAR_MIN_LEN and "\n\n" in text:
+        delim = text.rfind("\n\n")
+        head = text[:delim]
+        tail = text[delim + 2 :]
     else:
-        return "text"
+        head = None
+        tail = text
+    return head, tail
 
 
-async def process_delim(delim, par, message, response):
-    await send(message, par[:delim])
-    await bot.send_chat_action(message.chat.id, ChatAction.TYPING)
-    response += par[:delim]
-    par = par[delim:]
-    return response, par
-
-
+@logged
 async def generate_completion(message):
     data = await read_user_data(message.from_user.id)
     stream = await client.chat.completions.create(
@@ -371,48 +281,16 @@ async def generate_completion(message):
         stream_options={"include_usage": True},
     )
     response = ""
-    par = ""
-    cur_par_type = "text"
-    try:
-        async for chunk in stream:
-            usage = chunk.usage
-            if chunk.choices and chunk.choices[0].delta.content is not None:
-                par += chunk.choices[0].delta.content
-                match cur_par_type, paragraph_type(par):
-                    case "text", "text":
-                        if (
-                            "\n\n" in par
-                            and len(par[: par.rfind("\n\n")]) > PAR_MIN_LEN
-                            and par[par.rfind("\n\n") - 1] != "`"
-                        ):
-                            delim = par.rfind("\n\n") + 2
-                            response, par = await process_delim(
-                                delim, par, message, response
-                            )
-                    case "text", "code":
-                        cur_par_type = "code"
-                        delim = par.rfind("```")
-                        response, par = await process_delim(
-                            delim, par, message, response
-                        )
-                    case "code", "text":
-                        cur_par_type = "text"
-                        delim = par.rfind("```") + 3
-                        response, par = await process_delim(
-                            delim, par, message, response
-                        )
-        await send(message, par, keyboards.forget_keyboard)
-        response += par
-    except (Exception, OpenAIError) as e:
-        alert = format(
-            f"*ERROR:* {e}\n\n*USER:* {message.from_user.username}\n\n*LAST PROMPT:* {message.text}\n\n*COLLECTED RESPONSE:* {response}"
-        )
-        await bot.send_message(OWNER_CHAT_ID, alert)
-        inline = inline_keyboard({"error": "error"}, language(message))
-        await bot.send_message(message.chat.id, alert, reply_markup=inline)
-        await clear_handler(message)
-    finally:
-        await stream.close()
+    tail = ""
+    async for chunk in stream:
+        usage = chunk.usage
+        if chunk.choices and chunk.choices[0].delta.content is not None:
+            tail += chunk.choices[0].delta.content
+            response += chunk.choices[0].delta.content
+            head, tail = cut(tail)
+            if head is not None:
+                await send(message, head)
+    await send(message, tail, keyboards.forget_keyboard)
     return response, usage
 
 
@@ -460,7 +338,7 @@ async def balance_is_sufficient(message) -> bool:
         text = message.text
     tokens = data["tokens"] + len(encoding.encode(text))
     message_cost += tokens * FEE * GPT4O_INPUT_1K / 1000
-    return message_cost < data["balance"]
+    return 2 * message_cost <= data["balance"]
 
 
 async def forget_outdated_messages(message):
@@ -783,32 +661,15 @@ async def help_handler(callback: types.CallbackQuery):
     )
 
 
-@dp.callback_query(F.data == "latex-original")
-async def latex_handler(callback: types.CallbackQuery):
-    message = callback.message
-    data = await read_user_data(callback.from_user.id)
-    text = data["latex"].get(
-        str(message.message_id), dialogues[language(callback)]["forgotten"]
-    )
-    text = format(text, latex=False)
-    inline = inline_keyboard({"hide": "hide"}, language(callback))
-    await bot.send_message(
-        message.chat.id,
-        text,
-        reply_to_message_id=message.message_id,
-        reply_markup=inline,
-    )
-
-
-@dp.callback_query(F.data == "hide")
-async def hide_handler(callback: types.CallbackQuery):
-    message = callback.message
-    deleted = await bot.delete_message(message.chat.id, message.message_id)
-    if not deleted:
-        text = format(dialogues[language(callback)]["old"])
-        await bot.send_message(
-            message.chat.id, text, reply_to_message_id=message.message_id
-        )
+# @dp.callback_query(F.data == "hide")
+# async def hide_handler(callback: types.CallbackQuery):
+#     message = callback.message
+#     deleted = await bot.delete_message(message.chat.id, message.message_id)
+#     if not deleted:
+#         text = format(dialogues[language(callback)]["old"])
+#         await bot.send_message(
+#             message.chat.id, text, reply_to_message_id=message.message_id
+#         )
 
 
 async def main() -> None:
