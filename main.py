@@ -413,7 +413,7 @@ async def authorized(message):
 
 
 @dp.message(Command("add"))
-async def top_up_handler(message: Message) -> None:
+async def add_handler(message: Message) -> None:
     if await authorized(message):
         if len(message.text.split()) != 3:
             text = "_Error: the command must have following syntax:_ `/add USER_ID [+/-]FUNDS`."
@@ -440,7 +440,7 @@ async def top_up_handler(message: Message) -> None:
             await add_user(user)
             text = f"_The user *{user}* was added._"
             await send(message, text)
-            await top_up_handler(message)
+            await add_handler(message)
 
 
 @dp.message(Command("start"))
@@ -482,7 +482,7 @@ async def help_handler(message: Message) -> None:
 
 
 @dp.message(Command("forget", "clear"))
-async def clear_handler(message: Message) -> None:
+async def forget_handler(message: Message) -> None:
     data = await read_user_data(message.from_user.id)
     await send_template_answer(message, "forget")
     data["messages"].clear()
@@ -492,7 +492,7 @@ async def clear_handler(message: Message) -> None:
 
 
 @dp.message(Command("balance"))
-async def billing_handler(message: Message) -> None:
+async def balance_handler(message: Message) -> None:
     markup = inline_keyboard(
         {"back-to-help": "help-0", "tokens": "tokens"}, language(message)
     )
@@ -514,7 +514,7 @@ async def billing_handler(message: Message) -> None:
 
 
 @dp.message(Command("draw"))
-async def image_generation_handler(message: Message) -> None:
+async def draw_handler(message: Message) -> None:
     if await prompt_is_accepted(message):
         try:
             prompt = message.text.split("draw")[1].strip()
@@ -541,11 +541,11 @@ async def image_generation_handler(message: Message) -> None:
             await write_user_data(message.from_user.id, data)
         except (Exception, OpenAIError) as e:
             await send_template_answer(message, "block")
-            await clear_handler(message)
+            await forget_handler(message)
 
 
 @dp.message()
-async def universal_handler(message: Message) -> None:
+async def handler(message: Message) -> None:
     if await prompt_is_accepted(message):
         await lock(message.from_user.id)
         async with ChatActionSender.typing(message.chat.id, bot):
@@ -565,7 +565,7 @@ async def universal_handler(message: Message) -> None:
 
 
 @dp.callback_query(F.data == "redraw")
-async def redraw_handler(callback: types.CallbackQuery):
+async def redraw_callback(callback: types.CallbackQuery):
     message = callback.message
     file_name = f"photos/{callback.from_user.id}"
     async with ChatActionSender.upload_photo(message.chat.id, bot):
@@ -578,13 +578,13 @@ async def redraw_handler(callback: types.CallbackQuery):
 
 
 @dp.callback_query(F.data == "error")
-async def error_message_handler(callback: types.CallbackQuery):
+async def error_callback(callback: types.CallbackQuery):
     text = dialogues[language(callback)]["error"]
     await send(callback.message, text)
 
 
 @dp.callback_query(F.data == "balance")
-async def payment_redirection_handler(callback: types.CallbackQuery):
+async def balance_callback(callback: types.CallbackQuery):
     message = callback.message
     data = await read_user_data(callback.from_user.id)
     text = format(
@@ -611,7 +611,7 @@ async def payment_redirection_handler(callback: types.CallbackQuery):
 
 
 @dp.callback_query(F.data == "tokens")
-async def tokens_description_handler(callback: types.CallbackQuery):
+async def tokens_callback(callback: types.CallbackQuery):
     message = callback.message
     text = format(dialogues[language(callback)]["tokens"])
     inline = inline_keyboard({"balance": "balance"}, language(message))
@@ -628,7 +628,7 @@ async def tokens_description_handler(callback: types.CallbackQuery):
 
 
 @dp.callback_query(F.data.startswith("help-"))
-async def help_handler(callback: types.CallbackQuery):
+async def help_callback(callback: types.CallbackQuery):
     message = callback.message
     h_idx = int(callback.data.split("-")[1])
     payment_button = types.InlineKeyboardButton(
@@ -662,7 +662,7 @@ async def help_handler(callback: types.CallbackQuery):
 
 
 # @dp.callback_query(F.data == "hide")
-# async def hide_handler(callback: types.CallbackQuery):
+# async def hide_callback(callback: types.CallbackQuery):
 #     message = callback.message
 #     deleted = await bot.delete_message(message.chat.id, message.message_id)
 #     if not deleted:
