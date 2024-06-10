@@ -8,6 +8,7 @@ import base64
 import tiktoken
 import cairosvg
 import urllib.parse
+import regex as re
 
 from mimetypes import guess_type
 from dotenv import load_dotenv
@@ -129,54 +130,53 @@ async def variate_image(path_to_image):
     return media
 
 
-def format_markdown(text, code=False, strict=False):
-    if strict:
-        strict_escape = "\\_*[]()`~>#+-=|}{.!"
-        for char in strict_escape:
-            text = text.replace(char, f"\\{char}")
-    elif code:
-        code_escape = "\\`"
-        for char in code_escape:
-            text = text.replace(char, f"\\{char}")
-    else:
-        if text.startswith("```"):
-            code_l = 0
-        else:
-            code_l = text.find("\n```") + 1
-        code_r = text.find("\n```", code_l + 1) + 1
-        if code_r:
-            text = (
-                format_markdown(text[:code_l])
-                + "```"
-                + format_markdown(text[code_l + 3 : code_r], code=True)
-                + "\n```"
-                + format_markdown(text[code_r + 3 :])
-            )
-        else:
-            pre_l = text.find("`")
-            pre_r = text.find("`", pre_l + 1)
-            if pre_r != -1:
-                text = (
-                    format_markdown(text[:pre_l])
-                    + "`"
-                    + format_markdown(text[pre_l + 1 : pre_r], code=True)
-                    + "`"
-                    + format_markdown(text[pre_r + 1 :])
-                )
-            else:
-                must_escape = "\\[]()`>#+-=|}{.!"
-                may_escape = "_*~"
-                for char in must_escape:
-                    text = text.replace(char, f"\\{char}")
-                for char in may_escape:
-                    if text.count(char) % 2 != 0:
-                        text = text.replace(char, f"\\{char}")
+def escaped_all(text):
+    return re.sub(".", lambda m: "\\" + m.group(), text, flags=re.DOTALL)
+
+
+def escaped_last(char, text):
+    m = re.search(rf"{re.escape(char[::-1])}(?!\\)", text[::-1])
+    tmp = text[: len(text) - m.end()] + text[len(text) - m.end() :].replace(
+        char, escaped_all(char), 1
+    )
+    return tmp
+
+
+def format_markdown(text):
+    code = r"(?<!`|\w)```\S*?\n(?:.|\n)*?\n\s*```(?!`|\w)"
+    pre = r"(?<!`|\w)`(?:.|\n)+?`(?!`|\w)"
+    code_and_pre = rf"(?:{pre})|(?:{code})"
+    c_entities = re.findall(code, text)
+    p_entities = re.findall(pre, text)
+    o_entities = re.split(code_and_pre, text)
+    for c in c_entities:
+        esc_c = r"(?<!\\)[\\`]"
+        new_c = "```" + re.sub(esc_c, lambda m: "\\" + m[0], c[3:-3]) + "```"
+        text = text.replace(c, new_c)
+    for p in p_entities:
+        esc_p = esc_c
+        new_p = "`" + re.sub(esc_p, lambda m: "\\" + m[0], p[1:-1]) + "`"
+        text = text.replace(p, new_p)
+    for o in o_entities:
+        new_o = o.replace("**", "*")
+        new_o = re.sub(r"(?<!\\)[\\[\]()`#+-={}.!]", lambda m: "\\" + m[0], new_o)
+        paired = [
+            "*",
+            "_",
+            "__",
+            "~",
+            "||",
+        ]
+        for char in paired:
+            if (new_o.count(char) - new_o.count(escaped_all(char))) % 2 != 0:
+                new_o = escaped_last(char, new_o)
+        text = text.replace(o, new_o)
     return text
 
 
-def format(text, *, latex=True, gpt=True, markdown=True, strict=False):
+def format(text, *, latex=True, gpt=True, markdown=True):
     if text and markdown:
-        text = format_markdown(text, strict=strict)
+        text = format_markdown(text)
     return text
 
 
@@ -205,7 +205,7 @@ async def send_latex_formula(message, formula):
 
 async def send(message, text, reply_markup=None):
     text = format(text)
-    if text:
+    if re.search(r"\w+", text) is not None:
         await bot.send_message(
             message.chat.id,
             text,
