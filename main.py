@@ -8,7 +8,7 @@ import base64
 import tiktoken
 import cairosvg
 import urllib.parse
-import regex as re
+import re
 
 from mimetypes import guess_type
 from dotenv import load_dotenv
@@ -136,15 +136,14 @@ def escaped_all(text):
 
 def escaped_last(char, text):
     m = re.search(rf"{re.escape(char[::-1])}(?!\\)", text[::-1])
-    tmp = text[: len(text) - m.end()] + text[len(text) - m.end() :].replace(
+    return text[: len(text) - m.end()] + text[len(text) - m.end() :].replace(
         char, escaped_all(char), 1
     )
-    return tmp
 
 
 def format_markdown(text):
     code = r"(?<!`|\w)```\S*?\n(?:.|\n)*?\n\s*```(?!`|\w)"
-    pre = r"(?<!`|\w)`(?:.|\n)+?`(?!`|\w)"
+    pre = r"(?<!`|\w)`[^`]+?`(?!`|\w)"
     code_and_pre = rf"(?:{pre})|(?:{code})"
     c_entities = re.findall(code, text)
     p_entities = re.findall(pre, text)
@@ -160,16 +159,13 @@ def format_markdown(text):
     for o in o_entities:
         new_o = o.replace("**", "*")
         new_o = re.sub(r"(?<!\\)[\\[\]()`#+-={}.!]", lambda m: "\\" + m[0], new_o)
-        paired = [
-            "*",
-            "_",
-            "__",
-            "~",
-            "||",
-        ]
+        new_o = re.sub(r"(?:(?<!\n)|(?<!\A)|(?<!\\))>", lambda m: "\\" + m[0], new_o)
+        new_o = re.sub(r"(?<!\||\\)\|(?!\|)", lambda m: "\\" + m[0], new_o)
+        paired = ["*", "_", "__", "~", "||"]
         for char in paired:
             if (new_o.count(char) - new_o.count(escaped_all(char))) % 2 != 0:
                 new_o = escaped_last(char, new_o)
+        new_o = re.sub(r"(?!\\)\\\\(?!\\)", lambda m: "\\" + m[0], new_o)
         text = text.replace(o, new_o)
     return text
 
@@ -182,10 +178,8 @@ def format(text, *, latex=True, gpt=True, markdown=True):
 
 def get_latex_image_url(formula):
     image_url = formula[2].replace("\n", "").replace("&", ",").replace("\\\\", ";\,")
-    image_url = (
-        " ".join([elem for elem in image_url.split(" ") if elem])
-        .replace(" ", "\,\!")
-        .replace(" ", "\,\!")
+    image_url = " ".join([elem for elem in image_url.split(" ") if elem]).replace(
+        " ", "\,\!"
     )
     image_url = "https://math.vercel.app?from=" + urllib.parse.quote(image_url)
     return image_url
