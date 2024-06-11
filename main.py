@@ -44,7 +44,7 @@ GPT4O_OUTPUT_1K = 0.015
 DALLE3_OUTPUT = 0.08
 DALLE2_OUTPUT = 0.02
 
-PAR_MIN_LEN = 250
+PAR_MIN_LEN = 300
 PAR_MAX_LEN = 3950
 
 INITIAL_USER_DATA = {
@@ -90,14 +90,20 @@ def svg_to_jpg(svg_file_path, output_file_path):
     )
 
 
-def inline_keyboard(keys, lang="en"):
+def inline_kbd(keys, lang=None):
     keyboard = InlineKeyboardBuilder()
-    for button, callback in keys.items():
-        keyboard.add(
-            types.InlineKeyboardButton(
-                text=buttons[lang][button], callback_data=callback
-            ),
-        )
+    if lang is not None:
+        for button, callback in keys.items():
+            keyboard.add(
+                types.InlineKeyboardButton(
+                    text=buttons[lang][button], callback_data=callback
+                ),
+            )
+    else:
+        for button, callback in keys.items():
+            keyboard.add(
+                types.InlineKeyboardButton(text=button, callback_data=callback),
+            )
     return keyboard.as_markup()
 
 
@@ -130,48 +136,85 @@ async def variate_image(path_to_image):
     return media
 
 
-def escaped_all(text):
-    return re.sub(".", lambda m: "\\" + m.group(), text, flags=re.DOTALL)
+def escaped(text, pattern="."):
+    return re.sub(pattern, lambda m: "\\" + m.group(), text, flags=re.DOTALL)
 
 
-def escaped_last(char, text):
-    m = re.search(rf"{re.escape(char[::-1])}(?!\\)", text[::-1])
+def escaped_last(pattern, text):
+    m = re.search(rf"{re.escape(pattern[::-1])}(?!\\)", text[::-1])
     return text[: len(text) - m.end()] + text[len(text) - m.end() :].replace(
-        char, escaped_all(char), 1
+        pattern, escaped(pattern), 1
     )
 
 
 def format_markdown(text):
     code = r"(?<!`|\w)```\S*?\n(?:.|\n)*?\n\s*```(?!`|\w)"
-    pre = r"(?<!`|\w)`[^`]+?`(?!`|\w)"
+    pre = r"(?<!`|\w)(?<!\\)`[^`]+?(?<!\\)`(?!`|\w)"
     code_and_pre = rf"(?:{pre})|(?:{code})"
     c_entities = re.findall(code, text)
     p_entities = re.findall(pre, text)
     o_entities = re.split(code_and_pre, text)
     for c in c_entities:
-        esc_c = r"(?<!\\)[\\`]"
-        new_c = "```" + re.sub(esc_c, lambda m: "\\" + m[0], c[3:-3]) + "```"
+        new_c = "```" + escaped(c[3:-3], pattern=r"(?<!\\)[\\`]") + "```"
         text = text.replace(c, new_c)
     for p in p_entities:
-        esc_p = esc_c
-        new_p = "`" + re.sub(esc_p, lambda m: "\\" + m[0], p[1:-1]) + "`"
+        new_p = "`" + escaped(p[1:-1], pattern=r"(?<!\\)[\\`]") + "`"
         text = text.replace(p, new_p)
     for o in o_entities:
         new_o = o.replace("**", "*")
-        new_o = re.sub(r"(?<!\\)[\\[\]()`#+-={}.!]", lambda m: "\\" + m[0], new_o)
-        new_o = re.sub(r"(?:(?<!\n)|(?<!\A)|(?<!\\))>", lambda m: "\\" + m[0], new_o)
-        new_o = re.sub(r"(?<!\||\\)\|(?!\|)", lambda m: "\\" + m[0], new_o)
+        new_o = escaped(new_o, pattern=r"(?<!\\)[\\[\]()`#+-={}.!]")
+        new_o = escaped(new_o, pattern=r"(?<!\n)(?<!\A)(?<!\\)>")
+        new_o = escaped(new_o, pattern=r"(?<!\|)(?<!\\)\|(?!\|)")
         paired = ["*", "_", "__", "~", "||"]
         for char in paired:
-            if (new_o.count(char) - new_o.count(escaped_all(char))) % 2 != 0:
+            if (new_o.count(char) - new_o.count(escaped(char))) % 2 != 0:
                 new_o = escaped_last(char, new_o)
-        new_o = re.sub(r"(?!\\)\\\\(?!\\)", lambda m: "\\" + m[0], new_o)
         text = text.replace(o, new_o)
+    return escaped(text, pattern=r"(?<!\\)\\\\(?!\\)")
+
+
+def find_latex(text):
+    code = r"(?<!`|\w)```\S*?\n(?:.|\n)*?\n\s*```(?!`|\w)"
+    pre = r"(?<!`|\w)`[^`]+?`(?!`|\w)"
+    code_and_pre = rf"(?:{pre})|(?:{code})"
+    other = re.split(code_and_pre, text)
+    result = []
+    for o in other:
+        result += re.findall(
+            r"(?:\$\$|\\\[|\\\(|\\begin\{\w+\*?\}).*?(?:\$\$|\\\]|\\\)|\\end\{\w+\*?\})",
+            o,
+            flags=re.DOTALL,
+        )
+    return result
+
+
+def latex_significant(latex):
+    MULTILINE = "begin" in latex and "end" in latex
+    TRICKY = len(re.findall(r"\\\w+", latex)) >= 2
+    return MULTILINE or TRICKY
+
+
+def format_latex(text, idx=0):
+    latex = find_latex(text)
+    p = 0
+    for formula in latex:
+        p = text.find(formula, p)
+        if latex_significant(formula):
+            new_f = f"*#{idx + 1}:*\n`{formula}`"
+            idx += 1
+        else:
+            new_f = f"`{formula}`"
+        text = text[:p] + text[p:].replace(formula, new_f, 1)
+        p += len(formula)
     return text
 
 
-def format(text, *, latex=True, gpt=True, markdown=True):
-    if text and markdown:
+def format(text, *, latex=True, gpt=True, markdown=True, idx=0):
+    if not text:
+        return text
+    if latex:
+        text = format_latex(text, idx=idx)
+    if markdown:
         text = format_markdown(text)
     return text
 
@@ -190,20 +233,22 @@ async def send_latex_formula(message, formula):
     path = f"photos/{message.from_user.id}.jpg"
     svg_to_jpg(image_url, path)
     photo = FSInputFile(path)
-    inline = inline_keyboard({"latex-original": "latex-original"}, language(message))
+    inline = inline_kbd({"latex-original": "latex-original"}, language(message))
     sent_message = await bot.send_photo(message.chat.id, photo, reply_markup=inline)
     data = await read_user_data(message.from_user.id)
     data["latex"][sent_message.message_id] = formula[3][0] + formula[2] + formula[3][1]
     await write_user_data(message.from_user.id, data)
 
 
-async def send(message, text, reply_markup=None):
-    text = format(text)
+async def send(message, text, reply_markup=None, idx=0):
     if re.search(r"\w+", text) is not None:
+        fnum = len([f for f in find_latex(text) if latex_significant(f)])
+        f_kbd = inline_kbd({f"#{idx+1+i}": f"latex-{idx+i}" for i in range(fnum)})
+        text = format(text, idx=idx)
         await bot.send_message(
             message.chat.id,
             text,
-            reply_markup=reply_markup,
+            reply_markup=f_kbd,
             disable_web_page_preview=True,
         )
 
@@ -283,7 +328,14 @@ async def generate_completion(message):
             response += chunk.choices[0].delta.content
             head, tail = cut(tail)
             if head is not None:
-                await send(message, head)
+                n_formulas_before = len(
+                    [
+                        f
+                        for f in find_latex(response[: response.find(head)])
+                        if latex_significant(f)
+                    ]
+                )
+                await send(message, head, idx=n_formulas_before)
     await send(message, tail, keyboards.forget_keyboard)
     return response, usage
 
@@ -487,9 +539,7 @@ async def forget_handler(message: Message) -> None:
 
 @dp.message(Command("balance"))
 async def balance_handler(message: Message) -> None:
-    markup = inline_keyboard(
-        {"back-to-help": "help-0", "tokens": "tokens"}, language(message)
-    )
+    kbd = inline_kbd({"back-to-help": "help-0", "tokens": "tokens"}, language(message))
     data = await read_user_data(message.from_user.id)
     text = format(
         dialogues[language(message)]["balance"].format(
@@ -503,7 +553,7 @@ async def balance_handler(message: Message) -> None:
         message.chat.id,
         videos["balance"],
         caption=text,
-        reply_markup=markup,
+        reply_markup=kbd,
     )
 
 
@@ -517,8 +567,8 @@ async def draw_handler(message: Message) -> None:
                 return
             async with ChatActionSender.upload_photo(message.chat.id, bot):
                 image_url = await generate_image(prompt)
-            inline = inline_keyboard({"redraw": "redraw"}, language(message))
-            await bot.send_photo(message.chat.id, image_url, reply_markup=inline)
+            kbd = inline_kbd({"redraw": "redraw"}, language(message))
+            await bot.send_photo(message.chat.id, image_url, reply_markup=kbd)
             data = await read_user_data(message.from_user.id)
             data["messages"].append(
                 {
@@ -589,9 +639,7 @@ async def balance_callback(callback: types.CallbackQuery):
         )
     )
     text += format(dialogues[language(message)]["payment"].format(FEE))
-    inline = inline_keyboard(
-        {"back-to-help": "help-0", "tokens": "tokens"}, language(message)
-    )
+    kbd = inline_kbd({"back-to-help": "help-0", "tokens": "tokens"}, language(message))
     await bot.edit_message_media(
         types.InputMediaAnimation(
             type=InputMediaType.ANIMATION,
@@ -600,7 +648,7 @@ async def balance_callback(callback: types.CallbackQuery):
         ),
         message.chat.id,
         message.message_id,
-        reply_markup=inline,
+        reply_markup=kbd,
     )
 
 
@@ -608,7 +656,7 @@ async def balance_callback(callback: types.CallbackQuery):
 async def tokens_callback(callback: types.CallbackQuery):
     message = callback.message
     text = format(dialogues[language(callback)]["tokens"])
-    inline = inline_keyboard({"balance": "balance"}, language(message))
+    kbd = inline_kbd({"balance": "balance"}, language(message))
     await bot.edit_message_media(
         types.InputMediaAnimation(
             type=InputMediaType.ANIMATION,
@@ -617,7 +665,7 @@ async def tokens_callback(callback: types.CallbackQuery):
         ),
         message.chat.id,
         message.message_id,
-        reply_markup=inline,
+        reply_markup=kbd,
     )
 
 
