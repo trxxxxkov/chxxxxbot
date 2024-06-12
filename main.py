@@ -55,6 +55,31 @@ INITIAL_USER_DATA = {
     "messages": [],
 }
 
+CODE_PATTERN = re.compile(
+    r"(?<!`|\w)(?<!\\)```\S*?\n(?:(?:.|\n)*?\S(?:.|\n)*?)(?:(?:\s+)|(?:\n\s*))```(?!`|\w)"
+)
+PRE_PATTERN = re.compile(
+    r"(?<!`|\w)(?<!\\)`(?:(?:[^`])|(?:[^`]*?\\`[^`]*?))*?(?<!\\)`(?!`|\w)"
+)
+CODE_AND_PRE_PATTERN = re.compile(
+    rf"(?:{PRE_PATTERN.pattern})|(?:{CODE_PATTERN.pattern})"
+)
+ESCAPED_IN_C_DEFAULT = re.compile(r"(?<!\\)[\\`]")
+ESCAPED_IN_O_DEFAULT = re.compile(r"(?<!\\)[\\[\]()`#+-={}.!]")
+ESCAPED_IN_O_TIGHT = re.compile(r"(?<=\w)(?<!\\)[*_~|](?=\w)")
+ESCAPED_IN_O_QUOTE = re.compile(r"(?<!\n)(?<!\A)(?<!\\)>")
+ESCAPED_IN_O_SINGLE = re.compile(r"(?<!\|)(?<!\\)\|(?!\|)")
+ESCAPED_EXTRA_SLASH = re.compile(r"(?<!\\)\\\\(?!\\)")
+LATEX_PATTERN = re.compile(
+    r"(?:\$\$|\\\[|\\\(|\\begin\{\w+\*?\}).*?(?:\$\$|\\\]|\\\)|\\end\{\w+\*?\})"
+)
+LATEX_BODY_PATTERN = re.compile(
+    r"(?:\$\$|\\\[|\\\(|\\begin\{\w+\*?\})((?:.|\n)*?)(?:\$\$|\\\]|\\\)|\\end\{\w+\*?\})"
+)
+INCOMPLETE_CODE_PATTERN = re.compile(
+    r"(?<!`|\w)(?<!\\)```\S*?\n(?:(?:.|\n)*?\S(?:.|\n)*?)(?:(?:\s+)|(?:\n\s*))(?!```)"
+)
+
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 dp = Dispatcher()
 bot = Bot(
@@ -137,39 +162,64 @@ async def variate_image(path_to_image):
 
 
 def escaped(text, pattern="."):
-    return re.sub(pattern, lambda m: "\\" + m.group(), text, flags=re.DOTALL)
+    if isinstance(pattern, re.Pattern):
+        return pattern.sub(lambda m: "\\" + m.group(), text, flags=re.DOTALL)
+    else:
+        return re.sub(pattern, lambda m: "\\" + m.group(), text, flags=re.DOTALL)
 
 
 def escaped_last(pattern, text):
-    m = re.search(rf"{re.escape(pattern[::-1])}(?!\\)", text[::-1])
-    return text[: len(text) - m.end()] + text[len(text) - m.end() :].replace(
-        pattern, escaped(pattern), 1
-    )
+    if isinstance(pattern, re.Pattern):
+        for m in pattern.finditer(text):
+            pass
+        else:
+            return text[: m.start()] + text[m.start() :].replace(
+                m.group(), "\\" + m.group()
+            )
+    for m in re.finditer(pattern, text):
+        pass
+    else:
+        return text[: m.start()] + text[m.start() :].replace(
+            m.group(), "\\" + m.group()
+        )
 
 
 def format_markdown(text):
-    code = r"(?<!`|\w)```\S*?\n(?:.|\n)*?\n\s*```(?!`|\w)"
-    pre = r"(?<!`|\w)(?<!\\)`[^`]+?(?<!\\)`(?!`|\w)"
+    code = r"(?<!`|\w)(?<!\\)```\S*?\n(?:(?:.|\n)*?\S(?:.|\n)*?)(?:(?:\s+)|(?:\n\s*))```(?!`|\w)"
+    pre = r"(?<!`|\w)(?<!\\)`(?:(?:[^`])|(?:[^`]*?\\`[^`]*?))*?(?<!\\)`(?!`|\w)"
     code_and_pre = rf"(?:{pre})|(?:{code})"
+
+    t_split = re.split(code, text)
     c_entities = re.findall(code, text)
+    text = t_split[0]
+    for idx, c in enumerate(c_entities):
+        new_c_entity = "```" + escaped(c[3:-3], pattern=r"(?<!\\)[\\`]") + "```"
+        c_entities[idx] = new_c_entity
+        text += c_entities[idx] + t_split[idx + 1]
+
+    t_split = re.split(pre, text)
     p_entities = re.findall(pre, text)
+    text = t_split[0]
+    for idx, p in enumerate(p_entities):
+        new_p_entity = "`" + escaped(p[1:-1], pattern=r"(?<!\\)[\\`]") + "`"
+        p_entities[idx] = new_p_entity
+        text += p_entities[idx] + t_split[idx + 1]
+
+    t_split = re.findall(code_and_pre, text) + [""]
     o_entities = re.split(code_and_pre, text)
-    for c in c_entities:
-        new_c = "```" + escaped(c[3:-3], pattern=r"(?<!\\)[\\`]") + "```"
-        text = text.replace(c, new_c)
-    for p in p_entities:
-        new_p = "`" + escaped(p[1:-1], pattern=r"(?<!\\)[\\`]") + "`"
-        text = text.replace(p, new_p)
-    for o in o_entities:
-        new_o = o.replace("**", "*")
-        new_o = escaped(new_o, pattern=r"(?<!\\)[\\[\]()`#+-={}.!]")
-        new_o = escaped(new_o, pattern=r"(?<!\n)(?<!\A)(?<!\\)>")
-        new_o = escaped(new_o, pattern=r"(?<!\|)(?<!\\)\|(?!\|)")
+    text = ""
+    for idx, o in enumerate(o_entities):
+        new_o_entity = o.replace("**", "*")
+        new_o_entity = escaped(new_o_entity, pattern=r"(?<!\\)[\\[\]()`#+-={}.!]")
+        new_o_entity = escaped(new_o_entity, pattern=r"(?<=\w)(?<!\\)[*_~|](?=\w)")
+        new_o_entity = escaped(new_o_entity, pattern=r"(?<!\n)(?<!\A)(?<!\\)>")
+        new_o_entity = escaped(new_o_entity, pattern=r"(?<!\|)(?<!\\)\|(?!\|)")
         paired = ["*", "_", "__", "~", "||"]
         for char in paired:
-            if (new_o.count(char) - new_o.count(escaped(char))) % 2 != 0:
-                new_o = escaped_last(char, new_o)
-        text = text.replace(o, new_o)
+            if (new_o_entity.count(char) - new_o_entity.count(escaped(char))) % 2 != 0:
+                new_o_entity = escaped_last(char, new_o_entity)
+        o_entities[idx] = new_o_entity
+        text += o_entities[idx] + t_split[idx]
     return escaped(text, pattern=r"(?<!\\)\\\\(?!\\)")
 
 
@@ -194,14 +244,14 @@ def latex_significant(latex):
     return MULTILINE or TRICKY
 
 
-def format_latex(text, idx=0):
+def format_latex(text, f_idx=0):
     latex = find_latex(text)
     p = 0
     for formula in latex:
         p = text.find(formula, p)
         if latex_significant(formula):
-            new_f = f"*#{idx + 1}:*\n`{formula}`"
-            idx += 1
+            new_f = f"*#{f_idx + 1}:*\n`{formula}`"
+            f_idx += 1
         else:
             new_f = f"`{formula}`"
         text = text[:p] + text[p:].replace(formula, new_f, 1)
@@ -209,48 +259,44 @@ def format_latex(text, idx=0):
     return text
 
 
-def format(text, *, latex=True, gpt=True, markdown=True, idx=0):
+def format(text, *, latex=True, gpt=True, markdown=True, f_idx=0):
     if not text:
         return text
     if latex:
-        text = format_latex(text, idx=idx)
+        text = format_latex(text, f_idx=f_idx)
     if markdown:
         text = format_markdown(text)
     return text
 
 
-def get_latex_image_url(formula):
-    image_url = formula[2].replace("\n", "").replace("&", ",").replace("\\\\", ";\,")
-    image_url = " ".join([elem for elem in image_url.split(" ") if elem]).replace(
-        " ", "\,\!"
-    )
-    image_url = "https://math.vercel.app?from=" + urllib.parse.quote(image_url)
-    return image_url
+def latex2url(formula):
+    body = re.search(
+        r"(?:\$\$|\\\[|\\\(|\\begin\{\w+\*?\})((?:.|\n)*?)(?:\$\$|\\\]|\\\)|\\end\{\w+\*?\})",
+        formula,
+    )[1]
+    image_url = body.replace("\n", "").replace("&", ",").replace("\\\\", ";\,")
+    image_url = " ".join([elem for elem in image_url.split(" ") if elem])
+    image_url = image_url.replace(" ", "\,\!")
+    return "https://math.vercel.app?from=" + urllib.parse.quote(image_url)
 
 
-async def send_latex_formula(message, formula):
-    image_url = get_latex_image_url(formula)
-    path = f"photos/{message.from_user.id}.jpg"
-    svg_to_jpg(image_url, path)
-    photo = FSInputFile(path)
-    inline = inline_kbd({"latex-original": "latex-original"}, language(message))
-    sent_message = await bot.send_photo(message.chat.id, photo, reply_markup=inline)
-    data = await read_user_data(message.from_user.id)
-    data["latex"][sent_message.message_id] = formula[3][0] + formula[2] + formula[3][1]
-    await write_user_data(message.from_user.id, data)
-
-
-async def send(message, text, reply_markup=None, idx=0):
+async def send(message, text, reply_markup=None, f_idx=0):
     if re.search(r"\w+", text) is not None:
-        fnum = len([f for f in find_latex(text) if latex_significant(f)])
-        f_kbd = inline_kbd({f"#{idx+1+i}": f"latex-{idx+i}" for i in range(fnum)})
-        text = format(text, idx=idx)
-        await bot.send_message(
-            message.chat.id,
-            text,
-            reply_markup=f_kbd,
-            disable_web_page_preview=True,
-        )
+        if fnum := len([f for f in find_latex(text) if latex_significant(f)]):
+            reply_markup = inline_kbd(
+                {f"#{f_idx+1+i}": f"latex-{i}" for i in range(fnum)}
+            )
+        new_text = format(text, f_idx=f_idx)
+        try:
+            await bot.send_message(
+                message.chat.id,
+                new_text,
+                reply_markup=reply_markup,
+                disable_web_page_preview=True,
+            )
+        except (OpenAIError, Exception) as e:
+            print(e)
+            print("ERROR!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
 
 
 def logged(f):
@@ -270,13 +316,7 @@ def logged(f):
 
 
 def is_incomplete(par):
-    par = par.replace(" ", "")
-    return (
-        par.startswith("```")
-        and par.count("\n```") % 2 == 0
-        or not par.startswith("```")
-        and par.count("\n```") % 2 != 0
-    )
+    return INCOMPLETE_CODE_PATTERN.search(par) is not None
 
 
 def cut(text):
@@ -335,7 +375,8 @@ async def generate_completion(message):
                         if latex_significant(f)
                     ]
                 )
-                await send(message, head, idx=n_formulas_before)
+                await send(message, head, f_idx=n_formulas_before)
+                await bot.send_chat_action(message.chat.id, ChatAction.TYPING)
     await send(message, tail, keyboards.forget_keyboard)
     return response, usage
 
@@ -703,15 +744,36 @@ async def help_callback(callback: types.CallbackQuery):
     )
 
 
-# @dp.callback_query(F.data == "hide")
-# async def hide_callback(callback: types.CallbackQuery):
-#     message = callback.message
-#     deleted = await bot.delete_message(message.chat.id, message.message_id)
-#     if not deleted:
-#         text = format(dialogues[language(callback)]["old"])
-#         await bot.send_message(
-#             message.chat.id, text, reply_to_message_id=message.message_id
-#         )
+@dp.callback_query(F.data.startswith("latex-"))
+async def latex_callback(callback: types.CallbackQuery):
+    f_i = int(callback.data.split("-")[1])
+    f = [f for f in find_latex(callback.message.text) if latex_significant(f)][f_i]
+    image_url = latex2url(f)
+    local_path = f"photos/{callback.from_user.id}.jpg"
+    svg_to_jpg(image_url, local_path)
+    photo = FSInputFile(local_path)
+    kbd = inline_kbd({"hide": "hide"}, language(callback))
+    f_idx = re.findall(r"(?<=#)\d\d?(?=:\n)", callback.message.text)[f_i]
+    await bot.send_photo(
+        callback.from_user.id,
+        photo,
+        reply_to_message_id=callback.message.message_id,
+        reply_parameters=types.ReplyParameters(
+            message_id=callback.message.message_id, quote=f"*\\#{f_idx}:*"
+        ),
+        reply_markup=kbd,
+    )
+
+
+@dp.callback_query(F.data == "hide")
+async def hide_callback(callback: types.CallbackQuery):
+    message = callback.message
+    deleted = await bot.delete_message(message.chat.id, message.message_id)
+    if not deleted:
+        text = format(dialogues[language(callback)]["old"])
+        await bot.send_message(
+            message.chat.id, text, reply_to_message_id=message.message_id
+        )
 
 
 async def main() -> None:
