@@ -76,7 +76,7 @@ where `YOUR_PROMPT` - is a description of an image you want.
         
   """,
         "payment": """
-*Sebastian is not free tot use.*
+*Sebastian is not free for use.*
   The usage cost is determined by amount of tokens you used. So, *there isn't any subscription or annual payment. No usage - no payment.*
   The cost of each token is tied to OpenAI's pricing and can be calculated as following:
 

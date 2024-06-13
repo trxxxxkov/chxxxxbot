@@ -66,10 +66,9 @@ CODE_AND_PRE_PATTERN = re.compile(
 )
 ESCAPED_IN_C_DEFAULT = re.compile(r"(?<!\\)[\\`]")
 ESCAPED_IN_O_DEFAULT = re.compile(r"(?<!\\)[\\[\]()`#+-={}.!]")
-ESCAPED_IN_O_TIGHT = re.compile(r"(?<=\w)(?<!\\)[*_~|](?=\w)")
+ESCAPED_IN_O_TIGHT = re.compile(r"(?<=\w)(?<!_)[*_~|](?!_)(?=\w)")
 ESCAPED_IN_O_QUOTE = re.compile(r"(?<!\n)(?<!\A)(?<!\\)>")
 ESCAPED_IN_O_SINGLE = re.compile(r"(?<!\|)(?<!\\)\|(?!\|)")
-ESCAPED_EXTRA_SLASH = re.compile(r"(?<!\\)\\\\(?!\\)")
 LATEX_PATTERN = re.compile(
     r"(?:\$\$|\\\[|\\\(|\\begin\{\w+\*?\})(?:.|\n)*?(?:\$\$|\\\]|\\\)|\\end\{\w+\*?\})"
 )
@@ -89,6 +88,62 @@ client = AsyncOpenAI(
     api_key=OPENAI_KEY,
     base_url="https://api.openai.com/v1",
 )
+
+
+def write_error(e, f, args, kwargs, path="errors.json"):
+    with open(path, "r") as f:
+        try:
+            errors = json.load(f)
+        except json.decoder.JSONDecodeError:
+            errors = []
+    errors.append(
+        {
+            "error": f"{e}",
+            "function": f"{f}",
+            "args": f"{args}",
+            "kwargs": f"{kwargs}",
+        }
+    )
+    with open(path, "w") as f:
+        json.dump(errors, f)
+
+
+def logged(f):
+    async def wrap(*args, **kwargs):
+        try:
+            result = await f(*args, **kwargs)
+            return result
+        except (Exception, OpenAIError) as e:
+            write_error(e, f.__name__, args, kwargs)
+            alert = format(f"_ERROR: {e}_")
+            await bot.send_message(OWNER_CHAT_ID, alert)
+            for arg in args:
+                if isinstance(arg, Message):
+                    kbd = inline_kbd({"error": "error"}, language(arg))
+                    await bot.send_message(arg.chat.id, alert, reply_markup=kbd)
+                    data = await read_user_data(arg.from_user.id)
+                    await send_template_answer(arg.message, "forget")
+                    data["messages"].clear()
+                    data["latex"].clear()
+                    data["timestamps"].clear()
+                    await write_user_data(arg.from_user.id, data)
+                    break
+                elif isinstance(arg, types.CallbackQuery):
+                    kbd = inline_kbd({"error": "error"}, language(arg))
+                    await bot.send_message(
+                        arg.from_user.id,
+                        alert,
+                        reply_markup=kbd,
+                    )
+                    data = await read_user_data(arg.from_user.id)
+                    await send_template_answer(arg.message, "forget")
+                    data["messages"].clear()
+                    data["latex"].clear()
+                    data["timestamps"].clear()
+                    await write_user_data(arg.from_user.id, data)
+                    break
+
+    return wrap
 
 
 # Function to encode a local image into data URL
@@ -132,6 +187,7 @@ def inline_kbd(keys, lang=None):
     return keyboard.as_markup()
 
 
+@logged
 async def generate_image(prompt):
     response = await client.images.generate(
         prompt=prompt,
@@ -144,6 +200,7 @@ async def generate_image(prompt):
     return response.data[0].url
 
 
+@logged
 async def variate_image(path_to_image):
     img = Image.open(f"{path_to_image}.jpg")
     img.save(f"{path_to_image}.png")
@@ -161,11 +218,16 @@ async def variate_image(path_to_image):
     return media
 
 
-def escaped(text, pattern="."):
+def escaped(text, pattern=".", group_idx=0):
     if isinstance(pattern, re.Pattern):
-        return pattern.sub(lambda m: "\\" + m.group(), text)
+        return pattern.sub(lambda m: "".join(["\\" + i for i in m[group_idx]]), text)
     else:
-        return re.sub(pattern, lambda m: "\\" + m.group(), text, flags=re.DOTALL)
+        return re.sub(
+            pattern,
+            lambda m: "".join(["\\" + i for i in m[group_idx]]),
+            text,
+            flags=re.DOTALL,
+        )
 
 
 def escaped_last(pattern, text):
@@ -173,15 +235,11 @@ def escaped_last(pattern, text):
         for m in pattern.finditer(text):
             pass
         else:
-            return text[: m.start()] + text[m.start() :].replace(
-                m.group(), "\\" + m.group()
-            )
+            return text[: m.start()] + escaped(text[m.start() :], pattern=pattern)
     for m in re.finditer(pattern, text):
         pass
     else:
-        return text[: m.start()] + text[m.start() :].replace(
-            m.group(), "\\" + m.group()
-        )
+        return text[: m.start()] + escaped(text[m.start() :], pattern=pattern)
 
 
 def format_markdown(text):
@@ -189,34 +247,34 @@ def format_markdown(text):
     c_entities = CODE_PATTERN.findall(text)
     text = t_split[0]
     for idx, c in enumerate(c_entities):
-        new_c_entity = "```" + escaped(c[3:-3], pattern=ESCAPED_IN_C_DEFAULT) + "```"
-        c_entities[idx] = new_c_entity
+        c = "```" + escaped(c[3:-3], pattern=ESCAPED_IN_C_DEFAULT) + "```"
+        c_entities[idx] = c
         text += c_entities[idx] + t_split[idx + 1]
 
     t_split = PRE_PATTERN.split(text)
     p_entities = PRE_PATTERN.findall(text)
     text = t_split[0]
     for idx, p in enumerate(p_entities):
-        new_p_entity = "`" + escaped(p[1:-1], pattern=ESCAPED_IN_C_DEFAULT) + "`"
-        p_entities[idx] = new_p_entity
+        p = "`" + escaped(p[1:-1], pattern=ESCAPED_IN_C_DEFAULT) + "`"
+        p_entities[idx] = p
         text += p_entities[idx] + t_split[idx + 1]
 
     t_split = CODE_AND_PRE_PATTERN.findall(text) + [""]
     o_entities = CODE_AND_PRE_PATTERN.split(text)
     text = ""
     for idx, o in enumerate(o_entities):
-        new_o_entity = o.replace("**", "*")
-        new_o_entity = escaped(new_o_entity, pattern=ESCAPED_IN_O_DEFAULT)
-        new_o_entity = escaped(new_o_entity, pattern=ESCAPED_IN_O_TIGHT)
-        new_o_entity = escaped(new_o_entity, pattern=ESCAPED_IN_O_QUOTE)
-        new_o_entity = escaped(new_o_entity, pattern=ESCAPED_IN_O_SINGLE)
+        o = o.replace("**", "*")
+        o = escaped(o, pattern=ESCAPED_IN_O_DEFAULT)
+        o = escaped(o, pattern=ESCAPED_IN_O_TIGHT)
+        o = escaped(o, pattern=ESCAPED_IN_O_QUOTE)
+        o = escaped(o, pattern=ESCAPED_IN_O_SINGLE)
         paired = ["*", "_", "__", "~", "||"]
         for char in paired:
-            if (new_o_entity.count(char) - new_o_entity.count(escaped(char))) % 2 != 0:
-                new_o_entity = escaped_last(char, new_o_entity)
-        o_entities[idx] = new_o_entity
+            if (o.count(char) - o.count(escaped(char))) % 2 != 0:
+                o = escaped_last(rf"(?<!\\){re.escape(char)}", o)
+        o_entities[idx] = o
         text += o_entities[idx] + t_split[idx]
-    return escaped(text, pattern=ESCAPED_EXTRA_SLASH)
+    return re.sub(r"\\\\+", lambda m: "\\\\\\", text)
 
 
 def find_latex(text):
@@ -248,14 +306,11 @@ def format_latex(text, f_idx=0):
     return text
 
 
-def format(text, *, latex=True, markdown=True, f_idx=0):
+def format(text, f_idx=0):
     if not text:
         return text
-    if latex:
-        text = format_latex(text, f_idx=f_idx)
-    if markdown:
-        text = format_markdown(text)
-    return text
+    else:
+        return format_markdown(format_latex(text, f_idx))
 
 
 def latex2url(formula):
@@ -266,39 +321,24 @@ def latex2url(formula):
     return "https://math.vercel.app?from=" + urllib.parse.quote(image_url)
 
 
+@logged
 async def send(message, text, reply_markup=None, f_idx=0):
     if re.search(r"\w+", text) is not None:
         if fnum := len([f for f in find_latex(text) if latex_significant(f)]):
             reply_markup = inline_kbd(
                 {f"#{f_idx+1+i}": f"latex-{i}" for i in range(fnum)}
             )
-        new_text = format(text, f_idx=f_idx)
-        try:
+        if len(text) > PAR_MAX_LEN:
+            head, tail = cut(text)
+            await send(message, head, reply_markup, f_idx)
+            await send(message, tail, reply_markup, 0)
+        else:
             await bot.send_message(
                 message.chat.id,
-                new_text,
+                format(text, f_idx),
                 reply_markup=reply_markup,
                 disable_web_page_preview=True,
             )
-        except (OpenAIError, Exception) as e:
-            print(e)
-            print("ERROR!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-
-
-def logged(f):
-    def wrapper(*args, **kwargs):
-        try:
-            return f(*args, **kwargs)
-        except (Exception, OpenAIError) as e:
-            alert = format(
-                f"*Error:* {e};\n\n*function name =* {f.__name__};\n\n*args =* {args};\n\n*kwargs =* {kwargs};"
-            )
-            bot.send_message(OWNER_CHAT_ID, alert)
-            # inline = inline_keyboard({"error": "error"}, language(message))
-            # await bot.send_message(message.chat.id, alert, reply_markup=inline)
-            # await clear_handler(message)
-
-    return wrapper
 
 
 def is_incomplete(par):
@@ -373,6 +413,7 @@ async def read_user_data(user_id) -> None:
     return data
 
 
+@logged
 async def add_user(user_id):
     with open("bot_users.json", "r") as f:
         bot_users = json.load(f)
@@ -399,6 +440,7 @@ async def lock(user_id):
     await write_user_data(user_id, data)
 
 
+@logged
 async def balance_is_sufficient(message) -> bool:
     message_cost = 0
     encoding = tiktoken.encoding_for_model("gpt-4o")
@@ -425,6 +467,7 @@ async def forget_outdated_messages(message):
     await write_user_data(message.from_user.id, data)
 
 
+@logged
 async def prompt_is_accepted(message) -> bool:
     if not await balance_is_sufficient(message):
         await send_template_answer(message, "empty")
@@ -483,6 +526,17 @@ async def authorized(message):
     else:
         await send_template_answer(message, "root")
         return False
+
+
+@dp.message(Command("hehe"))
+async def hehe_handler(message):
+    for lang in ("en", "ru"):
+        for d in dialogues[lang]:
+            if d == "help":
+                for item in dialogues[lang]["help"]:
+                    await bot.send_message(message.chat.id, format(item))
+            else:
+                await bot.send_message(message.chat.id, format(dialogues[lang][d]))
 
 
 @dp.message(Command("add"))

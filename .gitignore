@@ -2,6 +2,7 @@
 .venv
 .vscode
 bot_users.json
+errors.json
 test.py
 videos.py
 data/
