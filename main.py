@@ -404,6 +404,7 @@ async def generate_completion(message):
     return response, usage
 
 
+@logged
 async def read_user_data(user_id) -> None:
     with open(f"data/{user_id}.json", "r") as f:
         data = json.load(f)
@@ -422,11 +423,13 @@ async def add_user(user_id):
             json.dump(INITIAL_USER_DATA, f)
 
 
+@logged
 async def write_user_data(user_id, data) -> None:
     with open(f"data/{user_id}.json", "w") as f:
         json.dump(data, f)
 
 
+@logged
 async def lock(user_id):
     data = await read_user_data(user_id)
     data["lock"] = True
@@ -455,6 +458,7 @@ async def balance_is_sufficient(message) -> bool:
     return data["balance"] >= 2 * message_cost
 
 
+@logged
 async def forget_outdated_messages(message):
     data = await read_user_data(message.from_user.id)
     now = time.time()
@@ -512,6 +516,7 @@ def language(message):
     return lang
 
 
+@logged
 async def send_template_answer(message, template, *args, reply_markup=None):
     text = dialogues[language(message)][template]
     if len(args) != 0:
@@ -519,6 +524,7 @@ async def send_template_answer(message, template, *args, reply_markup=None):
     await send(message, text, reply_markup=reply_markup)
 
 
+@logged
 async def authorized(message):
     if message.from_user.id == OWNER_CHAT_ID:
         return True
