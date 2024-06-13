@@ -56,7 +56,7 @@ INITIAL_USER_DATA = {
 }
 
 CODE_PATTERN = re.compile(
-    r"(?<!`|\w)(?<!\\)```\S*?\n(?:(?:.|\n)*?\S(?:.|\n)*?)(?:(?:\s+)|(?:\n\s*))```(?!`|\w)"
+    r"(?<!`|\w)(?<!\\)```\S*?\n(?:(?:.|\n)*?\S(?:.|\n)*?)(?:\s+)```(?!`|\w)"
 )
 PRE_PATTERN = re.compile(
     r"(?<!`|\w)(?<!\\)`(?:(?:[^`])|(?:[^`]*?\\`[^`]*?))*?(?<!\\)`(?!`|\w)"
@@ -71,13 +71,13 @@ ESCAPED_IN_O_QUOTE = re.compile(r"(?<!\n)(?<!\A)(?<!\\)>")
 ESCAPED_IN_O_SINGLE = re.compile(r"(?<!\|)(?<!\\)\|(?!\|)")
 ESCAPED_EXTRA_SLASH = re.compile(r"(?<!\\)\\\\(?!\\)")
 LATEX_PATTERN = re.compile(
-    r"(?:\$\$|\\\[|\\\(|\\begin\{\w+\*?\}).*?(?:\$\$|\\\]|\\\)|\\end\{\w+\*?\})"
+    r"(?:\$\$|\\\[|\\\(|\\begin\{\w+\*?\})(?:.|\n)*?(?:\$\$|\\\]|\\\)|\\end\{\w+\*?\})"
 )
 LATEX_BODY_PATTERN = re.compile(
     r"(?:\$\$|\\\[|\\\(|\\begin\{\w+\*?\})((?:.|\n)*?)(?:\$\$|\\\]|\\\)|\\end\{\w+\*?\})"
 )
 INCOMPLETE_CODE_PATTERN = re.compile(
-    r"(?<!`|\w)(?<!\\)```\S*?\n(?:(?:.|\n)*?\S(?:.|\n)*?)(?:(?:\s+)|(?:\n\s*))(?!```)"
+    rf"(?:(?:{CODE_PATTERN.pattern})|(?:[^`])|(?:``?)(?!`)|(?:````+)|(?<=\w|\\)```|```(?!\n)\s)*"
 )
 
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
@@ -163,7 +163,7 @@ async def variate_image(path_to_image):
 
 def escaped(text, pattern="."):
     if isinstance(pattern, re.Pattern):
-        return pattern.sub(lambda m: "\\" + m.group(), text, flags=re.DOTALL)
+        return pattern.sub(lambda m: "\\" + m.group(), text)
     else:
         return re.sub(pattern, lambda m: "\\" + m.group(), text, flags=re.DOTALL)
 
@@ -185,63 +185,52 @@ def escaped_last(pattern, text):
 
 
 def format_markdown(text):
-    code = r"(?<!`|\w)(?<!\\)```\S*?\n(?:(?:.|\n)*?\S(?:.|\n)*?)(?:(?:\s+)|(?:\n\s*))```(?!`|\w)"
-    pre = r"(?<!`|\w)(?<!\\)`(?:(?:[^`])|(?:[^`]*?\\`[^`]*?))*?(?<!\\)`(?!`|\w)"
-    code_and_pre = rf"(?:{pre})|(?:{code})"
-
-    t_split = re.split(code, text)
-    c_entities = re.findall(code, text)
+    t_split = CODE_PATTERN.split(text)
+    c_entities = CODE_PATTERN.findall(text)
     text = t_split[0]
     for idx, c in enumerate(c_entities):
-        new_c_entity = "```" + escaped(c[3:-3], pattern=r"(?<!\\)[\\`]") + "```"
+        new_c_entity = "```" + escaped(c[3:-3], pattern=ESCAPED_IN_C_DEFAULT) + "```"
         c_entities[idx] = new_c_entity
         text += c_entities[idx] + t_split[idx + 1]
 
-    t_split = re.split(pre, text)
-    p_entities = re.findall(pre, text)
+    t_split = PRE_PATTERN.split(text)
+    p_entities = PRE_PATTERN.findall(text)
     text = t_split[0]
     for idx, p in enumerate(p_entities):
-        new_p_entity = "`" + escaped(p[1:-1], pattern=r"(?<!\\)[\\`]") + "`"
+        new_p_entity = "`" + escaped(p[1:-1], pattern=ESCAPED_IN_C_DEFAULT) + "`"
         p_entities[idx] = new_p_entity
         text += p_entities[idx] + t_split[idx + 1]
 
-    t_split = re.findall(code_and_pre, text) + [""]
-    o_entities = re.split(code_and_pre, text)
+    t_split = CODE_AND_PRE_PATTERN.findall(text) + [""]
+    o_entities = CODE_AND_PRE_PATTERN.split(text)
     text = ""
     for idx, o in enumerate(o_entities):
         new_o_entity = o.replace("**", "*")
-        new_o_entity = escaped(new_o_entity, pattern=r"(?<!\\)[\\[\]()`#+-={}.!]")
-        new_o_entity = escaped(new_o_entity, pattern=r"(?<=\w)(?<!\\)[*_~|](?=\w)")
-        new_o_entity = escaped(new_o_entity, pattern=r"(?<!\n)(?<!\A)(?<!\\)>")
-        new_o_entity = escaped(new_o_entity, pattern=r"(?<!\|)(?<!\\)\|(?!\|)")
+        new_o_entity = escaped(new_o_entity, pattern=ESCAPED_IN_O_DEFAULT)
+        new_o_entity = escaped(new_o_entity, pattern=ESCAPED_IN_O_TIGHT)
+        new_o_entity = escaped(new_o_entity, pattern=ESCAPED_IN_O_QUOTE)
+        new_o_entity = escaped(new_o_entity, pattern=ESCAPED_IN_O_SINGLE)
         paired = ["*", "_", "__", "~", "||"]
         for char in paired:
             if (new_o_entity.count(char) - new_o_entity.count(escaped(char))) % 2 != 0:
                 new_o_entity = escaped_last(char, new_o_entity)
         o_entities[idx] = new_o_entity
         text += o_entities[idx] + t_split[idx]
-    return escaped(text, pattern=r"(?<!\\)\\\\(?!\\)")
+    return escaped(text, pattern=ESCAPED_EXTRA_SLASH)
 
 
 def find_latex(text):
-    code = r"(?<!`|\w)```\S*?\n(?:.|\n)*?\n\s*```(?!`|\w)"
-    pre = r"(?<!`|\w)`[^`]+?`(?!`|\w)"
-    code_and_pre = rf"(?:{pre})|(?:{code})"
-    other = re.split(code_and_pre, text)
+    other = CODE_AND_PRE_PATTERN.split(text)
     result = []
     for o in other:
-        result += re.findall(
-            r"(?:\$\$|\\\[|\\\(|\\begin\{\w+\*?\}).*?(?:\$\$|\\\]|\\\)|\\end\{\w+\*?\})",
-            o,
-            flags=re.DOTALL,
-        )
+        result += LATEX_PATTERN.findall(o)
     return result
 
 
 def latex_significant(latex):
-    MULTILINE = "begin" in latex and "end" in latex
-    TRICKY = len(re.findall(r"\\\w+", latex)) >= 2
-    return MULTILINE or TRICKY
+    multiline = "begin" in latex and "end" in latex
+    tricky = len(re.findall(r"\\\w+", latex)) >= 2
+    return multiline or tricky
 
 
 def format_latex(text, f_idx=0):
@@ -259,7 +248,7 @@ def format_latex(text, f_idx=0):
     return text
 
 
-def format(text, *, latex=True, gpt=True, markdown=True, f_idx=0):
+def format(text, *, latex=True, markdown=True, f_idx=0):
     if not text:
         return text
     if latex:
@@ -270,10 +259,7 @@ def format(text, *, latex=True, gpt=True, markdown=True, f_idx=0):
 
 
 def latex2url(formula):
-    body = re.search(
-        r"(?:\$\$|\\\[|\\\(|\\begin\{\w+\*?\})((?:.|\n)*?)(?:\$\$|\\\]|\\\)|\\end\{\w+\*?\})",
-        formula,
-    )[1]
+    body = LATEX_BODY_PATTERN.search(formula)[1]
     image_url = body.replace("\n", "").replace("&", ",").replace("\\\\", ";\,")
     image_url = " ".join([elem for elem in image_url.split(" ") if elem])
     image_url = image_url.replace(" ", "\,\!")
@@ -316,7 +302,7 @@ def logged(f):
 
 
 def is_incomplete(par):
-    return INCOMPLETE_CODE_PATTERN.search(par) is not None
+    return INCOMPLETE_CODE_PATTERN.search(par).end() != len(par)
 
 
 def cut(text):
