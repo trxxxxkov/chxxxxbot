@@ -51,7 +51,6 @@ INITIAL_USER_DATA = {
     "balance": 0,
     "lock": False,
     "timestamps": [],
-    "latex": {},
     "messages": [],
 }
 
@@ -122,9 +121,8 @@ def logged(f):
                     kbd = inline_kbd({"error": "error"}, language(arg))
                     await bot.send_message(arg.chat.id, alert, reply_markup=kbd)
                     data = await read_user_data(arg.from_user.id)
-                    await send_template_answer(arg.message, "forget")
+                    await send_template_answer(arg, "forget")
                     data["messages"].clear()
-                    data["latex"].clear()
                     data["timestamps"].clear()
                     await write_user_data(arg.from_user.id, data)
                     break
@@ -138,7 +136,6 @@ def logged(f):
                     data = await read_user_data(arg.from_user.id)
                     await send_template_answer(arg.message, "forget")
                     data["messages"].clear()
-                    data["latex"].clear()
                     data["timestamps"].clear()
                     await write_user_data(arg.from_user.id, data)
                     break
@@ -451,9 +448,11 @@ async def balance_is_sufficient(message) -> bool:
         message_cost += FEE * GPT4O_INPUT_1K
     else:
         text = message.text
-    tokens = data["tokens"] + len(encoding.encode(text))
+    for previous_message in data["messages"]:
+        text += previous_message["content"]
+    tokens = len(encoding.encode(text))
     message_cost += tokens * FEE * GPT4O_INPUT_1K / 1000
-    return 2 * message_cost <= data["balance"]
+    return data["balance"] >= 2 * message_cost
 
 
 async def forget_outdated_messages(message):
@@ -526,17 +525,6 @@ async def authorized(message):
     else:
         await send_template_answer(message, "root")
         return False
-
-
-@dp.message(Command("hehe"))
-async def hehe_handler(message):
-    for lang in ("en", "ru"):
-        for d in dialogues[lang]:
-            if d == "help":
-                for item in dialogues[lang]["help"]:
-                    await bot.send_message(message.chat.id, format(item))
-            else:
-                await bot.send_message(message.chat.id, format(dialogues[lang][d]))
 
 
 @dp.message(Command("add"))
@@ -613,7 +601,6 @@ async def forget_handler(message: Message) -> None:
     data = await read_user_data(message.from_user.id)
     await send_template_answer(message, "forget")
     data["messages"].clear()
-    data["latex"].clear()
     data["timestamps"].clear()
     await write_user_data(message.from_user.id, data)
 
