@@ -372,6 +372,10 @@ def cut(text):
     return head, tail
 
 
+def num_formulas_before(head, text):
+    return len([f for f in find_latex(text[: text.find(head)]) if latex_significant(f)])
+
+
 @logged
 async def generate_completion(message):
     data = await read_user_data(message.from_user.id)
@@ -391,16 +395,11 @@ async def generate_completion(message):
             response += chunk.choices[0].delta.content
             head, tail = cut(tail)
             if head is not None:
-                n_formulas_before = len(
-                    [
-                        f
-                        for f in find_latex(response[: response.find(head)])
-                        if latex_significant(f)
-                    ]
-                )
-                await send(message, head, f_idx=n_formulas_before)
+                await send(message, head, f_idx=num_formulas_before(head, response))
                 await bot.send_chat_action(message.chat.id, ChatAction.TYPING)
-    await send(message, tail, keyboards.forget_keyboard)
+    await send(
+        message, tail, keyboards.forget_keyboard, num_formulas_before(tail, response)
+    )
     return response, usage
 
 
