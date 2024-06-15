@@ -343,12 +343,12 @@ def is_incomplete(par):
 
 
 def cut(text):
-    if is_incomplete(text) and len(text) > PAR_MAX_LEN:
-        if "\n\n" in text:
-            delim = text.rfind("\n\n")
+    if is_incomplete(text[:PAR_MAX_LEN]) and len(text) > PAR_MAX_LEN:
+        if "\n\n" in text[:PAR_MAX_LEN]:
+            delim = text.rfind("\n\n", 0, PAR_MAX_LEN)
             delim_len = 2
         else:
-            delim = text.rfind("\n")
+            delim = text.rfind("\n", 0, PAR_MAX_LEN)
             delim_len = 1
         if text.startswith("```"):
             cblock_begin = text[: text.find("\n") + 1]
@@ -358,14 +358,14 @@ def cut(text):
         cblock_end = "\n```"
         head = text[:delim] + cblock_end
         tail = cblock_begin + text[delim + delim_len :]
-    elif not is_incomplete(text) and len(text) > PAR_MAX_LEN:
+    elif not is_incomplete(text[:PAR_MAX_LEN]) and len(text) > PAR_MAX_LEN:
+        delim = text.rfind("\n", 0, PAR_MAX_LEN)
+        head = text[:delim]
+        tail = text[delim + 1 :]
+    elif not is_incomplete(text) and len(text) > PAR_MIN_LEN:
         delim = text.rfind("\n")
         head = text[:delim]
         tail = text[delim + 1 :]
-    elif not is_incomplete(text) and len(text) > PAR_MIN_LEN and "\n\n" in text:
-        delim = text.rfind("\n\n")
-        head = text[:delim]
-        tail = text[delim + 2 :]
     else:
         head = None
         tail = text
