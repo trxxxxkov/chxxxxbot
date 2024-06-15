@@ -89,18 +89,19 @@ client = AsyncOpenAI(
 )
 
 
-def write_error(e, f, args, kwargs, path="errors.json"):
+def write_error(error, func, args, kwargs, messages, path="errors.json"):
     with open(path, "r") as f:
         try:
             errors = json.load(f)
-        except json.decoder.JSONDecodeError:
-            errors = []
+        except Exception:
+            errors = list()
     errors.append(
         {
-            "error": f"{e}",
-            "function": f"{f}",
+            "error": f"{error}",
+            "function": f"{func}",
             "args": f"{args}",
             "kwargs": f"{kwargs}",
+            "messages": f"{messages}",
         }
     )
     with open(path, "w") as f:
@@ -113,32 +114,36 @@ def logged(f):
             result = await f(*args, **kwargs)
             return result
         except (Exception, OpenAIError) as e:
-            write_error(e, f.__name__, args, kwargs)
             alert = format(f"_ERROR: {e}_")
             await bot.send_message(OWNER_CHAT_ID, alert)
-            for arg in args:
-                if isinstance(arg, Message):
-                    kbd = inline_kbd({"error": "error"}, language(arg))
-                    await bot.send_message(arg.chat.id, alert, reply_markup=kbd)
-                    data = await read_user_data(arg.from_user.id)
-                    await send_template_answer(arg, "forget")
-                    data["messages"].clear()
-                    data["timestamps"].clear()
-                    await write_user_data(arg.from_user.id, data)
-                    break
-                elif isinstance(arg, types.CallbackQuery):
-                    kbd = inline_kbd({"error": "error"}, language(arg))
-                    await bot.send_message(
-                        arg.from_user.id,
-                        alert,
-                        reply_markup=kbd,
-                    )
-                    data = await read_user_data(arg.from_user.id)
-                    await send_template_answer(arg.message, "forget")
-                    data["messages"].clear()
-                    data["timestamps"].clear()
-                    await write_user_data(arg.from_user.id, data)
-                    break
+            messages = None
+            try:
+                for arg in args:
+                    if isinstance(arg, Message):
+                        kbd = inline_kbd({"error": "error"}, language(arg))
+                        await bot.send_message(arg.chat.id, alert, reply_markup=kbd)
+                        data = await read_user_data(arg.from_user.id)
+                        messages = data["messages"]
+                        data["messages"].clear()
+                        data["timestamps"].clear()
+                        await write_user_data(arg.from_user.id, data)
+                        break
+                    elif isinstance(arg, types.CallbackQuery):
+                        kbd = inline_kbd({"error": "error"}, language(arg))
+                        await bot.send_message(
+                            arg.from_user.id,
+                            alert,
+                            reply_markup=kbd,
+                        )
+                        data = await read_user_data(arg.from_user.id)
+                        messages = data["messages"]
+                        data["messages"].clear()
+                        data["timestamps"].clear()
+                        await write_user_data(arg.from_user.id, data)
+                        break
+            except Exception:
+                messages = "[unavailable because of an error in the logging function]"
+            write_error(e, f.__name__, args, kwargs, messages)
 
     return wrap
 
@@ -403,7 +408,6 @@ async def generate_completion(message):
     return response, usage
 
 
-@logged
 async def read_user_data(user_id) -> None:
     with open(f"data/{user_id}.json", "r") as f:
         data = json.load(f)
@@ -422,7 +426,6 @@ async def add_user(user_id):
             json.dump(INITIAL_USER_DATA, f)
 
 
-@logged
 async def write_user_data(user_id, data) -> None:
     with open(f"data/{user_id}.json", "w") as f:
         json.dump(data, f)
@@ -604,10 +607,11 @@ async def help_handler(message: Message) -> None:
 @dp.message(Command("forget", "clear"))
 async def forget_handler(message: Message) -> None:
     data = await read_user_data(message.from_user.id)
-    await send_template_answer(message, "forget")
-    data["messages"].clear()
+    data["lock"] = False
     data["timestamps"].clear()
+    data["messages"].clear()
     await write_user_data(message.from_user.id, data)
+    await send_template_answer(message, "forget")
 
 
 @dp.message(Command("balance"))
