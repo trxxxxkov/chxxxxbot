@@ -454,7 +454,11 @@ async def balance_is_sufficient(message) -> bool:
     else:
         text = message.text
     for previous_message in data["messages"]:
-        text += previous_message["content"]
+        if isinstance(previous_message["content"], str):
+            text += previous_message["content"]
+        else:
+            text += previous_message["content"][0]["text"]
+            message_cost += FEE * GPT4O_INPUT_1K
     tokens = len(encoding.encode(text))
     message_cost += tokens * FEE * GPT4O_INPUT_1K / 1000
     return data["balance"] >= 2 * message_cost
