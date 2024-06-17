@@ -189,7 +189,6 @@ def inline_kbd(keys, lang=None):
     return keyboard.as_markup()
 
 
-@logged
 async def generate_image(prompt):
     response = await client.images.generate(
         prompt=prompt,
@@ -655,6 +654,7 @@ async def draw_handler(message: Message) -> None:
                 {
                     "role": "user",
                     "content": [
+                        {"type": "text", "text": ""},
                         {
                             "type": "image_url",
                             "image_url": {"url": image_url, "detail": "high"},
