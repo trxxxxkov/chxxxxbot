@@ -6,19 +6,19 @@ Pleased to meet you, *{}*!
   My name is *Sebastian*. I'm a bot powered by GPT-4o. Here is a short list of my skills:
 
   *Casual conversations*:
-type a message (of any length!) to start a conversation. I will reply with my message splitted into paragraphs so that you don't need to wait until I finish typing.
+Type a message (of any length!) to start a conversation. I will reply with my message splitted into paragraphs so that you don't need to wait until I finish typing.
 
   *Image generation (DALLE-3) and variation (DALLE-2)*:
-describe your idea and generate an image based on it.
+Describe your idea and generate an image based on it.
 
   *Image recognition*:
-attach an image to your message and ask any questions about it.
+Attach an image to your message and ask any questions about it.
 
   *Automatic compilation of LaTeX formulas*:
-discuss math problems with comfort! All formulas will be compiled and sent as images.
+Discuss math problems with comfort! All formulas will be compiled and sent as images.
 
   *No subscription or annual payments*:
-you should only pay for the tokens that you used. No usage - no payment.
+You should only pay for the tokens that you used. No usage - no payment.
 
   *Type /help to get started!*""",
         "help": [
@@ -86,7 +86,7 @@ where `YOUR_PROMPT` - is a description of an image you want.
   `OPENAI_TOKEN_PRICE` - can be found here: https://openai.com/pricing (prices per 1,000,000 tokens).
 
   *You may use GPT-4o and DALLE-3 only after you top up you balance.*
-  Payment methods: Tinkoff/Sberbank, +7-900-65-60-859. *Contact @trxxxxkov to inform about your payment.*""",
+  Payment methods: Tinkoff/Sberbank transfter to +7-900-65-60-859. *Contact @trxxxxkov to inform about your payment.*""",
         "tokens": """
 OpenAI's models process text as a set of *tokens*. 
   Tokens - are common sequences of characters found in text. You can think of tokens as pieces of words, where 1,000 tokens is about 750 words.
@@ -124,19 +124,19 @@ Describe the image you want to get after /draw command, for example:
   Меня зовут *Себастиан*. Я - бот под управлением GPT-4o. Вот краткий список моих возможностей:
 
   *Свободное общение*:
-начните разговор, просто написав мне сообщение (любой длины!), и я отвечу, раздробив своё сообщение по абзацам, чтобы вам не пришлось ждать, пока я допишу.
+Начните разговор, просто написав мне сообщение (любой длины!), и я отвечу, раздробив своё сообщение по абзацам, чтобы вам не пришлось ждать, пока я допишу.
 
   *Распознавание изображений*:
-прикрепите фотографию к вашему сообщению и задавайте любые вопросы.
+Прикрепите фотографию к вашему сообщению и задавайте любые вопросы.
 
   *Генерация (DALLE-3) и вариация (DALLE-2) изображений*:
-опишите свою идею и получите изображение, созданное по мотивам ваших слов.
+Опишите свою идею и получите изображение, созданное по мотивам ваших слов.
 
   *Автоматическое компиляция формул LaTeX*:
-обсуждайте математику с комфортом! Все формулы будут скомпилированы и отправлены в виде изображений.
+Обсуждайте математику с комфортом! Все формулы будут скомпилированы и отправлены в виде изображений.
 
   *Никаких подписок и ежемесячных платежей*:
-платите только за токены, которые вы использовали. Ничего не использовали - ничего не платите.
+Платите только за токены, которые вы использовали. Ничего не использовали - ничего не платите.
 
   *Введите команду /help, чтобы узнать больше!*""",
         "help": [
@@ -206,7 +206,7 @@ Describe the image you want to get after /draw command, for example:
   `ЦЕНА_ТОКЕНА_OPENAI` - доступна здесь: https://openai.com/pricing (цены указаны за 1,000,000 токенов).
 
   *Вы можете использовать GPT-4o и DALLE-3 только после пополнения баланса.*
-  Способ оплаты: Тиньков/Сбербанк, +7-900-656-08-59. *Чтобы сообщить о вашем платеже, свяжитесь с @trxxxxkov.*""",
+  Способ оплаты: Тиньков/Сбербанк перевод по номеру +7-900-656-08-59. *Чтобы сообщить о вашем платеже, свяжитесь с @trxxxxkov.*""",
         "tokens": """
 Модели OpenAI анализируют текст, воспринимая его частями, называемыми *токенами*.
   Токены - это просто последовательность из ~4 символов. Можно думать о токенах как о кусочках слов, на которые разбивается каждый текст. 
