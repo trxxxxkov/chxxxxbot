@@ -485,7 +485,7 @@ async def prompt_is_accepted(message) -> bool:
     now = time.time()
     data["timestamps"].append(now)
     if message.photo:
-        image_path = f"photos/{message.from_user.id}.jpg"
+        image_path = f"images/{message.from_user.id}.jpg"
         await bot.download(message.photo[-1], destination=image_path)
         image_url = local_image_to_data_url(image_path)
         image_caption = (
@@ -692,7 +692,7 @@ async def handler(message: Message) -> None:
 @dp.callback_query(F.data == "redraw")
 async def redraw_callback(callback: types.CallbackQuery):
     message = callback.message
-    file_name = f"photos/{callback.from_user.id}"
+    file_name = f"images/{callback.from_user.id}"
     async with ChatActionSender.upload_photo(message.chat.id, bot):
         await bot.download(message.photo[-1], destination=file_name + ".jpg")
         media = await variate_image(file_name)
@@ -789,7 +789,7 @@ async def latex_callback(callback: types.CallbackQuery):
     f_i = int(callback.data.split("-")[1])
     f = [f for f in find_latex(callback.message.text) if latex_significant(f)][f_i]
     image_url = latex2url(f)
-    local_path = f"photos/{callback.from_user.id}.jpg"
+    local_path = f"images/{callback.from_user.id}.jpg"
     svg_to_jpg(image_url, local_path)
     photo = FSInputFile(local_path)
     kbd = inline_kbd({"hide": "hide"}, language(callback))
