@@ -1,0 +1,5 @@
+aiogram>=3.6.0
+python-dotenv>=1.0.1
+openai>=1.29.0
+tiktoken>=0.7.0
+cairosvg>=2.7.1
