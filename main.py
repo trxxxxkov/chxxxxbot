@@ -500,7 +500,7 @@ async def prompt_is_accepted(message) -> bool:
                     {"type": "text", "text": image_caption},
                     {
                         "type": "image_url",
-                        "image_url": {"url": image_url, "detail": "high"},
+                        "image_url": {"url": image_url},
                     },
                 ],
             }
@@ -657,7 +657,7 @@ async def draw_handler(message: Message) -> None:
                         {"type": "text", "text": ""},
                         {
                             "type": "image_url",
-                            "image_url": {"url": image_url, "detail": "high"},
+                            "image_url": {"url": image_url},
                         },
                     ],
                 }
