@@ -397,10 +397,17 @@ async def generate_completion(message):
         if chunk.choices and chunk.choices[0].delta.content is not None:
             tail += chunk.choices[0].delta.content
             response += chunk.choices[0].delta.content
-            head, tail = cut(tail)
-            if head is not None:
-                await send(message, head, f_idx=num_formulas_before(head, response))
-                await bot.send_chat_action(message.chat.id, ChatAction.TYPING)
+            if tail == response and "\n\n" in tail:
+                if not is_incomplete(tail[: tail.rfind("\n\n")]):
+                    delim = tail.rfind("\n\n")
+                    head, tail = tail[:delim], tail[delim + 2 :]
+                    await send(message, head, f_idx=0)
+                    await bot.send_chat_action(message.chat.id, ChatAction.TYPING)
+            if len(tail) > PAR_MIN_LEN and "\n" in chunk.choices[0].delta.content:
+                head, tail = cut(tail)
+                if head is not None:
+                    await send(message, head, f_idx=num_formulas_before(head, response))
+                    await bot.send_chat_action(message.chat.id, ChatAction.TYPING)
     await send(
         message, tail, keyboards.forget_keyboard, num_formulas_before(tail, response)
     )
