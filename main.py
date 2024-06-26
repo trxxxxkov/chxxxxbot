@@ -224,7 +224,7 @@ async def generate_image(prompt):
     return response.data[0].url
 
 
-# @logged
+@logged
 async def variate_image(path_to_image):
     img = Image.open(f"{path_to_image}.jpg")
     img.save(f"{path_to_image}.png")
@@ -345,7 +345,7 @@ def latex2url(formula):
     return "https://math.vercel.app?from=" + urllib.parse.quote(image_url)
 
 
-# @logged
+@logged
 async def send(message, text, reply_markup=None, f_idx=0):
     if re.search(r"\w+", text) is not None:
         if fnum := len([f for f in find_latex(text) if latex_significant(f)]):
@@ -404,9 +404,9 @@ def num_formulas_before(head, text):
     return len([f for f in find_latex(text[: text.find(head)]) if latex_significant(f)])
 
 
-# @logged
+@logged
 async def generate_completion(message):
-    # data = await read_user_data(message.from_user.id)
+    raise Exception("hehee")
     model = await db_get_model(message.from_user.id)
     messages = await db_get_messages(message.from_user.id)
     stream = await client.chat.completions.create(
@@ -441,6 +441,7 @@ async def generate_completion(message):
     return response, usage, last_message
 
 
+@logged
 async def db_execute(queries, args=None):
     response = []
     if not isinstance(queries, list):
@@ -562,7 +563,7 @@ async def db_save_expenses(message, usage):
     )
 
 
-# @logged
+@logged
 async def add_user(message):
     bot_users = await db_execute("SELECT id FROM users;")
     if not isinstance(bot_users, list):
@@ -582,7 +583,7 @@ async def add_user(message):
         )
 
 
-# @logged
+@logged
 async def lock(user_id):
     user = await db_get_user(user_id)
     user["lock"] = True
@@ -593,7 +594,7 @@ async def lock(user_id):
     await db_save_user(user)
 
 
-# @logged
+@logged
 async def balance_is_sufficient(message) -> bool:
     message_cost = 0
     encoding = tiktoken.encoding_for_model("gpt-4o")
@@ -616,7 +617,7 @@ async def balance_is_sufficient(message) -> bool:
     return user["balance"] >= 2 * message_cost
 
 
-# @logged
+@logged
 async def forget_outdated_messages(user_id):
     now = time.time()
     await db_execute(
@@ -625,7 +626,7 @@ async def forget_outdated_messages(user_id):
     )
 
 
-# @logged
+@logged
 async def prompt_is_accepted(message) -> bool:
     if not await balance_is_sufficient(message):
         await send_template_answer(message, "empty")
@@ -664,7 +665,7 @@ def language(message):
     return lang
 
 
-# @logged
+@logged
 async def send_template_answer(message, template, *args, reply_markup=None):
     text = dialogues[language(message)][template]
     if len(args) != 0:
@@ -672,7 +673,7 @@ async def send_template_answer(message, template, *args, reply_markup=None):
     await send(message, text, reply_markup=reply_markup)
 
 
-# @logged
+@logged
 async def authorized(message):
     if message.from_user.id == OWNER_CHAT_ID:
         return True
@@ -816,11 +817,12 @@ async def handler(message: Message) -> None:
         await db_save_expenses(message, usage)
         await db_execute(
             "INSERT INTO messages \
-                (message_id, from_user_id, text) \
-                VALUES (%s, %s, %s);",
+                (message_id, from_user_id, role, text) \
+                VALUES (%s, %s, %s, %s);",
             [
                 last_message.message_id,
                 message.from_user.id,
+                "system",
                 response,
             ],
         )
