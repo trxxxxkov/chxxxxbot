@@ -549,6 +549,19 @@ async def db_save_message(message, role):
     )
 
 
+async def db_save_expenses(message, usage):
+    await db_execute(
+        "INSERT INTO transactions (user_id, prompt_tokens, completion_tokens, cost) VALUES (%s, %s, %s, %s);",
+        [
+            message.from_user.id,
+            usage.prompt_tokens,
+            usage.completion_tokens,
+            usage.prompt_tokens * GPT4O_INPUT_1K / 1000
+            + usage.completion_tokens * GPT4O_OUTPUT_1K / 1000,
+        ],
+    )
+
+
 # @logged
 async def add_user(message):
     bot_users = await db_execute("SELECT id FROM users;")
@@ -556,18 +569,16 @@ async def add_user(message):
         bot_users = [bot_users]
     if message.from_user.id not in [item["id"] for item in bot_users]:
         await db_execute(
-            "INSERT INTO users (id, first_name, last_name, balance, lock) VALUES (%s, %s, %s, %s, %s)",
+            "INSERT INTO users (id, first_name, last_name) VALUES (%s, %s, %s)",
             [
                 message.from_user.id,
                 message.from_user.first_name,
                 message.from_user.last_name,
-                0,
-                False,
             ],
         )
         await db_execute(
-            "INSERT INTO models (user_id, model_name, max_tokens, temperature) VALUES (%s, %s, %s, %s)",
-            [message.from_user.id, "gpt-4o", None, 0.2],
+            "INSERT INTO models (user_id) VALUES (%s)",
+            [message.from_user.id],
         )
 
 
@@ -779,12 +790,10 @@ async def draw_handler(message: Message) -> None:
             kbd = inline_kbd({"redraw": "redraw"}, language(message))
             msg = await bot.send_photo(message.chat.id, image_url, reply_markup=kbd)
             await db_execute(
-                "INSERT INTO messages (message_id, from_user_id, timestamp, role, text, image_url) VALUES (%s, %s, %s, %s, %s, %s);",
+                "INSERT INTO messages (message_id, from_user_id, text, image_url) VALUES (%s, %s, %s, %s);",
                 [
                     msg.message_id,
                     message.from_user.id,
-                    msg.date,
-                    "user",
                     await get_message_text(msg),
                     await get_image_url(msg),
                 ],
@@ -804,17 +813,15 @@ async def handler(message: Message) -> None:
         await lock(message.from_user.id)
         async with ChatActionSender.typing(message.chat.id, bot):
             response, usage, last_message = await generate_completion(message)
+        await db_save_expenses(message, usage)
         await db_execute(
             "INSERT INTO messages \
-                (message_id, from_user_id, timestamp, role, text, image_url) \
-                VALUES (%s, %s, %s, %s, %s, %s);",
+                (message_id, from_user_id, text) \
+                VALUES (%s, %s, %s);",
             [
                 last_message.message_id,
                 message.from_user.id,
-                last_message.date,
-                "user",
                 response,
-                None,
             ],
         )
         user = await db_get_user(message.from_user.id)
