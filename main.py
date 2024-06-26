@@ -357,12 +357,13 @@ async def send(message, text, reply_markup=None, f_idx=0):
             await send(message, head, reply_markup, f_idx)
             await send(message, tail, reply_markup, 0)
         else:
-            await bot.send_message(
+            msg = await bot.send_message(
                 message.chat.id,
                 format(text, f_idx),
                 reply_markup=reply_markup,
                 disable_web_page_preview=True,
             )
+    return msg
 
 
 def is_incomplete(par):
@@ -450,14 +451,20 @@ async def db_execute(queries, args=None):
     ) as aconn:
         async with aconn.cursor() as cur:
             for i in range(min(len(queries), len(args))):
-                if not isinstance(args[i], list):
+                if not isinstance(args[i], list) and args[i] is not None:
                     args[i] = [args[i]]
                 try:
                     await cur.execute(queries[i], args[i])
                     response.extend(await cur.fetchall())
-                except psycopg.ProgrammingError:
-                    pass
-    return response
+                except Exception as e:
+                    if "the last operation didn't produce a result" in str(e):
+                        pass
+                    else:
+                        raise e
+    if len(response) == 1:
+        return response[0]
+    else:
+        return response
 
 
 async def db_get_user(user_id):
@@ -466,29 +473,32 @@ async def db_get_user(user_id):
 
 
 async def db_get_model(user_id):
-    user_model = await db_execute("SELECT * FROM models WHERE user_id = %s;", user_id)
-    return user_model
+    model = await db_execute("SELECT * FROM models WHERE user_id = %s;", user_id)
+    return model
 
 
 async def db_get_messages(user_id):
     data = await db_execute(
-        [
-            "SELECT * FROM messages WHERE from_user_id = %s ORDER BY timestamp;",
-        ],
-        [[user_id]],
+        "SELECT * FROM messages WHERE from_user_id = %s ORDER BY timestamp;",
+        user_id,
     )
-    user_messages = []
+    if not isinstance(data, list):
+        data = [data]
+    messages = []
     for msg in data:
-        user_messages.append(
+        messages.append(
             {
                 "role": msg["role"],
                 "content": [
                     {"type": "text", "text": msg["text"]},
-                    {"type": "image_url", "image_url": {"url": msg["image_url"]}},
                 ],
             }
         )
-    return user_messages
+        if msg["image_url"] is not None:
+            messages[-1]["content"].append(
+                {"type": "image_url", "image_url": {"url": msg["image_url"]}}
+            )
+    return messages
 
 
 async def db_save_user(user):
@@ -540,17 +550,24 @@ async def db_save_message(message, role):
 
 
 # @logged
-async def add_user(user_id):
+async def add_user(message):
     bot_users = await db_execute("SELECT id FROM users;")
-    if user_id not in bot_users["id"]:
-        bot_users.append(user_id)
+    if not isinstance(bot_users, list):
+        bot_users = [bot_users]
+    if message.from_user.id not in [item["id"] for item in bot_users]:
         await db_execute(
             "INSERT INTO users (id, first_name, last_name, balance, lock) VALUES (%s, %s, %s, %s, %s)",
-            [user_id, "", "", 0, False],
+            [
+                message.from_user.id,
+                message.from_user.first_name,
+                message.from_user.last_name,
+                0,
+                False,
+            ],
         )
         await db_execute(
             "INSERT INTO models (user_id, model_name, max_tokens, temperature) VALUES (%s, %s, %s, %s)",
-            [user_id, "gpt-4o", None, 0.2],
+            [message.from_user.id, "gpt-4o", None, 0.2],
         )
 
 
@@ -579,7 +596,7 @@ async def balance_is_sufficient(message) -> bool:
     for old_message in old_messages:
         if isinstance(old_message["content"], str):
             text += old_message["content"]
-        else:
+        elif old_message["content"][0]["text"] is not None:
             text += old_message["content"][0]["text"]
             message_cost += FEE * GPT4O_INPUT_1K
     tokens = len(encoding.encode(text))
@@ -592,7 +609,7 @@ async def balance_is_sufficient(message) -> bool:
 async def forget_outdated_messages(user_id):
     now = time.time()
     await db_execute(
-        "DELETE FROM messages WHERE from_user_id = %s and timestamp < %s;",
+        "DELETE FROM messages WHERE from_user_id = %s and timestamp < TO_TIMESTAMP(%s);",
         [user_id, now - GPT_MEMORY_SEC],
     )
 
@@ -624,7 +641,7 @@ async def get_message_text(message):
         if message.caption:
             return message.caption
         else:
-            return None
+            return ""
     else:
         return message.text
 
@@ -663,7 +680,9 @@ async def add_handler(message: Message) -> None:
         add_cmd, user_id, funds = message.text.split()
         user_id = int(user_id)
         bot_users = await db_execute("SELECT id FROM users;")
-        if user_id in bot_users["id"]:
+        if not isinstance(bot_users, list):
+            bot_users = [bot_users]
+        if user_id in [item["id"] for item in bot_users]:
             user = await db_get_user(user_id)
             if funds.startswith(("+", "-")) and funds[1:].replace(".", "", 1).isdigit():
                 user["balance"] += float(funds)
@@ -676,7 +695,7 @@ async def add_handler(message: Message) -> None:
             else:
                 await send(message, f"_Error: {funds} is not a valid numeric data._")
         else:
-            await add_user(user_id)
+            await add_user(message)
             await send(message, f"_The user *{user_id}* was added._")
             await add_handler(message)
 
@@ -689,8 +708,7 @@ async def start_handler(message: Message) -> None:
             for key, value in commands[language(message)].items()
         ]
     )
-    new_user = message.from_user.id
-    await add_user(new_user)
+    await add_user(message)
     await send_template_answer(
         message,
         "start",
@@ -760,7 +778,17 @@ async def draw_handler(message: Message) -> None:
                 image_url = await generate_image(prompt)
             kbd = inline_kbd({"redraw": "redraw"}, language(message))
             msg = await bot.send_photo(message.chat.id, image_url, reply_markup=kbd)
-            await db_save_message(msg, "system")
+            await db_execute(
+                "INSERT INTO messages (message_id, from_user_id, timestamp, role, text, image_url) VALUES (%s, %s, %s, %s, %s, %s);",
+                [
+                    msg.message_id,
+                    message.from_user.id,
+                    msg.date,
+                    "user",
+                    await get_message_text(msg),
+                    await get_image_url(msg),
+                ],
+            )
             user = await db_get_user(message.from_user.id)
             user["balance"] -= FEE * DALLE3_OUTPUT
             await db_save_user(user)
@@ -784,7 +812,7 @@ async def handler(message: Message) -> None:
                 last_message.message_id,
                 message.from_user.id,
                 last_message.date,
-                "system",
+                "user",
                 response,
                 None,
             ],
@@ -798,6 +826,8 @@ async def handler(message: Message) -> None:
             * FEE
             / 1000
         )
+        user["first_name"] = message.from_user.first_name
+        user["last_name"] = message.from_user.last_name
         await db_save_user(user)
 
 
@@ -839,8 +869,8 @@ async def balance_callback(callback: types.CallbackQuery):
             media=videos["balance"],
             caption=text,
         ),
-        message.chat.id,
-        message.message_id,
+        chat_id=message.chat.id,
+        message_id=message.message_id,
         reply_markup=kbd,
     )
 
@@ -856,8 +886,8 @@ async def tokens_callback(callback: types.CallbackQuery):
             media=videos["tokens"],
             caption=text,
         ),
-        message.chat.id,
-        message.message_id,
+        chat_id=message.chat.id,
+        message_id=message.message_id,
         reply_markup=kbd,
     )
 
@@ -890,8 +920,8 @@ async def help_callback(callback: types.CallbackQuery):
         types.InputMediaAnimation(
             type=InputMediaType.ANIMATION, media=videos["help"][h_idx], caption=text
         ),
-        message.chat.id,
-        message.message_id,
+        chat_id=message.chat.id,
+        message_id=message.message_id,
         reply_markup=builder.as_markup(),
     )
 
