@@ -10,6 +10,9 @@ import cairosvg
 import urllib.parse
 import re
 
+import psycopg
+from psycopg.rows import dict_row
+
 from mimetypes import guess_type
 from dotenv import load_dotenv
 from os import getenv
@@ -32,9 +35,23 @@ from buttons import buttons
 
 load_dotenv()
 
+IMAGES_PATH = "images"
+
 OWNER_CHAT_ID = 791388236
 BOT_TOKEN = getenv("TG_BOT_TOKEN")
 OPENAI_KEY = getenv("OPENAI_API_KEY")
+DATABASE_PASSWORD = getenv("POSTGRESQL_DB_PASSWORD")
+
+DATABASE_NAME = "chxxxxbot"
+DATABASE_USER = "chxxxxbot"
+DATABASE_HOST = "localhost"
+DATABASE_PORT = "5432"
+DATABASE_PASSWORD = "lkjh"
+DSN = f"host={DATABASE_HOST} \
+        port={DATABASE_PORT} \
+        dbname={DATABASE_NAME} \
+        user={DATABASE_USER} \
+        password={DATABASE_PASSWORD}"
 # OPENAI API prices per 1K tokens
 FEE = 1.6
 GPT_MEMORY_SEC = 7200
@@ -122,11 +139,14 @@ def logged(f):
                     if isinstance(arg, Message):
                         kbd = inline_kbd({"error": "error"}, language(arg))
                         await bot.send_message(arg.chat.id, alert, reply_markup=kbd)
-                        data = await read_user_data(arg.from_user.id)
-                        messages = data["messages"]
-                        data["messages"].clear()
-                        data["timestamps"].clear()
-                        await write_user_data(arg.from_user.id, data)
+                        messages = await db_execute(
+                            "SELECT * FROM messages WHERE from_user_id = %s",
+                            arg.from_user.id,
+                        )
+                        await db_execute(
+                            "DELETE FROM messages WHERE from_user_id = %s;",
+                            arg.from_user.id,
+                        )
                         break
                     elif isinstance(arg, types.CallbackQuery):
                         kbd = inline_kbd({"error": "error"}, language(arg))
@@ -135,11 +155,14 @@ def logged(f):
                             alert,
                             reply_markup=kbd,
                         )
-                        data = await read_user_data(arg.from_user.id)
-                        messages = data["messages"]
-                        data["messages"].clear()
-                        data["timestamps"].clear()
-                        await write_user_data(arg.from_user.id, data)
+                        messages = await db_execute(
+                            "SELECT * FROM messages WHERE from_user_id = %s",
+                            arg.from_user.id,
+                        )
+                        await db_execute(
+                            "DELETE FROM messages WHERE from_user_id = %s;",
+                            arg.from_user.id,
+                        )
                         break
             except Exception:
                 messages = "[unavailable because of an error in the logging function]"
@@ -201,7 +224,7 @@ async def generate_image(prompt):
     return response.data[0].url
 
 
-@logged
+# @logged
 async def variate_image(path_to_image):
     img = Image.open(f"{path_to_image}.jpg")
     img.save(f"{path_to_image}.png")
@@ -322,7 +345,7 @@ def latex2url(formula):
     return "https://math.vercel.app?from=" + urllib.parse.quote(image_url)
 
 
-@logged
+# @logged
 async def send(message, text, reply_markup=None, f_idx=0):
     if re.search(r"\w+", text) is not None:
         if fnum := len([f for f in find_latex(text) if latex_significant(f)]):
@@ -380,13 +403,16 @@ def num_formulas_before(head, text):
     return len([f for f in find_latex(text[: text.find(head)]) if latex_significant(f)])
 
 
-@logged
+# @logged
 async def generate_completion(message):
-    data = await read_user_data(message.from_user.id)
+    # data = await read_user_data(message.from_user.id)
+    model = await db_get_model(message.from_user.id)
+    messages = await db_get_messages(message.from_user.id)
     stream = await client.chat.completions.create(
-        model=GPT_MODEL,
-        messages=data["messages"],
-        temperature=0.2,
+        model=model["model_name"],
+        messages=messages,
+        max_tokens=model["max_tokens"],
+        temperature=model["temperature"],
         stream=True,
         stream_options={"include_usage": True},
     )
@@ -408,117 +434,199 @@ async def generate_completion(message):
                 if head is not None:
                     await send(message, head, f_idx=num_formulas_before(head, response))
                     await bot.send_chat_action(message.chat.id, ChatAction.TYPING)
-    await send(
+    last_message = await send(
         message, tail, keyboards.forget_keyboard, num_formulas_before(tail, response)
     )
-    return response, usage
+    return response, usage, last_message
 
 
-async def read_user_data(user_id) -> None:
-    with open(f"data/{user_id}.json", "r") as f:
-        data = json.load(f)
-    return data
+async def db_execute(queries, args=None):
+    response = []
+    if not isinstance(queries, list):
+        queries = [queries]
+        args = [args]
+    async with await psycopg.AsyncConnection.connect(
+        DSN, row_factory=dict_row
+    ) as aconn:
+        async with aconn.cursor() as cur:
+            for i in range(min(len(queries), len(args))):
+                if not isinstance(args[i], list):
+                    args[i] = [args[i]]
+                try:
+                    await cur.execute(queries[i], args[i])
+                    response.extend(await cur.fetchall())
+                except psycopg.ProgrammingError:
+                    pass
+    return response
 
 
-@logged
+async def db_get_user(user_id):
+    user = await db_execute("SELECT * FROM users WHERE id = %s;", user_id)
+    return user
+
+
+async def db_get_model(user_id):
+    user_model = await db_execute("SELECT * FROM models WHERE user_id = %s;", user_id)
+    return user_model
+
+
+async def db_get_messages(user_id):
+    data = await db_execute(
+        [
+            "SELECT * FROM messages WHERE from_user_id = %s ORDER BY timestamp;",
+        ],
+        [[user_id]],
+    )
+    user_messages = []
+    for msg in data:
+        user_messages.append(
+            {
+                "role": msg["role"],
+                "content": [
+                    {"type": "text", "text": msg["text"]},
+                    {"type": "image_url", "image_url": {"url": msg["image_url"]}},
+                ],
+            }
+        )
+    return user_messages
+
+
+async def db_save_user(user):
+    await db_execute(
+        "UPDATE users SET \
+                first_name = %s, \
+                last_name = %s, \
+                balance = %s, \
+                lock = %s \
+                WHERE id = %s;",
+        [
+            user["first_name"],
+            user["last_name"],
+            user["balance"],
+            user["lock"],
+            user["id"],
+        ],
+    )
+
+
+async def db_save_model(model):
+    await db_execute(
+        "UPDATE models SET \
+                model_name = %s, \
+                max_tokens = %s, \
+                temperature = %s, \
+                WHERE user_id = %s;",
+        [
+            model["model_name"],
+            model["max_tokens"],
+            model["temperature"],
+            model["user_id"],
+        ],
+    )
+
+
+async def db_save_message(message, role):
+    await db_execute(
+        "INSERT INTO messages (message_id, from_user_id, timestamp, role, text, image_url) VALUES (%s, %s, %s, %s, %s, %s);",
+        [
+            message.message_id,
+            message.from_user.id,
+            message.date,
+            role,
+            await get_message_text(message),
+            await get_image_url(message),
+        ],
+    )
+
+
+# @logged
 async def add_user(user_id):
-    with open("bot_users.json", "r") as f:
-        bot_users = json.load(f)
-    if user_id not in bot_users:
+    bot_users = await db_execute("SELECT id FROM users;")
+    if user_id not in bot_users["id"]:
         bot_users.append(user_id)
-        with open("bot_users.json", "w") as f:
-            json.dump(bot_users, f)
-        with open(f"data/{user_id}.json", "w") as f:
-            json.dump(INITIAL_USER_DATA, f)
+        await db_execute(
+            "INSERT INTO users (id, first_name, last_name, balance, lock) VALUES (%s, %s, %s, %s, %s)",
+            [user_id, "", "", 0, False],
+        )
+        await db_execute(
+            "INSERT INTO models (user_id, model_name, max_tokens, temperature) VALUES (%s, %s, %s, %s)",
+            [user_id, "gpt-4o", None, 0.2],
+        )
 
 
-async def write_user_data(user_id, data) -> None:
-    with open(f"data/{user_id}.json", "w") as f:
-        json.dump(data, f)
-
-
-@logged
+# @logged
 async def lock(user_id):
-    data = await read_user_data(user_id)
-    data["lock"] = True
-    await write_user_data(user_id, data)
+    user = await db_get_user(user_id)
+    user["lock"] = True
+    await db_save_user(user)
     await asyncio.sleep(0.6)
-    data = await read_user_data(user_id)
-    data["lock"] = False
-    await write_user_data(user_id, data)
+    user = await db_get_user(user_id)
+    user["lock"] = False
+    await db_save_user(user)
 
 
-@logged
+# @logged
 async def balance_is_sufficient(message) -> bool:
     message_cost = 0
     encoding = tiktoken.encoding_for_model("gpt-4o")
-    data = await read_user_data(message.from_user.id)
     if message.photo:
         pre_prompt = dialogues[language(message)]["vision-pre-prompt"]
         text = message.caption if message.caption else pre_prompt
         message_cost += FEE * GPT4O_INPUT_1K
     else:
         text = message.text
-    for previous_message in data["messages"]:
-        if isinstance(previous_message["content"], str):
-            text += previous_message["content"]
+    old_messages = await db_get_messages(message.from_user.id)
+    for old_message in old_messages:
+        if isinstance(old_message["content"], str):
+            text += old_message["content"]
         else:
-            text += previous_message["content"][0]["text"]
+            text += old_message["content"][0]["text"]
             message_cost += FEE * GPT4O_INPUT_1K
     tokens = len(encoding.encode(text))
     message_cost += tokens * FEE * GPT4O_INPUT_1K / 1000
-    return data["balance"] >= 2 * message_cost
+    user = await db_get_user(message.from_user.id)
+    return user["balance"] >= 2 * message_cost
 
 
-@logged
-async def forget_outdated_messages(message):
-    data = await read_user_data(message.from_user.id)
+# @logged
+async def forget_outdated_messages(user_id):
     now = time.time()
-    for i in range(len(data["timestamps"])):
-        if now - data["timestamps"][i] < GPT_MEMORY_SEC:
-            data["timestamps"] = data["timestamps"][i:]
-            data["messages"] = data["messages"][i:]
-            break
-    await write_user_data(message.from_user.id, data)
+    await db_execute(
+        "DELETE FROM messages WHERE from_user_id = %s and timestamp < %s;",
+        [user_id, now - GPT_MEMORY_SEC],
+    )
 
 
-@logged
+# @logged
 async def prompt_is_accepted(message) -> bool:
     if not await balance_is_sufficient(message):
         await send_template_answer(message, "empty")
         return False
-    await forget_outdated_messages(message)
-    data = await read_user_data(message.from_user.id)
-    now = time.time()
-    data["timestamps"].append(now)
-    if message.photo:
-        image_path = f"images/{message.from_user.id}.jpg"
-        await bot.download(message.photo[-1], destination=image_path)
-        image_url = local_image_to_data_url(image_path)
-        image_caption = (
-            message.caption
-            if message.caption
-            else dialogues[language(message)]["vision-pre-prompt"]
-        )
-        data["messages"].append(
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": image_caption},
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": image_url},
-                    },
-                ],
-            }
-        )
-    else:
-        data["messages"].append({"role": "user", "content": message.text})
-    await write_user_data(message.from_user.id, data)
-    if not data["lock"]:
-        return True
-    else:
+    user = await db_get_user(message.from_user.id)
+    if user["lock"]:
         return False
+    else:
+        await forget_outdated_messages(message.from_user.id)
+        return True
+
+
+async def get_image_url(message):
+    if message.photo:
+        image_path = f"{IMAGES_PATH}/{message.from_user.id}.jpg"
+        await bot.download(message.photo[-1], destination=image_path)
+        return local_image_to_data_url(image_path)
+    else:
+        return None
+
+
+async def get_message_text(message):
+    if message.photo:
+        if message.caption:
+            return message.caption
+        else:
+            return None
+    else:
+        return message.text
 
 
 def language(message):
@@ -528,7 +636,7 @@ def language(message):
     return lang
 
 
-@logged
+# @logged
 async def send_template_answer(message, template, *args, reply_markup=None):
     text = dialogues[language(message)][template]
     if len(args) != 0:
@@ -536,7 +644,7 @@ async def send_template_answer(message, template, *args, reply_markup=None):
     await send(message, text, reply_markup=reply_markup)
 
 
-@logged
+# @logged
 async def authorized(message):
     if message.from_user.id == OWNER_CHAT_ID:
         return True
@@ -552,27 +660,24 @@ async def add_handler(message: Message) -> None:
             text = "_Error: the command must have following syntax:_ `/add USER_ID [+/-]FUNDS`."
             await send(message, text)
             return
-        add_cmd, user, funds = message.text.split()
-        user = int(user)
-        with open("bot_users.json", "r") as f:
-            bot_users = json.load(f)
-        if user in bot_users:
-            user_data = await read_user_data(user)
+        add_cmd, user_id, funds = message.text.split()
+        user_id = int(user_id)
+        bot_users = await db_execute("SELECT id FROM users;")
+        if user_id in bot_users["id"]:
+            user = await db_get_user(user_id)
             if funds.startswith(("+", "-")) and funds[1:].replace(".", "", 1).isdigit():
-                user_data["balance"] += float(funds)
-                await write_user_data(user, user_data)
+                user["balance"] += float(funds)
+                await db_save_user(user)
                 await send(message, "_Done._")
             elif funds.replace(".", "", 1).isdigit():
-                user_data["balance"] = float(funds)
-                await write_user_data(user, user_data)
+                user["balance"] = float(funds)
+                await db_save_user(user)
                 await send(message, "_Done._")
             else:
-                text = f"_Error: {funds} is not a valid numeric data._"
-                await send(message, text)
+                await send(message, f"_Error: {funds} is not a valid numeric data._")
         else:
-            await add_user(user)
-            text = f"_The user *{user}* was added._"
-            await send(message, text)
+            await add_user(user_id)
+            await send(message, f"_The user *{user_id}* was added._")
             await add_handler(message)
 
 
@@ -616,23 +721,21 @@ async def help_handler(message: Message) -> None:
 
 @dp.message(Command("forget", "clear"))
 async def forget_handler(message: Message) -> None:
-    data = await read_user_data(message.from_user.id)
-    data["lock"] = False
-    data["timestamps"].clear()
-    data["messages"].clear()
-    await write_user_data(message.from_user.id, data)
+    await db_execute(
+        "DELETE FROM messages WHERE from_user_id = %s;", message.from_user.id
+    )
     await send_template_answer(message, "forget")
 
 
 @dp.message(Command("balance"))
 async def balance_handler(message: Message) -> None:
     kbd = inline_kbd({"back-to-help": "help-0", "tokens": "tokens"}, language(message))
-    data = await read_user_data(message.from_user.id)
+    user = await db_get_user(message.from_user.id)
     text = format(
         dialogues[language(message)]["balance"].format(
-            round(data["balance"], 4),
-            round(94 * data["balance"], 2),
-            round(data["balance"] / GPT4O_OUTPUT_1K * 1000),
+            round(user["balance"], 4),
+            round(87 * user["balance"], 2),
+            round(user["balance"] / GPT4O_OUTPUT_1K * 1000),
         ),
     )
     text += format(dialogues[language(message)]["payment"].format(FEE))
@@ -647,6 +750,7 @@ async def balance_handler(message: Message) -> None:
 @dp.message(Command("draw"))
 async def draw_handler(message: Message) -> None:
     if await prompt_is_accepted(message):
+        await db_save_message(message, "user")
         try:
             prompt = message.text.split("draw")[1].strip()
             if len(prompt) == 0:
@@ -655,22 +759,11 @@ async def draw_handler(message: Message) -> None:
             async with ChatActionSender.upload_photo(message.chat.id, bot):
                 image_url = await generate_image(prompt)
             kbd = inline_kbd({"redraw": "redraw"}, language(message))
-            await bot.send_photo(message.chat.id, image_url, reply_markup=kbd)
-            data = await read_user_data(message.from_user.id)
-            data["messages"].append(
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": ""},
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": image_url},
-                        },
-                    ],
-                }
-            )
-            data["balance"] -= FEE * DALLE3_OUTPUT
-            await write_user_data(message.from_user.id, data)
+            msg = await bot.send_photo(message.chat.id, image_url, reply_markup=kbd)
+            await db_save_message(msg, "system")
+            user = await db_get_user(message.from_user.id)
+            user["balance"] -= FEE * DALLE3_OUTPUT
+            await db_save_user(user)
         except (Exception, OpenAIError) as e:
             await send_template_answer(message, "block")
             await forget_handler(message)
@@ -679,13 +772,25 @@ async def draw_handler(message: Message) -> None:
 @dp.message()
 async def handler(message: Message) -> None:
     if await prompt_is_accepted(message):
+        await db_save_message(message, "user")
         await lock(message.from_user.id)
         async with ChatActionSender.typing(message.chat.id, bot):
-            response, usage = await generate_completion(message)
-        data = await read_user_data(message.from_user.id)
-        data["timestamps"].append(time.time())
-        data["messages"].append({"role": "system", "content": response})
-        data["balance"] -= (
+            response, usage, last_message = await generate_completion(message)
+        await db_execute(
+            "INSERT INTO messages \
+                (message_id, from_user_id, timestamp, role, text, image_url) \
+                VALUES (%s, %s, %s, %s, %s, %s);",
+            [
+                last_message.message_id,
+                message.from_user.id,
+                last_message.date,
+                "system",
+                response,
+                None,
+            ],
+        )
+        user = await db_get_user(message.from_user.id)
+        user["balance"] -= (
             (
                 GPT4O_INPUT_1K * usage.prompt_tokens
                 + GPT4O_OUTPUT_1K * usage.completion_tokens
@@ -693,7 +798,7 @@ async def handler(message: Message) -> None:
             * FEE
             / 1000
         )
-        await write_user_data(message.from_user.id, data)
+        await db_save_user(user)
 
 
 @dp.callback_query(F.data == "redraw")
@@ -704,9 +809,9 @@ async def redraw_callback(callback: types.CallbackQuery):
         await bot.download(message.photo[-1], destination=file_name + ".jpg")
         media = await variate_image(file_name)
     await bot.send_media_group(message.chat.id, media)
-    data = await read_user_data(callback.from_user.id)
-    data["balance"] -= 2 * FEE * DALLE2_OUTPUT
-    await write_user_data(callback.from_user.id, data)
+    user = await db_get_user(callback.from_user.id)
+    user["balance"] -= 2 * FEE * DALLE2_OUTPUT
+    await db_save_user(user)
 
 
 @dp.callback_query(F.data == "error")
@@ -718,12 +823,12 @@ async def error_callback(callback: types.CallbackQuery):
 @dp.callback_query(F.data == "balance")
 async def balance_callback(callback: types.CallbackQuery):
     message = callback.message
-    data = await read_user_data(callback.from_user.id)
+    user = await db_get_user(callback.from_user.id)
     text = format(
         dialogues[language(callback)]["balance"].format(
-            round(data["balance"], 4),
-            round(94 * data["balance"], 2),
-            round(data["balance"] / GPT4O_OUTPUT_1K * 1000),
+            round(user["balance"], 4),
+            round(87 * user["balance"], 2),
+            round(user["balance"] / GPT4O_OUTPUT_1K * 1000),
         )
     )
     text += format(dialogues[language(message)]["payment"].format(FEE))
