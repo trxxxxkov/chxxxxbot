@@ -19,13 +19,17 @@ from os import getenv
 from PIL import Image
 from openai import AsyncOpenAI, OpenAIError
 
-from aiogram import Bot, Dispatcher, types, F
+from aiohttp import web
+
+from aiogram import Bot, Dispatcher, Router, types, F
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode, InputMediaType, ChatAction
 from aiogram.filters import Command
 from aiogram.utils.chat_action import ChatActionSender
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import Message, InputMediaPhoto, FSInputFile
+from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
+
 
 import keyboards
 from dialogues import dialogues
@@ -34,6 +38,12 @@ from videos import videos
 from buttons import buttons
 
 load_dotenv()
+
+WEB_SERVER_HOST = "127.0.0.1"
+WEB_SERVER_PORT = 8080
+WEBHOOK_PATH = "/var/www/chxxxxbot"
+WEBHOOK_SECRET = "mysecret"
+BASE_WEBHOOK_URL = "https://trxxxxkov.net"
 
 IMAGES_PATH = "images"
 
@@ -93,15 +103,12 @@ INCOMPLETE_CODE_PATTERN = re.compile(
     rf"(?:(?:{CODE_PATTERN.pattern})|(?:[^`])|(?:``?)(?!`)|(?:````+)|(?<=\w|\\)```|```(?!\n)\s)*"
 )
 
-logging.basicConfig(level=logging.INFO, stream=sys.stdout)
-dp = Dispatcher()
-bot = Bot(
-    token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN_V2)
-)
 client = AsyncOpenAI(
     api_key=OPENAI_KEY,
     base_url="https://api.openai.com/v1",
 )
+
+dp = Dispatcher()
 
 
 def write_error(error, func, args, kwargs, messages, path="errors.json"):
@@ -964,9 +971,47 @@ async def hide_callback(callback: types.CallbackQuery):
         )
 
 
-async def main() -> None:
-    await dp.start_polling(bot)
+async def on_startup(bot: Bot) -> None:
+    # If you have a self-signed SSL certificate, then you will need to send a public
+    # certificate to Telegram
+    await bot.set_webhook(
+        f"{BASE_WEBHOOK_URL}{WEBHOOK_PATH}", secret_token=WEBHOOK_SECRET
+    )
+
+
+# Initialize Bot instance with default bot properties which will be passed to all API calls
+bot = Bot(
+    token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN_V2)
+)
+
+
+def main() -> None:
+    # Dispatcher is a root router
+
+    # Register startup hook to initialize webhook
+    dp.startup.register(on_startup)
+
+    # Create aiohttp.web.Application instance
+    app = web.Application()
+
+    # Create an instance of request handler,
+    # aiogram has few implementations for different cases of usage
+    # In this example we use SimpleRequestHandler which is designed to handle simple cases
+    webhook_requests_handler = SimpleRequestHandler(
+        dispatcher=dp,
+        bot=bot,
+        secret_token=WEBHOOK_SECRET,
+    )
+    # Register webhook handler on application
+    webhook_requests_handler.register(app, path=WEBHOOK_PATH)
+
+    # Mount dispatcher startup and shutdown hooks to aiohttp application
+    setup_application(app, dp, bot=bot)
+
+    # And finally start webserver
+    web.run_app(app, host=WEB_SERVER_HOST, port=WEB_SERVER_PORT)
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    logging.basicConfig(level=logging.INFO, stream=sys.stdout)
+    main()
