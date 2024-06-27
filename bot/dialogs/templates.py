@@ -1,4 +1,4 @@
-dialogues = {
+templates = {
     "en": {
         "start": """
 Pleased to meet you, *{}*!
