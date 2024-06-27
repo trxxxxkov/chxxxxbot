@@ -10,6 +10,7 @@ import cairosvg
 import urllib.parse
 import re
 
+
 import psycopg
 from psycopg.rows import dict_row
 
@@ -42,8 +43,8 @@ load_dotenv()
 WEB_SERVER_HOST = "127.0.0.1"
 WEB_SERVER_PORT = 8080
 WEBHOOK_PATH = "/var/www/chxxxxbot"
-WEBHOOK_SECRET = "mysecret"
 BASE_WEBHOOK_URL = "https://trxxxxkov.net"
+WEBHOOK_SECRET = getenv("WEBHOOK_SECRET")
 
 IMAGES_PATH = "images"
 
@@ -51,8 +52,8 @@ OWNER_CHAT_ID = 791388236
 BOT_TOKEN = getenv("TG_BOT_TOKEN")
 OPENAI_KEY = getenv("OPENAI_API_KEY")
 DATABASE_PASSWORD = getenv("POSTGRESQL_DB_PASSWORD")
-DATABASE_NAME = getenv("POSTGRESQL_DB_NAME")
-DATABASE_USER = getenv("POSTGRESQL_DB_USER")
+DATABASE_NAME = "chxxxxbot"
+DATABASE_USER = "chxxxxbot"
 DATABASE_HOST = "localhost"
 DATABASE_PORT = "5432"
 DSN = f"host={DATABASE_HOST} \
