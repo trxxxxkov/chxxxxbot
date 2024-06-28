@@ -123,12 +123,11 @@ async def draw_handler(message: Message, command) -> None:
             kbd = inline_kbd({"redraw": "redraw"}, language(message))
             msg = await bot.send_photo(message.chat.id, image_url, reply_markup=kbd)
             await db_execute(
-                "INSERT INTO messages (message_id, from_user_id, text, image_url) VALUES (%s, %s, %s, %s);",
+                "INSERT INTO messages (message_id, from_user_id, image_url) VALUES (%s, %s, %s);",
                 [
                     msg.message_id,
                     message.from_user.id,
-                    await get_message_text(msg),
-                    await get_image_url(msg),
+                    image_url,
                 ],
             )
             user = await db_get_user(message.from_user.id)
