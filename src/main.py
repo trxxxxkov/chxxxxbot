@@ -2,9 +2,7 @@ import logging
 import sys
 from aiohttp import web
 
-from aiogram import Bot, Dispatcher, Router
-from aiogram.types import Message
-from aiogram.filters import Command
+from aiogram import Bot, Dispatcher
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 
 from src.handlers import public_cmds, hidden_cmds, privileged_cmds, callbacks
@@ -17,13 +15,6 @@ from utils.globals import (
     WEB_SERVER_PORT,
 )
 
-router = Router()
-
-
-@router.message(Command("start"))
-async def command_start_handler(message: Message) -> None:
-    await message.answer(f"Hello\,\!")
-
 
 async def on_startup(bot: Bot) -> None:
     await bot.set_webhook(
@@ -33,11 +24,7 @@ async def on_startup(bot: Bot) -> None:
 
 def main() -> None:
     dp = Dispatcher()
-    dp.include_router(router)
-    dp.include_router(public_cmds.rt)
-    dp.include_router(hidden_cmds.rt)
-    dp.include_router(privileged_cmds.rt)
-    dp.include_router(callbacks.rt)
+    dp.include_routers(public_cmds.rt, hidden_cmds.rt, privileged_cmds.rt, callbacks.rt)
     dp.startup.register(on_startup)
     app = web.Application()
     webhook_requests_handler = SimpleRequestHandler(
