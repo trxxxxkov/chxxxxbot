@@ -6,16 +6,22 @@ from aiogram.filters import Command
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.utils.chat_action import ChatActionSender
 
+import src.templates.media.videos
 from src.templates.keyboards.reply_kbd import help_keyboard
 from src.templates.keyboards.buttons import buttons
-from src.templates.media.videos import videos
 from src.templates.dialogs import dialogs
 from src.templates.bot_menu import bot_menu
 from src.templates.keyboards.inline_kbd import inline_kbd
 from src.core.image_generation import generate_image
 from src.core.chat_completion import generate_completion
-from src.utils.formatting import send_template_answer
-from src.utils.validations import language, add_user, prompt_is_accepted, lock
+from src.utils.formatting import send_template_answer, format
+from src.utils.validations import (
+    language,
+    add_user,
+    prompt_is_accepted,
+    lock,
+    template_videos2ids,
+)
 from src.database.queries import (
     db_get_user,
     db_execute,
@@ -25,7 +31,13 @@ from src.database.queries import (
     get_image_url,
     get_message_text,
 )
-from src.utils.globals import bot, GPT4O_OUTPUT_1K, FEE, DALLE3_OUTPUT, GPT4O_INPUT_1K
+from src.utils.globals import (
+    bot,
+    GPT4O_OUTPUT_1K,
+    FEE,
+    DALLE3_OUTPUT,
+    GPT4O_INPUT_1K,
+)
 
 
 rt = Router()
@@ -46,6 +58,8 @@ async def start_handler(message: Message) -> None:
         message.from_user.first_name,
         reply_markup=help_keyboard,
     )
+    if src.templates.media.videos.videos is None:
+        await template_videos2ids()
 
 
 @rt.message(Command("help"))
@@ -62,7 +76,7 @@ async def help_handler(message: Message) -> None:
     text = format(dialogs[language(message)]["help"][0])
     await bot.send_animation(
         message.chat.id,
-        videos["help"][0],
+        src.templates.media.videos.videos["help"][0],
         caption=text,
         reply_markup=builder.as_markup(),
     )
@@ -90,23 +104,22 @@ async def balance_handler(message: Message) -> None:
     text += format(dialogs[language(message)]["payment"].format(FEE))
     await bot.send_animation(
         message.chat.id,
-        videos["balance"],
+        src.templates.media.videos.videos["balance"],
         caption=text,
         reply_markup=kbd,
     )
 
 
 @rt.message(Command("draw"))
-async def draw_handler(message: Message) -> None:
+async def draw_handler(message: Message, command) -> None:
     if await prompt_is_accepted(message):
         await db_save_message(message, "user")
         try:
-            prompt = message.text.split("draw")[1].strip()
-            if len(prompt) == 0:
+            if not command.args:
                 await send_template_answer(message, "draw")
                 return
             async with ChatActionSender.upload_photo(message.chat.id, bot):
-                image_url = await generate_image(prompt)
+                image_url = await generate_image(command.args)
             kbd = inline_kbd({"redraw": "redraw"}, language(message))
             msg = await bot.send_photo(message.chat.id, image_url, reply_markup=kbd)
             await db_execute(

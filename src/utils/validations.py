@@ -1,12 +1,16 @@
+import json
 import time
 import asyncio
 import tiktoken
 
-from src.utils.analytics.logging import logged
+from aiogram.types import FSInputFile
+
+import src.templates.media.videos
 from src.templates.dialogs import dialogs
+from src.utils.analytics.logging import logged
 from src.database.queries import db_execute, db_get_user, db_save_user, db_get_messages
 from src.utils.formatting import send_template_answer
-from src.utils.globals import FEE, GPT4O_INPUT_1K, GPT_MEMORY_SEC, OWNER_CHAT_ID
+from src.utils.globals import bot, FEE, GPT4O_INPUT_1K, GPT_MEMORY_SEC, OWNER_CHAT_ID
 
 
 @logged
@@ -99,3 +103,40 @@ async def authorized(message):
     else:
         await send_template_answer(message, "root")
         return False
+
+
+@logged
+async def template_videos2ids():
+    hvid0 = await bot.send_animation(
+        OWNER_CHAT_ID, FSInputFile("src/templates/media/saved_videos/text.mp4")
+    )
+    hvid1 = await bot.send_animation(
+        OWNER_CHAT_ID,
+        FSInputFile("src/templates/media/saved_videos/recognition.mp4"),
+    )
+    hvid2 = await bot.send_animation(
+        OWNER_CHAT_ID,
+        FSInputFile("src/templates/media/saved_videos/generation.mp4"),
+    )
+    hvid3 = await bot.send_animation(
+        OWNER_CHAT_ID, FSInputFile("src/templates/media/saved_videos/latex.mp4")
+    )
+    balance_vid = await bot.send_animation(
+        OWNER_CHAT_ID, FSInputFile("src/templates/media/saved_videos/forget.mp4")
+    )
+    tokens_vid = await bot.send_animation(
+        OWNER_CHAT_ID, FSInputFile("src/templates/media/saved_videos/rumble.mp4")
+    )
+    src.templates.media.videos.videos = {
+        "help": [
+            hvid0.video.file_id,
+            hvid1.video.file_id,
+            hvid2.video.file_id,
+            hvid3.video.file_id,
+        ],
+        "balance": balance_vid.video.file_id,
+        "tokens": tokens_vid.video.file_id,
+    }
+    with open("src/templates/media/videos.py", "w") as file:
+        file.write("videos = ")
+        json.dump(src.templates.media.videos.videos, file, indent=4)

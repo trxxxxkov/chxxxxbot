@@ -6,7 +6,7 @@ from aiogram.enums import InputMediaType
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import FSInputFile
 
-from src.templates.media.videos import videos
+import src.templates.media.videos
 from src.templates.dialogs import dialogs
 from src.templates.keyboards.buttons import buttons
 from src.templates.keyboards.inline_kbd import inline_kbd
@@ -19,6 +19,7 @@ from src.utils.formatting import (
     svg_to_jpg,
     latex_significant,
     send,
+    format,
 )
 from src.utils.globals import bot, FEE, DALLE2_OUTPUT, GPT4O_OUTPUT_1K
 
@@ -29,7 +30,7 @@ rt = Router()
 @rt.callback_query(F.data == "redraw")
 async def redraw_callback(callback: types.CallbackQuery):
     message = callback.message
-    file_name = f"images/{callback.from_user.id}"
+    file_name = f"src/templates/media/saved_images/{callback.from_user.id}"
     async with ChatActionSender.upload_photo(message.chat.id, bot):
         await bot.download(message.photo[-1], destination=file_name + ".jpg")
         media = await variate_image(file_name)
@@ -37,7 +38,6 @@ async def redraw_callback(callback: types.CallbackQuery):
     user = await db_get_user(callback.from_user.id)
     user["balance"] -= 2 * FEE * DALLE2_OUTPUT
     await db_save_user(user)
-    await callback.answer()
 
 
 @rt.callback_query(F.data == "error")
@@ -63,7 +63,7 @@ async def balance_callback(callback: types.CallbackQuery):
     await bot.edit_message_media(
         types.InputMediaAnimation(
             type=InputMediaType.ANIMATION,
-            media=videos["balance"],
+            media=src.templates.media.videos.videos["balance"],
             caption=text,
         ),
         chat_id=message.chat.id,
@@ -81,7 +81,7 @@ async def tokens_callback(callback: types.CallbackQuery):
     await bot.edit_message_media(
         types.InputMediaAnimation(
             type=InputMediaType.ANIMATION,
-            media=videos["tokens"],
+            media=src.templates.media.videos.videos["tokens"],
             caption=text,
         ),
         chat_id=message.chat.id,
@@ -117,7 +117,9 @@ async def help_callback(callback: types.CallbackQuery):
     text = format(dialogs[language(callback)]["help"][h_idx])
     await bot.edit_message_media(
         types.InputMediaAnimation(
-            type=InputMediaType.ANIMATION, media=videos["help"][h_idx], caption=text
+            type=InputMediaType.ANIMATION,
+            media=src.templates.media.videos.videos["help"][h_idx],
+            caption=text,
         ),
         chat_id=message.chat.id,
         message_id=message.message_id,

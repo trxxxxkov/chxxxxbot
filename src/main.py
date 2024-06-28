@@ -24,7 +24,7 @@ async def on_startup(bot: Bot) -> None:
 
 def main() -> None:
     dp = Dispatcher()
-    dp.include_routers(public_cmds.rt, hidden_cmds.rt, privileged_cmds.rt, callbacks.rt)
+    dp.include_routers(privileged_cmds.rt, hidden_cmds.rt, public_cmds.rt, callbacks.rt)
     dp.startup.register(on_startup)
     app = web.Application()
     webhook_requests_handler = SimpleRequestHandler(

@@ -16,7 +16,7 @@ async def add_handler(message: Message) -> None:
             text = "_Error: the command must have following syntax:_ `/add USER_ID [+/-]FUNDS`."
             await send(message, text)
             return
-        add_cmd, user_id, funds = message.text.split()
+        _, user_id, funds = message.text.split()
         user_id = int(user_id)
         bot_users = await db_execute("SELECT id FROM users;")
         if not isinstance(bot_users, list):
@@ -34,6 +34,4 @@ async def add_handler(message: Message) -> None:
             else:
                 await send(message, f"_Error: {funds} is not a valid numeric data._")
         else:
-            await add_user(message)
-            await send(message, f"_The user *{user_id}* was added._")
-            await add_handler(message)
+            await send(message, f"_The user *{user_id}* is not found._")

@@ -4,8 +4,12 @@ from openai import OpenAIError
 from aiogram.types import Message
 from aiogram import types
 
+from src.utils.globals import bot, OWNER_CHAT_ID
 
-def write_error(error, func, args, kwargs, messages, path="errors.json"):
+
+def write_error(
+    error, func, args, kwargs, messages, path="src/utils/analytics/errors.json"
+):
     with open(path, "r") as f:
         try:
             errors = json.load(f)
@@ -30,7 +34,7 @@ def logged(f):
             result = await f(*args, **kwargs)
             return result
         except (Exception, OpenAIError) as e:
-            alert = format(f"_ERROR: {e}_")
+            alert = "_ERROR\. Click the button below to see details\._"
             await bot.send_message(OWNER_CHAT_ID, alert)
             messages = None
             try:
