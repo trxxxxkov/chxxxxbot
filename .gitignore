@@ -2,5 +2,6 @@
 .venv
 test.py
 __pycache__
+src/utils/analytics/errors.json
 src/templates/media/saved_images/
 !src/templates/media/saved_images/Sebastian.jpg
