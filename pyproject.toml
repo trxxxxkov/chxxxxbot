@@ -1,0 +1,41 @@
+[project]
+name = "chxxxxbot"
+description = "Telegram Bot powered by OpenAI's models"
+version = "2024.6.28"
+dependencies = [
+  "aiogram",
+  "openai",
+  "python-dotenv",
+  "cairosvg",
+  "tiktoken",
+  "psycopg",
+]
+requires-python = ">= 3.9"
+authors = [
+  {name = "Daniil Tretyakov", email = "trxxxxkov@gmail.com"},
+]
+maintainers = [
+  {name = "Daniil Tretyakov", email = "trxxxxkov@gmail.com"},
+]
+readme = "README.md"
+keywords = ["python", "aiogram", "docker", "nginx", "postgresql", "telegram-api", "openai-api"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Operating System :: OS Independent"
+]
+
+
+[project.urls]
+Repository = "https://github.com/trxxxxkov/chxxxxbot"
+Issues = "https://github.com/trxxxxkov/chxxxxbot/issues"
+
+
+[build-system]
+build-backend = "hatchling.build"
+requires = ["hatchling"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
