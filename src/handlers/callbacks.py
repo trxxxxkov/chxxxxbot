@@ -37,12 +37,14 @@ async def redraw_callback(callback: types.CallbackQuery):
     user = await db_get_user(callback.from_user.id)
     user["balance"] -= 2 * FEE * DALLE2_OUTPUT
     await db_save_user(user)
+    await callback.answer()
 
 
 @rt.callback_query(F.data == "error")
 async def error_callback(callback: types.CallbackQuery):
     text = dialogs[language(callback)]["error"]
     await send(callback.message, text)
+    await callback.answer()
 
 
 @rt.callback_query(F.data == "balance")
@@ -68,6 +70,7 @@ async def balance_callback(callback: types.CallbackQuery):
         message_id=message.message_id,
         reply_markup=kbd,
     )
+    await callback.answer()
 
 
 @rt.callback_query(F.data == "tokens")
@@ -85,6 +88,7 @@ async def tokens_callback(callback: types.CallbackQuery):
         message_id=message.message_id,
         reply_markup=kbd,
     )
+    await callback.answer()
 
 
 @rt.callback_query(F.data.startswith("help-"))
@@ -119,6 +123,7 @@ async def help_callback(callback: types.CallbackQuery):
         message_id=message.message_id,
         reply_markup=builder.as_markup(),
     )
+    await callback.answer()
 
 
 @rt.callback_query(F.data.startswith("latex-"))
@@ -126,7 +131,7 @@ async def latex_callback(callback: types.CallbackQuery):
     f_i = int(callback.data.split("-")[1])
     f = [f for f in find_latex(callback.message.text) if latex_significant(f)][f_i]
     image_url = latex2url(f)
-    local_path = f"images/{callback.from_user.id}.jpg"
+    local_path = f"src/templates/media/saved_images/{callback.from_user.id}.jpg"
     svg_to_jpg(image_url, local_path)
     photo = FSInputFile(local_path)
     kbd = inline_kbd({"hide": "hide"}, language(callback))
@@ -140,6 +145,7 @@ async def latex_callback(callback: types.CallbackQuery):
         ),
         reply_markup=kbd,
     )
+    await callback.answer()
 
 
 @rt.callback_query(F.data == "hide")
@@ -151,3 +157,4 @@ async def hide_callback(callback: types.CallbackQuery):
         await bot.send_message(
             message.chat.id, text, reply_to_message_id=message.message_id
         )
+    await callback.answer()

@@ -2,3 +2,5 @@
 .venv
 test.py
 __pycache__
+src/templates/media/saved_images/
+!src/templates/media/saved_images/Sebastian.jpg
