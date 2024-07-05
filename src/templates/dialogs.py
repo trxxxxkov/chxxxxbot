@@ -116,6 +116,7 @@ Describe the image you want to get after /draw command, for example:
         "old": "_A message can only be hidden if it was sent less than 48 hours ago._",
         "block": "_The response has been blocked by OpenAI because your prompt violates its content policy. Consider using other words in your prompt!_",
         "vision-pre-prompt": "What do you think about it?",
+        "as_file": "_No messages are available to be sent as a file._",
     },
     "ru": {
         "start": """
@@ -236,5 +237,6 @@ _Недостаточно средств для оплаты вашего зап
         "old": "_Сообщение может быть скрыто только если оно было отправлено менее 48 часов назад_",
         "block": "_Ваш запрос был отклонён сервером OpenAI, так как в нём содержится запрещённая информация. Попробуйте изменить формулировку и использовать другие слова!_",
         "vision-pre-prompt": "Что ты об этом думаешь?",
+        "as_file": "_Отсутствуют сообщения, которые можно было бы отправить как файл._",
     },
 }
