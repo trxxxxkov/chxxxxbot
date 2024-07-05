@@ -7,21 +7,13 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.utils.chat_action import ChatActionSender
 
 import templates.tutorial_vids.videos
-from src.templates.keyboards.reply_kbd import help_keyboard
 from src.templates.keyboards.buttons import buttons
 from src.templates.dialogs import dialogs
-from src.templates.bot_menu import bot_menu
 from src.templates.keyboards.inline_kbd import inline_kbd
 from src.core.image_generation import generate_image
 from src.core.chat_completion import generate_completion
 from src.utils.formatting import send_template_answer, format
-from src.utils.validations import (
-    language,
-    add_user,
-    prompt_is_accepted,
-    lock,
-    template_videos2ids,
-)
+from src.utils.validations import language, prompt_is_accepted, lock
 from src.database.queries import (
     db_get_user,
     db_execute,
@@ -39,25 +31,6 @@ from src.utils.globals import (
 
 
 rt = Router()
-
-
-@rt.message(Command("start"))
-async def start_handler(message: Message) -> None:
-    await bot.set_my_commands(
-        [
-            types.BotCommand(command=key, description=value)
-            for key, value in bot_menu[language(message)].items()
-        ]
-    )
-    await add_user(message)
-    await send_template_answer(
-        message,
-        "start",
-        message.from_user.first_name,
-        reply_markup=help_keyboard,
-    )
-    if templates.tutorial_vids.videos.videos is None:
-        await template_videos2ids()
 
 
 @rt.message(Command("help"))
@@ -134,6 +107,21 @@ async def draw_handler(message: Message, command) -> None:
         except (Exception, OpenAIError) as e:
             await send_template_answer(message, "block")
             await forget_handler(message)
+
+
+@rt.message(Command("donate"))
+async def donate_handler(message: Message) -> None:
+    pass
+
+
+@rt.message(Command("refund"))
+async def refund_handler(message: Message) -> None:
+    pass
+
+
+@rt.message(Command("paysupport"))
+async def paysupport_handler(message: Message) -> None:
+    pass
 
 
 @rt.message()

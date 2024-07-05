@@ -3,11 +3,34 @@ from aiogram.types import Message
 from aiogram.filters import Command
 from aiogram.types import FSInputFile
 
+import templates.tutorial_vids.videos
 from src.utils.globals import bot
+from src.templates.bot_menu import bot_menu
+from src.templates.keyboards.reply_kbd import help_keyboard
 from src.utils.formatting import send_template_answer
+from src.utils.validations import add_user, language, template_videos2ids
 from src.database.queries import db_execute
 
 rt = Router()
+
+
+@rt.message(Command("start"))
+async def start_handler(message: Message) -> None:
+    await bot.set_my_commands(
+        [
+            types.BotCommand(command=key, description=value)
+            for key, value in bot_menu[language(message)].items()
+        ]
+    )
+    await add_user(message)
+    await send_template_answer(
+        message,
+        "start",
+        message.from_user.first_name,
+        reply_markup=help_keyboard,
+    )
+    if templates.tutorial_vids.videos.videos is None:
+        await template_videos2ids()
 
 
 @rt.message(Command("as_file"))
