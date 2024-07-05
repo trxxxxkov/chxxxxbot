@@ -1,6 +1,6 @@
 from aiogram.enums import ChatAction
 
-from src.templates.keyboards.reply_kbd import forget_keyboard
+from src.templates.keyboards.reply_kbd import last_msg_keyboard
 from src.utils.analytics.logging import logged
 from src.database.queries import db_get_messages, db_get_model
 from src.utils.formatting import is_incomplete, send, num_formulas_before, cut
@@ -38,6 +38,6 @@ async def generate_completion(message):
                     await send(message, head, f_idx=num_formulas_before(head, response))
                     await bot.send_chat_action(message.chat.id, ChatAction.TYPING)
     last_message = await send(
-        message, tail, forget_keyboard, num_formulas_before(tail, response)
+        message, tail, last_msg_keyboard, num_formulas_before(tail, response)
     )
     return response, usage, last_message

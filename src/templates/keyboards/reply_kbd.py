@@ -8,10 +8,9 @@ help_keyboard = types.ReplyKeyboardMarkup(
     one_time_keyboard=True,
 )
 
-forget_keyboard = types.ReplyKeyboardMarkup(
+last_msg_keyboard = types.ReplyKeyboardMarkup(
     keyboard=[
-        [types.KeyboardButton(text="/as_file")],
-        [types.KeyboardButton(text="/forget")],
+        [types.KeyboardButton(text="/forget"), types.KeyboardButton(text="/as_file")],
     ],
     resize_keyboard=True,
     is_persistent=True,
