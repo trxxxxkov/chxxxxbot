@@ -6,7 +6,7 @@ from aiogram.enums import InputMediaType
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import FSInputFile
 
-import src.templates.media.videos
+import templates.tutorial_vids.videos
 from src.templates.dialogs import dialogs
 from src.templates.keyboards.buttons import buttons
 from src.templates.keyboards.inline_kbd import inline_kbd
@@ -63,7 +63,7 @@ async def balance_callback(callback: types.CallbackQuery):
     await bot.edit_message_media(
         types.InputMediaAnimation(
             type=InputMediaType.ANIMATION,
-            media=src.templates.media.videos.videos["balance"],
+            media=templates.tutorial_vids.videos.videos["balance"],
             caption=text,
         ),
         chat_id=message.chat.id,
@@ -81,7 +81,7 @@ async def tokens_callback(callback: types.CallbackQuery):
     await bot.edit_message_media(
         types.InputMediaAnimation(
             type=InputMediaType.ANIMATION,
-            media=src.templates.media.videos.videos["tokens"],
+            media=templates.tutorial_vids.videos.videos["tokens"],
             caption=text,
         ),
         chat_id=message.chat.id,
@@ -118,7 +118,7 @@ async def help_callback(callback: types.CallbackQuery):
     await bot.edit_message_media(
         types.InputMediaAnimation(
             type=InputMediaType.ANIMATION,
-            media=src.templates.media.videos.videos["help"][h_idx],
+            media=templates.tutorial_vids.videos.videos["help"][h_idx],
             caption=text,
         ),
         chat_id=message.chat.id,

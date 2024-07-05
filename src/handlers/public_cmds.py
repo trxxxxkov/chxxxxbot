@@ -6,7 +6,7 @@ from aiogram.filters import Command
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.utils.chat_action import ChatActionSender
 
-import src.templates.media.videos
+import templates.tutorial_vids.videos
 from src.templates.keyboards.reply_kbd import help_keyboard
 from src.templates.keyboards.buttons import buttons
 from src.templates.dialogs import dialogs
@@ -56,7 +56,7 @@ async def start_handler(message: Message) -> None:
         message.from_user.first_name,
         reply_markup=help_keyboard,
     )
-    if src.templates.media.videos.videos is None:
+    if templates.tutorial_vids.videos.videos is None:
         await template_videos2ids()
 
 
@@ -74,7 +74,7 @@ async def help_handler(message: Message) -> None:
     text = format(dialogs[language(message)]["help"][0])
     await bot.send_animation(
         message.chat.id,
-        src.templates.media.videos.videos["help"][0],
+        templates.tutorial_vids.videos.videos["help"][0],
         caption=text,
         reply_markup=builder.as_markup(),
     )
@@ -102,7 +102,7 @@ async def balance_handler(message: Message) -> None:
     text += format(dialogs[language(message)]["payment"].format(FEE))
     await bot.send_animation(
         message.chat.id,
-        src.templates.media.videos.videos["balance"],
+        templates.tutorial_vids.videos.videos["balance"],
         caption=text,
         reply_markup=kbd,
     )
