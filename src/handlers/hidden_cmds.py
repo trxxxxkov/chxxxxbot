@@ -16,18 +16,16 @@ async def as_file_handler(message: Message) -> None:
         "SELECT * FROM messages WHERE from_user_id = %s ORDER BY timestamp;",
         message.from_user.id,
     )
-    if messages:
-        if isinstance(messages, list):
-            last_msg = messages[-1]
-        else:
-            last_msg = message
+    if messages and isinstance(messages, list):
+        last_msg = messages[-1]
+        prompt = messages[-2]
         path_to_file = f"src/utils/temp/markdown/{message.from_user.id}-as_file.md"
         with open(path_to_file, "w") as f:
             f.write(last_msg["text"])
         await bot.send_document(
             message.chat.id,
             FSInputFile(path_to_file),
-            reply_to_message_id=last_msg["message_id"],
+            reply_to_message_id=prompt["message_id"],
         )
     else:
         await send_template_answer(message, "as_file")
