@@ -5,7 +5,7 @@ import tiktoken
 
 from aiogram.types import FSInputFile
 
-import src.templates.media.videos
+import templates.tutorial_vids.videos
 from src.templates.dialogs import dialogs
 from src.utils.analytics.logging import logged
 from src.database.queries import db_execute, db_get_user, db_save_user, db_get_messages
@@ -108,26 +108,26 @@ async def authorized(message):
 @logged
 async def template_videos2ids():
     hvid0 = await bot.send_animation(
-        OWNER_CHAT_ID, FSInputFile("src/templates/media/saved_videos/text.mp4")
+        OWNER_CHAT_ID, FSInputFile("src/templates/tutorial_vids/prompt.mp4")
     )
     hvid1 = await bot.send_animation(
         OWNER_CHAT_ID,
-        FSInputFile("src/templates/media/saved_videos/recognition.mp4"),
+        FSInputFile("src/templates/tutorial_vids/recognition.mp4"),
     )
     hvid2 = await bot.send_animation(
         OWNER_CHAT_ID,
-        FSInputFile("src/templates/media/saved_videos/generation.mp4"),
+        FSInputFile("src/templates//tutorial_vids/generation.mp4"),
     )
     hvid3 = await bot.send_animation(
-        OWNER_CHAT_ID, FSInputFile("src/templates/media/saved_videos/latex.mp4")
+        OWNER_CHAT_ID, FSInputFile("src/templates/tutorial_vids/latex.mp4")
     )
     balance_vid = await bot.send_animation(
-        OWNER_CHAT_ID, FSInputFile("src/templates/media/saved_videos/forget.mp4")
+        OWNER_CHAT_ID, FSInputFile("src/templates/tutorial_vids/balance.mp4")
     )
     tokens_vid = await bot.send_animation(
-        OWNER_CHAT_ID, FSInputFile("src/templates/media/saved_videos/rumble.mp4")
+        OWNER_CHAT_ID, FSInputFile("src/templates/tutorial_vids/what_are_tokens.mp4")
     )
-    src.templates.media.videos.videos = {
+    templates.tutorial_vids.videos.videos = {
         "help": [
             hvid0.video.file_id,
             hvid1.video.file_id,
@@ -137,6 +137,6 @@ async def template_videos2ids():
         "balance": balance_vid.video.file_id,
         "tokens": tokens_vid.video.file_id,
     }
-    with open("src/templates/media/videos.py", "w") as file:
+    with open("src/templates/tutorial_vids/videos.py", "w") as file:
         file.write("videos = ")
-        json.dump(src.templates.media.videos.videos, file, indent=4)
+        json.dump(templates.tutorial_vids.videos.videos, file, indent=4)

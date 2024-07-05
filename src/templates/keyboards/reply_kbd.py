@@ -10,6 +10,7 @@ help_keyboard = types.ReplyKeyboardMarkup(
 
 forget_keyboard = types.ReplyKeyboardMarkup(
     keyboard=[
+        [types.KeyboardButton(text="/as_file")],
         [types.KeyboardButton(text="/forget")],
     ],
     resize_keyboard=True,

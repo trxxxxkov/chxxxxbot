@@ -129,7 +129,7 @@ async def get_image_url(message):
     from src.utils.formatting import local_image_to_data_url
 
     if message.photo:
-        image_path = f"src/templates/media/saved_images/{message.from_user.id}.jpg"
+        image_path = f"src/utils/temp/images/{message.from_user.id}.jpg"
         await bot.download(message.photo[-1], destination=image_path)
         return local_image_to_data_url(image_path)
     else:

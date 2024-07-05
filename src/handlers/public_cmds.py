@@ -28,8 +28,6 @@ from src.database.queries import (
     db_save_message,
     db_save_user,
     db_save_expenses,
-    get_image_url,
-    get_message_text,
 )
 from src.utils.globals import (
     bot,

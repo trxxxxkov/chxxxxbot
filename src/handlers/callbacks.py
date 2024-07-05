@@ -30,7 +30,7 @@ rt = Router()
 @rt.callback_query(F.data == "redraw")
 async def redraw_callback(callback: types.CallbackQuery):
     message = callback.message
-    file_name = f"src/templates/media/saved_images/{callback.from_user.id}"
+    file_name = f"src/utils/temp/images/{callback.from_user.id}"
     async with ChatActionSender.upload_photo(message.chat.id, bot):
         await bot.download(message.photo[-1], destination=file_name + ".jpg")
         media = await variate_image(file_name)
@@ -133,7 +133,7 @@ async def latex_callback(callback: types.CallbackQuery):
     f_i = int(callback.data.split("-")[1])
     f = [f for f in find_latex(callback.message.text) if latex_significant(f)][f_i]
     image_url = latex2url(f)
-    local_path = f"src/templates/media/saved_images/{callback.from_user.id}.jpg"
+    local_path = f"src/utils/temp/images/{callback.from_user.id}.jpg"
     svg_to_jpg(image_url, local_path)
     photo = FSInputFile(local_path)
     kbd = inline_kbd({"hide": "hide"}, language(callback))
