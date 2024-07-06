@@ -72,7 +72,7 @@ where `YOUR_PROMPT` - is a description of an image you want.
   Sebastian sends such code as is, without compilation.""",
         ],
         "balance": """ 
-  *Your balance: ${} \u2248 {}*\u20bd *\u2248 {} tokens.*
+  *Your balance: {} tokens \u2248 ${}.*
         
   """,
         "payment": """
@@ -110,6 +110,14 @@ _You don't have enough funds to perform this request. You have to add funds to u
 Describe the image you want to get after /draw command, for example:
 
   `/draw The stars tennis-balls, struck and bandied which way please them`""",
+        "donate": """
+_The command must have the following syntax:_ 
+
+  `/donate STARS_AMOUNT`,
+  
+  _where_ `STARS_AMOUNT` _- is an integer between 1 and 2500._""",
+        "donate-description": "You will top up your balance with {} tokens \u2248 ${}. These funds will be used exclusively for sending your requests to GPT-4o and DALLE and receiving responses from them.",
+        "donate-title": "Payment for Sebastian's services",
         "root": "_You are not allowed to use this command. Contact @trxxxxkov for a permission._",
         "forget": "_All previous messages have been forgotten!_",
         "forgotten": "_The source code is unavailable because the message was forgotten._",
@@ -193,7 +201,7 @@ Describe the image you want to get after /draw command, for example:
             """,
         ],
         "balance": """
-*Ваш баланс: ${} \u2248 {}*\u20bd *\u2248 {} токенов.*
+*Ваш баланс: {} токенов \u2248 ${}.*
         
   """,
         "payment": """
@@ -231,6 +239,14 @@ _Недостаточно средств для оплаты вашего зап
 Введите команду /draw и опишите изображение, которое желаете получить, например:
      
   `/draw Теннисные мячики небес, которые соединяют и лупят, как захотят`""",
+        "donate": """
+  _Команда должна иметь следующий вид:_
+  
+  `/donate ЧИСЛО_ЗВЁЗД`,
+  
+  _где_ `ЧИСЛО_ЗВЁЗД` _- целое число от 1 до 2500._""",
+        "donate-description": "Вы пополните свой баланс на {} токенов \u2248 ${}. Эти средства будут использоваться только для отправки ваших запросов к GPT-4o и DALLE и получения ответов от них.",
+        "donate-title": "Оплата услуг Себастиана",
         "root": "_Эта команда вам недоступна. Чтобы получить доступ к ней, свяжитесь с @trxxxxkov._",
         "forget": "_Все предыдущие сообщения были забыты!_",
         "forgotten": "_Исходный код недоступен, так как сообщение было забыто_",

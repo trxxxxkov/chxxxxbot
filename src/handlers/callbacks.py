@@ -21,7 +21,7 @@ from src.utils.formatting import (
     send,
     format,
 )
-from src.utils.globals import bot, FEE, DALLE2_OUTPUT, GPT4O_OUTPUT_1K
+from src.utils.globals import bot, FEE, DALLE2_OUTPUT, GPT4O_INPUT_1K
 
 
 rt = Router()
@@ -53,9 +53,8 @@ async def balance_callback(callback: types.CallbackQuery):
     user = await db_get_user(callback.from_user.id)
     text = format(
         dialogs[language(callback)]["balance"].format(
+            round(user["balance"] / FEE / GPT4O_INPUT_1K * 1000),
             round(user["balance"], 4),
-            round(87 * user["balance"], 2),
-            round(user["balance"] / GPT4O_OUTPUT_1K * 1000),
         )
     )
     text += format(dialogs[language(message)]["payment"].format(FEE))

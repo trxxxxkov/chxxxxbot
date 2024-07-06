@@ -13,7 +13,7 @@ rt = Router()
 async def add_handler(message: Message) -> None:
     if await authorized(message):
         if len(message.text.split()) != 3:
-            text = "_Error: the command must have following syntax:_ `/add USER_ID [+/-]FUNDS`."
+            text = "_Error: the command must have the following syntax:_ `/add USER_ID [+/-]FUNDS`."
             await send(message, text)
             return
         _, user_id, funds = message.text.split()

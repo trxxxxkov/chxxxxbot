@@ -13,6 +13,7 @@ buttons = {
         "tokens": "What are tokens?",
         "back-to-balance": "To your balance & prices",
         "back-to-help": "/help",
+        "donate": "Pay ⭐{} to Sebastian",
     },
     "ru": {
         "help": [
@@ -28,5 +29,6 @@ buttons = {
         "tokens": "Что такое токены?",
         "back-to-balance": "К ценам и балансу",
         "back-to-help": "/help",
+        "donate": "Заплатить Себастиану ⭐{}",
     },
 }

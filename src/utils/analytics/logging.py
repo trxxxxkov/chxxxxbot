@@ -10,11 +10,11 @@ from src.utils.globals import bot, OWNER_CHAT_ID
 def write_error(
     error, func, args, kwargs, messages, path="src/utils/analytics/errors.json"
 ):
-    with open(path, "r") as f:
-        try:
+    try:
+        with open(path, "r") as f:
             errors = json.load(f)
-        except Exception:
-            errors = list()
+    except Exception:
+        errors = list()
     errors.append(
         {
             "error": f"{error}",

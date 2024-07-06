@@ -1,7 +1,7 @@
 from openai import OpenAIError
 
 from aiogram import Router, types
-from aiogram.types import Message
+from aiogram.types import Message, LabeledPrice
 from aiogram.filters import Command
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.utils.chat_action import ChatActionSender
@@ -27,6 +27,7 @@ from src.utils.globals import (
     FEE,
     DALLE3_OUTPUT,
     GPT4O_INPUT_1K,
+    XTR2USD_COEF,
 )
 
 
@@ -67,9 +68,8 @@ async def balance_handler(message: Message) -> None:
     user = await db_get_user(message.from_user.id)
     text = format(
         dialogs[language(message)]["balance"].format(
+            round(user["balance"] / FEE / GPT4O_INPUT_1K * 1000),
             round(user["balance"], 4),
-            round(87 * user["balance"], 2),
-            round(user["balance"] / GPT4O_OUTPUT_1K * 1000),
         ),
     )
     text += format(dialogs[language(message)]["payment"].format(FEE))
@@ -110,8 +110,37 @@ async def draw_handler(message: Message, command) -> None:
 
 
 @rt.message(Command("donate"))
-async def donate_handler(message: Message) -> None:
-    pass
+async def donate_handler(message: Message, command) -> None:
+    if (
+        command.args is None
+        or not command.args.isdigit()
+        or not 1 <= int(command.args) <= 2500
+    ):
+        await send_template_answer(message, "donate")
+    else:
+        amount = int(command.args)
+        prices = [LabeledPrice(label="XTR", amount=amount)]
+        kbd = (
+            InlineKeyboardBuilder()
+            .add(
+                types.InlineKeyboardButton(
+                    text=buttons[language(message)]["donate"].format(amount), pay=True
+                )
+            )
+            .as_markup()
+        )
+        await bot.send_invoice(
+            chat_id=message.chat.id,
+            title=dialogs[language(message)]["donate-title"],
+            description=dialogs[language(message)]["donate-description"].format(
+                round(XTR2USD_COEF * amount / FEE / GPT4O_INPUT_1K * 1000),
+                round(XTR2USD_COEF * amount, 4),
+            ),
+            payload=f"{amount}",
+            currency="XTR",
+            prices=prices,
+            reply_markup=kbd,
+        )
 
 
 @rt.message(Command("refund"))
