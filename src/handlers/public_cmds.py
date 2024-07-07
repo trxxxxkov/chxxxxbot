@@ -5,8 +5,9 @@ from aiogram.types import Message, LabeledPrice
 from aiogram.filters import Command
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.utils.chat_action import ChatActionSender
+from aiogram.exceptions import TelegramBadRequest
 
-import templates.tutorial_vids.videos
+import src.templates.tutorial_vids.videos
 from src.templates.keyboards.buttons import buttons
 from src.templates.dialogs import dialogs
 from src.templates.keyboards.inline_kbd import inline_kbd
@@ -15,11 +16,12 @@ from src.core.chat_completion import generate_completion
 from src.utils.formatting import send_template_answer, format
 from src.utils.validations import language, prompt_is_accepted, lock
 from src.database.queries import (
-    db_get_user,
     db_execute,
     db_save_message,
-    db_save_user,
+    db_update_user,
     db_save_expenses,
+    db_get_user,
+    db_get_purchase,
 )
 from src.utils.globals import (
     bot,
@@ -32,53 +34,6 @@ from src.utils.globals import (
 
 
 rt = Router()
-
-
-@rt.message(Command("help"))
-async def help_handler(message: Message) -> None:
-    builder = InlineKeyboardBuilder()
-    builder.add(
-        types.InlineKeyboardButton(
-            text=buttons[language(message)]["balance"], callback_data="balance"
-        ),
-        types.InlineKeyboardButton(
-            text=buttons[language(message)]["help"][1] + " ->", callback_data="help-1"
-        ),
-    )
-    text = format(dialogs[language(message)]["help"][0])
-    await bot.send_animation(
-        message.chat.id,
-        templates.tutorial_vids.videos.videos["help"][0],
-        caption=text,
-        reply_markup=builder.as_markup(),
-    )
-
-
-@rt.message(Command("forget", "clear"))
-async def forget_handler(message: Message) -> None:
-    await db_execute(
-        "DELETE FROM messages WHERE from_user_id = %s;", message.from_user.id
-    )
-    await send_template_answer(message, "forget")
-
-
-@rt.message(Command("balance"))
-async def balance_handler(message: Message) -> None:
-    kbd = inline_kbd({"back-to-help": "help-0", "tokens": "tokens"}, language(message))
-    user = await db_get_user(message.from_user.id)
-    text = format(
-        dialogs[language(message)]["balance"].format(
-            round(user["balance"] / FEE / GPT4O_INPUT_1K * 1000),
-            round(user["balance"], 4),
-        ),
-    )
-    text += format(dialogs[language(message)]["payment"].format(FEE))
-    await bot.send_animation(
-        message.chat.id,
-        templates.tutorial_vids.videos.videos["balance"],
-        caption=text,
-        reply_markup=kbd,
-    )
 
 
 @rt.message(Command("draw"))
@@ -103,10 +58,37 @@ async def draw_handler(message: Message, command) -> None:
             )
             user = await db_get_user(message.from_user.id)
             user["balance"] -= FEE * DALLE3_OUTPUT
-            await db_save_user(user)
+            await db_update_user(user)
         except (Exception, OpenAIError) as e:
             await send_template_answer(message, "block")
             await forget_handler(message)
+
+
+@rt.message(Command("forget", "clear"))
+async def forget_handler(message: Message) -> None:
+    await db_execute(
+        "DELETE FROM messages WHERE from_user_id = %s;", message.from_user.id
+    )
+    await send_template_answer(message, "forget")
+
+
+@rt.message(Command("balance"))
+async def balance_handler(message: Message) -> None:
+    kbd = inline_kbd({"back-to-help": "help-0", "tokens": "tokens"}, language(message))
+    user = await db_get_user(message.from_user.id)
+    text = format(
+        dialogs[language(message)]["balance"].format(
+            round(user["balance"] / FEE / GPT4O_INPUT_1K * 1000),
+            round(user["balance"], 4),
+        ),
+    )
+    text += format(dialogs[language(message)]["payment"].format(FEE))
+    await bot.send_animation(
+        message.chat.id,
+        src.templates.tutorial_vids.videos.videos["balance"],
+        caption=text,
+        reply_markup=kbd,
+    )
 
 
 @rt.message(Command("donate"))
@@ -136,7 +118,7 @@ async def donate_handler(message: Message, command) -> None:
                 round(XTR2USD_COEF * amount / FEE / GPT4O_INPUT_1K * 1000),
                 round(XTR2USD_COEF * amount, 4),
             ),
-            payload=f"{amount}",
+            payload=f"{message.from_user.id} {amount}",
             currency="XTR",
             prices=prices,
             reply_markup=kbd,
@@ -144,13 +126,60 @@ async def donate_handler(message: Message, command) -> None:
 
 
 @rt.message(Command("refund"))
-async def refund_handler(message: Message) -> None:
-    pass
+async def refund_handler(message: Message, command) -> None:
+    purchase_id = command.args
+    if purchase_id is None:
+        await send_template_answer(message, "refund")
+    else:
+        purchase = await db_get_purchase(purchase_id)
+        user = await db_get_user(message.from_user.id)
+        if purchase and user["balance"] >= purchase["amount"] * XTR2USD_COEF:
+            try:
+                result = await bot.refund_star_payment(
+                    user_id=message.from_user.id, telegram_payment_charge_id=purchase_id
+                )
+                if result:
+                    await db_execute(
+                        [
+                            "UPDATE users SET balance = %s WHERE id = %s;",
+                            "UPDATE purchases SET refunded = True WHERE id = %s;",
+                        ],
+                        [
+                            [
+                                user["balance"] - purchase["amount"] * XTR2USD_COEF,
+                                user["id"],
+                            ],
+                            [purchase["id"]],
+                        ],
+                    )
+            except TelegramBadRequest as e:
+                if "CHARGE_ALREADY_REFUNDED" in e.message:
+                    text = "refund already refunded"
+                else:
+                    text = "refund not found"
+                await bot.send_message(message.chat.id, text)
+        else:
+            await bot.send_message(message.chat.id, "refund expired")
 
 
-@rt.message(Command("paysupport"))
-async def paysupport_handler(message: Message) -> None:
-    pass
+@rt.message(Command("help"))
+async def help_handler(message: Message) -> None:
+    builder = InlineKeyboardBuilder()
+    builder.add(
+        types.InlineKeyboardButton(
+            text=buttons[language(message)]["balance"], callback_data="balance"
+        ),
+        types.InlineKeyboardButton(
+            text=buttons[language(message)]["help"][1] + " ->", callback_data="help-1"
+        ),
+    )
+    text = format(dialogs[language(message)]["help"][0])
+    await bot.send_animation(
+        message.chat.id,
+        src.templates.tutorial_vids.videos.videos["help"][0],
+        caption=text,
+        reply_markup=builder.as_markup(),
+    )
 
 
 @rt.message()
@@ -183,4 +212,4 @@ async def handler(message: Message) -> None:
         )
         user["first_name"] = message.from_user.first_name
         user["last_name"] = message.from_user.last_name
-        await db_save_user(user)
+        await db_update_user(user)

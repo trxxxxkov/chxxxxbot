@@ -5,10 +5,15 @@ import tiktoken
 
 from aiogram.types import FSInputFile
 
-import templates.tutorial_vids.videos
+import src.templates.tutorial_vids.videos
 from src.templates.dialogs import dialogs
 from src.utils.analytics.logging import logged
-from src.database.queries import db_execute, db_get_user, db_save_user, db_get_messages
+from src.database.queries import (
+    db_execute,
+    db_get_user,
+    db_update_user,
+    db_get_messages,
+)
 from src.utils.formatting import send_template_answer
 from src.utils.globals import bot, FEE, GPT4O_INPUT_1K, GPT_MEMORY_SEC, OWNER_CHAT_ID
 
@@ -37,11 +42,11 @@ async def add_user(message):
 async def lock(user_id):
     user = await db_get_user(user_id)
     user["lock"] = True
-    await db_save_user(user)
+    await db_update_user(user)
     await asyncio.sleep(0.6)
     user = await db_get_user(user_id)
     user["lock"] = False
-    await db_save_user(user)
+    await db_update_user(user)
 
 
 @logged
@@ -71,8 +76,7 @@ async def balance_is_sufficient(message) -> bool:
 async def forget_outdated_messages(user_id):
     now = time.time()
     await db_execute(
-        "DELETE FROM messages WHERE from_user_id = %s and timestamp < TO_TIMESTAMP(%s);",
-        [user_id, now - GPT_MEMORY_SEC],
+        "DELETE FROM messages WHERE timestamp < TO_TIMESTAMP(%s);", now - GPT_MEMORY_SEC
     )
 
 
@@ -127,7 +131,7 @@ async def template_videos2ids():
     tokens_vid = await bot.send_animation(
         OWNER_CHAT_ID, FSInputFile("src/templates/tutorial_vids/what_are_tokens.mp4")
     )
-    templates.tutorial_vids.videos.videos = {
+    src.templates.tutorial_vids.videos.videos = {
         "help": [
             hvid0.video.file_id,
             hvid1.video.file_id,
@@ -139,4 +143,4 @@ async def template_videos2ids():
     }
     with open("src/templates/tutorial_vids/videos.py", "w") as file:
         file.write("videos = ")
-        json.dump(templates.tutorial_vids.videos.videos, file, indent=4)
+        json.dump(src.templates.tutorial_vids.videos.videos, file, indent=4)

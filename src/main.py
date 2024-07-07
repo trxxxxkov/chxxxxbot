@@ -5,7 +5,13 @@ from aiohttp import web
 from aiogram import Bot, Dispatcher
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 
-from src.handlers import public_cmds, hidden_cmds, privileged_cmds, callbacks
+from src.handlers import (
+    public_cmds,
+    hidden_cmds,
+    privileged_cmds,
+    callbacks,
+    other_upds,
+)
 from utils.globals import (
     bot,
     BASE_WEBHOOK_URL,
@@ -18,13 +24,22 @@ from utils.globals import (
 
 async def on_startup(bot: Bot) -> None:
     await bot.set_webhook(
-        f"{BASE_WEBHOOK_URL}{WEBHOOK_PATH}", secret_token=WEBHOOK_SECRET
+        f"{BASE_WEBHOOK_URL}{WEBHOOK_PATH}",
+        secret_token=WEBHOOK_SECRET,
+        allowed_updates=[
+            "message",
+            "inline_query",
+            "callback_query",
+            "pre_checkout_query",
+        ],
     )
 
 
 def main() -> None:
     dp = Dispatcher()
-    dp.include_routers(privileged_cmds.rt, hidden_cmds.rt, public_cmds.rt, callbacks.rt)
+    dp.include_routers(
+        other_upds.rt, callbacks.rt, privileged_cmds.rt, hidden_cmds.rt, public_cmds.rt
+    )
     dp.startup.register(on_startup)
     app = web.Application()
     webhook_requests_handler = SimpleRequestHandler(

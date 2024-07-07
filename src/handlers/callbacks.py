@@ -6,12 +6,12 @@ from aiogram.enums import InputMediaType
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import FSInputFile
 
-import templates.tutorial_vids.videos
+import src.templates.tutorial_vids.videos
 from src.templates.dialogs import dialogs
 from src.templates.keyboards.buttons import buttons
 from src.templates.keyboards.inline_kbd import inline_kbd
 from src.core.image_generation import variate_image
-from src.database.queries import db_save_user, db_get_user
+from src.database.queries import db_update_user, db_get_user
 from src.utils.validations import language
 from src.utils.formatting import (
     find_latex,
@@ -37,7 +37,7 @@ async def redraw_callback(callback: types.CallbackQuery):
     await bot.send_media_group(message.chat.id, media)
     user = await db_get_user(callback.from_user.id)
     user["balance"] -= 2 * FEE * DALLE2_OUTPUT
-    await db_save_user(user)
+    await db_update_user(user)
 
 
 @rt.callback_query(F.data == "error")
@@ -62,7 +62,7 @@ async def balance_callback(callback: types.CallbackQuery):
     await bot.edit_message_media(
         types.InputMediaAnimation(
             type=InputMediaType.ANIMATION,
-            media=templates.tutorial_vids.videos.videos["balance"],
+            media=src.templates.tutorial_vids.videos.videos["balance"],
             caption=text,
         ),
         chat_id=message.chat.id,
@@ -80,7 +80,7 @@ async def tokens_callback(callback: types.CallbackQuery):
     await bot.edit_message_media(
         types.InputMediaAnimation(
             type=InputMediaType.ANIMATION,
-            media=templates.tutorial_vids.videos.videos["tokens"],
+            media=src.templates.tutorial_vids.videos.videos["tokens"],
             caption=text,
         ),
         chat_id=message.chat.id,
@@ -117,7 +117,7 @@ async def help_callback(callback: types.CallbackQuery):
     await bot.edit_message_media(
         types.InputMediaAnimation(
             type=InputMediaType.ANIMATION,
-            media=templates.tutorial_vids.videos.videos["help"][h_idx],
+            media=src.templates.tutorial_vids.videos.videos["help"][h_idx],
             caption=text,
         ),
         chat_id=message.chat.id,

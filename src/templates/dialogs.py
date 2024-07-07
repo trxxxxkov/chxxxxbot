@@ -110,14 +110,26 @@ _You don't have enough funds to perform this request. You have to add funds to u
 Describe the image you want to get after /draw command, for example:
 
   `/draw The stars tennis-balls, struck and bandied which way please them`""",
+        "refund": """
+_The command must have the following syntax:_
+
+  `/refund PURCHASE_ID`,
+  
+_where_ `PURCHASE_ID` _- is the string you got after successful payment with Telegram Stars._""",
         "donate": """
 _The command must have the following syntax:_ 
 
   `/donate STARS_AMOUNT`,
   
-  _where_ `STARS_AMOUNT` _- is an integer between 1 and 2500._""",
+_where_ `STARS_AMOUNT` _- is an integer between 1 and 2500._""",
+        "payment-successful": """
+  _Your account has been successfully funded!_
+*Purchase ID:* `{}`.
+  
+_Save it in case you wish to request a refund in the future!_""",
         "donate-description": "You will top up your balance with {} tokens \u2248 ${}. These funds will be used exclusively for sending your requests to GPT-4o and DALLE and receiving responses from them.",
         "donate-title": "Payment for Sebastian's services",
+        "refund-successful": "_Refund successful! Telegram Stars have been fully returned to your account._",
         "root": "_You are not allowed to use this command. Contact @trxxxxkov for a permission._",
         "forget": "_All previous messages have been forgotten!_",
         "forgotten": "_The source code is unavailable because the message was forgotten._",
@@ -239,14 +251,26 @@ _Недостаточно средств для оплаты вашего зап
 Введите команду /draw и опишите изображение, которое желаете получить, например:
      
   `/draw Теннисные мячики небес, которые соединяют и лупят, как захотят`""",
+        "refund": """
+_Команда должна иметь следующий вид:_
+
+  `/refund ИДЕНТИФИКАТОР_ПОКУПКИ`,
+  
+_где_ `ИДЕНТИФИКАТОР_ПОКУПКИ` _- код, который вы получили после успешного пополнения счета с помощью Звёзд Telegram._""",
         "donate": """
-  _Команда должна иметь следующий вид:_
+_Команда должна иметь следующий вид:_
   
   `/donate ЧИСЛО_ЗВЁЗД`,
   
-  _где_ `ЧИСЛО_ЗВЁЗД` _- целое число от 1 до 2500._""",
+_где_ `ЧИСЛО_ЗВЁЗД` _- целое число от 1 до 2500._""",
+        "payment-successful": """
+  _Ваш баланс успешно пополнен!_
+*Идентификатор покупки:* `{}`.
+  
+_Сохраните его на случай, если в будущем пожелаете сделать возврат средств!_""",
         "donate-description": "Вы пополните свой баланс на {} токенов \u2248 ${}. Эти средства будут использоваться только для отправки ваших запросов к GPT-4o и DALLE и получения ответов от них.",
         "donate-title": "Оплата услуг Себастиана",
+        "refund-successful": "_Возврат средств произведён успешно! Звёзды Telegram уже вернулись на ваш счёт в полном объёме._",
         "root": "_Эта команда вам недоступна. Чтобы получить доступ к ней, свяжитесь с @trxxxxkov._",
         "forget": "_Все предыдущие сообщения были забыты!_",
         "forgotten": "_Исходный код недоступен, так как сообщение было забыто_",

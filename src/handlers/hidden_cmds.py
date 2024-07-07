@@ -3,10 +3,11 @@ from aiogram.types import Message
 from aiogram.filters import Command
 from aiogram.types import FSInputFile
 
-import templates.tutorial_vids.videos
+import src.templates.tutorial_vids.videos
 from src.utils.globals import bot
 from src.templates.bot_menu import bot_menu
 from src.templates.keyboards.reply_kbd import help_keyboard
+from src.handlers.public_cmds import help_handler
 from src.utils.formatting import send_template_answer
 from src.utils.validations import add_user, language, template_videos2ids
 from src.database.queries import db_execute
@@ -29,7 +30,7 @@ async def start_handler(message: Message) -> None:
         message.from_user.first_name,
         reply_markup=help_keyboard,
     )
-    if templates.tutorial_vids.videos.videos is None:
+    if src.templates.tutorial_vids.videos.videos is None:
         await template_videos2ids()
 
 
@@ -52,3 +53,13 @@ async def as_file_handler(message: Message) -> None:
         )
     else:
         await send_template_answer(message, "as_file")
+
+
+@rt.message(Command("paysupport"))
+async def paysupport_handler(message: Message) -> None:
+    await help_handler(message)
+
+
+@rt.message(Command("privacy"))
+async def privacy_handler(message: Message) -> None:
+    await bot.send_message(message.chat.id, "Your data will be fine.")

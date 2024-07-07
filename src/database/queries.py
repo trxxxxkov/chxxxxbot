@@ -1,7 +1,14 @@
+import time
 import psycopg
 from psycopg.rows import dict_row
 
-from src.utils.globals import bot, DSN, GPT4O_INPUT_1K, GPT4O_OUTPUT_1K
+from src.utils.globals import (
+    bot,
+    DSN,
+    GPT4O_INPUT_1K,
+    GPT4O_OUTPUT_1K,
+    REFUND_PERIOD_DAYS,
+)
 
 
 async def db_execute(queries, args=None):
@@ -28,6 +35,108 @@ async def db_execute(queries, args=None):
         return response[0]
     else:
         return response
+
+
+async def db_update_user(user):
+    await db_execute(
+        "UPDATE users SET \
+                first_name = %s, \
+                last_name = %s, \
+                balance = %s, \
+                lock = %s \
+                WHERE id = %s;",
+        [
+            user["first_name"],
+            user["last_name"],
+            user["balance"],
+            user["lock"],
+            user["id"],
+        ],
+    )
+
+
+async def db_update_model(model):
+    await db_execute(
+        "UPDATE models SET \
+                model_name = %s, \
+                max_tokens = %s, \
+                temperature = %s, \
+                WHERE user_id = %s;",
+        [
+            model["model_name"],
+            model["max_tokens"],
+            model["temperature"],
+            model["user_id"],
+        ],
+    )
+
+
+async def db_save_message(message, role):
+    await db_execute(
+        "INSERT INTO messages (message_id, from_user_id, timestamp, role, text, image_url) VALUES (%s, %s, %s, %s, %s, %s);",
+        [
+            message.message_id,
+            message.from_user.id,
+            message.date,
+            role,
+            await get_message_text(message),
+            await get_image_url(message),
+        ],
+    )
+
+
+async def db_save_expenses(message, usage):
+    await db_execute(
+        "INSERT INTO prompts (user_id, prompt_tokens, completion_tokens, cost) VALUES (%s, %s, %s, %s);",
+        [
+            message.from_user.id,
+            usage.prompt_tokens,
+            usage.completion_tokens,
+            usage.prompt_tokens * GPT4O_INPUT_1K / 1000
+            + usage.completion_tokens * GPT4O_OUTPUT_1K / 1000,
+        ],
+    )
+
+
+async def db_update_purchase(purchase):
+    await db_execute(
+        "UPDATE purchases SET \
+                user_id = %s, \
+                amount = %s, \
+                timestamp = %s, \
+                payment_method = %s, \
+                refunded = %s \
+                WHERE id = %s;",
+        [
+            purchase["user_id"],
+            purchase["amount"],
+            purchase["timestamp"],
+            purchase["payment_method"],
+            purchase["refunded"],
+            purchase["id"],
+        ],
+    )
+
+
+async def get_image_url(message):
+    from src.utils.formatting import local_image_to_data_url
+
+    if message.photo:
+        image_path = f"src/utils/temp/images/{message.from_user.id}.jpg"
+        await bot.download(message.photo[-1], destination=image_path)
+        return local_image_to_data_url(image_path)
+    else:
+        return None
+
+
+async def get_message_text(message):
+    if message.photo:
+        if message.caption:
+            return message.caption
+        else:
+            return ""
+    else:
+        return message.text
 
 
 async def db_get_user(user_id):
@@ -64,83 +173,11 @@ async def db_get_messages(user_id):
     return messages
 
 
-async def db_save_user(user):
-    await db_execute(
-        "UPDATE users SET \
-                first_name = %s, \
-                last_name = %s, \
-                balance = %s, \
-                lock = %s \
-                WHERE id = %s;",
-        [
-            user["first_name"],
-            user["last_name"],
-            user["balance"],
-            user["lock"],
-            user["id"],
-        ],
+async def db_get_purchase(purchase_id):
+    now = time.time()
+    purchase = await db_execute(
+        "SELECT * FROM purchases WHERE \
+            id = %s and timestamp > TO_TIMESTAMP(%s);",
+        [purchase_id, now - 60 * 60 * 24 * REFUND_PERIOD_DAYS],
     )
-
-
-async def db_save_model(model):
-    await db_execute(
-        "UPDATE models SET \
-                model_name = %s, \
-                max_tokens = %s, \
-                temperature = %s, \
-                WHERE user_id = %s;",
-        [
-            model["model_name"],
-            model["max_tokens"],
-            model["temperature"],
-            model["user_id"],
-        ],
-    )
-
-
-async def db_save_message(message, role):
-    await db_execute(
-        "INSERT INTO messages (message_id, from_user_id, timestamp, role, text, image_url) VALUES (%s, %s, %s, %s, %s, %s);",
-        [
-            message.message_id,
-            message.from_user.id,
-            message.date,
-            role,
-            await get_message_text(message),
-            await get_image_url(message),
-        ],
-    )
-
-
-async def db_save_expenses(message, usage):
-    await db_execute(
-        "INSERT INTO transactions (user_id, prompt_tokens, completion_tokens, cost) VALUES (%s, %s, %s, %s);",
-        [
-            message.from_user.id,
-            usage.prompt_tokens,
-            usage.completion_tokens,
-            usage.prompt_tokens * GPT4O_INPUT_1K / 1000
-            + usage.completion_tokens * GPT4O_OUTPUT_1K / 1000,
-        ],
-    )
-
-
-async def get_image_url(message):
-    from src.utils.formatting import local_image_to_data_url
-
-    if message.photo:
-        image_path = f"src/utils/temp/images/{message.from_user.id}.jpg"
-        await bot.download(message.photo[-1], destination=image_path)
-        return local_image_to_data_url(image_path)
-    else:
-        return None
-
-
-async def get_message_text(message):
-    if message.photo:
-        if message.caption:
-            return message.caption
-        else:
-            return ""
-    else:
-        return message.text
+    return purchase

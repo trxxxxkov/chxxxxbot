@@ -13,6 +13,5 @@ last_msg_keyboard = types.ReplyKeyboardMarkup(
         [types.KeyboardButton(text="/forget"), types.KeyboardButton(text="/as_file")],
     ],
     resize_keyboard=True,
-    is_persistent=True,
     one_time_keyboard=True,
 )

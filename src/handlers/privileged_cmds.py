@@ -3,7 +3,7 @@ from aiogram.filters import Command
 from aiogram.types import Message
 
 from src.utils.validations import authorized, add_user
-from src.database.queries import db_execute, db_get_user, db_save_user
+from src.database.queries import db_execute, db_get_user, db_update_user
 from src.utils.formatting import send
 
 rt = Router()
@@ -25,11 +25,11 @@ async def add_handler(message: Message) -> None:
             user = await db_get_user(user_id)
             if funds.startswith(("+", "-")) and funds[1:].replace(".", "", 1).isdigit():
                 user["balance"] += float(funds)
-                await db_save_user(user)
+                await db_update_user(user)
                 await send(message, "_Done._")
             elif funds.replace(".", "", 1).isdigit():
                 user["balance"] = float(funds)
-                await db_save_user(user)
+                await db_update_user(user)
                 await send(message, "_Done._")
             else:
                 await send(message, f"_Error: {funds} is not a valid numeric data._")
