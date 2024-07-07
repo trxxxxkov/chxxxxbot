@@ -1,3 +1,35 @@
+dialogs2 = {
+    "doc": {
+        "start": {"en": {}, "ru": {}},
+        "help": [{}, {}, {}, {}],
+        "balance": {"en": {}, "ru": {}},
+        "payment": {"en": {}, "ru": {}},
+        "tokens": {"en": {}, "ru": {}},
+        "draw": {"en": {}, "ru": {}},
+        "refund": {"en": {}, "ru": {}},
+        "payment": {"en": {}, "ru": {}},
+    },
+    "info": {
+        "forget-success": {"en": {}, "ru": {}},
+        "payment-success": {"en": {}, "ru": {}},
+        "payment-description": {"en": {}, "ru": {}},
+        "refund-success": {"en": {}, "ru": {}},
+    },
+    "err": {
+        "unexpected_error": {"en": {}, "ru": {}},
+        "balance_empty": {"en": {}, "ru": {}},
+        "not_privileged": {"en": {}, "ru": {}},
+        "no_source_code": {"en": {}, "ru": {}},
+        "too_old_to_hide": {"en": {}, "ru": {}},
+        "policy_block": {"en": {}, "ru": {}},
+        "nothing_to_convert": {"en": {}, "ru": {}},
+    },
+    "other": {
+        "payment-title": {"en": {}, "ru": {}},
+        "vision-pre-prompt": {"en": {}, "ru": {}},
+    },
+}
+
 dialogs = {
     "en": {
         "start": """
