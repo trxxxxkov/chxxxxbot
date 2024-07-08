@@ -44,7 +44,7 @@ async def as_file_handler(message: Message) -> None:
     if messages and isinstance(messages, list):
         last_msg = messages[-1]
         prompt = messages[-2]
-        path_to_file = f"src/utils/temp/markdown/{message.from_user.id}-as_file.md"
+        path_to_file = f"src/utils/temp/documents/{message.from_user.id}-as_file.txt"
         with open(path_to_file, "w") as f:
             f.write(last_msg["text"])
         await bot.send_document(

@@ -4,6 +4,6 @@ test.py
 __pycache__
 src/utils/analytics/errors.json
 /src/utils/temp/images/*
-/src/utils/temp/markdown/*
+/src/utils/temp/documents/*
 !/src/utils/temp/images/.gitignore
-!/src/utils/temp/markdown/.gitignore
+!/src/utils/temp/documents/.gitignore

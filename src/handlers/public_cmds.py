@@ -8,6 +8,7 @@ from aiogram.utils.chat_action import ChatActionSender
 from aiogram.exceptions import TelegramBadRequest
 
 import src.templates.tutorial_vids.videos
+from src.templates.bot_menu import bot_menu
 from src.templates.scripts import scripts
 from src.templates.keyboards.inline_kbd import inline_kbd
 from src.core.image_generation import generate_image
@@ -135,7 +136,10 @@ async def refund_handler(message: Message, command) -> None:
     else:
         purchase = await db_get_purchase(purchase_id)
         user = await db_get_user(message.from_user.id)
-        if purchase and user["balance"] >= purchase["amount"] * XTR2USD_COEF:
+        if purchase:
+            if user["balance"] < purchase["amount"] * XTR2USD_COEF:
+                await send_template_answer(message, "err", "invalid purchase id")
+                return
             try:
                 result = await bot.refund_star_payment(
                     user_id=message.from_user.id, telegram_payment_charge_id=purchase_id
@@ -156,12 +160,11 @@ async def refund_handler(message: Message, command) -> None:
                     )
             except TelegramBadRequest as e:
                 if "CHARGE_ALREADY_REFUNDED" in e.message:
-                    text = "refund already refunded"
+                    await send_template_answer(message, "err", "already refunded")
                 else:
-                    text = "refund not found"
-                await bot.send_message(message.chat.id, text)
+                    await send_template_answer(message, "err", "invalid purchase id")
         else:
-            await bot.send_message(message.chat.id, "refund expired")
+            await send_template_answer(message, "err", "refund expired")
 
 
 @rt.message(Command("help"))
@@ -216,4 +219,11 @@ async def handler(message: Message) -> None:
         )
         user["first_name"] = message.from_user.first_name
         user["last_name"] = message.from_user.last_name
+        user["language"] = language(message)
+        await bot.set_my_commands(
+            [
+                types.BotCommand(command=key, description=value)
+                for key, value in bot_menu[language(message)].items()
+            ]
+        )
         await db_update_user(user)

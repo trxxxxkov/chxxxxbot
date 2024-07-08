@@ -43,12 +43,14 @@ async def db_update_user(user):
                 first_name = %s, \
                 last_name = %s, \
                 balance = %s, \
+                language = %s, \
                 lock = %s \
                 WHERE id = %s;",
         [
             user["first_name"],
             user["last_name"],
             user["balance"],
+            user["language"],
             user["lock"],
             user["id"],
         ],

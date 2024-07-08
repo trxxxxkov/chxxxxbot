@@ -94,6 +94,18 @@ scripts = {
             "en": "_No messages are available to be sent as a file._",
             "ru": "_Отсутствуют сообщения, которые можно было бы отправить как файл._",
         },
+        "already refunded": {
+            "en": "_Refund for the purchase with the specified ID has already been processed. The stars have been successfully returned to your account!\n\n *If you believe an error has occurred, please contact @trxxxxkov.*_",
+            "ru": "_Возврат за покупку с указанным идентификатором уже был выполнен ранее. Звёзды успешно зачислены на ваш счёт!\n\n *Если вы полагаете, что произошла ошибка, пожалуйста, свяжитесь с @trxxxxkov.*_",
+        },
+        "invalid purchase id": {
+            "en": "_The provided purchase ID is invalid.\n\n *If you believe an error has occurred, plase contact @trxxxxkov.*_",
+            "ru": "_Возврат за покупку с указанным идентификатором невозможен.\n\n *Если вы полагаете, что произошла ошибка, пожалуйста, свяжитесь с @trxxxxkov.*_",
+        },
+        "refund expired": {
+            "en": "_The refund period for the purchase with the specified identifier has expired.\n\n *If you believe an error has occurred, plase contact @trxxxxkov.*_",
+            "ru": "_Срок возврата за покупку с указанным идентификатором истёк.\n\n *Если вы полагаете, что произошла ошибка, пожалуйста, свяжитесь с @trxxxxkov.*_",
+        },
     },
     "bttn": {
         "to help": [
