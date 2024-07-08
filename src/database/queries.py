@@ -5,8 +5,8 @@ from psycopg.rows import dict_row
 from src.utils.globals import (
     bot,
     DSN,
-    GPT4O_INPUT_1K,
-    GPT4O_OUTPUT_1K,
+    GPT4O_IN_USD,
+    GPT4O_OUT_USD,
     REFUND_PERIOD_DAYS,
 )
 
@@ -94,8 +94,8 @@ async def db_save_expenses(message, usage):
             message.from_user.id,
             usage.prompt_tokens,
             usage.completion_tokens,
-            usage.prompt_tokens * GPT4O_INPUT_1K / 1000
-            + usage.completion_tokens * GPT4O_OUTPUT_1K / 1000,
+            usage.prompt_tokens * GPT4O_IN_USD
+            + usage.completion_tokens * GPT4O_OUT_USD,
         ],
     )
 

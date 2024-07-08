@@ -15,12 +15,13 @@ from src.utils.validations import language
 from src.utils.formatting import (
     find_latex,
     latex2url,
-    svg_to_jpg,
+    svg2jpg,
     latex_significant,
     send,
     format,
+    usd2tok,
 )
-from src.utils.globals import bot, FEE, DALLE2_OUTPUT, GPT4O_INPUT_1K
+from src.utils.globals import bot, DALLE2_USD
 
 
 rt = Router()
@@ -35,7 +36,7 @@ async def redraw_callback(callback: types.CallbackQuery):
         media = await variate_image(file_name)
     await bot.send_media_group(message.chat.id, media)
     user = await db_get_user(callback.from_user.id)
-    user["balance"] -= 2 * FEE * DALLE2_OUTPUT
+    user["balance"] -= 2 * DALLE2_USD
     await db_update_user(user)
 
 
@@ -51,12 +52,9 @@ async def balance_callback(callback: types.CallbackQuery):
     message = callback.message
     user = await db_get_user(callback.from_user.id)
     text = format(
-        scripts["doc"]["balance"][language(callback)].format(
-            round(user["balance"] / FEE / GPT4O_INPUT_1K * 1000),
-            round(user["balance"], 4),
-        )
+        scripts["doc"]["balance"][language(callback)].format(usd2tok(user["balance"]))
     )
-    text += format(scripts["doc"]["payment"][language(message)].format(FEE))
+    text += format(scripts["doc"]["payment"][language(message)].format(77777777))
     kbd = inline_kbd(
         {"back to help": "help-0", "to tokens": "tokens"}, language(message)
     )
@@ -134,7 +132,7 @@ async def latex_callback(callback: types.CallbackQuery):
     f = [f for f in find_latex(callback.message.text) if latex_significant(f)][f_i]
     image_url = latex2url(f)
     local_path = f"src/utils/temp/images/{callback.from_user.id}.jpg"
-    svg_to_jpg(image_url, local_path)
+    svg2jpg(image_url, local_path)
     photo = FSInputFile(local_path)
     kbd = inline_kbd({"hide": "hide"}, language(callback))
     f_idx = re.findall(r"(?<=#)\d\d?(?=:\n)", callback.message.text)[f_i]

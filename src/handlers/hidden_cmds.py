@@ -19,8 +19,8 @@ rt = Router()
 async def start_handler(message: Message) -> None:
     await bot.set_my_commands(
         [
-            types.BotCommand(command=key, description=value)
-            for key, value in bot_menu[language(message)].items()
+            types.BotCommand(command=key, description=value[language(message)])
+            for key, value in bot_menu.items()
         ]
     )
     await add_user(message)

@@ -23,8 +23,8 @@ scripts = {
             },
         ],
         "balance": {
-            "en": "*Your balance: {} tokens \u2248 ${}.*",
-            "ru": "*Ваш баланс: {} токенов \u2248 ${}.*",
+            "en": "*Your balance: {} tokens.*",
+            "ru": "*Ваш баланс: {} токенов.*",
         },
         "payment": {
             "en": "*Sebastian is not free for use.*\n The usage cost is determined by amount of tokens you used. So, *there isn't any subscription or annual payment. No usage - no payment.*\n The cost of each token is tied to OpenAI's pricing and can be calculated as following:\n\n `SEBASTIAN_TOKEN_PRICE = FEE * OPENAI_TOKEN_PRICE`,\n\n `FEE` - is currently equal to {},\n `OPENAI_TOKEN_PRICE` - can be found here: https://openai.com/pricing (prices per 1,000,000 tokens).\n\n *You may use GPT-4o and DALLE-3 only after you top up you balance.*\n Payment methods: Tinkoff/Sberbank transfter to +7-900-65-60-859. *Contact @trxxxxkov to inform about your payment.*",
@@ -47,8 +47,8 @@ scripts = {
             "ru": "_Команда должна иметь следующий вид:_\n\n `/pay ЧИСЛО_ЗВЁЗД`,\n\n_где_ `ЧИСЛО_ЗВЁЗД` _- целое число от 1 до 2500._",
         },
         "payment description": {
-            "en": "You will top up your balance with {} tokens \u2248 ${}. These funds will be used exclusively for sending your requests to GPT-4o and DALLE and receiving responses from them.",
-            "ru": "Вы пополните свой баланс на {} токенов \u2248 ${}. Эти средства будут использоваться только для отправки ваших запросов к GPT-4o и DALLE и получения ответов от них.",
+            "en": "You will top up your balance with {} tokens. They will be used exclusively for sending your requests to GPT-4o and DALLE and receiving responses from them.",
+            "ru": "Вы пополните свой баланс на {} токенов. Эти средства будут использоваться только для отправки ваших запросов к GPT-4o и DALLE и получения ответов от них.",
         },
     },
     "info": {
@@ -57,12 +57,12 @@ scripts = {
             "ru": "_Все предыдущие сообщения были забыты!_",
         },
         "payment success": {
-            "en": "_Your account has been successfully funded!_\n *Purchase ID:* `{}`.\n\n _Save it in case you wish to request a refund in the future!_",
-            "ru": "_Ваш баланс успешно пополнен!_\n *Идентификатор покупки:* `{}`.\n\n _Сохраните его на случай, если в будущем пожелаете сделать возврат средств!_",
+            "en": "_*{} tokens has been successfully add to your account!*_\n *Purchase ID:* `{}`.\n\n _Save it in case you wish to request a refund in the future!_",
+            "ru": "_*Ваш баланс успешно пополнен на {} токенов!*_\n *Идентификатор покупки:* `{}`.\n\n _Сохраните его на случай, если в будущем пожелаете сделать возврат средств!_",
         },
         "refund success": {
-            "en": "_Refund successful! Telegram Stars have been fully returned to your account._",
-            "ru": "_Возврат средств произведён успешно! Звёзды Telegram уже вернулись на ваш счёт в полном объёме._",
+            "en": "_*Refund successful!* ⭐{} have been returned to your account._",
+            "ru": "_*Возврат средств произведён успешно!* ⭐{} уже вернулись на ваш счёт._",
         },
     },
     "err": {

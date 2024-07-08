@@ -13,7 +13,12 @@ from src.templates.scripts import scripts
 from src.templates.keyboards.inline_kbd import inline_kbd
 from src.core.image_generation import generate_image
 from src.core.chat_completion import generate_completion
-from src.utils.formatting import send_template_answer, format
+from src.utils.formatting import (
+    send_template_answer,
+    format,
+    xtr2usd,
+    usd2tok,
+)
 from src.utils.validations import language, prompt_is_accepted, lock
 from src.database.queries import (
     db_execute,
@@ -23,14 +28,7 @@ from src.database.queries import (
     db_get_user,
     db_get_purchase,
 )
-from src.utils.globals import (
-    bot,
-    GPT4O_OUTPUT_1K,
-    FEE,
-    DALLE3_OUTPUT,
-    GPT4O_INPUT_1K,
-    XTR2USD_COEF,
-)
+from src.utils.globals import bot, GPT4O_OUT_USD, DALLE3_USD, GPT4O_IN_USD
 
 
 rt = Router()
@@ -57,7 +55,7 @@ async def draw_handler(message: Message, command) -> None:
                 ],
             )
             user = await db_get_user(message.from_user.id)
-            user["balance"] -= FEE * DALLE3_OUTPUT
+            user["balance"] -= DALLE3_USD
             await db_update_user(user)
         except (Exception, OpenAIError) as e:
             await send_template_answer(message, "err", "policy block")
@@ -79,12 +77,9 @@ async def balance_handler(message: Message) -> None:
     )
     user = await db_get_user(message.from_user.id)
     text = format(
-        scripts["doc"]["balance"][language(message)].format(
-            round(user["balance"] / FEE / GPT4O_INPUT_1K * 1000),
-            round(user["balance"], 4),
-        ),
+        scripts["doc"]["balance"][language(message)].format(usd2tok(user["balance"]))
     )
-    text += format(scripts["doc"]["payment"][language(message)].format(FEE))
+    text += format(scripts["doc"]["payment"][language(message)].format(7777777))
     await bot.send_animation(
         message.chat.id,
         src.templates.tutorial_vids.videos.videos["balance"],
@@ -118,8 +113,7 @@ async def pay_handler(message: Message, command) -> None:
             chat_id=message.chat.id,
             title=scripts["other"]["payment title"][language(message)],
             description=scripts["doc"]["payment description"][language(message)].format(
-                round(XTR2USD_COEF * amount / FEE / GPT4O_INPUT_1K * 1000),
-                round(XTR2USD_COEF * amount, 4),
+                usd2tok(xtr2usd(amount))
             ),
             payload=f"{message.from_user.id} {amount}",
             currency="XTR",
@@ -137,7 +131,7 @@ async def refund_handler(message: Message, command) -> None:
         purchase = await db_get_purchase(purchase_id)
         user = await db_get_user(message.from_user.id)
         if purchase:
-            if user["balance"] < purchase["amount"] * XTR2USD_COEF:
+            if user["balance"] < xtr2usd(purchase["amount"]):
                 await send_template_answer(message, "err", "invalid purchase id")
                 return
             try:
@@ -152,7 +146,7 @@ async def refund_handler(message: Message, command) -> None:
                         ],
                         [
                             [
-                                user["balance"] - purchase["amount"] * XTR2USD_COEF,
+                                user["balance"] - xtr2usd(purchase["amount"]),
                                 user["id"],
                             ],
                             [purchase["id"]],
@@ -210,20 +204,15 @@ async def handler(message: Message) -> None:
         )
         user = await db_get_user(message.from_user.id)
         user["balance"] -= (
-            (
-                GPT4O_INPUT_1K * usage.prompt_tokens
-                + GPT4O_OUTPUT_1K * usage.completion_tokens
-            )
-            * FEE
-            / 1000
+            GPT4O_IN_USD * usage.prompt_tokens + GPT4O_OUT_USD * usage.completion_tokens
         )
         user["first_name"] = message.from_user.first_name
         user["last_name"] = message.from_user.last_name
         user["language"] = language(message)
         await bot.set_my_commands(
             [
-                types.BotCommand(command=key, description=value)
-                for key, value in bot_menu[language(message)].items()
+                types.BotCommand(command=key, description=value[language(message)])
+                for key, value in bot_menu.items()
             ]
         )
         await db_update_user(user)

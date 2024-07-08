@@ -2,7 +2,7 @@ from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
 
-from src.utils.validations import authorized, add_user
+from src.utils.validations import authorized
 from src.database.queries import db_execute, db_get_user, db_update_user
 from src.utils.formatting import send
 

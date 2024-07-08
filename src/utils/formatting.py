@@ -22,6 +22,12 @@ from src.utils.globals import (
     ESCAPED_IN_O_SINGLE,
     ESCAPED_IN_O_TIGHT,
     LATEX_PATTERN,
+    XTR2USD,
+    USD2TOKENS,
+    STORE_COMMISSION,
+    TELEGRAM_COMMISSSION,
+    OPENAI_REFILL_LOSS,
+    ROYALTIES,
 )
 
 
@@ -40,7 +46,7 @@ def local_image_to_data_url(image_path):
     return f"data:{mime_type};base64,{base64_encoded_data}"
 
 
-def svg_to_jpg(svg_file_path, output_file_path):
+def svg2jpg(svg_file_path, output_file_path):
     cairosvg.svg2png(
         url=svg_file_path,
         write_to=output_file_path,
@@ -219,3 +225,16 @@ def cut(text):
 
 def num_formulas_before(head, text):
     return len([f for f in find_latex(text[: text.find(head)]) if latex_significant(f)])
+
+
+def xtr2usd(xtr: int | str | float) -> float:
+    return (
+        float(xtr)
+        * XTR2USD
+        * (1 - STORE_COMMISSION - TELEGRAM_COMMISSSION)
+        * (1 - OPENAI_REFILL_LOSS - ROYALTIES)
+    )
+
+
+def usd2tok(usd: int | str | float) -> str:
+    return f"{round(float(usd) * USD2TOKENS):,}"

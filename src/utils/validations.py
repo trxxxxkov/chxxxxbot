@@ -15,7 +15,13 @@ from src.database.queries import (
     db_get_messages,
 )
 from src.utils.formatting import send_template_answer
-from src.utils.globals import bot, FEE, GPT4O_INPUT_1K, GPT_MEMORY_SEC, OWNER_CHAT_ID
+from src.utils.globals import (
+    bot,
+    VISION_USD,
+    GPT4O_IN_USD,
+    GPT_MEMORY_SEC,
+    OWNER_CHAT_ID,
+)
 
 
 @logged
@@ -57,7 +63,7 @@ async def balance_is_sufficient(message) -> bool:
     if message.photo:
         pre_prompt = scripts["other"]["vision pre-prompt"][language(message)]
         text = message.caption if message.caption else pre_prompt
-        message_cost += FEE * GPT4O_INPUT_1K
+        message_cost += VISION_USD
     else:
         text = message.text
     old_messages = await db_get_messages(message.from_user.id)
@@ -66,9 +72,9 @@ async def balance_is_sufficient(message) -> bool:
             text += old_message["content"]
         elif old_message["content"][0]["text"] is not None:
             text += old_message["content"][0]["text"]
-            message_cost += FEE * GPT4O_INPUT_1K
+            message_cost += VISION_USD
     tokens = len(encoding.encode(text))
-    message_cost += tokens * FEE * GPT4O_INPUT_1K / 1000
+    message_cost += tokens * GPT4O_IN_USD
     user = await db_get_user(message.from_user.id)
     return user["balance"] >= 2 * message_cost
 

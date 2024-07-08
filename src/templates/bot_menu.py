@@ -1,18 +1,26 @@
 bot_menu = {
-    "ru": {
-        "draw": "Создать изображение по предложенному описанию",
-        "forget": "Удалить последние сообщения из памяти",
-        "balance": "Показать баланс и информацию о стоимости использования",
-        "pay": "Приобрести токены за Telegram Stars",
-        "refund": "Оформить возврат платежа с использованием Telegram Stars",
-        "help": "Показать описание команд и общую информацию о боте",
+    "draw": {
+        "en": "Generate an image by description",
+        "ru": "Создать изображение по предложенному описанию",
     },
-    "en": {
-        "draw": "Generate an image by description",
-        "forget": "Clear previous messages from Sebastian's memory",
-        "balance": "Show your balance and information about usage cost",
-        "pay": "Purchase tokens using Telegram Stars",
-        "refund": "Make a refund of a payment made with Telegram Stars",
-        "help": "Show a description of the commands and general info",
+    "forget": {
+        "en": "Clear previous messages from Sebastian's memory",
+        "ru": "Удалить последние сообщения из памяти",
+    },
+    "balance": {
+        "en": "Show your balance and information about usage cost",
+        "ru": "Показать баланс и информацию о стоимости использования",
+    },
+    "pay": {
+        "en": "Purchase tokens using Telegram Stars",
+        "ru": "Приобрести токены за Telegram Stars",
+    },
+    "refund": {
+        "en": "Make a refund of a payment made with Telegram Stars",
+        "ru": "Оформить возврат платежа с использованием Telegram Stars",
+    },
+    "help": {
+        "en": "Show a description of the commands and general info",
+        "ru": "Показать описание команд и общую информацию о боте",
     },
 }
