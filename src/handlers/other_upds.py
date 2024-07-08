@@ -1,7 +1,7 @@
 from aiogram import Router, F
 from aiogram.types import Message, PreCheckoutQuery
 
-from src.templates.dialogs import dialogs
+from src.templates.scripts import scripts
 from src.utils.formatting import send
 from src.utils.validations import language
 from src.utils.globals import XTR2USD_COEF
@@ -32,10 +32,11 @@ async def successful_payment_handler(message: Message):
         ],
     )
     await send(
-        message, dialogs[language(message)]["payment-successful"].format(purchase_id)
+        message,
+        scripts["info"]["payment success"][language(message)].format(purchase_id),
     )
 
 
 @rt.message(F.refunded_payment)
 async def refunded_payment_handler(message: Message):
-    await send(message, dialogs[language(message)]["refund-successful"])
+    await send(message, scripts["info"]["refund success"][language(message)])

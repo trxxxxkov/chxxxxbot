@@ -1,7 +1,7 @@
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram import types
 
-from src.templates.keyboards.buttons import buttons
+from src.templates.scripts import scripts
 
 
 def inline_kbd(keys, lang=None):
@@ -10,7 +10,7 @@ def inline_kbd(keys, lang=None):
         for button, callback in keys.items():
             keyboard.add(
                 types.InlineKeyboardButton(
-                    text=buttons[lang][button], callback_data=callback
+                    text=scripts["bttn"][button][lang], callback_data=callback
                 ),
             )
     else:

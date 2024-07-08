@@ -7,8 +7,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import FSInputFile
 
 import src.templates.tutorial_vids.videos
-from src.templates.dialogs import dialogs
-from src.templates.keyboards.buttons import buttons
+from src.templates.scripts import scripts
 from src.templates.keyboards.inline_kbd import inline_kbd
 from src.core.image_generation import variate_image
 from src.database.queries import db_update_user, db_get_user
@@ -42,7 +41,7 @@ async def redraw_callback(callback: types.CallbackQuery):
 
 @rt.callback_query(F.data == "error")
 async def error_callback(callback: types.CallbackQuery):
-    text = dialogs[language(callback)]["error"]
+    text = scripts["err"]["unexpected err"][language(callback)]
     await send(callback.message, text)
     await callback.answer()
 
@@ -52,13 +51,15 @@ async def balance_callback(callback: types.CallbackQuery):
     message = callback.message
     user = await db_get_user(callback.from_user.id)
     text = format(
-        dialogs[language(callback)]["balance"].format(
+        scripts["doc"]["balance"][language(callback)].format(
             round(user["balance"] / FEE / GPT4O_INPUT_1K * 1000),
             round(user["balance"], 4),
         )
     )
-    text += format(dialogs[language(message)]["payment"].format(FEE))
-    kbd = inline_kbd({"back-to-help": "help-0", "tokens": "tokens"}, language(message))
+    text += format(scripts["doc"]["payment"][language(message)].format(FEE))
+    kbd = inline_kbd(
+        {"back to help": "help-0", "to tokens": "tokens"}, language(message)
+    )
     await bot.edit_message_media(
         types.InputMediaAnimation(
             type=InputMediaType.ANIMATION,
@@ -75,8 +76,8 @@ async def balance_callback(callback: types.CallbackQuery):
 @rt.callback_query(F.data == "tokens")
 async def tokens_callback(callback: types.CallbackQuery):
     message = callback.message
-    text = format(dialogs[language(callback)]["tokens"])
-    kbd = inline_kbd({"balance": "balance"}, language(message))
+    text = format(scripts["doc"]["tokens"][language(callback)])
+    kbd = inline_kbd({"to balance": "balance"}, language(message))
     await bot.edit_message_media(
         types.InputMediaAnimation(
             type=InputMediaType.ANIMATION,
@@ -95,25 +96,25 @@ async def help_callback(callback: types.CallbackQuery):
     message = callback.message
     h_idx = int(callback.data.split("-")[1])
     payment_button = types.InlineKeyboardButton(
-        text=buttons[language(callback)]["balance"], callback_data="balance"
+        text=scripts["bttn"]["to balance"][language(callback)], callback_data="balance"
     )
     if h_idx == 0:
         l_button = payment_button
     else:
         l_button = types.InlineKeyboardButton(
-            text="<- " + buttons[language(callback)]["help"][h_idx - 1],
+            text="<- " + scripts["bttn"]["to help"][h_idx - 1][language(callback)],
             callback_data=f"help-{h_idx-1}",
         )
-    if h_idx == len(buttons[language(callback)]["help"]) - 1:
+    if h_idx == len(scripts["bttn"]["to help"]) - 1:
         r_button = payment_button
     else:
         r_button = types.InlineKeyboardButton(
-            text=buttons[language(callback)]["help"][h_idx + 1] + " ->",
+            text=scripts["bttn"]["to help"][h_idx + 1][language(callback)] + " ->",
             callback_data=f"help-{h_idx+1}",
         )
     builder = InlineKeyboardBuilder()
     builder.add(l_button, r_button)
-    text = format(dialogs[language(callback)]["help"][h_idx])
+    text = format(scripts["doc"]["help"][h_idx][language(callback)])
     await bot.edit_message_media(
         types.InputMediaAnimation(
             type=InputMediaType.ANIMATION,
@@ -154,7 +155,7 @@ async def hide_callback(callback: types.CallbackQuery):
     message = callback.message
     deleted = await bot.delete_message(message.chat.id, message.message_id)
     if not deleted:
-        text = format(dialogs[language(callback)]["old"])
+        text = format(scripts["err"]["too old to hide"][language(callback)])
         await bot.send_message(
             message.chat.id, text, reply_to_message_id=message.message_id
         )

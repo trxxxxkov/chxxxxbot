@@ -4,7 +4,7 @@ import cairosvg
 import base64
 from mimetypes import guess_type
 
-from src.templates.dialogs import dialogs
+from src.templates.scripts import scripts
 from src.utils.analytics.logging import logged
 from src.templates.keyboards.inline_kbd import inline_kbd
 from src.utils.globals import (
@@ -153,10 +153,10 @@ def format(text, f_idx=0):
 
 
 @logged
-async def send_template_answer(message, template, *args, reply_markup=None):
+async def send_template_answer(message, cls, name, *args, reply_markup=None):
     from src.utils.validations import language
 
-    text = dialogs[language(message)][template]
+    text = scripts[cls][name][language(message)]
     if len(args) != 0:
         text = text.format(*args)
     await send(message, text, reply_markup=reply_markup)

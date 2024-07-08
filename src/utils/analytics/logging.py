@@ -40,7 +40,7 @@ def logged(f):
             try:
                 for arg in args:
                     if isinstance(arg, Message):
-                        kbd = inline_kbd({"error": "error"}, language(arg))
+                        kbd = inline_kbd({"what now": "error"}, language(arg))
                         await bot.send_message(arg.chat.id, alert, reply_markup=kbd)
                         messages = await db_execute(
                             "SELECT * FROM messages WHERE from_user_id = %s",
@@ -52,7 +52,7 @@ def logged(f):
                         )
                         break
                     elif isinstance(arg, types.CallbackQuery):
-                        kbd = inline_kbd({"error": "error"}, language(arg))
+                        kbd = inline_kbd({"what now": "error"}, language(arg))
                         await bot.send_message(
                             arg.from_user.id,
                             alert,

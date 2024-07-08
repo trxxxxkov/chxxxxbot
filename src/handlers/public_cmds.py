@@ -8,8 +8,7 @@ from aiogram.utils.chat_action import ChatActionSender
 from aiogram.exceptions import TelegramBadRequest
 
 import src.templates.tutorial_vids.videos
-from src.templates.keyboards.buttons import buttons
-from src.templates.dialogs import dialogs
+from src.templates.scripts import scripts
 from src.templates.keyboards.inline_kbd import inline_kbd
 from src.core.image_generation import generate_image
 from src.core.chat_completion import generate_completion
@@ -42,7 +41,7 @@ async def draw_handler(message: Message, command) -> None:
         await db_save_message(message, "user")
         try:
             if not command.args:
-                await send_template_answer(message, "draw")
+                await send_template_answer(message, "doc", "draw")
                 return
             async with ChatActionSender.upload_photo(message.chat.id, bot):
                 image_url = await generate_image(command.args)
@@ -60,7 +59,7 @@ async def draw_handler(message: Message, command) -> None:
             user["balance"] -= FEE * DALLE3_OUTPUT
             await db_update_user(user)
         except (Exception, OpenAIError) as e:
-            await send_template_answer(message, "block")
+            await send_template_answer(message, "err", "policy block")
             await forget_handler(message)
 
 
@@ -69,20 +68,22 @@ async def forget_handler(message: Message) -> None:
     await db_execute(
         "DELETE FROM messages WHERE from_user_id = %s;", message.from_user.id
     )
-    await send_template_answer(message, "forget")
+    await send_template_answer(message, "info", "forget success")
 
 
 @rt.message(Command("balance"))
 async def balance_handler(message: Message) -> None:
-    kbd = inline_kbd({"back-to-help": "help-0", "tokens": "tokens"}, language(message))
+    kbd = inline_kbd(
+        {"back to help": "help-0", "to tokens": "tokens"}, language(message)
+    )
     user = await db_get_user(message.from_user.id)
     text = format(
-        dialogs[language(message)]["balance"].format(
+        scripts["doc"]["balance"][language(message)].format(
             round(user["balance"] / FEE / GPT4O_INPUT_1K * 1000),
             round(user["balance"], 4),
         ),
     )
-    text += format(dialogs[language(message)]["payment"].format(FEE))
+    text += format(scripts["doc"]["payment"][language(message)].format(FEE))
     await bot.send_animation(
         message.chat.id,
         src.templates.tutorial_vids.videos.videos["balance"],
@@ -91,14 +92,14 @@ async def balance_handler(message: Message) -> None:
     )
 
 
-@rt.message(Command("donate"))
-async def donate_handler(message: Message, command) -> None:
+@rt.message(Command("pay"))
+async def pay_handler(message: Message, command) -> None:
     if (
         command.args is None
         or not command.args.isdigit()
         or not 1 <= int(command.args) <= 2500
     ):
-        await send_template_answer(message, "donate")
+        await send_template_answer(message, "doc", "pay")
     else:
         amount = int(command.args)
         prices = [LabeledPrice(label="XTR", amount=amount)]
@@ -106,15 +107,16 @@ async def donate_handler(message: Message, command) -> None:
             InlineKeyboardBuilder()
             .add(
                 types.InlineKeyboardButton(
-                    text=buttons[language(message)]["donate"].format(amount), pay=True
+                    text=scripts["bttn"]["pay"][language(message)].format(amount),
+                    pay=True,
                 )
             )
             .as_markup()
         )
         await bot.send_invoice(
             chat_id=message.chat.id,
-            title=dialogs[language(message)]["donate-title"],
-            description=dialogs[language(message)]["donate-description"].format(
+            title=scripts["other"]["payment title"][language(message)],
+            description=scripts["doc"]["payment description"][language(message)].format(
                 round(XTR2USD_COEF * amount / FEE / GPT4O_INPUT_1K * 1000),
                 round(XTR2USD_COEF * amount, 4),
             ),
@@ -129,7 +131,7 @@ async def donate_handler(message: Message, command) -> None:
 async def refund_handler(message: Message, command) -> None:
     purchase_id = command.args
     if purchase_id is None:
-        await send_template_answer(message, "refund")
+        await send_template_answer(message, "doc", "refund")
     else:
         purchase = await db_get_purchase(purchase_id)
         user = await db_get_user(message.from_user.id)
@@ -167,13 +169,15 @@ async def help_handler(message: Message) -> None:
     builder = InlineKeyboardBuilder()
     builder.add(
         types.InlineKeyboardButton(
-            text=buttons[language(message)]["balance"], callback_data="balance"
+            text=scripts["bttn"]["to balance"][language(message)],
+            callback_data="balance",
         ),
         types.InlineKeyboardButton(
-            text=buttons[language(message)]["help"][1] + " ->", callback_data="help-1"
+            text=scripts["bttn"]["to help"][1][language(message)] + " ->",
+            callback_data="help-1",
         ),
     )
-    text = format(dialogs[language(message)]["help"][0])
+    text = format(scripts["doc"]["help"][0][language(message)])
     await bot.send_animation(
         message.chat.id,
         src.templates.tutorial_vids.videos.videos["help"][0],

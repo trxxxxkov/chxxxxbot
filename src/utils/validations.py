@@ -6,7 +6,7 @@ import tiktoken
 from aiogram.types import FSInputFile
 
 import src.templates.tutorial_vids.videos
-from src.templates.dialogs import dialogs
+from src.templates.scripts import scripts
 from src.utils.analytics.logging import logged
 from src.database.queries import (
     db_execute,
@@ -54,7 +54,7 @@ async def balance_is_sufficient(message) -> bool:
     message_cost = 0
     encoding = tiktoken.encoding_for_model("gpt-4o")
     if message.photo:
-        pre_prompt = dialogs[language(message)]["vision-pre-prompt"]
+        pre_prompt = scripts["other"]["vision pre-prompt"][language(message)]
         text = message.caption if message.caption else pre_prompt
         message_cost += FEE * GPT4O_INPUT_1K
     else:
@@ -83,7 +83,7 @@ async def forget_outdated_messages(user_id):
 @logged
 async def prompt_is_accepted(message) -> bool:
     if not await balance_is_sufficient(message):
-        await send_template_answer(message, "empty")
+        await send_template_answer(message, "err", "balance is empty")
         return False
     user = await db_get_user(message.from_user.id)
     if user["lock"]:
@@ -105,7 +105,7 @@ async def authorized(message):
     if message.from_user.id == OWNER_CHAT_ID:
         return True
     else:
-        await send_template_answer(message, "root")
+        await send_template_answer(message, "err", "not privileged")
         return False
 
 

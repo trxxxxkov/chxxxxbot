@@ -26,6 +26,7 @@ async def start_handler(message: Message) -> None:
     await add_user(message)
     await send_template_answer(
         message,
+        "doc",
         "start",
         message.from_user.first_name,
         reply_markup=help_keyboard,
@@ -52,7 +53,7 @@ async def as_file_handler(message: Message) -> None:
             reply_to_message_id=prompt["message_id"],
         )
     else:
-        await send_template_answer(message, "as_file")
+        await send_template_answer(message, "err", "nothing to convert")
 
 
 @rt.message(Command("paysupport"))
