@@ -41,12 +41,13 @@ async def add_handler(message: Message) -> None:
 
 @rt.message(Command("show_scripts"))
 async def test_handler(message):
-    for cls, cmds in scripts.items():
-        for key, value in cmds.items():
-            if key == "help" or key == "to help":
-                for elem in value:
-                    await bot.send_message(message.chat.id, format(elem["en"]))
-                    await bot.send_message(message.chat.id, format(elem["ru"]))
-            else:
-                await bot.send_message(message.chat.id, format(value["en"]))
-                await bot.send_message(message.chat.id, format(value["ru"]))
+    if await authorized(message):
+        for cls, cmds in scripts.items():
+            for key, value in cmds.items():
+                if key == "help" or key == "to help":
+                    for elem in value:
+                        await bot.send_message(message.chat.id, format(elem["en"]))
+                        await bot.send_message(message.chat.id, format(elem["ru"]))
+                else:
+                    await bot.send_message(message.chat.id, format(value["en"]))
+                    await bot.send_message(message.chat.id, format(value["ru"]))

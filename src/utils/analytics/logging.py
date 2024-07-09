@@ -4,8 +4,6 @@ from openai import OpenAIError
 from aiogram.types import Message
 from aiogram import types
 
-from src.utils.globals import bot, OWNER_CHAT_ID
-
 
 def write_error(
     error, func, args, kwargs, messages, path="src/utils/analytics/errors.json"
@@ -34,6 +32,11 @@ def logged(f):
             result = await f(*args, **kwargs)
             return result
         except (Exception, OpenAIError) as e:
+            from src.templates.keyboards.inline_kbd import inline_kbd
+            from src.database.queries import db_execute
+            from src.utils.validations import language
+            from src.utils.globals import bot, OWNER_CHAT_ID
+
             alert = "_ERROR\. Click the button below to see details\._"
             await bot.send_message(OWNER_CHAT_ID, alert)
             messages = None
@@ -72,10 +75,3 @@ def logged(f):
             write_error(e, f.__name__, args, kwargs, messages)
 
     return wrap
-
-
-if __name__ == "__main__":
-    from src.templates.keyboards.inline_kbd import inline_kbd
-    from src.database.queries import db_execute
-    from src.utils.validations import language
-    from src.utils.globals import bot, OWNER_CHAT_ID
