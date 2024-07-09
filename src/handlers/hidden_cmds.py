@@ -3,7 +3,7 @@ from aiogram.types import Message
 from aiogram.filters import Command
 from aiogram.types import FSInputFile
 
-import src.templates.tutorial_vids.videos
+import src.templates.tutorial.videos
 from src.utils.globals import bot
 from src.templates.bot_menu import bot_menu
 from src.templates.keyboards.reply_kbd import help_keyboard
@@ -31,7 +31,7 @@ async def start_handler(message: Message) -> None:
         message.from_user.first_name,
         reply_markup=help_keyboard,
     )
-    if src.templates.tutorial_vids.videos.videos is None:
+    if src.templates.tutorial.videos.videos is None:
         await template_videos2ids()
 
 

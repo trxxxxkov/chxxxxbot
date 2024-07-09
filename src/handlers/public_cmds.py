@@ -7,7 +7,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.utils.chat_action import ChatActionSender
 from aiogram.exceptions import TelegramBadRequest
 
-import src.templates.tutorial_vids.videos
+import src.templates.tutorial.videos
 from src.templates.bot_menu import bot_menu
 from src.templates.scripts import scripts
 from src.templates.keyboards.inline_kbd import inline_kbd
@@ -72,9 +72,21 @@ async def forget_handler(message: Message) -> None:
 
 @rt.message(Command("balance"))
 async def balance_handler(message: Message) -> None:
-    kbd = inline_kbd(
-        {"back to help": "help-0", "pay 1 star": "try payment", "to tokens": "tokens"},
-        language(message),
+    builder = InlineKeyboardBuilder()
+    mid_button = types.InlineKeyboardButton(
+        text=scripts["bttn"]["try payment"][language(message)],
+        callback_data=f"try payment",
+    )
+    builder.row(mid_button)
+    builder.row(
+        types.InlineKeyboardButton(
+            text=scripts["bttn"]["back to help"][language(message)],
+            callback_data="help-0",
+        ),
+        types.InlineKeyboardButton(
+            text=scripts["bttn"]["to tokens"][language(message)] + " ->",
+            callback_data="tokens",
+        ),
     )
     user = await db_get_user(message.from_user.id)
     text = format(
@@ -82,9 +94,9 @@ async def balance_handler(message: Message) -> None:
     )
     await bot.send_animation(
         message.chat.id,
-        src.templates.tutorial_vids.videos.videos["tokens"],
+        src.templates.tutorial.videos.videos["tokens"],
         caption=text,
-        reply_markup=kbd,
+        reply_markup=builder.as_markup(),
     )
 
 
@@ -168,7 +180,12 @@ async def refund_handler(message: Message, command) -> None:
 @rt.message(Command("help"))
 async def help_handler(message: Message) -> None:
     builder = InlineKeyboardBuilder()
-    builder.add(
+    mid_button = types.InlineKeyboardButton(
+        text=scripts["bttn"]["try help"][0][language(message)],
+        callback_data=f"try help-{0}",
+    )
+    builder.row(mid_button)
+    builder.row(
         types.InlineKeyboardButton(
             text=scripts["bttn"]["to balance"][language(message)],
             callback_data="balance",
@@ -181,7 +198,7 @@ async def help_handler(message: Message) -> None:
     text = format(scripts["doc"]["help"][0][language(message)])
     await bot.send_animation(
         message.chat.id,
-        src.templates.tutorial_vids.videos.videos["help"][0],
+        src.templates.tutorial.videos.videos["help"][0],
         caption=text,
         reply_markup=builder.as_markup(),
     )

@@ -1,3 +1,4 @@
+import asyncio
 import re
 
 from aiogram import Router, types, F
@@ -6,7 +7,7 @@ from aiogram.enums import InputMediaType
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import FSInputFile, LabeledPrice
 
-import src.templates.tutorial_vids.videos
+import src.templates.tutorial.videos
 from src.templates.scripts import scripts
 from src.templates.keyboards.inline_kbd import inline_kbd
 from src.core.image_generation import variate_image
@@ -53,21 +54,33 @@ async def balance_callback(callback: types.CallbackQuery):
     message = callback.message
     user = await db_get_user(callback.from_user.id)
     text = format(
-        scripts["doc"]["payment"][language(message)].format(usd2tok(user["balance"]))
+        scripts["doc"]["payment"][language(callback)].format(usd2tok(user["balance"]))
     )
-    kbd = inline_kbd(
-        {"back to help": "help-0", "pay 1 star": "try payment", "to tokens": "tokens"},
-        language(message),
+    builder = InlineKeyboardBuilder()
+    mid_button = types.InlineKeyboardButton(
+        text=scripts["bttn"]["try payment"][language(callback)],
+        callback_data=f"try payment",
+    )
+    builder.row(mid_button)
+    builder.row(
+        types.InlineKeyboardButton(
+            text=scripts["bttn"]["back to help"][language(callback)],
+            callback_data="help-0",
+        ),
+        types.InlineKeyboardButton(
+            text=scripts["bttn"]["to tokens"][language(callback)] + " ->",
+            callback_data="tokens",
+        ),
     )
     await bot.edit_message_media(
         types.InputMediaAnimation(
             type=InputMediaType.ANIMATION,
-            media=src.templates.tutorial_vids.videos.videos["tokens"],
+            media=src.templates.tutorial.videos.videos["tokens"],
             caption=text,
         ),
         chat_id=message.chat.id,
         message_id=message.message_id,
-        reply_markup=kbd,
+        reply_markup=builder.as_markup(),
     )
     await callback.answer()
 
@@ -81,7 +94,7 @@ async def tokens_callback(callback: types.CallbackQuery):
         await bot.edit_message_media(
             types.InputMediaAnimation(
                 type=InputMediaType.ANIMATION,
-                media=src.templates.tutorial_vids.videos.videos["tokens"],
+                media=src.templates.tutorial.videos.videos["tokens"],
                 caption=text,
             ),
             chat_id=message.chat.id,
@@ -92,7 +105,7 @@ async def tokens_callback(callback: types.CallbackQuery):
         kbd = inline_kbd({"hide": "hide"}, language(callback))
         await bot.send_animation(
             message.chat.id,
-            src.templates.tutorial_vids.videos.videos["tokens"],
+            src.templates.tutorial.videos.videos["tokens"],
             caption=text,
             reply_markup=kbd,
         )
@@ -120,13 +133,18 @@ async def help_callback(callback: types.CallbackQuery):
             text=scripts["bttn"]["to help"][h_idx + 1][language(callback)] + " ->",
             callback_data=f"help-{h_idx+1}",
         )
+    mid_button = types.InlineKeyboardButton(
+        text=scripts["bttn"]["try help"][h_idx][language(callback)],
+        callback_data=f"try help-{h_idx}",
+    )
     builder = InlineKeyboardBuilder()
-    builder.add(l_button, r_button)
+    builder.row(mid_button)
+    builder.row(l_button, r_button)
     text = format(scripts["doc"]["help"][h_idx][language(callback)])
     await bot.edit_message_media(
         types.InputMediaAnimation(
             type=InputMediaType.ANIMATION,
-            media=src.templates.tutorial_vids.videos.videos["help"][h_idx],
+            media=src.templates.tutorial.videos.videos["help"][h_idx],
             caption=text,
         ),
         chat_id=message.chat.id,
@@ -199,3 +217,51 @@ async def try_payment_callback(callback):
         prices=prices,
         reply_markup=kbd,
     )
+    await callback.answer()
+
+
+@rt.callback_query(F.data.startswith("try help"))
+async def try_help_callback(callback):
+    h_idx = int(callback.data.split("-")[1])
+    if h_idx == 0:
+        async with ChatActionSender.typing(callback.message.chat.id, bot):
+            await asyncio.sleep(0.75)
+            await bot.send_message(
+                callback.message.chat.id,
+                format(scripts["other"]["prompt tutorial"][language(callback)][0]),
+            )
+        async with ChatActionSender.typing(callback.message.chat.id, bot):
+            await asyncio.sleep(3)
+            await bot.send_message(
+                callback.message.chat.id,
+                format(scripts["other"]["prompt tutorial"][language(callback)][1]),
+            )
+    elif h_idx == 1:
+        async with ChatActionSender.typing(callback.message.chat.id, bot):
+            await asyncio.sleep(1.5)
+            await bot.send_message(
+                callback.message.chat.id,
+                format(scripts["other"]["recognition tutorial"][language(callback)]),
+            )
+    elif h_idx == 2:
+        tutor_generation = FSInputFile("src/templates/tutorial/generation.jpg")
+        kbd = inline_kbd({"redraw": "redraw"}, language(callback))
+        async with ChatActionSender.upload_photo(callback.message.chat.id, bot):
+            await asyncio.sleep(4)
+            await bot.send_photo(
+                callback.message.chat.id, tutor_generation, reply_markup=kbd
+            )
+    elif h_idx == 3:
+        tutor_latex = FSInputFile("src/templates/tutorial/latex.jpg")
+        kbd = inline_kbd({"hide": "hide"}, language(callback))
+        f_idx = 1
+        await bot.send_photo(
+            callback.from_user.id,
+            tutor_latex,
+            reply_to_message_id=callback.message.message_id,
+            reply_parameters=types.ReplyParameters(
+                message_id=callback.message.message_id, quote=f"*\\#{f_idx}:*"
+            ),
+            reply_markup=kbd,
+        )
+    await callback.answer()

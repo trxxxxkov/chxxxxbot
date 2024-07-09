@@ -5,7 +5,7 @@ import tiktoken
 
 from aiogram.types import FSInputFile
 
-import src.templates.tutorial_vids.videos
+import src.templates.tutorial.videos
 from src.templates.scripts import scripts
 from src.utils.analytics.logging import logged
 from src.database.queries import (
@@ -120,35 +120,32 @@ async def authorized(message):
 @logged
 async def template_videos2ids():
     hvid0 = await bot.send_animation(
-        OWNER_CHAT_ID, FSInputFile("src/templates/tutorial_vids/prompt.mp4")
+        OWNER_CHAT_ID, FSInputFile("src/templates/tutorial/prompt.mp4")
     )
     hvid1 = await bot.send_animation(
         OWNER_CHAT_ID,
-        FSInputFile("src/templates/tutorial_vids/recognition.mp4"),
+        FSInputFile("src/templates/tutorial/recognition.mp4"),
     )
     hvid2 = await bot.send_animation(
         OWNER_CHAT_ID,
-        FSInputFile("src/templates//tutorial_vids/generation.mp4"),
+        FSInputFile("src/templates//tutorial/generation.mp4"),
     )
     hvid3 = await bot.send_animation(
-        OWNER_CHAT_ID, FSInputFile("src/templates/tutorial_vids/latex.mp4")
-    )
-    balance_vid = await bot.send_animation(
-        OWNER_CHAT_ID, FSInputFile("src/templates/tutorial_vids/balance.mp4")
+        OWNER_CHAT_ID, FSInputFile("src/templates/tutorial/latex.mp4")
     )
     tokens_vid = await bot.send_animation(
-        OWNER_CHAT_ID, FSInputFile("src/templates/tutorial_vids/what_are_tokens.mp4")
+        OWNER_CHAT_ID, FSInputFile("src/templates/tutorial/what_are_tokens.mp4")
     )
-    src.templates.tutorial_vids.videos.videos = {
+    src.templates.tutorial.videos.videos = {
         "help": [
             hvid0.video.file_id,
             hvid1.video.file_id,
             hvid2.video.file_id,
             hvid3.video.file_id,
         ],
-        "balance": balance_vid.video.file_id,
+        "balance": tokens_vid.video.file_id,
         "tokens": tokens_vid.video.file_id,
     }
-    with open("src/templates/tutorial_vids/videos.py", "w") as file:
+    with open("src/templates/tutorial/videos.py", "w") as file:
         file.write("videos = ")
-        json.dump(src.templates.tutorial_vids.videos.videos, file, indent=4)
+        json.dump(src.templates.tutorial.videos.videos, file, indent=4)
