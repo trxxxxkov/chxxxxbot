@@ -2,9 +2,11 @@ from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
 
+from src.utils.globals import bot
+from src.templates.scripts import scripts
 from src.utils.validations import authorized
 from src.database.queries import db_execute, db_get_user, db_update_user
-from src.utils.formatting import send
+from src.utils.formatting import send, format
 
 rt = Router()
 
@@ -35,3 +37,16 @@ async def add_handler(message: Message) -> None:
                 await send(message, f"_Error: {funds} is not a valid numeric data._")
         else:
             await send(message, f"_The user *{user_id}* is not found._")
+
+
+@rt.message(Command("show_scripts"))
+async def test_handler(message):
+    for cls, cmds in scripts.items():
+        for key, value in cmds.items():
+            if key == "help" or key == "to help":
+                for elem in value:
+                    await bot.send_message(message.chat.id, format(elem["en"]))
+                    await bot.send_message(message.chat.id, format(elem["ru"]))
+            else:
+                await bot.send_message(message.chat.id, format(value["en"]))
+                await bot.send_message(message.chat.id, format(value["ru"]))

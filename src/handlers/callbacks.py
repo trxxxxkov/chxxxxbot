@@ -4,7 +4,7 @@ from aiogram import Router, types, F
 from aiogram.utils.chat_action import ChatActionSender
 from aiogram.enums import InputMediaType
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from aiogram.types import FSInputFile
+from aiogram.types import FSInputFile, LabeledPrice
 
 import src.templates.tutorial_vids.videos
 from src.templates.scripts import scripts
@@ -20,6 +20,7 @@ from src.utils.formatting import (
     send,
     format,
     usd2tok,
+    xtr2usd,
 )
 from src.utils.globals import bot, DALLE2_USD
 
@@ -52,30 +53,12 @@ async def balance_callback(callback: types.CallbackQuery):
     message = callback.message
     user = await db_get_user(callback.from_user.id)
     text = format(
-        scripts["doc"]["balance"][language(callback)].format(usd2tok(user["balance"]))
+        scripts["doc"]["payment"][language(message)].format(usd2tok(user["balance"]))
     )
-    text += format(scripts["doc"]["payment"][language(message)].format(77777777))
     kbd = inline_kbd(
-        {"back to help": "help-0", "to tokens": "tokens"}, language(message)
+        {"back to help": "help-0", "pay 1 star": "try payment", "to tokens": "tokens"},
+        language(message),
     )
-    await bot.edit_message_media(
-        types.InputMediaAnimation(
-            type=InputMediaType.ANIMATION,
-            media=src.templates.tutorial_vids.videos.videos["balance"],
-            caption=text,
-        ),
-        chat_id=message.chat.id,
-        message_id=message.message_id,
-        reply_markup=kbd,
-    )
-    await callback.answer()
-
-
-@rt.callback_query(F.data == "tokens")
-async def tokens_callback(callback: types.CallbackQuery):
-    message = callback.message
-    text = format(scripts["doc"]["tokens"][language(callback)])
-    kbd = inline_kbd({"to balance": "balance"}, language(message))
     await bot.edit_message_media(
         types.InputMediaAnimation(
             type=InputMediaType.ANIMATION,
@@ -87,6 +70,33 @@ async def tokens_callback(callback: types.CallbackQuery):
         reply_markup=kbd,
     )
     await callback.answer()
+
+
+@rt.callback_query(F.data.endswith("tokens"))
+async def tokens_callback(callback: types.CallbackQuery):
+    message = callback.message
+    text = format(scripts["doc"]["tokens"][language(callback)])
+    if callback.data == "tokens":
+        kbd = inline_kbd({"to balance": "balance"}, language(message))
+        await bot.edit_message_media(
+            types.InputMediaAnimation(
+                type=InputMediaType.ANIMATION,
+                media=src.templates.tutorial_vids.videos.videos["tokens"],
+                caption=text,
+            ),
+            chat_id=message.chat.id,
+            message_id=message.message_id,
+            reply_markup=kbd,
+        )
+    elif callback.data == "sep tokens":
+        kbd = inline_kbd({"hide": "hide"}, language(callback))
+        await bot.send_animation(
+            message.chat.id,
+            src.templates.tutorial_vids.videos.videos["tokens"],
+            caption=text,
+            reply_markup=kbd,
+        )
+        await callback.answer()
 
 
 @rt.callback_query(F.data.startswith("help-"))
@@ -158,3 +168,34 @@ async def hide_callback(callback: types.CallbackQuery):
             message.chat.id, text, reply_to_message_id=message.message_id
         )
     await callback.answer()
+
+
+@rt.callback_query(F.data == "try payment")
+async def try_payment_callback(callback):
+    amount = 1
+    prices = [LabeledPrice(label="XTR", amount=amount)]
+    kbd = (
+        InlineKeyboardBuilder()
+        .add(
+            types.InlineKeyboardButton(
+                text=scripts["bttn"]["pay"][language(callback)].format(amount),
+                pay=True,
+            ),
+            types.InlineKeyboardButton(
+                text=scripts["bttn"]["to tokens"][language(callback)],
+                callback_data="sep tokens",
+            ),
+        )
+        .as_markup()
+    )
+    await bot.send_invoice(
+        chat_id=callback.message.chat.id,
+        title=scripts["other"]["payment title"][language(callback)],
+        description=scripts["doc"]["payment description"][language(callback)].format(
+            usd2tok(xtr2usd(amount))
+        ),
+        payload=f"{callback.from_user.id} {amount}",
+        currency="XTR",
+        prices=prices,
+        reply_markup=kbd,
+    )

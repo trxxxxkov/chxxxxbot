@@ -72,7 +72,8 @@ async def balance_is_sufficient(message) -> bool:
             text += old_message["content"]
         elif old_message["content"][0]["text"] is not None:
             text += old_message["content"][0]["text"]
-            message_cost += VISION_USD
+            if len(old_message["content"]) == 2:
+                message_cost += VISION_USD
     tokens = len(encoding.encode(text))
     message_cost += tokens * GPT4O_IN_USD
     user = await db_get_user(message.from_user.id)
@@ -109,7 +110,7 @@ def language(message):
 
 @logged
 async def authorized(message):
-    if message.from_user.id == OWNER_CHAT_ID:
+    if message.from_user.id in [OWNER_CHAT_ID]:
         return True
     else:
         await send_template_answer(message, "err", "not privileged")

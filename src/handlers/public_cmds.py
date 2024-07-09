@@ -37,11 +37,11 @@ rt = Router()
 @rt.message(Command("draw"))
 async def draw_handler(message: Message, command) -> None:
     if await prompt_is_accepted(message):
-        await db_save_message(message, "user")
         try:
             if not command.args:
                 await send_template_answer(message, "doc", "draw")
                 return
+            await db_save_message(message, "user")
             async with ChatActionSender.upload_photo(message.chat.id, bot):
                 image_url = await generate_image(command.args)
             kbd = inline_kbd({"redraw": "redraw"}, language(message))
@@ -73,16 +73,16 @@ async def forget_handler(message: Message) -> None:
 @rt.message(Command("balance"))
 async def balance_handler(message: Message) -> None:
     kbd = inline_kbd(
-        {"back to help": "help-0", "to tokens": "tokens"}, language(message)
+        {"back to help": "help-0", "pay 1 star": "try payment", "to tokens": "tokens"},
+        language(message),
     )
     user = await db_get_user(message.from_user.id)
     text = format(
-        scripts["doc"]["balance"][language(message)].format(usd2tok(user["balance"]))
+        scripts["doc"]["payment"][language(message)].format(usd2tok(user["balance"]))
     )
-    text += format(scripts["doc"]["payment"][language(message)].format(7777777))
     await bot.send_animation(
         message.chat.id,
-        src.templates.tutorial_vids.videos.videos["balance"],
+        src.templates.tutorial_vids.videos.videos["tokens"],
         caption=text,
         reply_markup=kbd,
     )
@@ -105,7 +105,11 @@ async def pay_handler(message: Message, command) -> None:
                 types.InlineKeyboardButton(
                     text=scripts["bttn"]["pay"][language(message)].format(amount),
                     pay=True,
-                )
+                ),
+                types.InlineKeyboardButton(
+                    text=scripts["bttn"]["to tokens"][language(message)],
+                    callback_data="sep tokens",
+                ),
             )
             .as_markup()
         )
