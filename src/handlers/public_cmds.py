@@ -180,11 +180,6 @@ async def refund_handler(message: Message, command) -> None:
 @rt.message(Command("help"))
 async def help_handler(message: Message) -> None:
     builder = InlineKeyboardBuilder()
-    mid_button = types.InlineKeyboardButton(
-        text=scripts["bttn"]["try help"][0][language(message)],
-        callback_data=f"try help-{0}",
-    )
-    builder.row(mid_button)
     builder.row(
         types.InlineKeyboardButton(
             text=scripts["bttn"]["to balance"][language(message)],

@@ -134,12 +134,7 @@ async def help_callback(callback: types.CallbackQuery):
             text=scripts["bttn"]["to help"][h_idx + 1][language(callback)] + " ->",
             callback_data=f"help-{h_idx+1}",
         )
-    mid_button = types.InlineKeyboardButton(
-        text=scripts["bttn"]["try help"][h_idx][language(callback)],
-        callback_data=f"try help-{h_idx}",
-    )
     builder = InlineKeyboardBuilder()
-    builder.row(mid_button)
     builder.row(l_button, r_button)
     text = format_tg_msg(scripts["doc"]["help"][h_idx][language(callback)])
     await bot.edit_message_media(
@@ -215,44 +210,6 @@ async def try_payment_callback(callback):
         prices=prices,
         reply_markup=kbd,
     )
-    await callback.answer()
-
-
-@rt.callback_query(F.data.startswith("try help"))
-async def try_help_callback(callback):
-    h_idx = int(callback.data.split("-")[1])
-    if h_idx == 0:
-        await callback.message.answer(
-            format_tg_msg(scripts["other"]["prompt tutorial"][language(callback)][0])
-        )
-        await callback.message.answer(
-            format_tg_msg(scripts["other"]["prompt tutorial"][language(callback)][1])
-        )
-    elif h_idx == 1:
-        await callback.message.answer(
-            format_tg_msg(scripts["other"]["recognition tutorial"][language(callback)])
-        )
-    elif h_idx == 2:
-        tutor_generation = FSInputFile("src/templates/tutorial/generation.jpg")
-        kbd = inline_kbd({"redraw": "redraw"}, language(callback))
-        async with ChatActionSender.upload_photo(callback.message.chat.id, bot):
-            await asyncio.sleep(4)
-            await bot.send_photo(
-                callback.message.chat.id, tutor_generation, reply_markup=kbd
-            )
-    elif h_idx == 3:
-        tutor_latex = FSInputFile("src/templates/tutorial/latex.jpg")
-        kbd = inline_kbd({"hide": "hide"}, language(callback))
-        f_idx = 1
-        await bot.send_photo(
-            callback.from_user.id,
-            tutor_latex,
-            reply_to_message_id=callback.message.message_id,
-            reply_parameters=types.ReplyParameters(
-                message_id=callback.message.message_id, quote=f"*\\#{f_idx}:*"
-            ),
-            reply_markup=kbd,
-        )
     await callback.answer()
 
 

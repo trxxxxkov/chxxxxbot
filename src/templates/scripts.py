@@ -53,8 +53,8 @@ scripts = {
             "ru": "_Все предыдущие сообщения были забыты!_",
         },
         "payment success": {
-            "en": "_*{}* tokens has been successfully added to your account!_\n *Purchase ID:* `{}`.\n\n _Save it in case you wish to request a refund in the future!_",
-            "ru": "_Ваш баланс успешно пополнен на *{}* токенов!_\n *Идентификатор покупки:* `{}`.\n\n _Сохраните его на случай, если в будущем пожелаете сделать возврат средств!_",
+            "en": "_*{} tokens has been successfully added to your account!\nSave your purchase ID in case you wish to request a refund in the future!*_\n\n*Purchase ID:* `{}`.",
+            "ru": "_*Ваш баланс успешно пополнен на {} токенов!\nСохраните идентификатор покупки на случай, если в будущем пожелаете сделать возврат средств!*_\n\n*Идентификатор покупки:* `{}`.",
         },
         "refund success": {
             "en": "_*Refund successful!* ⭐*{}* have been returned to your account._",
@@ -129,18 +129,6 @@ scripts = {
         "back to help": {"en": "/help", "ru": "/help"},
         "pay": {"en": "Pay ⭐{} to Sebastian", "ru": "Заплатить Себастиану ⭐{}"},
         "try payment": {"en": "Pay ⭐1", "ru": "Заплатить ⭐1"},
-        "try help": [
-            {
-                "en": "Try: Write a Gumbo recipe",
-                "ru": "Пример: Напиши рецепт Гамбо",
-            },
-            {
-                "en": "Try: What am I looking at?",
-                "ru": "Пример: На что я смотрю?",
-            },
-            {"en": "Try: /draw me", "ru": "Пример: /draw меня"},
-            {"en": "Try: #1", "ru": "Пример: #1"},
-        ],
         "send as file": {
             "en": "Send as a text file",
             "ru": "Отправить в формате текстового файла",
@@ -154,20 +142,6 @@ scripts = {
         "vision pre-prompt": {
             "en": "What do you think about it?",
             "ru": "Что ты об этом думаешь?",
-        },
-        "prompt tutorial": {
-            "en": [
-                "Sure! Here's a classic recipe for a delicious and hearty gumbo soup:",
-                "*Classic Gumbo Soup Recipe*\n\n*Ingredients:*\n\n*For the Roux:*\n - 1/2 cup vegetable oil\n - 1/2 cup all-purpose flour\n\n*For the Gumbo:*\n - 1 large onion, finely chopped\n - 1 green bell pepper, finely chopped\n - 2 celery stalks, finely chopped\n - 4 cloves garlic, minced\n - 1 pound smoked sausage (such as Andouille), sliced into 1/4-inch rounds\n - 1 pound chicken thighs, boneless and skinless, cut into bite-sized pieces\n - 1 (14.5-ounce) can diced tomatoes\n - 6 cups chicken broth\n - 2 bay leaves\n - 1 teaspoon dried thyme\n - 1 teaspoon dried oregano\n - 1 teaspoon paprika\n - 1/2 teaspoon cayenne pepper (adjust to taste)\n - 1 teaspoon salt (adjust to taste)\n - 1/2 teaspoon black pepper\n - 1 pound raw shrimp, peeled and deveined\n - 1 cup okra, sliced (optional)\n - 1/4 cup fresh parsley, chopped\n - 4 green onions, sliced\n - Cooked white rice, for serving\n - Hot sauce, for serving (optional)\n\n*Instructions:*\n\n1. *Make the Roux:*\n - In a large, heavy-bottomed pot or Dutch oven, heat the vegetable oil over medium heat.\n - Gradually whisk in the flour to form a smooth mixture.\n - Cook the roux, stirring constantly, until it turns a deep brown color, about 20-30 minutes. Be patient and keep stirring to avoid burning.\n\n2. *Add the Vegetables:*\n - Once the roux is ready, add the chopped onion, bell pepper, and celery to the pot.\n - Cook, stirring frequently, until the vegetables are softened, about 5-7 minutes.\n - Add the minced garlic and cook for another 1-2 minutes.\n\n3. *Add the Meats:*\n - Add the sliced sausage and chicken pieces to the pot.\n - Cook, stirring occasionally, until the chicken is browned on all sides, about 5-7 minutes.\n\n4. *Add the Liquids and Seasonings:*\n - Stir in the diced tomatoes (with their juice) and chicken broth.\n - Add the bay leaves, thyme, oregano, paprika, cayenne pepper, salt, and black pepper.\n - Bring the mixture to a boil, then reduce the heat to low and let it simmer for about 45 minutes, stirring occasionally.\n\n5. *Add the Shrimp and Okra:*\n - Add the shrimp and okra (if using) to the pot.\n - Simmer for an additional 10-15 minutes, or until the shrimp are cooked through and the okra is tender.\n\n6. *Finish the Gumbo:*\n - Remove the bay leaves from the pot.\n - Stir in the chopped parsley and green onions.\n - Taste and adjust the seasoning with more salt, pepper, or cayenne if needed.\n\n7. *Serve:*\n - Serve the gumbo hot over cooked white rice.\n - Offer hot sauce on the side for those who like extra heat.\n\nEnjoy your homemade gumbo soup! It's a perfect dish for a cozy meal with family and friends.",
-            ],
-            "ru": [
-                "Конечно! Суп гамбо — это традиционное блюдо южной кухни США, особенно популярное в Луизиане. Вот классический рецепт супа гамбо с курицей и колбасой андуй:",
-                "*Ингредиенты:*\n\n*Для ру (загустителя):*\n- 1/2 стакана растительного масла\n- 1/2 стакана муки\n\n*Для супа:\n- 1 большая луковица, мелко нарезанная\n- 1 зеленый болгарский перец, мелко нарезанный\n- 2-3 стебля сельдерея, мелко нарезанные\n- 4 зубчика чеснока, измельченных\n- 1 литр куриного бульона\n- 2 стакана воды\n- 2 лавровых листа\n- 1 чайная ложка тимьяна\n- 1 чайная ложка орегано\n- 1 чайная ложка кайенского перца (по вкусу)\n- 1 чайная ложка паприки\n- 1/2 чайной ложки черного перца\n- 1/2 чайной ложки соли (по вкусу)\n- 400 г куриного филе, нарезанного кубиками\n- 300 г колбасы андуй, нарезанной кружочками\n- 200 г окры (бамии), нарезанной\n- 2 столовые ложки нарезанной петрушки\n- 2 столовые ложки нарезанного зеленого лука\n- 1 столовая ложка соуса Вустершир\n- 1 столовая ложка соуса Табаско (по вкусу)\n- Вареный рис для подачи\n\n*Инструкции:* \n\n1. *Приготовление ру:*\n- В большой кастрюле или глубокой сковороде разогрейте растительное масло на среднем огне.\n- Постепенно добавляйте муку, постоянно помешивая, чтобы не образовались комочки.\n- Продолжайте готовить, постоянно помешивая, пока ру не станет темно-коричневого цвета (около 15-20 минут). Будьте осторожны, чтобы не сжечь ру.\n\n2. *Добавление овощей:*\n- Добавьте нарезанный лук, болгарский перец и сельдерей в ру. Готовьте, помешивая, пока овощи не станут мягкими (около 5 минут).\n- Добавьте измельченный чеснок и готовьте еще 1 минуту.\n\n3. *Добавление жидкости и специй:*\n- Постепенно влейте куриный бульон и воду, постоянно помешивая, чтобы избежать комочков.\n- Добавьте лавровые листья, тимьян, орегано, кайенский перец, паприку, черный перец и соль. Доведите до кипения.\n\n4. *Добавление мяса и окры:*\n- Добавьте куриное филе и колбасу андуй. Уменьшите огонь и готовьте на медленном огне около 30 минут.\n- Добавьте нарезанную окру и готовьте еще 10-15 минут, пока окра не станет мягкой.\n\n5. *Завершение:*\n- Добавьте нарезанную петрушку, зеленый лук, соус Вустершир и соус Табаско. Перемешайте и готовьте еще 5 минут.\n- Попробуйте суп и при необходимости добавьте еще соли или специй.\n\n6. *Подача:*\n- Подавайте суп гамбо горячим с вареным рисом.\n\nПриятного аппетита!",
-            ],
-        },
-        "recognition tutorial": {
-            "en": 'You are looking at the interface of a chatbot called *Sebastian*. The interface displays a text message explaining the bot\'s capabilities for interacting with images. The text states that the bot can recognize and analyze images, and to do this, you need to send an image or attach it to a text query. It also mentions that this feature is very convenient for adjusting the instructions provided by the bot and that the image recognition process has a fixed cost. At the bottom of the interface, there are buttons labeled "*What am I looking at?*", "*<- Prompts*", and "*Drawing ->*".',
-            "ru": 'Вы смотрите на интерфейс чат-бота под названием *Себастиан*. В интерфейсе отображается текстовое сообщение, объясняющее возможности бота по взаимодействию с изображениями. В тексте указано, что бот может распознавать и анализировать изображения, и для этого нужно отправить изображение или прикрепить его к текстовому запросу. Также упоминается, что эту функцию очень удобно использовать для корректировки инструкций, предлагаемых ботом и что процесс распознавания изображений имеет фиксированную стоимость. Внизу интерфейса есть кнопки "*На что я сейчас смотрю?*", "*<- Текстовые запросы*", и "*Рисование ->*".',
         },
     },
 }
