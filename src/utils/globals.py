@@ -47,9 +47,7 @@ XTR2USD = 0.02
 USD2TOKENS = 1 / GPT4O_OUT_USD
 REFUND_PERIOD_DAYS = 28
 
-PAR_MIN_LEN = 500
-PAR_MAX_LEN = 3950
-
+PAR_MAX_LEN = 4090
 
 CODE_PATTERN = re.compile(
     r"(?<!`|\w)(?<!\\)```\S*?\n(?:(?:.|\n)*?\S(?:.|\n)*?)(?:\s+)```(?!`|\w)"

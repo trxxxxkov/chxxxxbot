@@ -209,8 +209,7 @@ async def handler(message: Message) -> None:
     if await prompt_is_accepted(message):
         await db_save_message(message, "user")
         await lock(message.from_user.id)
-        async with ChatActionSender.typing(message.chat.id, bot):
-            response, usage, last_message = await generate_completion(message)
+        response, usage, last_message = await generate_completion(message)
         await db_save_expenses(message, usage)
         await db_execute(
             "INSERT INTO messages \

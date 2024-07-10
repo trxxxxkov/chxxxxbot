@@ -60,6 +60,10 @@ scripts = {
             "en": "_*Refund successful!* ⭐*{}* have been returned to your account._",
             "ru": "_*Возврат средств произведён успешно!* ⭐*{}* уже вернулись на ваш счёт._",
         },
+        "long message": {
+            "en": "_The last message seems to be very long. Would you like it to be sent as a text file?_",
+            "ru": "_Последнее сообщение оказалось очень длинным. Желаете чтобы оно было прислано в формате текстового файла?_",
+        },
     },
     "err": {
         "unexpected err": {
@@ -79,16 +83,16 @@ scripts = {
             "ru": "_Исходный код недоступен, так как сообщение было забыто_",
         },
         "too old to hide": {
-            "en": "_A message can only be hidden if it was sent less than 48 hours ago._",
-            "ru": "_Сообщение может быть скрыто только если оно было отправлено менее 48 часов назад_",
+            "en": "A message can only be hidden if it was sent less than 48 hours ago.",
+            "ru": "Сообщение может быть скрыто только если оно было отправлено менее 48 часов назад",
         },
         "policy block": {
             "en": "_The response has been blocked by OpenAI because your prompt violates its content policy. Consider using other words in your prompt!_",
             "ru": "_Ваш запрос был отклонён сервером OpenAI, так как в нём содержится запрещённая информация. Попробуйте изменить формулировку и использовать другие слова!_",
         },
         "nothing to convert": {
-            "en": "_No messages are available to be sent as a file._",
-            "ru": "_Отсутствуют сообщения, которые можно было бы отправить как файл._",
+            "en": "No messages are available to be sent as a file.",
+            "ru": "Отсутствуют сообщения, которые можно было бы отправить как файл.",
         },
         "already refunded": {
             "en": "_Refund for the purchase with the specified ID has already been processed. The stars have been successfully returned to your account!\n\n *If you believe an error has occurred, please contact @trxxxxkov.*_",
@@ -126,11 +130,21 @@ scripts = {
         "pay": {"en": "Pay ⭐{} to Sebastian", "ru": "Заплатить Себастиану ⭐{}"},
         "try payment": {"en": "Pay ⭐1", "ru": "Заплатить ⭐1"},
         "try help": [
-            {"en": "Write a gumbo soup recipe", "ru": "Напиши рецепт супа Гамбо"},
-            {"en": "What am I looking at?", "ru": "На что я сейчас смотрю?"},
-            {"en": "/draw me", "ru": "/draw меня"},
-            {"en": "#1", "ru": "#1"},
+            {
+                "en": "Try: Write a Gumbo recipe",
+                "ru": "Пример: Напиши рецепт Гамбо",
+            },
+            {
+                "en": "Try: What am I looking at?",
+                "ru": "Пример: На что я смотрю?",
+            },
+            {"en": "Try: /draw me", "ru": "Пример: /draw меня"},
+            {"en": "Try: #1", "ru": "Пример: #1"},
         ],
+        "send as file": {
+            "en": "Send as a text file",
+            "ru": "Отправить в формате текстового файла",
+        },
     },
     "other": {
         "payment title": {

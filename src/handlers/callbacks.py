@@ -11,14 +11,13 @@ import src.templates.tutorial.videos
 from src.templates.scripts import scripts
 from src.templates.keyboards.inline_kbd import inline_kbd
 from src.core.image_generation import variate_image
-from src.database.queries import db_update_user, db_get_user
+from src.database.queries import db_update_user, db_get_user, db_execute
 from src.utils.validations import language
 from src.utils.formatting import (
     find_latex,
     latex2url,
     svg2jpg,
     latex_significant,
-    send,
     format,
     usd2tok,
     xtr2usd,
@@ -44,8 +43,12 @@ async def redraw_callback(callback: types.CallbackQuery):
 
 @rt.callback_query(F.data == "error")
 async def error_callback(callback: types.CallbackQuery):
-    text = scripts["err"]["unexpected err"][language(callback)]
-    await send(callback.message, text)
+    text = format(scripts["err"]["unexpected err"][language(callback)])
+    await bot.send_message(
+        callback.message.chat.id,
+        text,
+        reply_markup=inline_kbd({"hide": "hide"}, language(callback)),
+    )
     await callback.answer()
 
 
@@ -181,10 +184,7 @@ async def hide_callback(callback: types.CallbackQuery):
     message = callback.message
     deleted = await bot.delete_message(message.chat.id, message.message_id)
     if not deleted:
-        text = format(scripts["err"]["too old to hide"][language(callback)])
-        await bot.send_message(
-            message.chat.id, text, reply_to_message_id=message.message_id
-        )
+        await callback.answer(scripts["err"]["too old to hide"][language(callback)])
     await callback.answer()
 
 
@@ -224,25 +224,19 @@ async def try_payment_callback(callback):
 async def try_help_callback(callback):
     h_idx = int(callback.data.split("-")[1])
     if h_idx == 0:
-        async with ChatActionSender.typing(callback.message.chat.id, bot):
-            await asyncio.sleep(0.75)
-            await bot.send_message(
-                callback.message.chat.id,
-                format(scripts["other"]["prompt tutorial"][language(callback)][0]),
-            )
-        async with ChatActionSender.typing(callback.message.chat.id, bot):
-            await asyncio.sleep(3)
-            await bot.send_message(
-                callback.message.chat.id,
-                format(scripts["other"]["prompt tutorial"][language(callback)][1]),
-            )
+        await bot.send_message(
+            callback.message.chat.id,
+            format(scripts["other"]["prompt tutorial"][language(callback)][0]),
+        )
+        await bot.send_message(
+            callback.message.chat.id,
+            format(scripts["other"]["prompt tutorial"][language(callback)][1]),
+        )
     elif h_idx == 1:
-        async with ChatActionSender.typing(callback.message.chat.id, bot):
-            await asyncio.sleep(1.5)
-            await bot.send_message(
-                callback.message.chat.id,
-                format(scripts["other"]["recognition tutorial"][language(callback)]),
-            )
+        await bot.send_message(
+            callback.message.chat.id,
+            format(scripts["other"]["recognition tutorial"][language(callback)]),
+        )
     elif h_idx == 2:
         tutor_generation = FSInputFile("src/templates/tutorial/generation.jpg")
         kbd = inline_kbd({"redraw": "redraw"}, language(callback))
@@ -265,3 +259,25 @@ async def try_help_callback(callback):
             reply_markup=kbd,
         )
     await callback.answer()
+
+
+@rt.callback_query(F.data == "send as file")
+async def as_file_handler(callback) -> None:
+    messages = await db_execute(
+        "SELECT * FROM messages WHERE from_user_id = %s ORDER BY timestamp;",
+        callback.from_user.id,
+    )
+    if messages and isinstance(messages, list):
+        last_msg = messages[-1]
+        prompt = messages[-2]
+        path_to_file = f"src/utils/temp/documents/{callback.from_user.id}-as_file.txt"
+        with open(path_to_file, "w") as f:
+            f.write(last_msg["text"])
+        await bot.send_document(
+            callback.message.chat.id,
+            FSInputFile(path_to_file),
+            reply_to_message_id=prompt["message_id"],
+        )
+        await callback.answer()
+    else:
+        await callback.answer(scripts["err"]["nothing to convert"][language(callback)])

@@ -4,6 +4,7 @@ import asyncio
 import tiktoken
 
 from aiogram.types import FSInputFile
+from aiogram.enums import ChatAction
 
 import src.templates.tutorial.videos
 from src.templates.scripts import scripts
@@ -50,7 +51,7 @@ async def lock(user_id):
     user = await db_get_user(user_id)
     user["lock"] = True
     await db_update_user(user)
-    await asyncio.sleep(0.6)
+    await asyncio.sleep(0.25)
     user = await db_get_user(user_id)
     user["lock"] = False
     await db_update_user(user)

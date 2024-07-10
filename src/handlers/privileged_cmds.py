@@ -16,7 +16,7 @@ async def add_handler(message: Message) -> None:
     if await authorized(message):
         if len(message.text.split()) != 3:
             text = "_Error: the command must have the following syntax:_ `/add USER_ID [+/-]FUNDS`."
-            await send(message, text)
+            await bot.send_message(message.chat.id, format(text))
             return
         _, user_id, funds = message.text.split()
         user_id = int(user_id)
@@ -28,11 +28,11 @@ async def add_handler(message: Message) -> None:
             if funds.startswith(("+", "-")) and funds[1:].replace(".", "", 1).isdigit():
                 user["balance"] += float(funds)
                 await db_update_user(user)
-                await send(message, "_Done._")
+                await bot.send_message(message.chat.id, format("_Done._"))
             elif funds.replace(".", "", 1).isdigit():
                 user["balance"] = float(funds)
                 await db_update_user(user)
-                await send(message, "_Done._")
+                await bot.send_message(message.chat.id, format("_Done._"))
             else:
                 await send(message, f"_Error: {funds} is not a valid numeric data._")
         else:
@@ -44,7 +44,7 @@ async def test_handler(message):
     if await authorized(message):
         for cls, cmds in scripts.items():
             for key, value in cmds.items():
-                if key == "help" or key == "to help":
+                if isinstance(value, list):
                     for elem in value:
                         await bot.send_message(message.chat.id, format(elem["en"]))
                         await bot.send_message(message.chat.id, format(elem["ru"]))

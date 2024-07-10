@@ -1,14 +1,21 @@
 from aiogram.enums import ChatAction
 
-from src.templates.keyboards.reply_kbd import last_msg_keyboard
+from src.templates.keyboards.inline_kbd import latex_inline_kbd, inline_kbd
 from src.utils.analytics.logging import logged
 from src.database.queries import db_get_messages, db_get_model
-from src.utils.formatting import is_incomplete, send, num_formulas_before, cut
-from src.utils.globals import bot, openai_client, PAR_MIN_LEN
+from src.utils.validations import language
+from src.utils.formatting import (
+    nformulas_before,
+    cut_tg_msg,
+    format,
+    send_template_answer,
+)
+from src.utils.globals import openai_client, bot
 
 
 @logged
 async def generate_completion(message):
+    await bot.send_chat_action(message.chat.id, ChatAction.TYPING)
     model = await db_get_model(message.from_user.id)
     messages = await db_get_messages(message.from_user.id)
     stream = await openai_client.chat.completions.create(
@@ -20,24 +27,49 @@ async def generate_completion(message):
         stream_options={"include_usage": True},
     )
     response = ""
-    tail = ""
+    par = ""
+    delta = 0
+    last_msg = None
     async for chunk in stream:
         usage = chunk.usage
         if chunk.choices and chunk.choices[0].delta.content is not None:
-            tail += chunk.choices[0].delta.content
             response += chunk.choices[0].delta.content
-            if tail == response and "\n\n" in tail:
-                if not is_incomplete(tail[: tail.rfind("\n\n")]):
-                    delim = tail.rfind("\n\n")
-                    head, tail = tail[:delim], tail[delim + 2 :]
-                    await send(message, head, f_idx=0)
-                    await bot.send_chat_action(message.chat.id, ChatAction.TYPING)
-            if len(tail) > PAR_MIN_LEN and "\n" in chunk.choices[0].delta.content:
-                head, tail = cut(tail)
-                if head is not None:
-                    await send(message, head, f_idx=num_formulas_before(head, response))
-                    await bot.send_chat_action(message.chat.id, ChatAction.TYPING)
-    last_message = await send(
-        message, tail, last_msg_keyboard, num_formulas_before(tail, response)
-    )
-    return response, usage, last_message
+            par += chunk.choices[0].delta.content
+            delta += len(chunk.choices[0].delta.content)
+            par, tail = cut_tg_msg(par)
+            if tail is None and (
+                last_msg is not None
+                and delta >= 100
+                or last_msg is None
+                and delta >= 50
+            ):
+                delta = 0
+                if last_msg is None:
+                    last_msg = await message.answer(format(par))
+                else:
+                    last_msg = await last_msg.edit_text(format(par))
+            elif tail is not None:
+                latex_kbd = latex_inline_kbd(par, nformulas_before(par, response))
+                last_msg = await last_msg.edit_text(format(par))
+                if latex_kbd is not None:
+                    last_msg = await last_msg.edit_reply_markup(reply_markup=latex_kbd)
+                par = tail
+                delta = 0
+                last_msg = await message.answer(format(par))
+    latex_kbd = latex_inline_kbd(par, nformulas_before(par, response))
+    if last_msg is not None:
+        last_msg = await last_msg.edit_text(format(par))
+        if latex_kbd is not None:
+            last_msg = await last_msg.edit_reply_markup(reply_markup=latex_kbd)
+    else:
+        last_msg = await message.answer(format(par), reply_markup=latex_kbd)
+    if len(response) != len(par):
+        await send_template_answer(
+            message,
+            "info",
+            "long message",
+            reply_markup=inline_kbd(
+                {"send as file": "send as file"}, language(message)
+            ),
+        )
+    return response, usage, last_msg

@@ -6,11 +6,9 @@ from mimetypes import guess_type
 
 from src.templates.scripts import scripts
 from src.utils.analytics.logging import logged
-from src.templates.keyboards.inline_kbd import inline_kbd
 from src.utils.globals import (
     bot,
     PAR_MAX_LEN,
-    PAR_MIN_LEN,
     INCOMPLETE_CODE_PATTERN,
     LATEX_BODY_PATTERN,
     CODE_PATTERN,
@@ -165,20 +163,16 @@ async def send_template_answer(message, cls, name, *args, reply_markup=None):
     text = scripts[cls][name][language(message)]
     if len(args) != 0:
         text = text.format(*args)
-    await send(message, text, reply_markup=reply_markup)
+    await message.answer(format(text), reply_markup=reply_markup)
 
 
 @logged
 async def send(message, text, reply_markup=None, f_idx=0):
     if re.search(r"\w+", text) is not None:
-        if fnum := len([f for f in find_latex(text) if latex_significant(f)]):
-            reply_markup = inline_kbd(
-                {f"#{f_idx+1+i}": f"latex-{i}" for i in range(fnum)}
-            )
         if len(text) > PAR_MAX_LEN:
-            head, tail = cut(text)
+            head, tail = cut_tg_msg(text)
             await send(message, head, reply_markup, f_idx)
-            await send(message, tail, reply_markup, 0)
+            msg = await send(message, tail, reply_markup, 0)
         else:
             msg = await bot.send_message(
                 message.chat.id,
@@ -186,6 +180,8 @@ async def send(message, text, reply_markup=None, f_idx=0):
                 reply_markup=reply_markup,
                 disable_web_page_preview=True,
             )
+    else:
+        msg = None
     return msg
 
 
@@ -193,14 +189,24 @@ def is_incomplete(par):
     return INCOMPLETE_CODE_PATTERN.search(par).end() != len(par)
 
 
-def cut(text):
-    if is_incomplete(text[:PAR_MAX_LEN]) and len(text) > PAR_MAX_LEN:
-        if "\n\n" in text[:PAR_MAX_LEN]:
-            delim = text.rfind("\n\n", 0, PAR_MAX_LEN)
-            delim_len = 2
-        else:
-            delim = text.rfind("\n", 0, PAR_MAX_LEN)
-            delim_len = 1
+def cut_tg_msg(text):
+    if len(text) < PAR_MAX_LEN:
+        head = text
+        tail = None
+        return head, tail
+    if "\n\n" in text[:PAR_MAX_LEN]:
+        delim = text[:PAR_MAX_LEN].rfind("\n\n")
+        dlen = len("\n\n")
+    elif "\n" in text[:PAR_MAX_LEN]:
+        delim = text[:PAR_MAX_LEN].rfind("\n")
+        dlen = len("\n")
+    elif " " in text[:PAR_MAX_LEN]:
+        delim = text[:PAR_MAX_LEN].rfind(" ")
+        dlen = len(" ")
+    else:
+        delim = PAR_MAX_LEN
+        dlen = len("")
+    if is_incomplete(text[:delim]):
         if text.startswith("```"):
             cblock_begin = text[: text.find("\n") + 1]
         else:
@@ -208,22 +214,14 @@ def cut(text):
             cblock_begin = text[tmp + 1 : text.find("\n", tmp + 1) + 1]
         cblock_end = "\n```"
         head = text[:delim] + cblock_end
-        tail = cblock_begin + text[delim + delim_len :]
-    elif not is_incomplete(text[:PAR_MAX_LEN]) and len(text) > PAR_MAX_LEN:
-        delim = text.rfind("\n", 0, PAR_MAX_LEN)
-        head = text[:delim]
-        tail = text[delim + 1 :]
-    elif not is_incomplete(text) and len(text) > PAR_MIN_LEN:
-        delim = text.rfind("\n")
-        head = text[:delim]
-        tail = text[delim + 1 :]
+        tail = cblock_begin + text[delim + dlen :]
     else:
-        head = None
-        tail = text
+        head = text[:delim]
+        tail = text[delim + dlen :]
     return head, tail
 
 
-def num_formulas_before(head, text):
+def nformulas_before(head, text):
     return len([f for f in find_latex(text[: text.find(head)]) if latex_significant(f)])
 
 
