@@ -7,7 +7,6 @@ from mimetypes import guess_type
 from src.templates.scripts import scripts
 from src.utils.analytics.logging import logged
 from src.utils.globals import (
-    bot,
     PAR_MAX_LEN,
     INCOMPLETE_CODE_PATTERN,
     LATEX_BODY_PATTERN,
@@ -149,7 +148,7 @@ def format_latex(text, f_idx=0):
     return text
 
 
-def format(text, f_idx=0):
+def format_tg_msg(text, f_idx=0):
     if not text:
         return text
     else:
@@ -163,26 +162,7 @@ async def send_template_answer(message, cls, name, *args, reply_markup=None):
     text = scripts[cls][name][language(message)]
     if len(args) != 0:
         text = text.format(*args)
-    await message.answer(format(text), reply_markup=reply_markup)
-
-
-@logged
-async def send(message, text, reply_markup=None, f_idx=0):
-    if re.search(r"\w+", text) is not None:
-        if len(text) > PAR_MAX_LEN:
-            head, tail = cut_tg_msg(text)
-            await send(message, head, reply_markup, f_idx)
-            msg = await send(message, tail, reply_markup, 0)
-        else:
-            msg = await bot.send_message(
-                message.chat.id,
-                format(text, f_idx),
-                reply_markup=reply_markup,
-                disable_web_page_preview=True,
-            )
-    else:
-        msg = None
-    return msg
+    await message.answer(format_tg_msg(text), reply_markup=reply_markup)
 
 
 def is_incomplete(par):

@@ -1,16 +1,14 @@
 from aiogram import Router, types
 from aiogram.types import Message
 from aiogram.filters import Command
-from aiogram.types import FSInputFile
 
 import src.templates.tutorial.videos
 from src.utils.globals import bot
 from src.templates.bot_menu import bot_menu
 from src.templates.keyboards.reply_kbd import help_keyboard
 from src.handlers.public_cmds import help_handler
-from src.utils.formatting import send_template_answer
+from src.utils.formatting import send_template_answer, format_tg_msg
 from src.utils.validations import add_user, language, template_videos2ids
-from src.database.queries import db_execute
 
 rt = Router()
 
@@ -42,4 +40,4 @@ async def paysupport_handler(message: Message) -> None:
 
 @rt.message(Command("privacy"))
 async def privacy_handler(message: Message) -> None:
-    await bot.send_message(message.chat.id, "Your data will be fine.")
+    await message.answer(format_tg_msg("_Your data will be fine._"))

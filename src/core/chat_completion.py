@@ -7,7 +7,7 @@ from src.utils.validations import language
 from src.utils.formatting import (
     nformulas_before,
     cut_tg_msg,
-    format,
+    format_tg_msg,
     send_template_answer,
 )
 from src.utils.globals import openai_client, bot
@@ -28,6 +28,7 @@ async def generate_completion(message):
     )
     response = ""
     par = ""
+    sended_chunk_size = 40
     delta = 0
     last_msg = None
     async for chunk in stream:
@@ -37,32 +38,28 @@ async def generate_completion(message):
             par += chunk.choices[0].delta.content
             delta += len(chunk.choices[0].delta.content)
             par, tail = cut_tg_msg(par)
-            if tail is None and (
-                last_msg is not None
-                and delta >= 100
-                or last_msg is None
-                and delta >= 50
-            ):
+            if tail is None and delta > sended_chunk_size:
                 delta = 0
+                sended_chunk_size = 100
                 if last_msg is None:
-                    last_msg = await message.answer(format(par))
+                    last_msg = await message.answer(format_tg_msg(par))
                 else:
-                    last_msg = await last_msg.edit_text(format(par))
+                    last_msg = await last_msg.edit_text(format_tg_msg(par))
             elif tail is not None:
                 latex_kbd = latex_inline_kbd(par, nformulas_before(par, response))
-                last_msg = await last_msg.edit_text(format(par))
+                last_msg = await last_msg.edit_text(format_tg_msg(par))
                 if latex_kbd is not None:
                     last_msg = await last_msg.edit_reply_markup(reply_markup=latex_kbd)
                 par = tail
                 delta = 0
-                last_msg = await message.answer(format(par))
+                last_msg = await message.answer(format_tg_msg(par))
     latex_kbd = latex_inline_kbd(par, nformulas_before(par, response))
     if last_msg is not None:
-        last_msg = await last_msg.edit_text(format(par))
+        last_msg = await last_msg.edit_text(format_tg_msg(par))
         if latex_kbd is not None:
             last_msg = await last_msg.edit_reply_markup(reply_markup=latex_kbd)
     else:
-        last_msg = await message.answer(format(par), reply_markup=latex_kbd)
+        last_msg = await message.answer(format_tg_msg(par), reply_markup=latex_kbd)
     if len(response) != len(par):
         await send_template_answer(
             message,

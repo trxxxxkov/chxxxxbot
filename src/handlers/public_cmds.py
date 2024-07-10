@@ -15,7 +15,7 @@ from src.core.image_generation import generate_image
 from src.core.chat_completion import generate_completion
 from src.utils.formatting import (
     send_template_answer,
-    format,
+    format_tg_msg,
     xtr2usd,
     usd2tok,
 )
@@ -89,7 +89,7 @@ async def balance_handler(message: Message) -> None:
         ),
     )
     user = await db_get_user(message.from_user.id)
-    text = format(
+    text = format_tg_msg(
         scripts["doc"]["payment"][language(message)].format(usd2tok(user["balance"]))
     )
     await bot.send_animation(
@@ -195,7 +195,7 @@ async def help_handler(message: Message) -> None:
             callback_data="help-1",
         ),
     )
-    text = format(scripts["doc"]["help"][0][language(message)])
+    text = format_tg_msg(scripts["doc"]["help"][0][language(message)])
     await bot.send_animation(
         message.chat.id,
         src.templates.tutorial.videos.videos["help"][0],

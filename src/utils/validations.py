@@ -4,7 +4,6 @@ import asyncio
 import tiktoken
 
 from aiogram.types import FSInputFile
-from aiogram.enums import ChatAction
 
 import src.templates.tutorial.videos
 from src.templates.scripts import scripts

@@ -2,11 +2,9 @@ from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
 
-from src.utils.globals import bot
-from src.templates.scripts import scripts
 from src.utils.validations import authorized
 from src.database.queries import db_execute, db_get_user, db_update_user
-from src.utils.formatting import send, format
+from src.utils.formatting import format_tg_msg
 
 rt = Router()
 
@@ -16,7 +14,7 @@ async def add_handler(message: Message) -> None:
     if await authorized(message):
         if len(message.text.split()) != 3:
             text = "_Error: the command must have the following syntax:_ `/add USER_ID [+/-]FUNDS`."
-            await bot.send_message(message.chat.id, format(text))
+            await message.answer(format_tg_msg(text))
             return
         _, user_id, funds = message.text.split()
         user_id = int(user_id)
@@ -28,26 +26,14 @@ async def add_handler(message: Message) -> None:
             if funds.startswith(("+", "-")) and funds[1:].replace(".", "", 1).isdigit():
                 user["balance"] += float(funds)
                 await db_update_user(user)
-                await bot.send_message(message.chat.id, format("_Done._"))
+                await message.answer(format_tg_msg("_Done._"))
             elif funds.replace(".", "", 1).isdigit():
                 user["balance"] = float(funds)
                 await db_update_user(user)
-                await bot.send_message(message.chat.id, format("_Done._"))
+                await message.answer(format_tg_msg("_Done._"))
             else:
-                await send(message, f"_Error: {funds} is not a valid numeric data._")
+                await message.answer(
+                    format_tg_msg(f"_Error: {funds} is not a valid numeric data._")
+                )
         else:
-            await send(message, f"_The user *{user_id}* is not found._")
-
-
-@rt.message(Command("show_scripts"))
-async def test_handler(message):
-    if await authorized(message):
-        for cls, cmds in scripts.items():
-            for key, value in cmds.items():
-                if isinstance(value, list):
-                    for elem in value:
-                        await bot.send_message(message.chat.id, format(elem["en"]))
-                        await bot.send_message(message.chat.id, format(elem["ru"]))
-                else:
-                    await bot.send_message(message.chat.id, format(value["en"]))
-                    await bot.send_message(message.chat.id, format(value["ru"]))
+            await message.answer(format_tg_msg(f"_The user *{user_id}* is not found._"))

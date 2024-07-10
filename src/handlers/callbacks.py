@@ -18,7 +18,7 @@ from src.utils.formatting import (
     latex2url,
     svg2jpg,
     latex_significant,
-    format,
+    format_tg_msg,
     usd2tok,
     xtr2usd,
 )
@@ -43,10 +43,8 @@ async def redraw_callback(callback: types.CallbackQuery):
 
 @rt.callback_query(F.data == "error")
 async def error_callback(callback: types.CallbackQuery):
-    text = format(scripts["err"]["unexpected err"][language(callback)])
-    await bot.send_message(
-        callback.message.chat.id,
-        text,
+    await callback.message.answer(
+        format_tg_msg(scripts["err"]["unexpected err"][language(callback)]),
         reply_markup=inline_kbd({"hide": "hide"}, language(callback)),
     )
     await callback.answer()
@@ -56,7 +54,7 @@ async def error_callback(callback: types.CallbackQuery):
 async def balance_callback(callback: types.CallbackQuery):
     message = callback.message
     user = await db_get_user(callback.from_user.id)
-    text = format(
+    text = format_tg_msg(
         scripts["doc"]["payment"][language(callback)].format(usd2tok(user["balance"]))
     )
     builder = InlineKeyboardBuilder()
@@ -91,7 +89,7 @@ async def balance_callback(callback: types.CallbackQuery):
 @rt.callback_query(F.data.endswith("tokens"))
 async def tokens_callback(callback: types.CallbackQuery):
     message = callback.message
-    text = format(scripts["doc"]["tokens"][language(callback)])
+    text = format_tg_msg(scripts["doc"]["tokens"][language(callback)])
     if callback.data == "tokens":
         kbd = inline_kbd({"to balance": "balance"}, language(message))
         await bot.edit_message_media(
@@ -143,7 +141,7 @@ async def help_callback(callback: types.CallbackQuery):
     builder = InlineKeyboardBuilder()
     builder.row(mid_button)
     builder.row(l_button, r_button)
-    text = format(scripts["doc"]["help"][h_idx][language(callback)])
+    text = format_tg_msg(scripts["doc"]["help"][h_idx][language(callback)])
     await bot.edit_message_media(
         types.InputMediaAnimation(
             type=InputMediaType.ANIMATION,
@@ -224,18 +222,15 @@ async def try_payment_callback(callback):
 async def try_help_callback(callback):
     h_idx = int(callback.data.split("-")[1])
     if h_idx == 0:
-        await bot.send_message(
-            callback.message.chat.id,
-            format(scripts["other"]["prompt tutorial"][language(callback)][0]),
+        await callback.message.answer(
+            format_tg_msg(scripts["other"]["prompt tutorial"][language(callback)][0])
         )
-        await bot.send_message(
-            callback.message.chat.id,
-            format(scripts["other"]["prompt tutorial"][language(callback)][1]),
+        await callback.message.answer(
+            format_tg_msg(scripts["other"]["prompt tutorial"][language(callback)][1])
         )
     elif h_idx == 1:
-        await bot.send_message(
-            callback.message.chat.id,
-            format(scripts["other"]["recognition tutorial"][language(callback)]),
+        await callback.message.answer(
+            format_tg_msg(scripts["other"]["recognition tutorial"][language(callback)])
         )
     elif h_idx == 2:
         tutor_generation = FSInputFile("src/templates/tutorial/generation.jpg")
