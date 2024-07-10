@@ -28,7 +28,7 @@ async def generate_completion(message):
     )
     response = ""
     par = ""
-    sended_chunk_size = 40
+    sended_chunk_size = 20
     delta = 0
     last_msg = None
     async for chunk in stream:
@@ -40,7 +40,7 @@ async def generate_completion(message):
             par, tail = cut_tg_msg(par)
             if tail is None and delta > sended_chunk_size:
                 delta = 0
-                sended_chunk_size = 100
+                sended_chunk_size = min(80, 20 + len(par) / 10)
                 if last_msg is None:
                     last_msg = await message.answer(format_tg_msg(par))
                 else:
