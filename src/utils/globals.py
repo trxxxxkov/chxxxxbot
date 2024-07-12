@@ -13,7 +13,7 @@ load_dotenv()
 BOT_TOKEN = getenv("TG_BOT_TOKEN")
 OPENAI_KEY = getenv("OPENAI_API_KEY")
 
-WEB_SERVER_HOST = "127.0.0.1"
+WEB_SERVER_HOST = "localhost"
 WEB_SERVER_PORT = 8080
 WEBHOOK_PATH = "/var/www/chxxxxbot"
 BASE_WEBHOOK_URL = "https://trxxxxkov.net"

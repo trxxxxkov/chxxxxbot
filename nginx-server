@@ -1,0 +1,12 @@
+server {
+	listen 443 ssl;
+	ssl_certificate /etc/letsencrypt/live/trxxxxkov.net/fullchain.pem;
+	ssl_certificate_key /etc/letsencrypt/live/trxxxxkov.net/privkey.pem;
+	server_name trxxxxkov.net;
+
+	root /var/www/chxxxxbot;
+
+	location / {
+		proxy_pass http://localhost:8080/;
+	}
+}
