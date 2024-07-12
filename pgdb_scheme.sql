@@ -1,0 +1,202 @@
+--
+-- PostgreSQL database dump
+--
+
+-- Dumped from database version 14.12 (Ubuntu 14.12-0ubuntu0.22.04.1)
+-- Dumped by pg_dump version 14.12 (Ubuntu 14.12-0ubuntu0.22.04.1)
+
+SET statement_timeout = 0;
+SET lock_timeout = 0;
+SET idle_in_transaction_session_timeout = 0;
+SET client_encoding = 'UTF8';
+SET standard_conforming_strings = on;
+SELECT pg_catalog.set_config('search_path', '', false);
+SET check_function_bodies = false;
+SET xmloption = content;
+SET client_min_messages = warning;
+SET row_security = off;
+
+SET default_tablespace = '';
+
+SET default_table_access_method = heap;
+
+--
+-- Name: messages; Type: TABLE; Schema: public; Owner: chxxxxbot
+--
+
+CREATE TABLE public.messages (
+    message_id bigint NOT NULL,
+    from_user_id bigint NOT NULL,
+    "timestamp" timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    role character varying(255) DEFAULT 'user'::character varying NOT NULL,
+    text text DEFAULT ''::text NOT NULL,
+    image_url text
+);
+
+
+ALTER TABLE public.messages OWNER TO chxxxxbot;
+
+--
+-- Name: models; Type: TABLE; Schema: public; Owner: chxxxxbot
+--
+
+CREATE TABLE public.models (
+    user_id bigint NOT NULL,
+    model_name character varying(255) DEFAULT 'gpt-4o'::character varying NOT NULL,
+    max_tokens integer DEFAULT 4096 NOT NULL,
+    temperature real DEFAULT 0.2 NOT NULL
+);
+
+
+ALTER TABLE public.models OWNER TO chxxxxbot;
+
+--
+-- Name: purchases; Type: TABLE; Schema: public; Owner: chxxxxbot
+--
+
+CREATE TABLE public.purchases (
+    id character varying(255) NOT NULL,
+    user_id bigint NOT NULL,
+    currency character varying(255) DEFAULT 'telegram stars'::character varying NOT NULL,
+    amount integer NOT NULL,
+    "timestamp" timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    refunded boolean DEFAULT false NOT NULL
+);
+
+
+ALTER TABLE public.purchases OWNER TO chxxxxbot;
+
+--
+-- Name: users; Type: TABLE; Schema: public; Owner: chxxxxbot
+--
+
+CREATE TABLE public.users (
+    id bigint NOT NULL,
+    first_name character varying(255),
+    last_name character varying(255),
+    language character varying(255) DEFAULT 'en'::character varying NOT NULL,
+    balance double precision DEFAULT 0 NOT NULL,
+    lock boolean DEFAULT false NOT NULL
+);
+
+
+ALTER TABLE public.users OWNER TO chxxxxbot;
+
+--
+-- Data for Name: messages; Type: TABLE DATA; Schema: public; Owner: chxxxxbot
+--
+
+COPY public.messages (message_id, from_user_id, "timestamp", role, text, image_url) FROM stdin;
+\.
+
+
+--
+-- Data for Name: models; Type: TABLE DATA; Schema: public; Owner: chxxxxbot
+--
+
+COPY public.models (user_id, model_name, max_tokens, temperature) FROM stdin;
+791388236	gpt-4o	4096	0.2
+\.
+
+
+--
+-- Data for Name: purchases; Type: TABLE DATA; Schema: public; Owner: chxxxxbot
+--
+
+COPY public.purchases (id, user_id, currency, amount, "timestamp", refunded) FROM stdin;
+\.
+
+
+--
+-- Data for Name: users; Type: TABLE DATA; Schema: public; Owner: chxxxxbot
+--
+
+COPY public.users (id, first_name, last_name, language, balance, lock) FROM stdin;
+791388236	Daniil Tretyakov	\N	en	0	f
+\.
+
+
+--
+-- Name: messages message_pk; Type: CONSTRAINT; Schema: public; Owner: chxxxxbot
+--
+
+ALTER TABLE ONLY public.messages
+    ADD CONSTRAINT message_pk PRIMARY KEY (message_id);
+
+
+--
+-- Name: models models_pkey; Type: CONSTRAINT; Schema: public; Owner: chxxxxbot
+--
+
+ALTER TABLE ONLY public.models
+    ADD CONSTRAINT models_pkey PRIMARY KEY (user_id);
+
+
+--
+-- Name: purchases payment_transactions_pkey; Type: CONSTRAINT; Schema: public; Owner: chxxxxbot
+--
+
+ALTER TABLE ONLY public.purchases
+    ADD CONSTRAINT payment_transactions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: users unique_id; Type: CONSTRAINT; Schema: public; Owner: chxxxxbot
+--
+
+ALTER TABLE ONLY public.users
+    ADD CONSTRAINT unique_id UNIQUE (id);
+
+
+--
+-- Name: messages unique_message_id; Type: CONSTRAINT; Schema: public; Owner: chxxxxbot
+--
+
+ALTER TABLE ONLY public.messages
+    ADD CONSTRAINT unique_message_id UNIQUE (message_id);
+
+
+--
+-- Name: models unique_user_id; Type: CONSTRAINT; Schema: public; Owner: chxxxxbot
+--
+
+ALTER TABLE ONLY public.models
+    ADD CONSTRAINT unique_user_id UNIQUE (user_id);
+
+
+--
+-- Name: users users_pkey; Type: CONSTRAINT; Schema: public; Owner: chxxxxbot
+--
+
+ALTER TABLE ONLY public.users
+    ADD CONSTRAINT users_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: messages message_users_fk; Type: FK CONSTRAINT; Schema: public; Owner: chxxxxbot
+--
+
+ALTER TABLE ONLY public.messages
+    ADD CONSTRAINT message_users_fk FOREIGN KEY (from_user_id) REFERENCES public.users(id);
+
+
+--
+-- Name: models models_users_fkey; Type: FK CONSTRAINT; Schema: public; Owner: chxxxxbot
+--
+
+ALTER TABLE ONLY public.models
+    ADD CONSTRAINT models_users_fkey FOREIGN KEY (user_id) REFERENCES public.users(id);
+
+
+--
+-- Name: purchases payment_transactions_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: chxxxxbot
+--
+
+ALTER TABLE ONLY public.purchases
+    ADD CONSTRAINT payment_transactions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id);
+
+
+--
+-- PostgreSQL database dump complete
+--
+
