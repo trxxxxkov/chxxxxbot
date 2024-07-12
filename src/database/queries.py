@@ -87,33 +87,20 @@ async def db_save_message(message, role):
     )
 
 
-async def db_save_expenses(message, usage):
-    await db_execute(
-        "INSERT INTO prompts (user_id, prompt_tokens, completion_tokens, cost) VALUES (%s, %s, %s, %s);",
-        [
-            message.from_user.id,
-            usage.prompt_tokens,
-            usage.completion_tokens,
-            usage.prompt_tokens * GPT4O_IN_USD
-            + usage.completion_tokens * GPT4O_OUT_USD,
-        ],
-    )
-
-
 async def db_update_purchase(purchase):
     await db_execute(
         "UPDATE purchases SET \
                 user_id = %s, \
                 amount = %s, \
                 timestamp = %s, \
-                payment_method = %s, \
+                currency = %s, \
                 refunded = %s \
                 WHERE id = %s;",
         [
             purchase["user_id"],
             purchase["amount"],
             purchase["timestamp"],
-            purchase["payment_method"],
+            purchase["currency"],
             purchase["refunded"],
             purchase["id"],
         ],

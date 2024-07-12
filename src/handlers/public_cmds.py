@@ -24,7 +24,6 @@ from src.database.queries import (
     db_execute,
     db_save_message,
     db_update_user,
-    db_save_expenses,
     db_get_user,
     db_get_purchase,
 )
@@ -205,7 +204,6 @@ async def handler(message: Message) -> None:
         await db_save_message(message, "user")
         await lock(message.from_user.id)
         response, usage, last_message = await generate_completion(message)
-        await db_save_expenses(message, usage)
         await db_execute(
             "INSERT INTO messages \
                 (message_id, from_user_id, role, text) \
