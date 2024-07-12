@@ -1,7 +1,6 @@
-.env
 .venv
-test.py
 __pycache__
+secrets.txt
 src/utils/analytics/errors.json
 /src/utils/temp/images/*
 /src/utils/temp/documents/*

@@ -1,6 +1,5 @@
 .gitignore
 chxxxxbot.service
-LICENSE
 nginx-server
 pgdb_scheme.sql
-README.md
+secrets.txt

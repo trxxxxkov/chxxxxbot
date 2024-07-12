@@ -1,0 +1,9 @@
+services:
+  bot:
+    build: .
+    secrets:
+      - bot_secrets
+
+secrets:
+  bot_secrets:
+    file: ./secrets.txt

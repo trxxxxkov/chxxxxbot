@@ -10,21 +10,25 @@ from aiogram.client.default import DefaultBotProperties
 
 load_dotenv()
 
-BOT_TOKEN = getenv("TG_BOT_TOKEN")
-OPENAI_KEY = getenv("OPENAI_API_KEY")
+# BOT_TOKEN = getenv("TG_BOT_TOKEN")
+# OPENAI_KEY = getenv("OPENAI_API_KEY")
+# DATABASE_PASSWORD = getenv("POSTGRESQL_DB_PASSWORD")
+# WEBHOOK_SECRET = getenv("WEBHOOK_SECRET")
+
+with open("/run/secrets/bot_secrets") as secret_f:
+    BOT_TOKEN, OPENAI_KEY, DATABASE_PASSWORD, WEBHOOK_SECRET = secret_f.read().strip().split("\n")
+
 
 WEB_SERVER_HOST = "localhost"
 WEB_SERVER_PORT = 8080
 WEBHOOK_PATH = "/var/www/chxxxxbot"
 BASE_WEBHOOK_URL = "https://trxxxxkov.net"
-WEBHOOK_SECRET = getenv("WEBHOOK_SECRET")
 
 OWNER_CHAT_ID = 791388236
 DATABASE_NAME = "chxxxxbot"
 DATABASE_USER = "chxxxxbot"
 DATABASE_HOST = "localhost"
 DATABASE_PORT = "5432"
-DATABASE_PASSWORD = getenv("POSTGRESQL_DB_PASSWORD")
 DSN = f"host={DATABASE_HOST} \
         port={DATABASE_PORT} \
         dbname={DATABASE_NAME} \
