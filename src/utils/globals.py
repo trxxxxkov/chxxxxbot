@@ -1,6 +1,5 @@
 import re
 from os import getenv
-from dotenv import load_dotenv
 
 from openai import AsyncOpenAI
 
@@ -8,20 +7,22 @@ from aiogram import Bot
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
 
-load_dotenv()
+with open("/run/secrets/bot_token") as f:
+    BOT_TOKEN = f.read().strip()
 
-# BOT_TOKEN = getenv("TG_BOT_TOKEN")
-# OPENAI_KEY = getenv("OPENAI_API_KEY")
-# DATABASE_PASSWORD = getenv("POSTGRESQL_DB_PASSWORD")
-# WEBHOOK_SECRET = getenv("WEBHOOK_SECRET")
+with open("/run/secrets/openai_token") as f:
+    OPENAI_TOKEN = f.read().strip()
 
-with open("/run/secrets/bot_secrets") as secret_f:
-    BOT_TOKEN, OPENAI_KEY, DATABASE_PASSWORD, WEBHOOK_SECRET = secret_f.read().strip().split("\n")
+with open("/run/secrets/webhook_secret") as f:
+    WEBHOOK_SECRET = f.read().strip()
+
+with open("/run/secrets/db_password") as f:
+    DATABASE_PASSWORD = f.read().strip()
 
 
-WEB_SERVER_HOST = "localhost"
+WEB_SERVER_HOST = "0.0.0.0"
 WEB_SERVER_PORT = 8080
-WEBHOOK_PATH = "/var/www/chxxxxbot"
+WEBHOOK_PATH = "/app/webhooks/"
 BASE_WEBHOOK_URL = "https://trxxxxkov.net"
 
 OWNER_CHAT_ID = 791388236
@@ -82,6 +83,6 @@ bot = Bot(
     token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN_V2)
 )
 openai_client = AsyncOpenAI(
-    api_key=OPENAI_KEY,
+    api_key=OPENAI_TOKEN,
     base_url="https://api.openai.com/v1",
 )

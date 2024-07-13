@@ -3,6 +3,7 @@ FROM python:3-slim
 
 WORKDIR /app
 COPY . .
+RUN ["mkdir", "webhooks"]
 RUN apt update \
   && apt install -y libcairo2-dev libpq-dev libaio1 \
   && apt clean

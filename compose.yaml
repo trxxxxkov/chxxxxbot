@@ -1,9 +1,40 @@
 services:
   bot:
     build: .
+    restart: always
     secrets:
-      - bot_secrets
+      - webhook_secret
+      - bot_token
+      - openai_token
+      - db_password
+    env_file:
+      - .env
+    ports:
+      - "8080:8080"
+  webserver:
+    image: jonasal/nginx-certbot:5.2.0
+    restart: always
+    depends_on:
+      - bot
+    env_file:
+      - .env
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ssl_cert:/etc/letsencrypt
+      - ./nginx.conf:/etc/nginx/user_conf.d/nginx.conf
+
+volumes:
+  ssl_cert:
+
 
 secrets:
-  bot_secrets:
-    file: ./secrets.txt
+  webhook_secret:
+    file: ./secrets/webhook_secret.txt
+  bot_token:
+    file: ./secrets/bot_token.txt
+  openai_token:
+    file: ./secrets/openai_token.txt
+  db_password:
+    file: ./secrets/db_password.txt

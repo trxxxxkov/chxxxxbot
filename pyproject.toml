@@ -5,7 +5,6 @@ version = "2024.6.28"
 dependencies = [
   "aiogram",
   "openai",
-  "python-dotenv",
   "cairosvg",
   "tiktoken",
   "psycopg",
