@@ -1,6 +1,5 @@
 import json
 import time
-import asyncio
 import tiktoken
 
 from aiogram.types import FSInputFile
@@ -11,10 +10,9 @@ from src.utils.analytics.logging import logged
 from src.database.queries import (
     db_execute,
     db_get_user,
-    db_update_user,
     db_get_messages,
 )
-from src.utils.formatting import send_template_answer
+from src.utils.formatting import send_template_answer, format_tg_msg
 from src.utils.globals import (
     bot,
     VISION_USD,
@@ -46,17 +44,6 @@ async def add_user(message):
 
 
 @logged
-async def lock(user_id):
-    user = await db_get_user(user_id)
-    user["lock"] = True
-    await db_update_user(user)
-    await asyncio.sleep(0.25)
-    user = await db_get_user(user_id)
-    user["lock"] = False
-    await db_update_user(user)
-
-
-@logged
 async def balance_is_sufficient(message) -> bool:
     message_cost = 0
     encoding = tiktoken.encoding_for_model("gpt-4o")
@@ -66,6 +53,10 @@ async def balance_is_sufficient(message) -> bool:
         message_cost += VISION_USD
     else:
         text = message.text
+    now = time.time()
+    await db_execute(
+        "DELETE FROM messages WHERE timestamp < TO_TIMESTAMP(%s);", now - GPT_MEMORY_SEC
+    )
     old_messages = await db_get_messages(message.from_user.id)
     for old_message in old_messages:
         if isinstance(old_message["content"], str):
@@ -80,27 +71,6 @@ async def balance_is_sufficient(message) -> bool:
     return user["balance"] >= 2 * message_cost
 
 
-@logged
-async def forget_outdated_messages(user_id):
-    now = time.time()
-    await db_execute(
-        "DELETE FROM messages WHERE timestamp < TO_TIMESTAMP(%s);", now - GPT_MEMORY_SEC
-    )
-
-
-@logged
-async def prompt_is_accepted(message) -> bool:
-    if not await balance_is_sufficient(message):
-        await send_template_answer(message, "err", "balance is empty")
-        return False
-    user = await db_get_user(message.from_user.id)
-    if user["lock"]:
-        return False
-    else:
-        await forget_outdated_messages(message.from_user.id)
-        return True
-
-
 def language(message):
     lang = message.from_user.language_code
     if lang is None or lang != "ru":
@@ -110,7 +80,7 @@ def language(message):
 
 @logged
 async def authorized(message):
-    if message.from_user.id in [OWNER_TG_ID]:
+    if str(message.from_user.id) in [OWNER_TG_ID]:
         return True
     else:
         await send_template_answer(message, "err", "not privileged")
@@ -135,6 +105,10 @@ async def template_videos2ids():
     )
     tokens_vid = await bot.send_animation(
         OWNER_TG_ID, FSInputFile("src/templates/tutorial/what_are_tokens.mp4")
+    )
+    await bot.send_message(
+        chat_id=OWNER_TG_ID,
+        text=format_tg_msg("_The tutorial videos are successfully uploaded._"),
     )
     src.templates.tutorial.videos.videos = {
         "help": [

@@ -1,8 +1,14 @@
+import asyncio
+
 from aiogram.enums import ChatAction
 
 from src.templates.keyboards.inline_kbd import latex_inline_kbd, inline_kbd
 from src.utils.analytics.logging import logged
-from src.database.queries import db_get_messages, db_get_model
+from src.database.queries import (
+    db_get_messages,
+    db_get_model,
+    db_execute,
+)
 from src.utils.validations import language
 from src.utils.formatting import (
     nformulas_before,
@@ -10,14 +16,19 @@ from src.utils.formatting import (
     format_tg_msg,
     send_template_answer,
 )
-from src.utils.globals import openai_client, bot
+from src.utils.globals import openai_client, bot, MAX_INCREMENT, MIN_INCREMENT
 
 
 @logged
 async def generate_completion(message):
     await bot.send_chat_action(message.chat.id, ChatAction.TYPING)
     model = await db_get_model(message.from_user.id)
+    await asyncio.sleep(0.1)
     messages = await db_get_messages(message.from_user.id)
+    await db_execute(
+        "UPDATE messages SET pending = FALSE WHERE pending = TRUE AND from_user_id = %s;",
+        message.from_user.id,
+    )
     stream = await openai_client.chat.completions.create(
         model=model["model_name"],
         messages=messages,
@@ -28,7 +39,7 @@ async def generate_completion(message):
     )
     response = ""
     par = ""
-    sended_chunk_size = 20
+    msg_increment = MIN_INCREMENT
     delta = 0
     last_msg = None
     async for chunk in stream:
@@ -38,9 +49,9 @@ async def generate_completion(message):
             par += chunk.choices[0].delta.content
             delta += len(chunk.choices[0].delta.content)
             par, tail = cut_tg_msg(par)
-            if tail is None and delta > sended_chunk_size:
+            if tail is None and delta > msg_increment:
                 delta = 0
-                sended_chunk_size = min(80, 20 + len(par) / 10)
+                msg_increment = min(MAX_INCREMENT, MIN_INCREMENT + len(par) / 10)
                 if last_msg is None:
                     last_msg = await message.answer(format_tg_msg(par))
                 else:

@@ -5,8 +5,6 @@ from psycopg.rows import dict_row
 from src.utils.globals import (
     bot,
     DSN,
-    GPT4O_IN_USD,
-    GPT4O_OUT_USD,
     REFUND_PERIOD_DAYS,
 )
 
@@ -43,15 +41,13 @@ async def db_update_user(user):
                 first_name = %s, \
                 last_name = %s, \
                 balance = %s, \
-                language = %s, \
-                lock = %s \
+                language = %s \
                 WHERE id = %s;",
         [
             user["first_name"],
             user["last_name"],
             user["balance"],
             user["language"],
-            user["lock"],
             user["id"],
         ],
     )
@@ -62,7 +58,7 @@ async def db_update_model(model):
         "UPDATE models SET \
                 model_name = %s, \
                 max_tokens = %s, \
-                temperature = %s, \
+                temperature = %s \
                 WHERE user_id = %s;",
         [
             model["model_name"],
@@ -73,9 +69,9 @@ async def db_update_model(model):
     )
 
 
-async def db_save_message(message, role):
+async def db_save_message(message, role, pending=False):
     await db_execute(
-        "INSERT INTO messages (message_id, from_user_id, timestamp, role, text, image_url) VALUES (%s, %s, %s, %s, %s, %s);",
+        "INSERT INTO messages (message_id, from_user_id, timestamp, role, text, image_url, pending) VALUES (%s, %s, %s, %s, %s, %s, %s);",
         [
             message.message_id,
             message.from_user.id,
@@ -83,6 +79,7 @@ async def db_save_message(message, role):
             role,
             await get_message_text(message),
             await get_image_url(message),
+            pending,
         ],
     )
 

@@ -19,7 +19,7 @@ from src.utils.formatting import (
     xtr2usd,
     usd2tok,
 )
-from src.utils.validations import language, prompt_is_accepted, lock
+from src.utils.validations import language, balance_is_sufficient
 from src.database.queries import (
     db_execute,
     db_save_message,
@@ -31,34 +31,34 @@ from src.utils.globals import bot, GPT4O_OUT_USD, DALLE3_USD, GPT4O_IN_USD
 
 
 rt = Router()
+BUSY_USERS = set()
 
 
 @rt.message(Command("draw"))
 async def draw_handler(message: Message, command) -> None:
-    if await prompt_is_accepted(message):
-        try:
-            if not command.args:
-                await send_template_answer(message, "doc", "draw")
-                return
-            await db_save_message(message, "user")
-            async with ChatActionSender.upload_photo(message.chat.id, bot):
-                image_url = await generate_image(command.args)
-            kbd = inline_kbd({"redraw": "redraw"}, language(message))
-            msg = await bot.send_photo(message.chat.id, image_url, reply_markup=kbd)
-            await db_execute(
-                "INSERT INTO messages (message_id, from_user_id, image_url) VALUES (%s, %s, %s);",
-                [
-                    msg.message_id,
-                    message.from_user.id,
-                    image_url,
-                ],
-            )
-            user = await db_get_user(message.from_user.id)
-            user["balance"] -= DALLE3_USD
-            await db_update_user(user)
-        except (Exception, OpenAIError) as e:
-            await send_template_answer(message, "err", "policy block")
-            await forget_handler(message)
+    if not command.args:
+        await send_template_answer(message, "doc", "draw")
+    else:
+        if await balance_is_sufficient(message):
+            await db_save_message(message, "user", False)
+            try:
+                async with ChatActionSender.upload_photo(message.chat.id, bot):
+                    image_url = await generate_image(command.args)
+                kbd = inline_kbd({"redraw": "redraw"}, language(message))
+                msg = await bot.send_photo(message.chat.id, image_url, reply_markup=kbd)
+                await db_execute(
+                    "INSERT INTO messages (message_id, from_user_id, image_url, pending) \
+                        VALUES (%s, %s, %s, %s);",
+                    [msg.message_id, message.from_user.id, image_url, True],
+                )
+                user = await db_get_user(message.from_user.id)
+                user["balance"] -= DALLE3_USD
+                await db_update_user(user)
+            except (Exception, OpenAIError) as e:
+                await send_template_answer(message, "err", "policy block")
+                await forget_handler(message)
+        else:
+            await send_template_answer(message, "err", "balance is empty")
 
 
 @rt.message(Command("forget", "clear"))
@@ -199,10 +199,13 @@ async def help_handler(message: Message) -> None:
 
 
 @rt.message()
-async def handler(message: Message) -> None:
-    if await prompt_is_accepted(message):
-        await db_save_message(message, "user")
-        await lock(message.from_user.id)
+async def handler(message: Message, *, recursive=False) -> None:
+    if await balance_is_sufficient(message):
+        if not recursive:
+            await db_save_message(message, "user", True)
+        if message.from_user.id in BUSY_USERS:
+            return
+        BUSY_USERS.add(message.from_user.id)
         response, usage, last_message = await generate_completion(message)
         await db_execute(
             "INSERT INTO messages \
@@ -222,10 +225,20 @@ async def handler(message: Message) -> None:
         user["first_name"] = message.from_user.first_name
         user["last_name"] = message.from_user.last_name
         user["language"] = language(message)
-        await bot.set_my_commands(
-            [
-                types.BotCommand(command=key, description=value[language(message)])
-                for key, value in bot_menu.items()
-            ]
-        )
         await db_update_user(user)
+        BUSY_USERS.remove(message.from_user.id)
+        pending = await db_execute(
+            "SELECT message_id FROM messages WHERE pending = TRUE and from_user_id = %s;",
+            message.from_user.id,
+        )
+        if pending:
+            await handler(message, recursive=True)
+        else:
+            await bot.set_my_commands(
+                [
+                    types.BotCommand(command=key, description=value[language(message)])
+                    for key, value in bot_menu.items()
+                ]
+            )
+    else:
+        await send_template_answer(message, "err", "balance is empty")

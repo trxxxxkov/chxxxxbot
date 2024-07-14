@@ -54,6 +54,9 @@ REFUND_PERIOD_DAYS = 28
 
 PAR_MAX_LEN = 3900
 
+MIN_INCREMENT = 25
+MAX_INCREMENT = 100
+
 CODE_PATTERN = re.compile(
     r"(?<!`|\w)(?<!\\)```\S*?\n(?:(?:.|\n)*?\S(?:.|\n)*?)(?:\s+)```(?!`|\w)"
 )
