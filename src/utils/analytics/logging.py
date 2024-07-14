@@ -1,29 +1,22 @@
 import json
 from openai import OpenAIError
 
-from aiogram.types import Message
+from aiogram.types import Message, FSInputFile
 from aiogram import types
 
+from src.utils.globals import bot, OWNER_TG_ID
 
-def write_error(
-    error, func, args, kwargs, messages, path="src/utils/analytics/errors.json"
-):
-    try:
-        with open(path, "r") as f:
-            errors = json.load(f)
-    except Exception:
-        errors = list()
-    errors.append(
-        {
-            "error": f"{error}",
-            "function": f"{func}",
-            "args": f"{args}",
-            "kwargs": f"{kwargs}",
-            "messages": f"{messages}",
-        }
-    )
-    with open(path, "w") as f:
-        json.dump(errors, f)
+
+async def send_error_alert(error, func, args, kwargs, messages):
+    path_to_file = "src/utils/temp/documents/unexpected_error.txt"
+    err = f"ERROR: {error}\n\n\n \
+            FUNCTION: {func}\n\n\n \
+            ARGS: {args}\n\n\n \
+            KWARGS: {kwargs}\n\n\n \
+            PREVIOUS MESSAGES: {messages}"
+    with open(path_to_file, "w") as f:
+        f.write(err)
+    await bot.send_document(OWNER_TG_ID, FSInputFile(path_to_file))
 
 
 def logged(f):
@@ -35,12 +28,9 @@ def logged(f):
             from src.templates.keyboards.inline_kbd import inline_kbd
             from src.database.queries import db_execute
             from src.utils.validations import language
-            from src.utils.globals import bot, OWNER_CHAT_ID
 
-            alert = "_ERROR\. Click the button below to see details\._"
-            await bot.send_message(OWNER_CHAT_ID, alert)
-            messages = None
             try:
+                alert = "_ERROR\. Click the button below to see details\._"
                 for arg in args:
                     if isinstance(arg, Message):
                         kbd = inline_kbd({"what now": "error"}, language(arg))
@@ -72,6 +62,6 @@ def logged(f):
                         break
             except Exception:
                 messages = "[unavailable because of an error in the logging function]"
-            write_error(e, f.__name__, args, kwargs, messages)
+            await send_error_alert(e, f.__name__, args, kwargs, messages)
 
     return wrap

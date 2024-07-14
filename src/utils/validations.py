@@ -20,7 +20,7 @@ from src.utils.globals import (
     VISION_USD,
     GPT4O_IN_USD,
     GPT_MEMORY_SEC,
-    OWNER_CHAT_ID,
+    OWNER_TG_ID,
 )
 
 
@@ -110,7 +110,7 @@ def language(message):
 
 @logged
 async def authorized(message):
-    if message.from_user.id in [OWNER_CHAT_ID]:
+    if message.from_user.id in [OWNER_TG_ID]:
         return True
     else:
         await send_template_answer(message, "err", "not privileged")
@@ -120,21 +120,21 @@ async def authorized(message):
 @logged
 async def template_videos2ids():
     hvid0 = await bot.send_animation(
-        OWNER_CHAT_ID, FSInputFile("src/templates/tutorial/prompt.mp4")
+        OWNER_TG_ID, FSInputFile("src/templates/tutorial/prompt.mp4")
     )
     hvid1 = await bot.send_animation(
-        OWNER_CHAT_ID,
+        OWNER_TG_ID,
         FSInputFile("src/templates/tutorial/recognition.mp4"),
     )
     hvid2 = await bot.send_animation(
-        OWNER_CHAT_ID,
+        OWNER_TG_ID,
         FSInputFile("src/templates//tutorial/generation.mp4"),
     )
     hvid3 = await bot.send_animation(
-        OWNER_CHAT_ID, FSInputFile("src/templates/tutorial/latex.mp4")
+        OWNER_TG_ID, FSInputFile("src/templates/tutorial/latex.mp4")
     )
     tokens_vid = await bot.send_animation(
-        OWNER_CHAT_ID, FSInputFile("src/templates/tutorial/what_are_tokens.mp4")
+        OWNER_TG_ID, FSInputFile("src/templates/tutorial/what_are_tokens.mp4")
     )
     src.templates.tutorial.videos.videos = {
         "help": [

@@ -3,6 +3,7 @@ secrets
 .env
 .gitattributes
 .gitignore
+.venv
 compose.yaml
 Dockerfile
 nginx.conf.template
