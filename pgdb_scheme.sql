@@ -2,8 +2,8 @@
 -- PostgreSQL database dump
 --
 
--- Dumped from database version 14.12 (Ubuntu 14.12-0ubuntu0.22.04.1)
--- Dumped by pg_dump version 14.12 (Ubuntu 14.12-0ubuntu0.22.04.1)
+-- Dumped from database version 16.3 (Debian 16.3-1.pgdg120+1)
+-- Dumped by pg_dump version 16.3 (Debian 16.3-1.pgdg120+1)
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -30,7 +30,8 @@ CREATE TABLE public.messages (
     "timestamp" timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     role character varying(255) DEFAULT 'user'::character varying NOT NULL,
     text text DEFAULT ''::text NOT NULL,
-    image_url text
+    image_url text,
+    pending boolean DEFAULT false NOT NULL
 );
 
 
@@ -76,44 +77,11 @@ CREATE TABLE public.users (
     last_name character varying(255),
     language character varying(255) DEFAULT 'en'::character varying NOT NULL,
     balance double precision DEFAULT 0 NOT NULL,
-    lock boolean DEFAULT false NOT NULL
+    input_lock boolean DEFAULT false NOT NULL
 );
 
 
 ALTER TABLE public.users OWNER TO chxxxxbot;
-
---
--- Data for Name: messages; Type: TABLE DATA; Schema: public; Owner: chxxxxbot
---
-
-COPY public.messages (message_id, from_user_id, "timestamp", role, text, image_url) FROM stdin;
-\.
-
-
---
--- Data for Name: models; Type: TABLE DATA; Schema: public; Owner: chxxxxbot
---
-
-COPY public.models (user_id, model_name, max_tokens, temperature) FROM stdin;
-791388236	gpt-4o	4096	0.2
-\.
-
-
---
--- Data for Name: purchases; Type: TABLE DATA; Schema: public; Owner: chxxxxbot
---
-
-COPY public.purchases (id, user_id, currency, amount, "timestamp", refunded) FROM stdin;
-\.
-
-
---
--- Data for Name: users; Type: TABLE DATA; Schema: public; Owner: chxxxxbot
---
-
-COPY public.users (id, first_name, last_name, language, balance, lock) FROM stdin;
-791388236	Daniil Tretyakov	\N	en	0	f
-\.
 
 
 --
