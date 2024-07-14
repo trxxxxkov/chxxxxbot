@@ -23,11 +23,11 @@ with open("/run/secrets/db_password") as f:
 WEB_SERVER_HOST = "0.0.0.0"
 WEB_SERVER_PORT = 8080
 WEBHOOK_PATH = "/app/webhooks/"
-BASE_WEBHOOK_URL = "https://xxxxxxx.site"
+BASE_WEBHOOK_URL = f"https://{getenv('NGINX_HOST')}"
 
 OWNER_CHAT_ID = 791388236
-DATABASE_NAME = "chxxxxbot"
-DATABASE_USER = "chxxxxbot"
+DATABASE_NAME = getenv("POSTGRES_DB")
+DATABASE_USER = getenv("POSTGRES_USER")
 DATABASE_HOST = "pgdb"
 DATABASE_PORT = "5432"
 DSN = f"host={DATABASE_HOST} \

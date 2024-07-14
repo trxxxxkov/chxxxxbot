@@ -1,5 +1,9 @@
+secrets
+.dockerignore
+.env
+.gitattributes
 .gitignore
-chxxxxbot.service
-nginx-server
+compose.yaml
+Dockerfile
+nginx.conf.template
 pgdb_scheme.sql
-secrets.txt

@@ -26,7 +26,7 @@ services:
       - "443:443"
     volumes:
       - ssl_cert:/etc/letsencrypt
-      - ./nginx.conf:/etc/nginx/user_conf.d/nginx.conf
+      - ./nginx.conf.template:/etc/nginx/templates/nginx.conf.template
 
   pgdb:
     image: postgres:latest
