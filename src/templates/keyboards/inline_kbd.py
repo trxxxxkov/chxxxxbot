@@ -19,6 +19,7 @@ def inline_kbd(keys, lang=None):
             keyboard.add(
                 types.InlineKeyboardButton(text=button, callback_data=callback),
             )
+    keyboard.adjust(5)
     return keyboard.as_markup()
 
 
