@@ -13,6 +13,7 @@ services:
       - .env
     ports:
       - "8080:8080"
+
   webserver:
     image: jonasal/nginx-certbot:5.2.0
     restart: always
@@ -26,8 +27,10 @@ services:
     volumes:
       - ssl_cert:/etc/letsencrypt
       - ./nginx.conf:/etc/nginx/user_conf.d/nginx.conf
+
   pgdb:
     image: postgres:latest
+    shm_size: 128mb
     restart: always
     secrets:
       - db_password
