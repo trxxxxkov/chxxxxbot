@@ -1,3 +1,3 @@
 # Some of the following rules may be applied with 'git add --renormalize .' command
 secrets/* assume-unchanged
-src/templates/tutorial/videos.py assume-unchanged
+pgdb_data.sql assume-unchanged
