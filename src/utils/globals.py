@@ -23,12 +23,12 @@ with open("/run/secrets/db_password") as f:
 WEB_SERVER_HOST = "0.0.0.0"
 WEB_SERVER_PORT = 8080
 WEBHOOK_PATH = "/app/webhooks/"
-BASE_WEBHOOK_URL = "https://trxxxxkov.net"
+BASE_WEBHOOK_URL = "https://xxxxxxx.site"
 
 OWNER_CHAT_ID = 791388236
 DATABASE_NAME = "chxxxxbot"
 DATABASE_USER = "chxxxxbot"
-DATABASE_HOST = "localhost"
+DATABASE_HOST = "pgdb"
 DATABASE_PORT = "5432"
 DSN = f"host={DATABASE_HOST} \
         port={DATABASE_PORT} \
