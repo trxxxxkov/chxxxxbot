@@ -66,6 +66,7 @@ async def forget_handler(message: Message) -> None:
     await db_execute(
         "DELETE FROM messages WHERE from_user_id = %s;", message.from_user.id
     )
+    BUSY_USERS.discard(message.from_user.id)
     await send_template_answer(message, "info", "forget success")
 
 
@@ -206,39 +207,45 @@ async def handler(message: Message, *, recursive=False) -> None:
         if message.from_user.id in BUSY_USERS:
             return
         BUSY_USERS.add(message.from_user.id)
-        response, usage, last_message = await generate_completion(message)
-        await db_execute(
-            "INSERT INTO messages \
-                (message_id, from_user_id, role, text) \
-                VALUES (%s, %s, %s, %s);",
-            [
-                last_message.message_id,
-                message.from_user.id,
-                "system",
-                response,
-            ],
-        )
-        user = await db_get_user(message.from_user.id)
-        user["balance"] -= (
-            GPT4O_IN_USD * usage.prompt_tokens + GPT4O_OUT_USD * usage.completion_tokens
-        )
-        user["first_name"] = message.from_user.first_name
-        user["last_name"] = message.from_user.last_name
-        user["language"] = language(message)
-        await db_update_user(user)
-        BUSY_USERS.remove(message.from_user.id)
-        pending = await db_execute(
-            "SELECT message_id FROM messages WHERE pending = TRUE and from_user_id = %s;",
-            message.from_user.id,
-        )
-        if pending:
-            await handler(message, recursive=True)
-        else:
-            await bot.set_my_commands(
+        try:
+            response, usage, last_message = await generate_completion(message)
+            await db_execute(
+                "INSERT INTO messages \
+                    (message_id, from_user_id, role, text) \
+                    VALUES (%s, %s, %s, %s);",
                 [
-                    types.BotCommand(command=key, description=value[language(message)])
-                    for key, value in bot_menu.items()
-                ]
+                    last_message.message_id,
+                    message.from_user.id,
+                    "system",
+                    response,
+                ],
             )
+            user = await db_get_user(message.from_user.id)
+            user["balance"] -= (
+                GPT4O_IN_USD * usage.prompt_tokens
+                + GPT4O_OUT_USD * usage.completion_tokens
+            )
+            user["first_name"] = message.from_user.first_name
+            user["last_name"] = message.from_user.last_name
+            user["language"] = language(message)
+            await db_update_user(user)
+            BUSY_USERS.discard(message.from_user.id)
+            pending = await db_execute(
+                "SELECT message_id FROM messages WHERE pending = TRUE and from_user_id = %s;",
+                message.from_user.id,
+            )
+            if pending:
+                await handler(message, recursive=True)
+            else:
+                await bot.set_my_commands(
+                    [
+                        types.BotCommand(
+                            command=key, description=value[language(message)]
+                        )
+                        for key, value in bot_menu.items()
+                    ]
+                )
+        except Exception:
+            BUSY_USERS.discard(message.from_user.id)
     else:
         await send_template_answer(message, "err", "balance is empty")
