@@ -1,11 +1,11 @@
 bot_menu = {
-    "draw": {
-        "en": "Generate an image by description",
-        "ru": "Создать изображение по предложенному описанию",
-    },
     "forget": {
         "en": "Clear previous messages from Sebastian's memory",
         "ru": "Удалить последние сообщения из памяти",
+    },
+    "draw": {
+        "en": "Generate an image by description",
+        "ru": "Создать изображение по предложенному описанию",
     },
     "balance": {
         "en": "Show your balance and information about usage cost",

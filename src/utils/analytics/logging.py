@@ -16,7 +16,7 @@ async def send_error_alert(error, func, args, kwargs, messages):
             PREVIOUS MESSAGES: {messages}"
     with open(path_to_file, "w") as f:
         f.write(err)
-    return await bot.send_document(OWNER_TG_ID, FSInputFile(path_to_file))
+    await bot.send_document(OWNER_TG_ID, FSInputFile(path_to_file))
 
 
 def logged(f):
@@ -62,7 +62,6 @@ def logged(f):
                         break
             except Exception:
                 messages = "[unavailable because of an error in the logging function]"
-            alert = await send_error_alert(e, f.__name__, args, kwargs, messages)
-            await bot.pin_chat_message(chat_id=OWNER_TG_ID, message_id=alert.message_id)
+            await send_error_alert(e, f.__name__, args, kwargs, messages)
 
     return wrap
