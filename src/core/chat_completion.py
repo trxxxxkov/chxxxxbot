@@ -1,6 +1,7 @@
 import asyncio
 
 from aiogram.enums import ChatAction
+from aiogram.exceptions import TelegramBadRequest
 
 from src.templates.keyboards.inline_kbd import latex_inline_kbd, inline_kbd
 from src.utils.analytics.logging import logged
@@ -39,7 +40,7 @@ async def generate_completion(message):
     )
     response = ""
     par = ""
-    msg_increment = MIN_INCREMENT
+    msg_increment = 0
     delta = 0
     last_msg = None
     async for chunk in stream:
@@ -49,28 +50,38 @@ async def generate_completion(message):
             par += chunk.choices[0].delta.content
             delta += len(chunk.choices[0].delta.content)
             par, tail = cut_tg_msg(par)
-            if tail is None and delta > msg_increment:
-                delta = 0
-                msg_increment = min(MAX_INCREMENT, MIN_INCREMENT + len(par) / 10)
-                if last_msg is None:
-                    last_msg = await message.answer(format_tg_msg(par))
-                else:
+            try:
+                if tail is None and delta > msg_increment:
+                    delta = 0
+                    msg_increment = min(MAX_INCREMENT, MIN_INCREMENT + len(par) / 10)
+                    if last_msg is None:
+                        last_msg = await message.answer(format_tg_msg(par))
+                    else:
+                        last_msg = await last_msg.edit_text(format_tg_msg(par))
+                elif tail is not None:
+                    latex_kbd = latex_inline_kbd(par, nformulas_before(par, response))
                     last_msg = await last_msg.edit_text(format_tg_msg(par))
-            elif tail is not None:
-                latex_kbd = latex_inline_kbd(par, nformulas_before(par, response))
-                last_msg = await last_msg.edit_text(format_tg_msg(par))
-                if latex_kbd is not None:
-                    last_msg = await last_msg.edit_reply_markup(reply_markup=latex_kbd)
-                par = tail
-                delta = 0
-                last_msg = await message.answer(format_tg_msg(par))
+                    if latex_kbd is not None:
+                        last_msg = await last_msg.edit_reply_markup(
+                            reply_markup=latex_kbd
+                        )
+                    par = tail
+                    delta = 0
+                    last_msg = await message.answer(format_tg_msg(par))
+            except TelegramBadRequest as e:
+                if "is not modified" in e.message:
+                    pass
     latex_kbd = latex_inline_kbd(par, nformulas_before(par, response))
-    if last_msg is not None:
-        last_msg = await last_msg.edit_text(format_tg_msg(par))
-        if latex_kbd is not None:
-            last_msg = await last_msg.edit_reply_markup(reply_markup=latex_kbd)
-    else:
-        last_msg = await message.answer(format_tg_msg(par), reply_markup=latex_kbd)
+    try:
+        if last_msg is not None:
+            last_msg = await last_msg.edit_text(format_tg_msg(par))
+            if latex_kbd is not None:
+                last_msg = await last_msg.edit_reply_markup(reply_markup=latex_kbd)
+        else:
+            last_msg = await message.answer(format_tg_msg(par), reply_markup=latex_kbd)
+    except TelegramBadRequest as e:
+        if "is not modified" in e.message:
+            pass
     if len(response) != len(par):
         await send_template_answer(
             message,
