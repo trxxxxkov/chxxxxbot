@@ -21,7 +21,7 @@ SET default_tablespace = '';
 SET default_table_access_method = heap;
 
 --
--- Name: messages; Type: TABLE; Schema: public; Owner: chxxxxbot
+-- Name: messages; Type: TABLE; Schema: public; Owner: postgres
 --
 
 CREATE TABLE public.messages (
@@ -35,10 +35,10 @@ CREATE TABLE public.messages (
 );
 
 
-ALTER TABLE public.messages OWNER TO chxxxxbot;
+ALTER TABLE public.messages OWNER TO postgres;
 
 --
--- Name: models; Type: TABLE; Schema: public; Owner: chxxxxbot
+-- Name: models; Type: TABLE; Schema: public; Owner: postgres
 --
 
 CREATE TABLE public.models (
@@ -49,10 +49,10 @@ CREATE TABLE public.models (
 );
 
 
-ALTER TABLE public.models OWNER TO chxxxxbot;
+ALTER TABLE public.models OWNER TO postgres;
 
 --
--- Name: purchases; Type: TABLE; Schema: public; Owner: chxxxxbot
+-- Name: purchases; Type: TABLE; Schema: public; Owner: postgres
 --
 
 CREATE TABLE public.purchases (
@@ -65,27 +65,26 @@ CREATE TABLE public.purchases (
 );
 
 
-ALTER TABLE public.purchases OWNER TO chxxxxbot;
+ALTER TABLE public.purchases OWNER TO postgres;
 
 --
--- Name: users; Type: TABLE; Schema: public; Owner: chxxxxbot
+-- Name: users; Type: TABLE; Schema: public; Owner: postgres
 --
 
 CREATE TABLE public.users (
     id bigint NOT NULL,
-    first_name character varying(255),
-    last_name character varying(255),
+    first_name character varying(255) NOT NULL,
+    last_name character varying(255) DEFAULT NULL::character varying,
     language character varying(255) DEFAULT 'en'::character varying NOT NULL,
-    balance double precision DEFAULT 0 NOT NULL,
-    input_lock boolean DEFAULT false NOT NULL
+    balance double precision DEFAULT 0 NOT NULL
 );
 
 
-ALTER TABLE public.users OWNER TO chxxxxbot;
+ALTER TABLE public.users OWNER TO postgres;
 
 
 --
--- Name: messages message_pk; Type: CONSTRAINT; Schema: public; Owner: chxxxxbot
+-- Name: messages message_pk; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.messages
@@ -93,7 +92,7 @@ ALTER TABLE ONLY public.messages
 
 
 --
--- Name: models models_pkey; Type: CONSTRAINT; Schema: public; Owner: chxxxxbot
+-- Name: models models_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.models
@@ -101,7 +100,7 @@ ALTER TABLE ONLY public.models
 
 
 --
--- Name: purchases payment_transactions_pkey; Type: CONSTRAINT; Schema: public; Owner: chxxxxbot
+-- Name: purchases payment_transactions_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.purchases
@@ -109,7 +108,7 @@ ALTER TABLE ONLY public.purchases
 
 
 --
--- Name: users unique_id; Type: CONSTRAINT; Schema: public; Owner: chxxxxbot
+-- Name: users unique_id; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.users
@@ -117,7 +116,7 @@ ALTER TABLE ONLY public.users
 
 
 --
--- Name: messages unique_message_id; Type: CONSTRAINT; Schema: public; Owner: chxxxxbot
+-- Name: messages unique_message_id; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.messages
@@ -125,7 +124,7 @@ ALTER TABLE ONLY public.messages
 
 
 --
--- Name: models unique_user_id; Type: CONSTRAINT; Schema: public; Owner: chxxxxbot
+-- Name: models unique_user_id; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.models
@@ -133,7 +132,7 @@ ALTER TABLE ONLY public.models
 
 
 --
--- Name: users users_pkey; Type: CONSTRAINT; Schema: public; Owner: chxxxxbot
+-- Name: users users_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.users
@@ -141,7 +140,7 @@ ALTER TABLE ONLY public.users
 
 
 --
--- Name: messages message_users_fk; Type: FK CONSTRAINT; Schema: public; Owner: chxxxxbot
+-- Name: messages message_users_fk; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.messages
@@ -149,7 +148,7 @@ ALTER TABLE ONLY public.messages
 
 
 --
--- Name: models models_users_fkey; Type: FK CONSTRAINT; Schema: public; Owner: chxxxxbot
+-- Name: models models_users_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.models
@@ -157,7 +156,7 @@ ALTER TABLE ONLY public.models
 
 
 --
--- Name: purchases payment_transactions_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: chxxxxbot
+-- Name: purchases payment_transactions_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.purchases
