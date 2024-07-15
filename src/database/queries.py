@@ -154,7 +154,10 @@ async def db_get_messages(user_id):
         )
         if msg["image_url"] is not None:
             messages[-1]["content"].append(
-                {"type": "image_url", "image_url": {"url": msg["image_url"]}}
+                {
+                    "type": "image_url",
+                    "image_url": {"url": msg["image_url"], "detail": "high"},
+                }
             )
     return messages
 

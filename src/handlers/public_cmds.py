@@ -205,7 +205,7 @@ async def help_handler(message: Message) -> None:
 
 @rt.message()
 async def handler(message: Message, *, recursive=False) -> None:
-    if await balance_is_sufficient(message):
+    if message.pinned_message is None and await balance_is_sufficient(message):
         if not recursive:
             await db_save_message(message, "user", True)
         if message.from_user.id in BUSY_USERS:
