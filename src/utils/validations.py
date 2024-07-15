@@ -6,6 +6,7 @@ from aiogram.types import FSInputFile
 
 import src.templates.tutorial.videos
 from src.templates.scripts import scripts
+from src.templates.keyboards.inline_kbd import inline_kbd
 from src.utils.analytics.logging import logged
 from src.database.queries import (
     db_execute,
@@ -68,7 +69,12 @@ async def balance_is_sufficient(message) -> bool:
     tokens = len(encoding.encode(text))
     message_cost += tokens * GPT4O_IN_USD
     user = await db_get_user(message.from_user.id)
-    return user["balance"] >= 2 * message_cost
+    if user["balance"] >= 2 * message_cost:
+        return True
+    else:
+        kbd = inline_kbd({"try payment": "try payment"}, language(message))
+        await send_template_answer(message, "err", "balance is empty", reply_markup=kbd)
+        return False
 
 
 def language(message):

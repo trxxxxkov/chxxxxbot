@@ -53,7 +53,7 @@ async def generate_completion(message):
             try:
                 if tail is None and delta > msg_increment:
                     delta = 0
-                    msg_increment = min(MAX_INCREMENT, MIN_INCREMENT + len(par) / 10)
+                    msg_increment = min(MAX_INCREMENT, MIN_INCREMENT + len(par) / 20)
                     if last_msg is None:
                         last_msg = await message.answer(format_tg_msg(par))
                     else:

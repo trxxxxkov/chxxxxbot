@@ -19,7 +19,7 @@ from src.utils.formatting import (
     xtr2usd,
     usd2tok,
 )
-from src.utils.validations import language, balance_is_sufficient
+from src.utils.validations import language, balance_is_sufficient, template_videos2ids
 from src.database.queries import (
     db_execute,
     db_save_message,
@@ -57,8 +57,6 @@ async def draw_handler(message: Message, command) -> None:
             except (Exception, OpenAIError) as e:
                 await send_template_answer(message, "err", "policy block")
                 await forget_handler(message)
-        else:
-            await send_template_answer(message, "err", "balance is empty")
 
 
 @rt.message(Command("forget", "clear"))
@@ -72,6 +70,8 @@ async def forget_handler(message: Message) -> None:
 
 @rt.message(Command("balance"))
 async def balance_handler(message: Message) -> None:
+    if src.templates.tutorial.videos.videos is None:
+        await template_videos2ids()
     builder = InlineKeyboardBuilder()
     mid_button = types.InlineKeyboardButton(
         text=scripts["bttn"]["try payment"][language(message)],
@@ -90,7 +90,9 @@ async def balance_handler(message: Message) -> None:
     )
     user = await db_get_user(message.from_user.id)
     text = format_tg_msg(
-        scripts["doc"]["payment"][language(message)].format(usd2tok(user["balance"]))
+        scripts["doc"]["payment"][language(message)].format(
+            usd2tok(user["balance"]), usd2tok(xtr2usd(1))
+        )
     )
     await bot.send_animation(
         message.chat.id,
@@ -107,7 +109,7 @@ async def pay_handler(message: Message, command) -> None:
         or not command.args.isdigit()
         or not 1 <= int(command.args) <= 2500
     ):
-        await send_template_answer(message, "doc", "pay")
+        await send_template_answer(message, "doc", "pay", usd2tok(xtr2usd(1)))
     else:
         amount = int(command.args)
         prices = [LabeledPrice(label="XTR", amount=amount)]
@@ -179,6 +181,8 @@ async def refund_handler(message: Message, command) -> None:
 
 @rt.message(Command("help"))
 async def help_handler(message: Message) -> None:
+    if src.templates.tutorial.videos.videos is None:
+        await template_videos2ids()
     builder = InlineKeyboardBuilder()
     builder.row(
         types.InlineKeyboardButton(
@@ -247,5 +251,3 @@ async def handler(message: Message, *, recursive=False) -> None:
                 )
         except Exception:
             BUSY_USERS.discard(message.from_user.id)
-    else:
-        await send_template_answer(message, "err", "balance is empty")

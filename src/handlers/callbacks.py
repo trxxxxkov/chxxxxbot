@@ -12,7 +12,7 @@ from src.templates.scripts import scripts
 from src.templates.keyboards.inline_kbd import inline_kbd
 from src.core.image_generation import variate_image
 from src.database.queries import db_update_user, db_get_user, db_execute
-from src.utils.validations import language
+from src.utils.validations import language, template_videos2ids
 from src.utils.formatting import (
     find_latex,
     latex2url,
@@ -55,7 +55,9 @@ async def balance_callback(callback: types.CallbackQuery):
     message = callback.message
     user = await db_get_user(callback.from_user.id)
     text = format_tg_msg(
-        scripts["doc"]["payment"][language(callback)].format(usd2tok(user["balance"]))
+        scripts["doc"]["payment"][language(callback)].format(
+            usd2tok(user["balance"]), usd2tok(xtr2usd(1))
+        )
     )
     builder = InlineKeyboardBuilder()
     mid_button = types.InlineKeyboardButton(
@@ -88,6 +90,8 @@ async def balance_callback(callback: types.CallbackQuery):
 
 @rt.callback_query(F.data.endswith("tokens"))
 async def tokens_callback(callback: types.CallbackQuery):
+    if src.templates.tutorial.videos.videos is None:
+        await template_videos2ids()
     message = callback.message
     text = format_tg_msg(scripts["doc"]["tokens"][language(callback)])
     if callback.data == "tokens":
