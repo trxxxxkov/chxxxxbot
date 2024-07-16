@@ -8,6 +8,7 @@ dependencies = [
   "cairosvg",
   "tiktoken",
   "psycopg",
+  "debugpy",
 ]
 requires-python = ">= 3.9"
 authors = [

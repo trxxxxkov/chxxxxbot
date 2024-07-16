@@ -1,5 +1,7 @@
 import logging
 import sys
+from os import getenv
+
 from aiohttp import web
 
 from aiogram import Bot, Dispatcher
@@ -36,6 +38,10 @@ async def on_startup(bot: Bot) -> None:
 
 
 def main() -> None:
+    if getenv("BOT_DEBUG") != "0":
+        import debugpy
+
+        debugpy.listen(("0.0.0.0", 5678))
     dp = Dispatcher()
     dp.include_routers(
         other_upds.rt, callbacks.rt, privileged_cmds.rt, hidden_cmds.rt, public_cmds.rt

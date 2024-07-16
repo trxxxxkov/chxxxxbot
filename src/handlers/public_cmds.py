@@ -1,4 +1,5 @@
 from openai import OpenAIError
+import debugpy
 
 from aiogram import Router, types
 from aiogram.types import Message, LabeledPrice

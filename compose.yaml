@@ -13,6 +13,7 @@ services:
       - .env
     ports:
       - "8080:8080"
+      - "5678:5678"
 
   webserver:
     image: jonasal/nginx-certbot:5.2.0
