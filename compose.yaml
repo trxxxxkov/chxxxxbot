@@ -41,8 +41,7 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./pgdb_scheme.sql:/docker-entrypoint-initdb.d/1_scheme.sql
-      - ./pgdb_data.sql:/docker-entrypoint-initdb.d/2_data.sql
+      - ./pgdb_scheme.sql:/docker-entrypoint-initdb.d/scheme.sql
 
 volumes:
   ssl_cert:

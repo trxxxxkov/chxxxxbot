@@ -232,6 +232,7 @@ async def handler(message: Message, *, recursive=False) -> None:
             )
             user["first_name"] = message.from_user.first_name
             user["last_name"] = message.from_user.last_name
+            user["username"] = message.from_user.username
             user["language"] = language(message)
             await db_update_user(user)
             BUSY_USERS.discard(message.from_user.id)

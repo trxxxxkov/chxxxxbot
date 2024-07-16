@@ -40,12 +40,14 @@ async def db_update_user(user):
         "UPDATE users SET \
                 first_name = %s, \
                 last_name = %s, \
+                username = %s, \
                 balance = %s, \
                 language = %s \
                 WHERE id = %s;",
         [
             user["first_name"],
             user["last_name"],
+            user["username"],
             user["balance"],
             user["language"],
             user["id"],

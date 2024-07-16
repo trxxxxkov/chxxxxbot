@@ -30,11 +30,12 @@ async def add_user(message):
         bot_users = [bot_users]
     if message.from_user.id not in [item["id"] for item in bot_users]:
         await db_execute(
-            "INSERT INTO users (id, first_name, last_name, language) VALUES (%s, %s, %s, %s)",
+            "INSERT INTO users (id, first_name, last_name, username, language) VALUES (%s, %s, %s, %s, %s)",
             [
                 message.from_user.id,
                 message.from_user.first_name,
                 message.from_user.last_name,
+                message.from_user.username,
                 language(message),
             ],
         )

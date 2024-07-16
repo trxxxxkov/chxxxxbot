@@ -75,6 +75,7 @@ CREATE TABLE public.users (
     id bigint NOT NULL,
     first_name character varying(255) NOT NULL,
     last_name character varying(255) DEFAULT NULL::character varying,
+    username character varying(255) DEFAULT NULL::character varying,
     language character varying(255) DEFAULT 'en'::character varying NOT NULL,
     balance double precision DEFAULT 0 NOT NULL
 );
@@ -84,11 +85,11 @@ ALTER TABLE public.users OWNER TO postgres;
 
 
 --
--- Name: messages message_pk; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: messages messages_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.messages
-    ADD CONSTRAINT message_pk PRIMARY KEY (message_id);
+    ADD CONSTRAINT messages_pkey PRIMARY KEY (message_id);
 
 
 --
