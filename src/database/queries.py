@@ -71,15 +71,16 @@ async def db_update_model(model):
     )
 
 
-async def db_save_message(message, role, pending=False):
+async def db_save_message(message, tokens, role, pending=False):
     await db_execute(
-        "INSERT INTO messages (message_id, from_user_id, timestamp, role, text, image_url, pending) VALUES (%s, %s, %s, %s, %s, %s, %s);",
+        "INSERT INTO messages (message_id, from_user_id, timestamp, tokens, role, text, image_url, pending) VALUES (%s, %s, %s, %s, %s, %s, %s, %s);",
         [
             message.message_id,
             message.from_user.id,
             message.date,
+            tokens,
             role,
-            await get_message_text(message),
+            get_message_text(message),
             await get_image_url(message),
             pending,
         ],
@@ -117,7 +118,7 @@ async def get_image_url(message):
         return None
 
 
-async def get_message_text(message):
+def get_message_text(message):
     if message.photo:
         if message.caption:
             return message.caption

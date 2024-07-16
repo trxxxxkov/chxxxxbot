@@ -20,7 +20,13 @@ from src.utils.formatting import (
     xtr2usd,
     usd2tok,
 )
-from src.utils.validations import language, balance_is_sufficient, template_videos2ids
+from src.utils.validations import (
+    language,
+    template_videos2ids,
+    is_implemented,
+    is_affordable,
+    message_cost,
+)
 from src.database.queries import (
     db_execute,
     db_save_message,
@@ -40,7 +46,7 @@ async def draw_handler(message: Message, command) -> None:
     if not command.args:
         await send_template_answer(message, "doc", "draw")
     else:
-        if await balance_is_sufficient(message):
+        if await is_affordable(message):
             await db_save_message(message, "user", False)
             try:
                 async with ChatActionSender.upload_photo(message.chat.id, bot):
@@ -48,9 +54,9 @@ async def draw_handler(message: Message, command) -> None:
                 kbd = inline_kbd({"redraw": "redraw"}, language(message))
                 msg = await bot.send_photo(message.chat.id, image_url, reply_markup=kbd)
                 await db_execute(
-                    "INSERT INTO messages (message_id, from_user_id, image_url, pending) \
-                        VALUES (%s, %s, %s, %s);",
-                    [msg.message_id, message.from_user.id, image_url, True],
+                    "INSERT INTO messages (message_id, from_user_id, tokens, image_url, pending) \
+                        VALUES (%s, %s, %s, %s, %s);",
+                    [msg.message_id, message.from_user.id, 1000, image_url, False],
                 )
                 user = await db_get_user(message.from_user.id)
                 user["balance"] -= DALLE3_USD
@@ -206,9 +212,10 @@ async def help_handler(message: Message) -> None:
 
 @rt.message()
 async def handler(message: Message, *, recursive=False) -> None:
-    if message.pinned_message is None and await balance_is_sufficient(message):
+    if is_implemented(message) and await is_affordable(message):
         if not recursive:
-            await db_save_message(message, "user", True)
+            input_tokens = usd2tok(message_cost(message) + 2 * GPT4O_OUT_USD)
+            await db_save_message(message, input_tokens, "user", True)
         if message.from_user.id in BUSY_USERS:
             return
         BUSY_USERS.add(message.from_user.id)
@@ -216,11 +223,12 @@ async def handler(message: Message, *, recursive=False) -> None:
             response, usage, last_message = await generate_completion(message)
             await db_execute(
                 "INSERT INTO messages \
-                    (message_id, from_user_id, role, text) \
-                    VALUES (%s, %s, %s, %s);",
+                    (message_id, from_user_id, tokens, role, text) \
+                    VALUES (%s, %s, %s, %s, %s);",
                 [
                     last_message.message_id,
                     message.from_user.id,
+                    usage.completion_tokens,
                     "system",
                     response,
                 ],

@@ -5,19 +5,15 @@ import tiktoken
 from aiogram.types import FSInputFile
 
 import src.templates.tutorial.videos
-from src.templates.scripts import scripts
 from src.templates.keyboards.inline_kbd import inline_kbd
 from src.utils.analytics.logging import logged
-from src.database.queries import (
-    db_execute,
-    db_get_user,
-    db_get_messages,
-)
+from src.database.queries import db_execute, get_message_text
 from src.utils.formatting import send_template_answer, format_tg_msg
 from src.utils.globals import (
     bot,
     VISION_USD,
     GPT4O_IN_USD,
+    GPT4O_OUT_USD,
     GPT_MEMORY_SEC,
     OWNER_TG_ID,
 )
@@ -45,44 +41,55 @@ async def add_user(message):
         )
 
 
-@logged
-async def balance_is_sufficient(message) -> bool:
-    message_cost = 0
-    encoding = tiktoken.encoding_for_model("gpt-4o")
-    if message.photo:
-        pre_prompt = scripts["other"]["vision pre-prompt"][language(message)]
-        text = message.caption if message.caption else pre_prompt
-        message_cost += VISION_USD
-    else:
-        text = message.text
-    now = time.time()
-    await db_execute(
-        "DELETE FROM messages WHERE timestamp < TO_TIMESTAMP(%s);", now - GPT_MEMORY_SEC
-    )
-    old_messages = await db_get_messages(message.from_user.id)
-    for old_message in old_messages:
-        if isinstance(old_message["content"], str):
-            text += old_message["content"]
-        elif old_message["content"][0]["text"] is not None:
-            text += old_message["content"][0]["text"]
-            if len(old_message["content"]) == 2:
-                message_cost += VISION_USD
-    tokens = len(encoding.encode(text))
-    message_cost += tokens * GPT4O_IN_USD
-    user = await db_get_user(message.from_user.id)
-    if user["balance"] >= 2 * message_cost:
-        return True
-    else:
-        kbd = inline_kbd({"try payment": "try payment"}, language(message))
-        await send_template_answer(message, "err", "balance is empty", reply_markup=kbd)
-        return False
-
-
 def language(message):
     lang = message.from_user.language_code
     if lang is None or lang != "ru":
         lang = "en"
     return lang
+
+
+def is_implemented(message):
+    if message.pinned_message is not None:
+        return False
+    else:
+        return True
+
+
+def message_cost(message):
+    cost = 0
+    encoding = tiktoken.encoding_for_model("gpt-4o")
+    if message.photo:
+        cost += VISION_USD
+    tokens = len(encoding.encode(get_message_text(message)))
+    return cost + tokens * GPT4O_IN_USD
+
+
+@logged
+async def is_affordable(message):
+    cost = message_cost(message)
+    response = await db_execute(
+        [
+            "DELETE FROM messages WHERE timestamp < TO_TIMESTAMP(%s) and from_user_id = %s;",
+            "SELECT tokens FROM messages WHERE from_user_id = %s;",
+            "SELECT balance FROM users WHERE id = %s;",
+        ],
+        [
+            [time.time() - GPT_MEMORY_SEC, message.from_user.id],
+            [message.from_user.id],
+            [message.from_user.id],
+        ],
+    )
+    if isinstance(response, list):
+        cost += GPT4O_OUT_USD * sum(item["tokens"] for item in response[:-1])
+        balance = response[-1]["balance"]
+    else:
+        balance = response["balance"]
+    if balance >= cost * 1.5:
+        return True
+    else:
+        kbd = inline_kbd({"try payment": "try payment"}, language(message))
+        await send_template_answer(message, "err", "balance is empty", reply_markup=kbd)
+        return False
 
 
 @logged

@@ -28,6 +28,7 @@ CREATE TABLE public.messages (
     message_id bigint NOT NULL,
     from_user_id bigint NOT NULL,
     "timestamp" timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    tokens bigint DEFAULT 0 NOT NULL,
     role character varying(255) DEFAULT 'user'::character varying NOT NULL,
     text text DEFAULT ''::text NOT NULL,
     image_url text,
