@@ -1,12 +1,9 @@
 import time
 import psycopg
+import os
 from psycopg.rows import dict_row
 
-from src.utils.globals import (
-    bot,
-    DSN,
-    REFUND_PERIOD_DAYS,
-)
+from src.utils.globals import bot, DSN, REFUND_PERIOD_DAYS
 
 
 async def db_execute(queries, args=None):
@@ -108,12 +105,14 @@ async def db_update_purchase(purchase):
 
 
 async def get_image_url(message):
-    from src.utils.formatting import local_image_to_data_url
+    from src.utils.formatting import encode_image
 
     if message.photo:
-        image_path = f"src/utils/temp/images/{message.from_user.id}.jpg"
+        image_path = f"src/utils/temp/images/{message.from_user.id}-{message.message_id}.jpg"
         await bot.download(message.photo[-1], destination=image_path)
-        return local_image_to_data_url(image_path)
+        url = encode_image(image_path)
+        os.remove(image_path)
+        return url
     else:
         return None
 
@@ -159,7 +158,7 @@ async def db_get_messages(user_id):
             messages[-1]["content"].append(
                 {
                     "type": "image_url",
-                    "image_url": {"url": msg["image_url"], "detail": "high"},
+                    "image_url": {"url": f"data:image/jpeg;base64,{msg["image_url"]}", "detail": "high"},
                 }
             )
     return messages

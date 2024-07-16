@@ -2,7 +2,8 @@ import re
 import urllib.parse
 import cairosvg
 import base64
-from mimetypes import guess_type
+from io import BytesIO
+from PIL import Image
 
 from src.templates.scripts import scripts
 from src.utils.analytics.logging import logged
@@ -28,19 +29,20 @@ from src.utils.globals import (
 )
 
 
-# Function to encode a local image into data URL
-def local_image_to_data_url(image_path):
-    # Guess the MIME type of the image based on the file extension
-    mime_type, _ = guess_type(image_path)
-    if mime_type is None:
-        mime_type = "application/octet-stream"  # Default MIME type if none is found
+def encode_image(image_path, max_image=2048):
+    with Image.open(image_path) as img:
+        width, height = img.size
+        max_dim = max(width, height)
+        if max_dim > max_image:
+            scale_factor = max_image / max_dim
+            new_width = int(width * scale_factor)
+            new_height = int(height * scale_factor)
+            img = img.resize((new_width, new_height))
 
-    # Read and encode the image file
-    with open(image_path, "rb") as image_file:
-        base64_encoded_data = base64.b64encode(image_file.read()).decode("utf-8")
-
-    # Construct the data URL
-    return f"data:{mime_type};base64,{base64_encoded_data}"
+        buffered = BytesIO()
+        img.save(buffered, format="PNG")
+        img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
+        return img_str
 
 
 def svg2jpg(svg_file_path, output_file_path):
