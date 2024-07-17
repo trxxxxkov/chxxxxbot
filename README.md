@@ -86,7 +86,7 @@ chxxxxbot/  # The main project's directory
 │       ├── analytics/        # Directory for administration tools and logging
 │       │   ├── analytics.py  # Analytics auxiliary function
 │       │   └── logging.py    # Logging wrapper
-│       └── temp/           # Directory for data that is sent to user or is obtained from user
+│       └── temp/           # Directory for data sent to users or obtained from them
 │           ├── documents/  # Directory for all temporary files that are not images
 │           └── images/     # Directory for images that are obtained from user
 ├── .dockerignore        # Ignore files that should not be in Bot's docker container
