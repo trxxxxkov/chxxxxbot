@@ -142,6 +142,10 @@ docker compose up
 ```
 ##### Done. You have successfully deployed chxxxbot.
 
+## Contributions
+
+#### Everyone is welcome to participate! Suggestions, improvements, and corrections will be greatly appreciated. 
+
 ## FAQ
 
 ###### [This section will be added later]
