@@ -48,58 +48,58 @@ And much more.
 ## Project Structure
 ```bash
 chxxxxbot/  # The main project's directory
-├── secrets/  # Directory for build secrets. 
+├── secrets/                # Directory for build secrets. 
 │   ├── bot_token.txt       # Telegram Bot Token (provided by @BotFather)
 │   ├── db_password.txt     # Database password  (arbitrary)
 │   ├── openai_token.txt    # OpenAI API token   (provided by OpenAI)
 │   └── webhook_secret.txt  # Webhook secret     (arbitrary
-├── src/  # Directory for bot source code
+├── src/         # Directory for bot source code
 │   ├── main.py  # Bot entrypoint
-│   ├── core/  # Directory for core chatbot functionality 
+│   ├── core/                    # Directory for core chatbot functionality 
 │   │   ├── chat_completion.py   # Text processing
 │   │   └── image_generation.py  # Image processing
-│   ├── database/  # Directory for database-related python code
+│   ├── database/       # Directory for database-related python code
 │   │   └── queries.py  # Wrapper functions over psycopg calls
-│   ├── handlers/  # Directory for Telegram API updates handlers
+│   ├── handlers/               # Directory for Telegram API updates handlers
 │   │   ├── callbacks.py        # Inline keyboards events
 │   │   ├── hidden_cmds.py      # Commands that aren't visible in Telegram interface
 │   │   ├── other_upds.py       # Payment updates 
 │   │   ├── privileged_cmds.py  # Commands that are available only for bot owner and privileged users
 │   │   └── public_cmds.py      # Commands that are shown in Telegram interface
-│   ├── templates/  # Directory for documentation and keyboards templates
+│   ├── templates/       # Directory for documentation and keyboards templates
 │   │   ├── bot_menu.py  # Dict structure that store Telegram Bot Menu commands
 │   │   ├── scripts.py   # Dict structure for all docs and buttons texts
-│   │   ├── keyboards/  # Directory for keyboards templates 
+│   │   ├── keyboards/         # Directory for keyboards templates 
 │   │   │   ├── inline_kbd.py  # Templates and a factory for inline keyboards
 │   │   │   └── reply_kbd.py   # Templates for reply keyboards
-│   │   └── tutorial/  # Directory for tutorial's media
+│   │   └── tutorial/            # Directory for tutorial's media
 │   │       ├── generation.mp4   # Video for image generation functionality
 │   │       ├── latex.mp4        # Video for latex detection and compilation functionality
 │   │       ├── prompt.mp4       # Video for chat completion functionality
 │   │       ├── recognition.mp4  # Video for image recognition functionality
 │   │       ├── tokens.mp4       # Video about describing what are tokens
 │   │       └── videos.py        # Dict structure for tutorial videos file_ids (Automatically filled after deployment)
-│   └── utils/  #
-│       ├── formatting.py   #
-│       ├── globals.py      #
-│       ├── validations.py  #
-│       ├── analytics/  #
-│       │   ├── analytics.py  #
-│       │   └── logging.py    #
-│       └── temp/  #
-│           ├── documents/  #
-│           └── images/     #
-├── .dockerignore
-├── .gitignore
-├── .gitattributes
-├── .env
-├── compose.yaml
-├── Dockerfile
-├── nginx.conf.template
-├── pgdb_scheme.sql
-├── pyproject.toml
-├── LICENSE
-└── README.md
+│   └── utils/              # Directory for auxiliary functions and temprorary data
+│       ├── formatting.py   # Functions for text parsing and formatting
+│       ├── globals.py      # Storage for bot object, openai client and global constants
+│       ├── validations.py  # Functions for input validations and users data consistancy checks
+│       ├── analytics/        # Directory for administration tools and logging
+│       │   ├── analytics.py  # Analytics auxiliary function
+│       │   └── logging.py    # Logging wrapper
+│       └── temp/           # Directory for data that is sent to user or is obtained from user
+│           ├── documents/  # Directory for all temporary files that are not images
+│           └── images/     # Directory for temporary stored images that are converted from latex or obtained from user
+├── .dockerignore        # Ignore files that should not be accessible in Bot's docker container
+├── .gitignore           # Ignore secret and temporary files
+├── .gitattributes       # Files to use 'git update-index --assume-unchanged' on
+├── .env                 # Storage for all environment variables
+├── compose.yaml         # Docker compose file
+├── Dockerfile           # Bot container's Dockerfile
+├── nginx.conf.template  # NGINX reverse proxy servers configuration. Configure it using .env
+├── pgdb_scheme.sql      # File for PostgreSQL database initialization. Contains only scheme by default, but can be populated with data locally
+├── pyproject.toml       # Configuration file for bot's source code build system. Also contains dependencies list 
+├── LICENSE              # Project's license
+└── README.md            # The file you are currently looking at 
 ```
 
 ## Installation
@@ -119,10 +119,10 @@ CERTBOT_EMAIL=example@gmail.com
 NGINX_HOST=example.com
 ```
 #### 5. Add your tokens and passwords into the files in `chxxxxbot/secret/` folder:
- - Write your Telegram Bot token (can be obtained from [@BotFather](https://t.me/botfather)) to `chxxxxbot/secrets/bot_token.txt`;
- - Write your OpenAI API token to `chxxxxbot/secrets/openai_token.txt`;
- - Write your database password (the password can be anything) to `chxxxxbot/secrets/db_password.txt`;
- - Write your [webhook secret](https://docs.github.com/en/webhooks/using-webhooks/best-practices-for-using-webhooks#use-a-webhook-secret) to `chxxxxbot/secrets/webhook_secret.txt`;
+ - Write your Telegram Bot token (obtained from [@BotFather](https://t.me/botfather)) to `chxxxxbot/secrets/bot_token.txt`;
+ - Write your OpenAI API token (obtained from OpenAI) to `chxxxxbot/secrets/openai_token.txt`;
+ - Write your database password (arbitrary) to `chxxxxbot/secrets/db_password.txt`;
+ - Write your [webhook secret](https://docs.github.com/en/webhooks/using-webhooks/best-practices-for-using-webhooks#use-a-webhook-secret) (arbitrary) to `chxxxxbot/secrets/webhook_secret.txt`;
 #### 6. Deploy the project by entering the following command in the console:
 ```bash
 docker compose up
@@ -130,7 +130,8 @@ docker compose up
 
 ## Contributions
 
-#### Everyone is welcome to participate! Suggestions, improvements, and corrections will be greatly appreciated. 
+#### Everyone is welcome to participate! The project needs help not only with improvements and additions to the codebase but also with ideas! The main goal of the project can only be achieved by working through numerous details that are hard to foresee in advance, but when encountered, make you think, "Oh! This is so natural and convenient!"
+If you have any suggestions that you would like to see implemented in this project, please feel free to write either in the [Issues section](https://github.com/trxxxxkov/chxxxxbot/issues) or contact the project author through [Telegram](https://t.me/trxxxxkov) or [email](trxxxxkov@gmail.com).
 
 ## FAQ
 
