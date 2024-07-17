@@ -67,6 +67,7 @@ def message_cost(message):
 @logged
 async def is_affordable(message):
     cost = message_cost(message)
+
     response = await db_execute(
         [
             "DELETE FROM messages WHERE timestamp < TO_TIMESTAMP(%s) and from_user_id = %s;",
@@ -80,10 +81,10 @@ async def is_affordable(message):
         ],
     )
     if isinstance(response, list):
-        cost += GPT4O_OUT_USD * sum(item["tokens"] for item in response[:-1])
-        balance = response[-1]["balance"]
+        cost += GPT4O_OUT_USD * sum(item.get("tokens", 0) for item in response[:-1])
+        balance = response[-1].get("balance", 0)
     else:
-        balance = response["balance"]
+        balance = response.get("balance", 0)
     if balance >= cost * 1.5:
         return True
     else:

@@ -33,6 +33,7 @@ from src.database.queries import (
     db_update_user,
     db_get_user,
     db_get_purchase,
+    get_image_url,
 )
 from src.utils.globals import bot, GPT4O_OUT_USD, DALLE3_USD, GPT4O_IN_USD
 
@@ -47,16 +48,24 @@ async def draw_handler(message: Message, command) -> None:
         await send_template_answer(message, "doc", "draw")
     else:
         if await is_affordable(message):
-            await db_save_message(message, "user", False)
+            input_tokens = usd2tok(message_cost(message) + 2 * GPT4O_OUT_USD)
+            await db_save_message(message, input_tokens, "user", False)
             try:
                 async with ChatActionSender.upload_photo(message.chat.id, bot):
                     image_url = await generate_image(command.args)
                 kbd = inline_kbd({"redraw": "redraw"}, language(message))
                 msg = await bot.send_photo(message.chat.id, image_url, reply_markup=kbd)
+
                 await db_execute(
                     "INSERT INTO messages (message_id, from_user_id, tokens, image_url, pending) \
                         VALUES (%s, %s, %s, %s, %s);",
-                    [msg.message_id, message.from_user.id, 1000, image_url, False],
+                    [
+                        msg.message_id,
+                        message.from_user.id,
+                        300,
+                        await get_image_url(msg),
+                        False,
+                    ],
                 )
                 user = await db_get_user(message.from_user.id)
                 user["balance"] -= DALLE3_USD
