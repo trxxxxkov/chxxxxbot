@@ -118,13 +118,18 @@ async def get_image_url(message):
 
 
 def get_message_text(message):
+    text = ""
+    if message.reply_to_message:
+        text += f"{get_message_text(message.reply_to_message)}\n\n"
+    if message.quote:
+        if message.quote.text:
+            text += f"{message.quote.text}\n\n"
     if message.photo:
         if message.caption:
-            return message.caption
-        else:
-            return ""
+            text += message.caption
     else:
-        return message.text
+        text += message.text
+    return text
 
 
 async def db_get_user(user_id):
