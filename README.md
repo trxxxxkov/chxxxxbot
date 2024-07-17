@@ -1,7 +1,9 @@
-# Project Title
+# [Telegram bot called Sebastian](https://t.me/chxxxxbot), a chatbot whose main priority is user convenience.
+
+## Overview
+**Sebastian** is a Telegram bot providing access to the most advanced modern AI models  (currently only **GPT-4** and **DALLE**), designed for seamless interaction with them through the Telegram app.
 
 ## Project Goals
-[Describe the main objectives and goals of your project here.]
 
 ## Features
 [Detail the key features and functionalities of your project here.]
