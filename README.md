@@ -64,7 +64,7 @@ chxxxxbot/  # The main project's directory
 │   │   ├── callbacks.py        # Inline keyboards events
 │   │   ├── hidden_cmds.py      # Commands that aren't visible in Telegram interface
 │   │   ├── other_upds.py       # Payment updates 
-│   │   ├── privileged_cmds.py  # Commands that are available only for bot owner and privileged users
+│   │   ├── privileged_cmds.py  # Commands that are available only for bot owner
 │   │   └── public_cmds.py      # Commands that are shown in Telegram interface
 │   ├── templates/       # Directory for documentation and keyboards templates
 │   │   ├── bot_menu.py  # Dict structure that store Telegram Bot Menu commands
@@ -78,26 +78,26 @@ chxxxxbot/  # The main project's directory
 │   │       ├── prompt.mp4       # Video for chat completion functionality
 │   │       ├── recognition.mp4  # Video for image recognition functionality
 │   │       ├── tokens.mp4       # Video about describing what are tokens
-│   │       └── videos.py        # Dict structure for tutorial videos file_ids (Automatically filled after deployment)
+│   │       └── videos.py        # Dict structure for tutorial videos file_ids
 │   └── utils/              # Directory for auxiliary functions and temprorary data
 │       ├── formatting.py   # Functions for text parsing and formatting
 │       ├── globals.py      # Storage for bot object, openai client and global constants
-│       ├── validations.py  # Functions for input validations and users data consistancy checks
+│       ├── validations.py  # Functions for input validations
 │       ├── analytics/        # Directory for administration tools and logging
 │       │   ├── analytics.py  # Analytics auxiliary function
 │       │   └── logging.py    # Logging wrapper
 │       └── temp/           # Directory for data that is sent to user or is obtained from user
 │           ├── documents/  # Directory for all temporary files that are not images
-│           └── images/     # Directory for temporary stored images that are converted from latex or obtained from user
-├── .dockerignore        # Ignore files that should not be accessible in Bot's docker container
+│           └── images/     # Directory for images that are obtained from user
+├── .dockerignore        # Ignore files that should not be in Bot's docker container
 ├── .gitignore           # Ignore secret and temporary files
 ├── .gitattributes       # Files to use 'git update-index --assume-unchanged' on
 ├── .env                 # Storage for all environment variables
 ├── compose.yaml         # Docker compose file
 ├── Dockerfile           # Bot container's Dockerfile
-├── nginx.conf.template  # NGINX reverse proxy servers configuration. Configure it using .env
-├── pgdb_scheme.sql      # File for PostgreSQL database initialization. Contains only scheme by default, but can be populated with data locally
-├── pyproject.toml       # Configuration file for bot's source code build system. Also contains dependencies list 
+├── nginx.conf.template  # NGINX reverse proxy servers configuration
+├── pgdb_scheme.sql      # File for PostgreSQL database initialization
+├── pyproject.toml       # Configuration file for bot's source code build system
 ├── LICENSE              # Project's license
 └── README.md            # The file you are currently looking at 
 ```
