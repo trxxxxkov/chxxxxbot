@@ -6,17 +6,44 @@ Messengers, especially Telegram, offer an exceptionally convenient platform for 
 **Sebastian** is a Telegram bot providing access to the most advanced modern AI models  (currently only **GPT-4** and **DALLE**), designed for seamless interaction with them through the Telegram. 
 
 ## Project Goals
-The name **Sebastian**, which is a traditional butler name in anime, represents the aspiration to make the project not just a chatbot but a full-fledged assistant capable of handling a wide range of tasks.
-The main goal of this project is to create the most 'human-like' chatbot possible by actively utilizing the advantages of messenger platform.
-
+#### The main goal of this project is to create the most 'human-like' chatbot possible. The name **Sebastian**, which is a traditional butler name in anime, represents the aspiration to make the project not just a chatbot but a full-fledged assistant capable of handling a wide range of tasks.
 Thus, most of the tasks are divided into two categories:
-- Implementing support for new types of input data such as various files, audio requests and video requests;
+- Providing support for new types of input data such as various files, audio requests and video requests;
 - Processing all possible use cases of the existing functionality and extending its capabilities through manual handling of edge cases and exceptional situations.
 
 The latter category essentially involves working on numerous, often unnoticed details that, nevertheless, constitute an important part of the user experience.
 
 ## Features
-
+#### Chatbot features, such as:
+- Processing text messages using GPT-4o;
+- Recognizing images using GPT-4o;
+- Generating images using DALLE-3 and their variations using DALLE-2;
+#### Telegram Bot API features:
+- Support for payments and refunds using Telegram Stars and all related commands;
+- Telegram Webhooks;
+- Error-prone MarkdownV2 text formatting that minimize the number of escapements in a response;
+- The interface language (buttons, documentation) is determined individually for each user;
+- Inline & Reply Keyboards;
+#### Usability Enhancements:
+- OpenAI streaming API usage for real-time response transmission by editing the message as chunks of the response are received;
+- Storage of each user's message history, with both automatic and manual clearing options;
+- Handling of long messages:
+  + Splitting messages into chunks with a length of less than 4096 characters
+  + Joining messages that were split into chunks due to Telegram's limitations."
+  + User notification offering to send long messages as a txt file;
+- Automatic LaTeX compilation;
+- Over 18,000 characters in various system messages for user interaction;
+- User tutorial including short video clips;
+- Handling of quotations;
+- Handling of messages with multiple images;
+- Integration of DALLE-3 into the dialogue context of GPT-4o;
+And much more.
+#### Build features:
+- **Docker** for containerization and **Docker Compose** for container orchestration;
+- **PostgreSQL** database for user data storage;
+- **NGINX** as a reverse proxy with automatic SSL certificate issuance;
+- Proper handling of secrets used in environment setup;
+- Use of pyproject.toml for storing build system configuration and dependency management;
 
 ## Installation
 [Provide step-by-step instructions on how to install and set up your project.]
