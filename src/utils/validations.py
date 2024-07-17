@@ -118,7 +118,7 @@ async def template_videos2ids():
         OWNER_TG_ID, FSInputFile("src/templates/tutorial/latex.mp4")
     )
     tokens_vid = await bot.send_animation(
-        OWNER_TG_ID, FSInputFile("src/templates/tutorial/what_are_tokens.mp4")
+        OWNER_TG_ID, FSInputFile("src/templates/tutorial/tokens.mp4")
     )
     await bot.send_message(
         chat_id=OWNER_TG_ID,
