@@ -45,9 +45,6 @@ And much more.
 - Proper handling of secrets used in environment setup;
 - Use of pyproject.toml for storing build system configuration and dependency management;
 
-## Installation
-[Provide step-by-step instructions on how to install and set up your project.]
-
 ## Project Structure
 ```
 chxxxxbot/
@@ -104,3 +101,47 @@ chxxxxbot/
 ├── LICENSE
 └── README.md
 ```
+
+## Installation
+#### 1. [Install Git](https://git-scm.com/downloads);
+#### 2. [Install Docker Desktop or Docker Engine](https://docs.docker.com/get-docker/);
+#### 3. Clone this repository:
+```bash
+git clone https://github.com/trxxxxkov/chxxxxbot.git
+```
+#### 4. Specify the required environment variables in `chxxxxbot/.env` file, for example:
+```.env
+### BOT ENVIRONMENT VARIABLES
+OWNER_TG_ID=000000000
+
+### WEBSERVER ENVIRONMENT VARIABLES
+CERTBOT_EMAIL=example@gmail.com
+NGINX_HOST=example.com
+```
+#### 5. Add your tokens and passwords into the files in `chxxxxbot/secret/` folder:
+
+Write your Telegram Bot token (can be obtained from [@BotFather](https://t.me/botfather)) to `chxxxxbot/secrets/bot_token.txt`:
+```
+0000000000:EXamplEeXAmPleExaMPLeeXaMplEeXamplE
+```
+Write your database password (the password can be anything, but it is not recommended to make it too simple) to `chxxxxbot/secrets/db_password.txt`:
+```
+myfavoriteexamplepassword123456789
+```
+Write your OpenAI API token to `chxxxxbot/secrets/openai_token.txt`:
+```
+eE-XamPlEExaMPLeEXAmplEexampleExampLEexaMPleeXAMPle
+```
+Write your [webhook secret](https://docs.github.com/en/webhooks/using-webhooks/best-practices-for-using-webhooks#use-a-webhook-secret) to `chxxxxbot/secrets/webhook_secret.txt`:
+```
+myfavoriteexamplewebhooksecret1234
+```
+#### 6. Deploy the project by entering the following command in the console:
+```bash
+docker compose up
+```
+##### Done. You have successfully deployed chxxxbot.
+
+## FAQ
+
+###### [This section will be added later]
