@@ -91,7 +91,6 @@ chxxxxbot/  # The main project's directory
 │           └── images/     # Directory for images that are obtained from user
 ├── .dockerignore        # Ignore files that should not be in Bot's docker container
 ├── .gitignore           # Ignore secret and temporary files
-├── .gitattributes       # Files to use 'git update-index --assume-unchanged' on
 ├── .env                 # Storage for all environment variables
 ├── compose.yaml         # Docker compose file
 ├── Dockerfile           # Bot container's Dockerfile

@@ -1,2 +1,0 @@
-# Some of the following rules may be applied with 'git add --renormalize .' command
-secrets/* assume-unchanged
