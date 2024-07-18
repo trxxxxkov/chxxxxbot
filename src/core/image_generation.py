@@ -1,3 +1,5 @@
+"""DALLE API usage for image generation and variation"""
+
 from PIL import Image
 
 from aiogram.enums import InputMediaType
@@ -7,7 +9,8 @@ from src.utils.analytics.logging import logged
 from src.utils.globals import openai_client
 
 
-async def generate_image(prompt):
+async def generate_image(prompt: str) -> str | None:
+    """Wrapper over OpenAI's DALLE-3 API call for image generation."""
     response = await openai_client.images.generate(
         prompt=prompt,
         n=1,
@@ -20,7 +23,8 @@ async def generate_image(prompt):
 
 
 @logged
-async def variate_image(path_to_image):
+async def variate_image(path_to_image: str) -> list[InputMediaPhoto]:
+    """Wrapper over OpenAI's DALLE-2 API call for image variation."""
     img = Image.open(f"{path_to_image}.jpg")
     img.save(f"{path_to_image}.png")
     response = await openai_client.images.create_variation(
