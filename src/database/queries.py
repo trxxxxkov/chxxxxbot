@@ -54,7 +54,8 @@ async def db_update_user(user: dict) -> None:
     
     Args:
         user: dictionary with non-empty table fields. Usually is obtained as a
-            result of db_get_user() function."""
+            result of db_get_user() function.
+    """
 
     await db_execute(
         "UPDATE users SET \
@@ -80,7 +81,8 @@ async def db_update_model(model: dict) -> None:
     
     Args:
         model: dictionary with non-empty table fields. Usually is obtained as a
-            result of db_get_model() function."""
+            result of db_get_model() function.
+    """
     await db_execute(
         "UPDATE models SET \
                 model_name = %s, \
@@ -96,7 +98,7 @@ async def db_update_model(model: dict) -> None:
     )
 
 
-async def db_save_message(message: Message, tokens: int, role: str, pending: bool = False) -> None:
+async def db_save_message(message: Message, tokens: str | int, role: str, pending: bool = False) -> None:
     """Write Telegram message object data into 'messages' table.
     
     Args:
@@ -127,7 +129,8 @@ async def db_update_purchase(purchase: dict) -> None:
     
     Args:
         purchase: dictionary with non-empty table fields. Usually is obtained as a
-            result of db_get_purchase() function."""
+            result of db_get_purchase() function.
+    """
     await db_execute(
         "UPDATE purchases SET \
                 user_id = %s, \
@@ -163,7 +166,8 @@ async def db_get_messages(user_id: int) -> dict:
     """Read and format messages of the specified user from the 'messages' table.
     
     The user's messages are formatted in a way that is required by OpenAI for 
-    chatbot context."""
+    chatbot context.
+    """
     data = await db_execute(
         "SELECT text, role, image_url FROM messages WHERE from_user_id = %s ORDER BY timestamp;",
         user_id,

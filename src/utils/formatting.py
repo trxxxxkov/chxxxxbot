@@ -166,7 +166,9 @@ async def send_template_answer(message, cls, name, *args, reply_markup=None):
     text = scripts[cls][name][language(message)]
     if len(args) != 0:
         text = text.format(*args)
-    await message.answer(format_tg_msg(text), reply_markup=reply_markup)
+    await bot.send_message(
+        message.from_user.id, format_tg_msg(text), reply_markup=reply_markup
+    )
 
 
 def is_incomplete(par):
