@@ -14,7 +14,7 @@ Thus, most of the tasks are divided into two categories:
 The latter category essentially involves working on numerous, often unnoticed details that, nevertheless, constitute an important part of the user experience.
 
 ## Features
-##### You can [try out Sebastian's features right now](https://t.me/chxxxxbot). New users receive a welcome gift of 1000 tokens.
+##### You can [try out Sebastian's features right now](https://t.me/chxxxxbot) - new users receive a welcome gift of 1000 tokens.
 #### Chatbot features, such as:
 - Processing text messages using GPT-4o;
 - Recognizing images using GPT-4o;
