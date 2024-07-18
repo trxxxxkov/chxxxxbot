@@ -1,5 +1,5 @@
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from aiogram import types
+from aiogram.types import InlineKeyboardButton
 
 from src.utils.formatting import find_latex, latex_significant
 from src.templates.scripts import scripts
@@ -10,15 +10,13 @@ def inline_kbd(keys, lang=None):
     if lang is not None:
         for button, callback in keys.items():
             keyboard.add(
-                types.InlineKeyboardButton(
+                InlineKeyboardButton(
                     text=scripts["bttn"][button][lang], callback_data=callback
                 ),
             )
     else:
         for button, callback in keys.items():
-            keyboard.add(
-                types.InlineKeyboardButton(text=button, callback_data=callback),
-            )
+            keyboard.add(InlineKeyboardButton(text=button, callback_data=callback))
     keyboard.adjust(5)
     return keyboard.as_markup()
 
@@ -29,3 +27,16 @@ def latex_inline_kbd(text, f_idx=0):
     else:
         kbd = None
     return kbd
+
+
+def empty_balance_kbd(message):
+    from src.utils.validations import language
+
+    npay = scripts["bttn"]["try payment"][language(message)][:-1]
+    kbd = InlineKeyboardBuilder()
+    kbd.add(
+        InlineKeyboardButton(text=npay + "1", callback_data="try payment 1"),
+        InlineKeyboardButton(text=npay + "10", callback_data="try payment 10"),
+        InlineKeyboardButton(text=npay + "100", callback_data="try payment 100"),
+    )
+    return kbd.as_markup()

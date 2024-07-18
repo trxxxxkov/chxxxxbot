@@ -185,9 +185,12 @@ async def hide_callback(callback: types.CallbackQuery):
     await callback.answer()
 
 
-@rt.callback_query(F.data == "try payment")
+@rt.callback_query(F.data.startswith("try payment"))
 async def try_payment_callback(callback):
-    amount = 1
+    if callback.data == "try payment":
+        amount = 1
+    else:
+        amount = int(callback.data.split()[-1])
     prices = [LabeledPrice(label="XTR", amount=amount)]
     kbd = (
         InlineKeyboardBuilder()

@@ -2,10 +2,12 @@ import json
 import time
 import tiktoken
 
-from aiogram.types import FSInputFile
+from aiogram.types import FSInputFile, InlineKeyboardButton
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 import src.templates.tutorial.videos
-from src.templates.keyboards.inline_kbd import inline_kbd
+from src.templates.scripts import scripts
+from src.templates.keyboards.inline_kbd import empty_balance_kbd
 from src.utils.analytics.logging import logged
 from src.database.queries import db_execute, get_message_text
 from src.utils.formatting import send_template_answer, format_tg_msg
@@ -88,8 +90,9 @@ async def is_affordable(message):
     if balance >= cost * 1.5:
         return True
     else:
-        kbd = inline_kbd({"try payment": "try payment"}, language(message))
-        await send_template_answer(message, "err", "balance is empty", reply_markup=kbd)
+        await send_template_answer(
+            message, "err", "balance is empty", reply_markup=empty_balance_kbd(message)
+        )
         return False
 
 
