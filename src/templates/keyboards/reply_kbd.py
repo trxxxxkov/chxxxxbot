@@ -1,6 +1,6 @@
 from aiogram import types
 
-help_keyboard = types.ReplyKeyboardMarkup(
+help_kbd = types.ReplyKeyboardMarkup(
     keyboard=[
         [types.KeyboardButton(text="/help")],
     ],

@@ -212,7 +212,7 @@ async def help_handler(message: Message) -> None:
     )
     text = format_tg_msg(scripts["doc"]["help"][0][language(message)])
     await bot.send_animation(
-        message.chat.id,
+        message.from_user.id,
         src.templates.tutorial.videos.videos["help"][0],
         caption=text,
         reply_markup=builder.as_markup(),

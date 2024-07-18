@@ -9,6 +9,7 @@ from aiogram.types import FSInputFile, LabeledPrice
 
 import src.templates.tutorial.videos
 from src.templates.scripts import scripts
+from src.handlers.public_cmds import help_handler
 from src.templates.keyboards.inline_kbd import inline_kbd
 from src.core.image_generation import variate_image
 from src.database.queries import db_update_user, db_get_user, db_execute
@@ -152,6 +153,11 @@ async def help_callback(callback: types.CallbackQuery):
         reply_markup=builder.as_markup(),
     )
     await callback.answer()
+
+
+@rt.callback_query(F.data == "send help")
+async def send_help_callback(callback):
+    await help_handler(callback)
 
 
 @rt.callback_query(F.data.startswith("latex-"))

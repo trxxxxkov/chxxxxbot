@@ -1,11 +1,12 @@
-from aiogram import Router, types
-from aiogram.types import Message
+from aiogram import Router
+from aiogram.types import Message, BotCommand, LinkPreviewOptions
 from aiogram.filters import Command
 
 import src.templates.tutorial.videos
 from src.utils.globals import bot
+from src.templates.scripts import scripts
 from src.templates.bot_menu import bot_menu
-from src.templates.keyboards.reply_kbd import help_keyboard
+from src.templates.keyboards.inline_kbd import inline_kbd
 from src.handlers.public_cmds import help_handler
 from src.utils.formatting import send_template_answer, format_tg_msg
 from src.utils.validations import add_user, language, template_videos2ids
@@ -17,18 +18,21 @@ rt = Router()
 async def start_handler(message: Message) -> None:
     await bot.set_my_commands(
         [
-            types.BotCommand(command=key, description=value[language(message)])
+            BotCommand(command=key, description=value[language(message)])
             for key, value in bot_menu.items()
         ]
     )
-    await add_user(message)
-    await send_template_answer(
-        message,
-        "doc",
-        "start",
-        message.from_user.first_name,
-        reply_markup=help_keyboard,
+    kbd = inline_kbd(
+        {"back to help": "send help", "to tokens": "sep tokens"}, language(message)
     )
+    await message.answer(
+        scripts["doc"]["start"][language(message)].format(
+            format_tg_msg(message.from_user.first_name)
+        ),
+        link_preview_options=LinkPreviewOptions(is_disabled=True),
+        reply_markup=kbd,
+    )
+    await add_user(message)
     if src.templates.tutorial.videos.videos is None:
         await template_videos2ids()
 
