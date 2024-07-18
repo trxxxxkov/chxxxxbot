@@ -1,4 +1,5 @@
 import re
+import os
 import urllib.parse
 import cairosvg
 import base64
@@ -8,6 +9,7 @@ from PIL import Image
 from src.templates.scripts import scripts
 from src.utils.analytics.logging import logged
 from src.utils.globals import (
+    bot,
     PAR_MAX_LEN,
     INCOMPLETE_CODE_PATTERN,
     LATEX_BODY_PATTERN,
@@ -218,3 +220,27 @@ def xtr2usd(xtr: int | str | float) -> float:
 
 def usd2tok(usd: int | str | float) -> str:
     return f"{round(float(usd) * USD2TOKENS):,}"
+
+
+async def get_image_url(message):
+    from src.utils.formatting import encode_image
+
+    if message.photo:
+        image_path = (
+            f"src/utils/temp/images/{message.from_user.id}-{message.message_id}.jpg"
+        )
+        await bot.download(message.photo[-1], destination=image_path)
+        url = encode_image(image_path)
+        os.remove(image_path)
+        return url
+    else:
+        return None
+
+
+def get_message_text(message):
+    text = message.md_text
+    if message.invoice:
+        text = f"{message.invoice.title}\n{message.invoice.description}"
+    if message.reply_to_message:
+        text = f"{get_message_text(message.reply_to_message)}\n\n{text}"
+    return text

@@ -2,15 +2,13 @@ import json
 import time
 import tiktoken
 
-from aiogram.types import FSInputFile, InlineKeyboardButton
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.types import FSInputFile
 
 import src.templates.tutorial.videos
-from src.templates.scripts import scripts
 from src.templates.keyboards.inline_kbd import empty_balance_kbd
 from src.utils.analytics.logging import logged
-from src.database.queries import db_execute, get_message_text
-from src.utils.formatting import send_template_answer, format_tg_msg
+from src.database.queries import db_execute
+from src.utils.formatting import send_template_answer, format_tg_msg, get_message_text
 from src.utils.globals import (
     bot,
     VISION_USD,
@@ -69,7 +67,6 @@ def message_cost(message):
 @logged
 async def is_affordable(message):
     cost = message_cost(message)
-
     response = await db_execute(
         [
             "DELETE FROM messages WHERE timestamp < TO_TIMESTAMP(%s) and from_user_id = %s;",

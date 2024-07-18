@@ -19,6 +19,7 @@ from src.utils.formatting import (
     format_tg_msg,
     xtr2usd,
     usd2tok,
+    get_image_url,
 )
 from src.utils.validations import (
     language,
@@ -33,7 +34,6 @@ from src.database.queries import (
     db_update_user,
     db_get_user,
     db_get_purchase,
-    get_image_url,
 )
 from src.utils.globals import bot, GPT4O_OUT_USD, DALLE3_USD, GPT4O_IN_USD
 
