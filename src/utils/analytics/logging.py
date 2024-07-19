@@ -9,7 +9,7 @@ from src.utils.globals import bot, OWNER_TG_ID
 
 
 async def send_error_alert(
-    error: Exception, func: function, args: list, kwargs: dict, messages: list
+    error: Exception, func, args: list, kwargs: dict, messages: list
 ) -> Message:
     """Send Telegram message with error context to the owner's chat.
 

@@ -12,11 +12,11 @@ services:
     env_file:
       - .env
     ports:
-      - "8080:8080"
-      - "5678:5678"
+      - "8080:8080" 
+      - "5678:5678" # for debugger
 
   webserver:
-    image: jonasal/nginx-certbot:5.2.0
+    image: jonasal/nginx-certbot:5.2.0 # nginx with automatic SSL certificate issuance
     restart: always
     depends_on:
       - bot
@@ -26,8 +26,8 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ssl_cert:/etc/letsencrypt
-      - ./nginx.conf.template:/etc/nginx/templates/nginx.conf.template
+      - ssl_cert:/etc/letsencrypt # storage for issued SSL certificate
+      - ./nginx.conf.template:/etc/nginx/templates/nginx.conf.template # nginx config
 
   pgdb:
     image: postgres:latest
@@ -40,8 +40,8 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
-      - ./pgdb_scheme.sql:/docker-entrypoint-initdb.d/scheme.sql
+      - pgdata:/var/lib/postgresql/data # database data
+      - ./pgdb_scheme.sql:/docker-entrypoint-initdb.d/scheme.sql # initialization files
 
 volumes:
   ssl_cert:
