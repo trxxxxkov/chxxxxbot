@@ -86,7 +86,7 @@ async def generate_completion(message: Message):
                     # First updates are performed frequently to provide smooth
                     # experience to the user. Then frequence of updates is slowly
                     # increases to the one that will not result in temporary block.
-                    msg_increment = min(MAX_INCREMENT, MIN_INCREMENT + len(par) / 20)
+                    msg_increment = min(MAX_INCREMENT, MIN_INCREMENT + len(par) / 10)
                     if last_msg is None:
                         last_msg = await message.answer(format_tg_msg(par))
                     else:

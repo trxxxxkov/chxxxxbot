@@ -1,27 +1,44 @@
+"""Telegram inline kyboards templates."""
+
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from aiogram.types import InlineKeyboardButton
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from src.utils.formatting import find_latex, latex_significant
 from src.templates.scripts import scripts
 
 
-def inline_kbd(keys, lang=None):
+def inline_kbd(buttons: dict, lang: str | None = None) -> InlineKeyboardMarkup:
+    """Return an inline keyboard based on provided buttons and callbacks.
+
+    Args:
+        buttons: a dictionary which keys are either used directly as buttons
+            text or as a key in scripts structure depending on whether the lang is
+            provided and values are always callback data for a corresponding button.
+        lang: user's language code. If is not None, the buttons text is obtained
+            from scripts structure that is used for localization of pre-defined dialogs.
+
+    Returns:
+        InlineKeyboardMarkup - ready to use inline keyboard.
+    """
     keyboard = InlineKeyboardBuilder()
     if lang is not None:
-        for button, callback in keys.items():
+        for button, callback in buttons.items():
             keyboard.add(
                 InlineKeyboardButton(
                     text=scripts["bttn"][button][lang], callback_data=callback
                 ),
             )
     else:
-        for button, callback in keys.items():
+        for button, callback in buttons.items():
             keyboard.add(InlineKeyboardButton(text=button, callback_data=callback))
+    # The number of keys in a row is restricted specifically for latex_inline_kbd
+    # which can produce keyboards with more then 10 buttons with short ("#x:") text.
     keyboard.adjust(5)
     return keyboard.as_markup()
 
 
 def latex_inline_kbd(text, f_idx=0):
+    """Return a keyboard with a button for each latex formula found in the text."""
     if fnum := len([f for f in find_latex(text) if latex_significant(f)]):
         kbd = inline_kbd({f"#{f_idx+1+i}": f"latex-{i}" for i in range(fnum)})
     else:
