@@ -1,3 +1,5 @@
+"""Telegram Bot menu commands"""
+
 bot_menu = {
     "forget": {
         "en": "Clear previous messages from Sebastian's memory",

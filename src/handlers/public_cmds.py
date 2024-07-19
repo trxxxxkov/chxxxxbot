@@ -28,7 +28,7 @@ from src.utils.formatting import (
 )
 from src.utils.validations import (
     language,
-    template_videos2ids,
+    tutorial_videos2ids,
     is_implemented,
     is_affordable,
     message_cost,
@@ -123,7 +123,7 @@ async def balance_handler(message: Message) -> None:
     # If the tutorial videos weren't send yet, send them to bot owner and save
     # their file_ids into src.templates.tutorial.videos.videos.
     if src.templates.tutorial.videos.videos is None:
-        await template_videos2ids()
+        await tutorial_videos2ids()
     builder = InlineKeyboardBuilder()
     mid_button = types.InlineKeyboardButton(
         text=scripts["bttn"]["try payment"][language(message)],
@@ -275,7 +275,7 @@ async def help_handler(message: Message) -> None:
     When the button is pressed, the message is edited with the required content.
     """
     if src.templates.tutorial.videos.videos is None:
-        await template_videos2ids()
+        await tutorial_videos2ids()
     builder = InlineKeyboardBuilder()
     builder.row(
         types.InlineKeyboardButton(

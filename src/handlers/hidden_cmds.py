@@ -18,7 +18,7 @@ from src.templates.bot_menu import bot_menu
 from src.templates.keyboards.inline_kbd import inline_kbd
 from src.handlers.public_cmds import balance_handler
 from src.utils.formatting import format_tg_msg
-from src.utils.validations import add_user, language, template_videos2ids
+from src.utils.validations import add_user, language, tutorial_videos2ids
 
 rt = Router()
 
@@ -64,7 +64,7 @@ async def start_handler(message: Message) -> None:
     await add_user(message)
     # If tutorial videos were never sended, send them and save their file_ids.
     if src.templates.tutorial.videos.videos is None:
-        await template_videos2ids()
+        await tutorial_videos2ids()
 
 
 @rt.message(Command("paysupport"))

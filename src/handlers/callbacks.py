@@ -14,7 +14,7 @@ from src.handlers.public_cmds import help_handler, forget_handler
 from src.templates.keyboards.inline_kbd import inline_kbd
 from src.core.image_generation import variate_image
 from src.database.queries import db_update_user, db_get_user, db_execute
-from src.utils.validations import language, template_videos2ids
+from src.utils.validations import language, tutorial_videos2ids
 from src.utils.formatting import (
     find_latex,
     latex2url,
@@ -122,7 +122,7 @@ async def tokens_callback(callback: types.CallbackQuery):
     from the first category, but with "Hide" inline keyboard.
     """
     if src.templates.tutorial.videos.videos is None:
-        await template_videos2ids()
+        await tutorial_videos2ids()
     message = callback.message
     text = format_tg_msg(scripts["doc"]["tokens"][language(callback)])
     # The message content must be substituted with a new one.

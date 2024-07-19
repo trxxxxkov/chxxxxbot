@@ -1,8 +1,10 @@
+"""Validations of users' requests and user management commands"""
+
 import json
 import time
 import tiktoken
 
-from aiogram.types import FSInputFile
+from aiogram.types import FSInputFile, Message
 
 import src.templates.tutorial.videos
 from src.templates.keyboards.inline_kbd import empty_balance_kbd
@@ -16,11 +18,16 @@ from src.utils.globals import (
     GPT4O_OUT_USD,
     GPT_MEMORY_SEC,
     OWNER_TG_ID,
+    PRIVILEGED_USERS,
 )
 
 
 @logged
-async def add_user(message):
+async def add_user(message: Message) -> None:
+    """Add user to the database.
+
+    Add the user with initial balance of 0.015 USD ~ 100 tokens as a welcome gift.
+    If the user is already added, nothing happens."""
     bot_users = await db_execute("SELECT id FROM users;")
     if not isinstance(bot_users, list):
         bot_users = [bot_users]
@@ -44,31 +51,43 @@ async def add_user(message):
         )
 
 
-def language(message):
+def language(message: Message) -> str:
+    """Return a language code of the user for appropriate interface language."""
     lang = message.from_user.language_code
+    # Currently scripts are only available in English and Russian languages,
+    # so defaults to English for most of the cases.
     if lang is None or lang != "ru":
         lang = "en"
     return lang
 
 
-def is_implemented(message):
+def is_implemented(message: Message) -> bool:
+    """Filter updates which are not currently handled."""
     if message.pinned_message is not None:
         return False
     else:
         return True
 
 
-def message_cost(message):
-    cost = 0
+def message_cost(message: Message) -> float:
+    """Estimation of processing cost for a given message in USD."""
+    media_cost = 0
     encoding = tiktoken.encoding_for_model("gpt-4o")
     if message.photo:
-        cost += VISION_USD
+        media_cost += VISION_USD
     tokens = len(encoding.encode(get_message_text(message)))
-    return cost + tokens * GPT4O_IN_USD
+    return media_cost + tokens * GPT4O_IN_USD
 
 
 @logged
-async def is_affordable(message):
+async def is_affordable(message: Message) -> bool:
+    """User's balance check for estimating his ability to pay for a request.
+
+    The result based on the cost of the current message and cost of the context
+    which is basically all previous messages that are stored in the database.
+     Cost of incoming (GPT's) messages is obtained from OpenAI while cost for
+    outgoing (user's) messages is estimated with TikToken tokenizer.
+    """
     cost = message_cost(message)
     response = await db_execute(
         [
@@ -87,6 +106,8 @@ async def is_affordable(message):
         balance = response[-1].get("balance", 0)
     else:
         balance = response.get("balance", 0)
+
+    # The balance is compared with 1.5 costs to reserve funds for bot's response
     if balance >= cost * 1.5:
         return True
     else:
@@ -97,8 +118,9 @@ async def is_affordable(message):
 
 
 @logged
-async def authorized(message):
-    if str(message.from_user.id) in [OWNER_TG_ID]:
+async def authorized(message: Message) -> bool:
+    """Check if the user is allowed to run admin commands."""
+    if str(message.from_user.id) in PRIVILEGED_USERS:
         return True
     else:
         await send_template_answer(message, "err", "not privileged")
@@ -106,7 +128,12 @@ async def authorized(message):
 
 
 @logged
-async def template_videos2ids():
+async def tutorial_videos2ids() -> None:
+    """Send tutorial videos to the bot's owner and save their file ids.
+
+    For the first time the videos are requested, they are sent to the bot's owner
+    and their file_ids are written to 'chxxxxbot/src/templates/tutorial/videos.py'
+    for future use."""
     hvid0 = await bot.send_animation(
         OWNER_TG_ID, FSInputFile("src/templates/tutorial/prompt.mp4")
     )
