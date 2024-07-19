@@ -37,8 +37,17 @@ def inline_kbd(buttons: dict, lang: str | None = None) -> InlineKeyboardMarkup:
     return keyboard.as_markup()
 
 
-def latex_inline_kbd(text, f_idx=0):
-    """Return a keyboard with a button for each latex formula found in the text."""
+def latex_inline_kbd(text: str, f_idx: int = 0) -> InlineKeyboardMarkup:
+    """Return a keyboard with a button for each latex formula found in the text.
+
+    Buttons in the keyboard have text like this: #X, where X - is a formula's
+    index in the current response.
+
+    Args:
+        text: the text where latex formulas are searched.
+        f_idx: index to start counting formulas from. It is calculated based
+            on the formuals found in the previous messages that are part of the
+            current response."""
     if fnum := len([f for f in find_latex(text) if latex_significant(f)]):
         kbd = inline_kbd({f"#{f_idx+1+i}": f"latex-{i}" for i in range(fnum)})
     else:
@@ -47,6 +56,7 @@ def latex_inline_kbd(text, f_idx=0):
 
 
 def empty_balance_kbd(message):
+    """Return a keyboard with three payment buttons for 1,10,100 stars invoice."""
     from src.utils.validations import language
 
     npay = scripts["bttn"]["try payment"][language(message)][:-1]

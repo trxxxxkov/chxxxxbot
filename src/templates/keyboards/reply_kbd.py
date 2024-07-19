@@ -1,5 +1,8 @@
+"""Pre-built Telegram reply keyboards."""
+
 from aiogram import types
 
+# Suggest /help command
 help_kbd = types.ReplyKeyboardMarkup(
     keyboard=[
         [types.KeyboardButton(text="/help")],
