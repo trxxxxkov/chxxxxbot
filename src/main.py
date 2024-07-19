@@ -1,3 +1,5 @@
+"""Bot entrypoint"""
+
 import logging
 import sys
 from os import getenv
@@ -38,11 +40,13 @@ async def on_startup(bot: Bot) -> None:
 
 
 def main() -> None:
+    # Connect debugger depending on a variable in .env
     if getenv("BOT_DEBUG") != "0":
         import debugpy
 
         debugpy.listen(("0.0.0.0", 5678))
     dp = Dispatcher()
+    # The order of routers matters
     dp.include_routers(
         other_upds.rt, callbacks.rt, privileged_cmds.rt, hidden_cmds.rt, public_cmds.rt
     )
