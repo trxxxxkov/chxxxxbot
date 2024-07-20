@@ -1,6 +1,6 @@
-"""Pre-written text scripts that are used for interaction with users"""
+"""Pre-written text dialogues that are used for interaction with users"""
 
-scripts = {
+dialogues = {
     "doc": {
         "start": {
             "en": "Pleased to meet you\\, {}\\! My name is *Sebastian*\\. I am an [open\\-source](https://github.com/trxxxxkov/chxxxxbot) bot powered by the most advanced *AI* models\\, which means you can explore my source code or participate in my development\\.\n\n *I ask you to review my capabilities\\. To do this\\, your balance has just been funded with __1000__ tokens\\. Now type /help to learn about the basic features and available commands\\!*",

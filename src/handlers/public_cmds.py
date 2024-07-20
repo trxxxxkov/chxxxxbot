@@ -15,7 +15,7 @@ from aiogram.exceptions import TelegramBadRequest
 
 import src.templates.tutorial.videos
 from src.templates.bot_menu import bot_menu
-from src.templates.scripts import scripts
+from src.templates.scripted_dialogues import dialogues
 from src.templates.keyboards.inline_kbd import inline_kbd
 from src.core.image_generation import generate_image
 from src.core.chat_completion import generate_completion
@@ -126,23 +126,23 @@ async def balance_handler(message: Message) -> None:
         await tutorial_videos2ids()
     builder = InlineKeyboardBuilder()
     mid_button = types.InlineKeyboardButton(
-        text=scripts["bttn"]["try payment"][language(message)],
+        text=dialogues["bttn"]["try payment"][language(message)],
         callback_data=f"try payment",
     )
     builder.row(mid_button)
     builder.row(
         types.InlineKeyboardButton(
-            text=scripts["bttn"]["back to help"][language(message)],
+            text=dialogues["bttn"]["back to help"][language(message)],
             callback_data="help-0",
         ),
         types.InlineKeyboardButton(
-            text=scripts["bttn"]["to tokens"][language(message)] + " ->",
+            text=dialogues["bttn"]["to tokens"][language(message)] + " ->",
             callback_data="tokens",
         ),
     )
     user = await db_get_user(message.from_user.id)
     text = format_tg_msg(
-        scripts["doc"]["payment"][language(message)].format(
+        dialogues["doc"]["payment"][language(message)].format(
             usd2tok(user["balance"]), usd2tok(xtr2usd(1))
         )
     )
@@ -183,11 +183,11 @@ async def pay_handler(message: Message, command) -> None:
             InlineKeyboardBuilder()
             .add(
                 types.InlineKeyboardButton(
-                    text=scripts["bttn"]["pay"][language(message)].format(amount),
+                    text=dialogues["bttn"]["pay"][language(message)].format(amount),
                     pay=True,
                 ),
                 types.InlineKeyboardButton(
-                    text=scripts["bttn"]["to tokens"][language(message)],
+                    text=dialogues["bttn"]["to tokens"][language(message)],
                     callback_data="sep tokens",
                 ),
             )
@@ -195,10 +195,10 @@ async def pay_handler(message: Message, command) -> None:
         )
         await bot.send_invoice(
             chat_id=message.chat.id,
-            title=scripts["other"]["payment title"][language(message)],
-            description=scripts["doc"]["payment description"][language(message)].format(
-                usd2tok(xtr2usd(amount))
-            ),
+            title=dialogues["other"]["payment title"][language(message)],
+            description=dialogues["doc"]["payment description"][
+                language(message)
+            ].format(usd2tok(xtr2usd(amount))),
             payload=f"{message.from_user.id} {amount}",
             currency="XTR",
             prices=prices,
@@ -279,15 +279,15 @@ async def help_handler(message: Message) -> None:
     builder = InlineKeyboardBuilder()
     builder.row(
         types.InlineKeyboardButton(
-            text=scripts["bttn"]["to balance"][language(message)],
+            text=dialogues["bttn"]["to balance"][language(message)],
             callback_data="balance",
         ),
         types.InlineKeyboardButton(
-            text=scripts["bttn"]["to help"][1][language(message)] + " ->",
+            text=dialogues["bttn"]["to help"][1][language(message)] + " ->",
             callback_data="help-1",
         ),
     )
-    text = format_tg_msg(scripts["doc"]["help"][0][language(message)])
+    text = format_tg_msg(dialogues["doc"]["help"][0][language(message)])
     await bot.send_animation(
         message.from_user.id,
         src.templates.tutorial.videos.videos["help"][0],

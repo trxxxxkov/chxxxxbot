@@ -69,7 +69,7 @@ chxxxxbot/  # The main project's directory
 │   │   └── public_cmds.py      # Commands that are shown in Telegram interface
 │   ├── templates/       # Directory for documentation and keyboards templates
 │   │   ├── bot_menu.py  # Dict structure that store Telegram Bot Menu commands
-│   │   ├── scripts.py   # Dict structure for all docs and buttons texts
+│   │   ├── scripted_dialogues.py   # Dict structure for all docs and buttons texts
 │   │   ├── keyboards/         # Directory for keyboards templates 
 │   │   │   ├── inline_kbd.py  # Templates and a factory for inline keyboards
 │   │   │   └── reply_kbd.py   # Templates for reply keyboards

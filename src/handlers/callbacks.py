@@ -9,7 +9,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import FSInputFile, LabeledPrice
 
 import src.templates.tutorial.videos
-from src.templates.scripts import scripts
+from src.templates.scripted_dialogues import dialogues
 from src.handlers.public_cmds import help_handler, forget_handler
 from src.templates.keyboards.inline_kbd import inline_kbd
 from src.core.image_generation import variate_image
@@ -58,7 +58,7 @@ async def error_callback(callback: types.CallbackQuery):
     It should calm down the user and clean the chat context.
     """
     await callback.message.answer(
-        format_tg_msg(scripts["err"]["unexpected err"][language(callback)]),
+        format_tg_msg(dialogues["err"]["unexpected err"][language(callback)]),
         reply_markup=inline_kbd({"hide": "hide"}, language(callback)),
     )
     await forget_handler(callback)
@@ -75,13 +75,13 @@ async def balance_callback(callback: types.CallbackQuery):
     message = callback.message
     user = await db_get_user(callback.from_user.id)
     text = format_tg_msg(
-        scripts["doc"]["payment"][language(callback)].format(
+        dialogues["doc"]["payment"][language(callback)].format(
             usd2tok(user["balance"]), usd2tok(xtr2usd(1))
         )
     )
     builder = InlineKeyboardBuilder()
     mid_button = types.InlineKeyboardButton(
-        text=scripts["bttn"]["try payment"][language(callback)],
+        text=dialogues["bttn"]["try payment"][language(callback)],
         callback_data=f"try payment",
     )
     # Add payment button.
@@ -89,11 +89,11 @@ async def balance_callback(callback: types.CallbackQuery):
     # Add buttons that reference other tutorial messages.
     builder.row(
         types.InlineKeyboardButton(
-            text=scripts["bttn"]["back to help"][language(callback)],
+            text=dialogues["bttn"]["back to help"][language(callback)],
             callback_data="help-0",
         ),
         types.InlineKeyboardButton(
-            text=scripts["bttn"]["to tokens"][language(callback)] + " ->",
+            text=dialogues["bttn"]["to tokens"][language(callback)] + " ->",
             callback_data="tokens",
         ),
     )
@@ -124,7 +124,7 @@ async def tokens_callback(callback: types.CallbackQuery):
     if src.templates.tutorial.videos.videos is None:
         await tutorial_videos2ids()
     message = callback.message
-    text = format_tg_msg(scripts["doc"]["tokens"][language(callback)])
+    text = format_tg_msg(dialogues["doc"]["tokens"][language(callback)])
     # The message content must be substituted with a new one.
     if callback.data == "tokens":
         kbd = inline_kbd({"to balance": "balance"}, language(message))
@@ -166,25 +166,26 @@ async def help_callback(callback: types.CallbackQuery):
     message = callback.message
     h_idx = int(callback.data.split("-")[1])
     payment_button = types.InlineKeyboardButton(
-        text=scripts["bttn"]["to balance"][language(callback)], callback_data="balance"
+        text=dialogues["bttn"]["to balance"][language(callback)],
+        callback_data="balance",
     )
     if h_idx == 0:
         l_button = payment_button
     else:
         l_button = types.InlineKeyboardButton(
-            text="<- " + scripts["bttn"]["to help"][h_idx - 1][language(callback)],
+            text="<- " + dialogues["bttn"]["to help"][h_idx - 1][language(callback)],
             callback_data=f"help-{h_idx-1}",
         )
-    if h_idx == len(scripts["bttn"]["to help"]) - 1:
+    if h_idx == len(dialogues["bttn"]["to help"]) - 1:
         r_button = payment_button
     else:
         r_button = types.InlineKeyboardButton(
-            text=scripts["bttn"]["to help"][h_idx + 1][language(callback)] + " ->",
+            text=dialogues["bttn"]["to help"][h_idx + 1][language(callback)] + " ->",
             callback_data=f"help-{h_idx+1}",
         )
     builder = InlineKeyboardBuilder()
     builder.row(l_button, r_button)
-    text = format_tg_msg(scripts["doc"]["help"][h_idx][language(callback)])
+    text = format_tg_msg(dialogues["doc"]["help"][h_idx][language(callback)])
     await bot.edit_message_media(
         types.InputMediaAnimation(
             type=InputMediaType.ANIMATION,
@@ -252,7 +253,7 @@ async def hide_callback(callback: types.CallbackQuery):
     if not deleted:
         # Telegram does not allow deleting messages that were sent more than 48
         # hours ago. The user will be notified about this.
-        await callback.answer(scripts["err"]["too old to hide"][language(callback)])
+        await callback.answer(dialogues["err"]["too old to hide"][language(callback)])
     await callback.answer()
 
 
@@ -271,11 +272,11 @@ async def try_payment_callback(callback):
         InlineKeyboardBuilder()
         .add(
             types.InlineKeyboardButton(
-                text=scripts["bttn"]["pay"][language(callback)].format(amount),
+                text=dialogues["bttn"]["pay"][language(callback)].format(amount),
                 pay=True,
             ),
             types.InlineKeyboardButton(
-                text=scripts["bttn"]["to tokens"][language(callback)],
+                text=dialogues["bttn"]["to tokens"][language(callback)],
                 callback_data="sep tokens",
             ),
         )
@@ -283,8 +284,8 @@ async def try_payment_callback(callback):
     )
     await bot.send_invoice(
         chat_id=callback.message.chat.id,
-        title=scripts["other"]["payment title"][language(callback)],
-        description=scripts["doc"]["payment description"][language(callback)].format(
+        title=dialogues["other"]["payment title"][language(callback)],
+        description=dialogues["doc"]["payment description"][language(callback)].format(
             usd2tok(xtr2usd(amount))
         ),
         payload=f"{callback.from_user.id} {amount}",
@@ -321,4 +322,6 @@ async def as_file_handler(callback) -> None:
         await callback.answer()
     else:
         # If all messages are cleaned from memory, the user will be notified.
-        await callback.answer(scripts["err"]["nothing to convert"][language(callback)])
+        await callback.answer(
+            dialogues["err"]["nothing to convert"][language(callback)]
+        )

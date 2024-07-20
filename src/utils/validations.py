@@ -54,8 +54,8 @@ async def add_user(message: Message) -> None:
 def language(message: Message) -> str:
     """Return a language code of the user for appropriate interface language."""
     lang = message.from_user.language_code
-    # Currently scripts are only available in English and Russian languages,
-    # so defaults to English for most of the cases.
+    # Currently scripted dialogues are only available in English and Russian
+    # languages, so defaults to English for most of the cases.
     if lang is None or lang != "ru":
         lang = "en"
     return lang

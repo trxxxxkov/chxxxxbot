@@ -13,7 +13,7 @@ from aiogram.filters import Command
 
 import src.templates.tutorial.videos
 from src.utils.globals import bot
-from src.templates.scripts import scripts
+from src.templates.scripted_dialogues import dialogues
 from src.templates.bot_menu import bot_menu
 from src.templates.keyboards.inline_kbd import inline_kbd
 from src.handlers.public_cmds import balance_handler
@@ -52,7 +52,7 @@ async def start_handler(message: Message) -> None:
     )
     # Greeting message
     await message.answer(
-        scripts["doc"]["start"][language(message)].format(
+        dialogues["doc"]["start"][language(message)].format(
             format_tg_msg(message.from_user.first_name)
         ),
         link_preview_options=LinkPreviewOptions(is_disabled=True),

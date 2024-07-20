@@ -4,7 +4,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from src.utils.formatting import find_latex, latex_significant
-from src.templates.scripts import scripts
+from src.templates.scripted_dialogues import dialogues
 
 
 def inline_kbd(buttons: dict, lang: str | None = None) -> InlineKeyboardMarkup:
@@ -12,10 +12,10 @@ def inline_kbd(buttons: dict, lang: str | None = None) -> InlineKeyboardMarkup:
 
     Args:
         buttons: a dictionary which keys are either used directly as buttons
-            text or as a key in scripts structure depending on whether the lang is
+            text or as a key in dialogues structure depending on whether the lang is
             provided and values are always callback data for a corresponding button.
         lang: user's language code. If is not None, the buttons text is obtained
-            from scripts structure that is used for localization of pre-defined dialogs.
+            from dialogues structure that is used for localization of pre-defined dialogs.
 
     Returns:
         InlineKeyboardMarkup - ready to use inline keyboard.
@@ -25,7 +25,7 @@ def inline_kbd(buttons: dict, lang: str | None = None) -> InlineKeyboardMarkup:
         for button, callback in buttons.items():
             keyboard.add(
                 InlineKeyboardButton(
-                    text=scripts["bttn"][button][lang], callback_data=callback
+                    text=dialogues["bttn"][button][lang], callback_data=callback
                 ),
             )
     else:
@@ -59,7 +59,7 @@ def empty_balance_kbd(message):
     """Return a keyboard with three payment buttons for 1,10,100 stars invoice."""
     from src.utils.validations import language
 
-    npay = scripts["bttn"]["try payment"][language(message)][:-1]
+    npay = dialogues["bttn"]["try payment"][language(message)][:-1]
     kbd = InlineKeyboardBuilder()
     kbd.add(
         InlineKeyboardButton(text=npay + "1", callback_data="try payment 1"),

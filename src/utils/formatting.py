@@ -10,7 +10,7 @@ from PIL import Image
 
 from aiogram.types import Message, InlineKeyboardMarkup
 
-from src.templates.scripts import scripts
+from src.templates.scripted_dialogues import dialogues
 from src.utils.analytics.logging import logged
 from src.utils.globals import (
     bot,
@@ -248,7 +248,7 @@ async def send_template_answer(
     *args,
     reply_markup: InlineKeyboardMarkup | None = None,
 ):
-    """Send message with pre-defined text obtained from scripts structure.
+    """Send message with pre-defined text obtained from dialogues structure.
 
     The structure is a dictionary of texts divided into classes, each have texts
     written in multiple languages.
@@ -263,7 +263,7 @@ async def send_template_answer(
     """
     from src.utils.validations import language
 
-    text = scripts[cls][name][language(message)]
+    text = dialogues[cls][name][language(message)]
     if len(args) != 0:
         text = text.format(*args)
     await bot.send_message(
