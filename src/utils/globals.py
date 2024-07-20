@@ -62,13 +62,13 @@ DALLE3_USD = 0.04
 DALLE2_USD = 0.02
 
 # Loss of funds due to taxes and account top-up service fees
-OPENAI_REFILL_LOSS = 0.4
+OPENAI_REFILL_LOSS = 0.35
 # Apple Store and Google Play's commission for Telegram Stars
 STORE_COMMISSION = 0.3
 # Telegram commission for Telegram Stars
 TELEGRAM_COMMISSSION = 0.05
 # Bow owner's profit for Telegram Stars
-ROYALTIES = 0.05
+ROYALTIES = 0.00
 # Cost of a Telegram Star
 XTR2USD = 0.02
 # Cost of a USD in GPT-4o output tokens
