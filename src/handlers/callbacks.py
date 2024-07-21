@@ -93,7 +93,7 @@ async def balance_callback(callback: types.CallbackQuery):
             callback_data="help-0",
         ),
         types.InlineKeyboardButton(
-            text=dialogues["bttn"]["to tokens"][language(callback)] + " ->",
+            text=dialogues["bttn"]["to tokens"][language(callback)] + " »",
             callback_data="tokens",
         ),
     )
@@ -173,14 +173,14 @@ async def help_callback(callback: types.CallbackQuery):
         l_button = payment_button
     else:
         l_button = types.InlineKeyboardButton(
-            text="<- " + dialogues["bttn"]["to help"][h_idx - 1][language(callback)],
+            text="« " + dialogues["bttn"]["to help"][h_idx - 1][language(callback)],
             callback_data=f"help-{h_idx-1}",
         )
     if h_idx == len(dialogues["bttn"]["to help"]) - 1:
         r_button = payment_button
     else:
         r_button = types.InlineKeyboardButton(
-            text=dialogues["bttn"]["to help"][h_idx + 1][language(callback)] + " ->",
+            text=dialogues["bttn"]["to help"][h_idx + 1][language(callback)] + " »",
             callback_data=f"help-{h_idx+1}",
         )
     builder = InlineKeyboardBuilder()
