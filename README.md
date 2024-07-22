@@ -5,7 +5,7 @@ Messengers, especially Telegram, offer an exceptionally convenient platform for 
 
 **Sebastian** is a Telegram bot written using the **aiogram** asynchronous framework. It provides access to the most advanced modern AI models  (currently only **GPT-4** and **DALLE**), designed for seamless interaction with them through the Telegram. 
 
-## Project Goals
+## Motivation
 #### The main goal of this project is to create the most 'human-like' chatbot possible. The name **Sebastian**, which is a traditional butler name in anime, represents the aspiration to make the project not just a chatbot but a full-fledged assistant capable of handling a wide range of tasks.
 Thus, most of the tasks are divided into two categories:
 - Providing support for new types of input data such as various files, audio requests and video requests;
