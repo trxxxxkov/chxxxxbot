@@ -1,5 +1,14 @@
 # [Telegram bot called Sebastian](https://t.me/chxxxxbot), a chatbot whose main priority is user convenience.
 
+## Table of Contents
+1. [Overview](#overview)
+2. [Motivation](#motivation)
+3. [Features](#features)
+4. [Project Structure](#project-structure)
+5. [Installation](#installation)
+6. [Contributions](#contributions)
+7. [FAQ](#faq)
+
 ## Overview
 Messengers, especially Telegram, offer an exceptionally convenient platform for interacting with generative AI models. They are accessible on all devices and are designed for dialogues and the rapid exchange and forwarding of text and graphic information with minimal requirements for internet connection speed.
 
@@ -123,7 +132,7 @@ NGINX_HOST=example.com
  - Write your OpenAI API token (obtained from OpenAI) to `chxxxxbot/secrets/openai_token.txt`;
  - Write your database password (arbitrary) to `chxxxxbot/secrets/db_password.txt`;
  - Write your [webhook secret](https://docs.github.com/en/webhooks/using-webhooks/best-practices-for-using-webhooks#use-a-webhook-secret) (arbitrary) to `chxxxxbot/secrets/webhook_secret.txt`;
-#### 6. Deploy the project by entering the following command in the console:
+#### 6. Deploy the project by entering the following command in your console:
 ```bash
 docker compose up
 ```
