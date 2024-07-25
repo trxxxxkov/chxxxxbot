@@ -102,6 +102,7 @@ chxxxxbot/  # The main project's directory
 ├── .dockerignore        # Ignore files that should not be in Bot's docker container
 ├── .gitignore           # Ignore secret and temporary files
 ├── .env                 # Storage for all environment variables
+├── botpic.jpg           # An image that is used as a bot picture in Telegram
 ├── compose.yaml         # Docker compose file
 ├── Dockerfile           # Bot container's Dockerfile
 ├── nginx.conf.template  # NGINX reverse proxy servers configuration
