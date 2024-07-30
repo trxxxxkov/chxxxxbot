@@ -2,7 +2,7 @@
 
 import asyncio
 
-from aiogram.types import Message
+from aiogram.types import Message, LinkPreviewOptions
 from aiogram.enums import ChatAction
 from aiogram.exceptions import TelegramBadRequest
 
@@ -88,7 +88,10 @@ async def generate_completion(message: Message):
                     # increases to the one that will not result in temporary block.
                     msg_increment = min(MAX_INCREMENT, MIN_INCREMENT + len(par) / 10)
                     if last_msg is None:
-                        last_msg = await message.answer(format_tg_msg(par))
+                        last_msg = await message.answer(
+                            format_tg_msg(par),
+                            link_preview_options=LinkPreviewOptions(is_disabled=True),
+                        )
                     else:
                         last_msg = await last_msg.edit_text(format_tg_msg(par))
                 # The completion was cut into pieces.
@@ -101,7 +104,10 @@ async def generate_completion(message: Message):
                         )
                     par = tail
                     delta = 0
-                    last_msg = await message.answer(format_tg_msg(par))
+                    last_msg = await message.answer(
+                        format_tg_msg(par),
+                        link_preview_options=LinkPreviewOptions(is_disabled=True),
+                    )
             except TelegramBadRequest as e:
                 # Sometimes Telegram seems to have problems even with not that
                 # frequent updates. The error should not bother the user though.
@@ -114,7 +120,11 @@ async def generate_completion(message: Message):
             if latex_kbd is not None:
                 last_msg = await last_msg.edit_reply_markup(reply_markup=latex_kbd)
         else:
-            last_msg = await message.answer(format_tg_msg(par), reply_markup=latex_kbd)
+            last_msg = await message.answer(
+                format_tg_msg(par),
+                reply_markup=latex_kbd,
+                link_preview_options=LinkPreviewOptions(is_disabled=True),
+            )
     except TelegramBadRequest as e:
         if "is not modified" in e.message:
             pass

@@ -252,7 +252,7 @@ async def refund_handler(message: Message, command) -> None:
 
 @rt.message(Command("help"))
 async def help_handler(message: Message) -> None:
-    """Show tutorial's start page with [outdated] information about making prompt.
+    """Show tutorial start page with information about making prompt.
 
     The message contain text and short video that provides example about how to
     make requests to GPT-4o and buttons to the default /balance message, and the

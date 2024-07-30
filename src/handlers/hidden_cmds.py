@@ -16,7 +16,7 @@ from src.utils.globals import bot
 from src.templates.scripted_dialogues import dialogues
 from src.templates.bot_menu import bot_menu
 from src.templates.keyboards.inline_kbd import inline_kbd
-from src.handlers.public_cmds import balance_handler
+from src.handlers.public_cmds import balance_handler, help_handler
 from src.utils.formatting import format_tg_msg
 from src.utils.validations import add_user, language, tutorial_videos2ids
 
@@ -33,7 +33,7 @@ async def start_handler(message: Message) -> None:
     During user's initialization the following happens:
      - User's system language is determined and the corresponding Bot Menu commands
      are chosen;
-     - Greeting message containing information about welcome gift is shown;
+     - /help message is shown;
      - User is added to the 'users' table in the database;
      - Videos used in /help messages are sent to the bot owner and their file_id's
      are written into /src/templates/tutorial/videos.py dictionary.
@@ -47,20 +47,9 @@ async def start_handler(message: Message) -> None:
             for key, value in bot_menu.items()
         ]
     )
-    kbd = inline_kbd(
-        {"back to help": "send help", "to tokens": "sep tokens"}, language(message)
-    )
-    # Greeting message
-    await message.answer(
-        dialogues["doc"]["start"][language(message)].format(
-            format_tg_msg(message.from_user.first_name)
-        ),
-        link_preview_options=LinkPreviewOptions(is_disabled=True),
-        reply_markup=kbd,
-    )
+    await help_handler(message)
     # If user not yet in the database, which means he never used /start command,
-    # which is required to start a bot in Telegram, add user to the database with
-    # initial balance $0.015 = 1000 output tokens of GPT-4o.
+    # add the user to the database with an initial balance of $0.015
     await add_user(message)
     # If tutorial videos were never sended, send them and save their file_ids.
     if src.templates.tutorial.videos.videos is None:
