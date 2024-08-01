@@ -1,5 +1,5 @@
 # [Telegram bot called Sebastian](https://t.me/chxxxxbot), a chatbot whose main priority is user convenience.
-
+[![Docker Image CI](https://github.com/trxxxxkov/chxxxxbot/actions/workflows/docker-image.yml/badge.svg)](https://github.com/trxxxxkov/chxxxxbot/actions/workflows/docker-image.yml)
 ## Table of Contents
 1. [Overview](#overview)
 2. [Motivation](#motivation)
