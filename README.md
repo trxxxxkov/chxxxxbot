@@ -141,7 +141,7 @@ docker compose up
 ## Contributions
 
 The project needs help not only with improvements and additions to the codebase but also with ideas! The main goal of the project can only be achieved by working through numerous details that are hard to foresee in advance, but when encountered, make you think, "Oh! This is so natural and convenient!"
-##### So, if you have any suggestions that you would like to see implemented in this project, please feel free to either write in the [Issues section](https://github.com/trxxxxkov/chxxxxbot/issues) or contact the project author through [Telegram](https://t.me/trxxxxkov) or [email](mailto:trxxxxkov@gmail.com).
+##### If you have any suggestions that you would like to see implemented in this project, you can either write in the [Issues section](https://github.com/trxxxxkov/chxxxxbot/issues) or contact the project author through [Telegram](https://t.me/trxxxxkov) or [email](mailto:trxxxxkov@gmail.com).
 
 ## FAQ
 
