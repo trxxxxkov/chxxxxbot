@@ -1,7 +1,6 @@
 secrets
 .dockerignore
 .env
-.gitattributes
 .gitignore
 .venv
 compose.yaml
