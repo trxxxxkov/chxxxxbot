@@ -26,7 +26,7 @@ from src.utils.globals import (
 async def add_user(message: Message) -> None:
     """Add user to the database.
 
-    Add the user with initial balance of 0.015 USD ~ 100 tokens as a welcome gift.
+    Add the user with initial balance of 0.06 USD ~ 4000 tokens as a welcome gift.
     If the user is already added, nothing happens."""
     bot_users = await db_execute("SELECT id FROM users;")
     if not isinstance(bot_users, list):
@@ -44,7 +44,7 @@ async def add_user(message: Message) -> None:
                     message.from_user.last_name,
                     message.from_user.username,
                     language(message),
-                    0.015,
+                    0.06,
                 ],
                 [message.from_user.id],
             ],
