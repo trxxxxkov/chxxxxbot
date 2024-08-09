@@ -51,9 +51,9 @@ DSN = f"host={DATABASE_HOST} \
 # Time in seconds which user's dialogs with GPT-4 are stored.
 GPT_MEMORY_SEC = 7200
 # Price in USD for an input token for GPT-4o
-GPT4O_IN_USD = 0.005 / 1000
+GPT4O_IN_USD = 0.0025 / 1000
 # Price in USD for an output token for GPT-4o
-GPT4O_OUT_USD = 0.015 / 1000
+GPT4O_OUT_USD = 0.01 / 1000
 # Price in USD for an image recognition for GPT
 VISION_USD = 0.004
 # Price in USD for an image generation for DALLE-3

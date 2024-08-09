@@ -26,7 +26,7 @@ from src.utils.globals import (
 async def add_user(message: Message) -> None:
     """Add user to the database.
 
-    Add the user with initial balance of 0.06 USD ~ 4000 tokens as a welcome gift.
+    Add the user with initial balance of 0.04 USD ~ 4000 tokens as a welcome gift.
     If the user is already added, nothing happens."""
     bot_users = await db_execute("SELECT id FROM users;")
     if not isinstance(bot_users, list):
@@ -35,7 +35,7 @@ async def add_user(message: Message) -> None:
         await db_execute(
             [
                 "INSERT INTO users (id, first_name, last_name, username, language, balance) VALUES (%s, %s, %s, %s, %s, %s)",
-                "INSERT INTO models (user_id) VALUES (%s)",
+                "INSERT INTO models (user_id, model_name) VALUES (%s, %s)",
             ],
             [
                 [
@@ -44,9 +44,9 @@ async def add_user(message: Message) -> None:
                     message.from_user.last_name,
                     message.from_user.username,
                     language(message),
-                    0.06,
+                    0.04,
                 ],
-                [message.from_user.id],
+                [message.from_user.id, "gpt-4o-2024-08-06"],
             ],
         )
 
