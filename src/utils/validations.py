@@ -63,7 +63,7 @@ def language(message: Message) -> str:
 
 def is_implemented(message: Message) -> bool:
     """Filter updates which are not currently handled."""
-    if message.pinned_message is not None:
+    if message.pinned_message is not None or message.refunded_payment is not None:
         return False
     else:
         return True
