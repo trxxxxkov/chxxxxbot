@@ -93,7 +93,7 @@ async def balance_callback(callback: types.CallbackQuery):
             callback_data="help-0",
         ),
         types.InlineKeyboardButton(
-            text=dialogues["bttn"]["to tokens"][language(callback)] + " »",
+            text=dialogues["bttn"]["to tokens"][language(callback)],
             callback_data="tokens",
         ),
     )

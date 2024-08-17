@@ -136,7 +136,7 @@ async def balance_handler(message: Message) -> None:
             callback_data="help-0",
         ),
         types.InlineKeyboardButton(
-            text=dialogues["bttn"]["to tokens"][language(message)] + " »",
+            text=dialogues["bttn"]["to tokens"][language(message)],
             callback_data="tokens",
         ),
     )

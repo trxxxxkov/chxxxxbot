@@ -101,8 +101,8 @@ dialogues = {
             "ru": "_Возврат за покупку с указанным идентификатором уже был выполнен ранее. Звёзды успешно зачислены на ваш счёт!\n\n *Если вы полагаете, что произошла ошибка, пожалуйста, свяжитесь с @trxxxxkov.*_",
         },
         "invalid purchase id": {
-            "en": "_The provided purchase ID is invalid.\n\n *If you believe an error has occurred, plase contact @trxxxxkov.*_",
-            "ru": "_Возврат за покупку с указанным идентификатором невозможен.\n\n *Если вы полагаете, что произошла ошибка, пожалуйста, свяжитесь с @trxxxxkov.*_",
+            "en": "_Refund for the purchase with the specified ID in unavailable.\n\n If you have used some of the purchased tokens, you can purchase the missing part and proceed with the refund.\n\n *If you believe an error has occurred, please contact @trxxxxkov.*_",
+            "ru": "_Возврат за покупку с указанным идентификатором недоступен.\n\n Если вы израсходовали часть купленных токенов, можете докупить недостающую часть и осуществить возврат.\n\n *Если вы полагаете, что произошла ошибка, пожалуйста, свяжитесь с @trxxxxkov.*_",
         },
         "refund expired": {
             "en": "_The refund period for the purchase with the specified identifier has expired.\n\n *If you believe an error has occurred, plase contact @trxxxxkov.*_",
@@ -129,7 +129,7 @@ dialogues = {
             "ru": "К ценам и балансу",
         },
         "back to help": {"en": "/help", "ru": "/help"},
-        "pay": {"en": "Pay ⭐{} to Sebastian", "ru": "Заплатить Себастиану ⭐{}"},
+        "pay": {"en": "Pay ⭐{}", "ru": "Заплатить ⭐{}"},
         "try payment": {"en": "Pay ⭐1", "ru": "Заплатить ⭐1"},
         "send as file": {
             "en": "Send as a text file",
