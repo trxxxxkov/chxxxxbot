@@ -138,6 +138,7 @@ def format_markdown(text: str) -> str:
      - mention of a user;
      - expandable block of quotation;
     """
+    ALIGNED_CODE_PATTERN = re.compile(r"\n\S+")
     # Split text into code blocks and non-code blocks and format code blocks.
     t_split = CODE_PATTERN.split(text)
     c_entities = CODE_PATTERN.findall(text)
@@ -145,6 +146,8 @@ def format_markdown(text: str) -> str:
     for idx, c in enumerate(c_entities):
         # Add code block dilimiter for a code block entity
         c = f"```{escaped(c[3:-3], pattern=ESCAPED_IN_C_DEFAULT)}```"
+        while "\n" in c and ALIGNED_CODE_PATTERN.search(c) is None:
+            c = re.sub(r"\n\s", "\n", c)
         c_entities[idx] = c
         # Join formatted code blocks back with the untouched text blocks.
         text += c_entities[idx] + t_split[idx + 1]
@@ -156,6 +159,8 @@ def format_markdown(text: str) -> str:
     text = t_split[0]
     for idx, p in enumerate(p_entities):
         p = f"`{escaped(p[1:-1], pattern=ESCAPED_IN_C_DEFAULT)}`"
+        while "\n" in p and ALIGNED_CODE_PATTERN.search(p) is None:
+            p = re.sub(r"\n\s", "\n", p)
         p_entities[idx] = p
         text += p_entities[idx] + t_split[idx + 1]
 
