@@ -3,8 +3,8 @@
 dialogues = {
     "doc": {
         "start": {
-            "en": "Pleased to meet you\\, {}\\! My name is *Sebastian*\\. I am an [open\\-source](https://github.com/trxxxxkov/chxxxxbot) bot powered by the most advanced *AI* models\\, which means you can explore my source code or participate in my development\\.\n\n *I ask you to review my capabilities\\. To do this\\, your balance has just been funded with __4000__ tokens\\. Now type /help to learn about the basic features and available commands\\!*",
-            "ru": "Здравствуйте, {}\\! Меня зовут *Себастиан*\\. Я \\- [open\\-source](https://github.com/trxxxxkov/chxxxxbot) бот под управлением передовых моделей *AI*\\. Это означает\\, что вы можете изучить мой исходный код или принять участие в моей разработке\\.\n\n *Предлагаю вам оценить мои способности\\. Для этого ваш баланс только что был пополнен на __4000__ токенов\\. Теперь введите /help\\, чтобы узнать о базовых возможностях и доступных командах\\!*",
+            "en": "Pleased to meet you, {}! I will use *GPT-4o* to respond to your messages. Please, ask me a question",
+            "ru": "Здравствуйте, {}! Я буду использовать *GPT-4o*, чтобы отвечать на ваши сообщения. Попробуйте задать мне вопрос",
         },
         "help": [
             {

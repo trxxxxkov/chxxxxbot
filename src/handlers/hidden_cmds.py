@@ -16,8 +16,9 @@ from src.utils.globals import bot
 from src.templates.scripted_dialogues import dialogues
 from src.templates.bot_menu import bot_menu
 from src.templates.keyboards.inline_kbd import inline_kbd
+from src.templates.keyboards.reply_kbd import help_kbd
 from src.handlers.public_cmds import balance_handler, help_handler
-from src.utils.formatting import format_tg_msg
+from src.utils.formatting import format_tg_msg, send_template_answer
 from src.utils.validations import add_user, language, tutorial_videos2ids
 
 rt = Router()
@@ -47,7 +48,7 @@ async def start_handler(message: Message) -> None:
             for key, value in bot_menu.items()
         ]
     )
-    await help_handler(message)
+    await send_template_answer(message, "doc", "start", message.from_user.first_name, reply_markup=help_kbd)
     # If user not yet in the database, which means he never used /start command,
     # add the user to the database with an initial balance of $0.015
     await add_user(message)
