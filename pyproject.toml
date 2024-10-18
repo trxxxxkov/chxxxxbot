@@ -4,11 +4,7 @@ description = "Telegram Bot powered by OpenAI's models"
 version = "2024.6.28"
 dependencies = [
   "aiogram",
-  "openai",
-  "cairosvg",
-  "tiktoken",
-  "psycopg",
-  "debugpy",
+  "openai"
 ]
 requires-python = ">= 3.9"
 authors = [
@@ -18,7 +14,7 @@ maintainers = [
   {name = "Daniil Tretyakov", email = "trxxxxkov@gmail.com"},
 ]
 readme = "README.md"
-keywords = ["python", "aiogram", "docker", "nginx", "postgresql", "telegram-api", "openai-api"]
+keywords = ["python", "aiogram", "telegram-api", "openai-api"]
 classifiers = [
   "Development Status :: 4 - Beta",
   "Intended Audience :: Developers",
