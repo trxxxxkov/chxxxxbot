@@ -1,22 +1,30 @@
-import asyncio
+"""Bot entrypoint"""
+
 import logging
 import sys
-from os import getenv
-from dotenv import load_dotenv
-from openai import OpenAI
+import os
 
+import asyncio
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from dotenv import load_dotenv
+
 
 load_dotenv()
-BOT_TOKEN = getenv("TG_BOT_TOKEN")
-client = OpenAI(api_key=getenv("OPENAI_API_KEY"))
 
 dp = Dispatcher()
 
 async def main() -> None:
-    bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+    """Initialize Bot instance and start polling.
+
+    Initialize Bot instance with default bot properties which will be passed to
+    all API calls and run event dispatching.
+    """
+    tg_bot_token = os.getenv("TG_BOT_TOKEN")
+    bot = Bot(
+        token=tg_bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML)
+    )
     await dp.start_polling(bot)
 
 
