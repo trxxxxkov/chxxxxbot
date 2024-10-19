@@ -1,10 +1,11 @@
 [project]
 name = "chxxxxbot"
 description = "Telegram Bot powered by OpenAI's models"
-version = "2024.6.28"
+version = "2.0.0"
 dependencies = [
   "aiogram",
-  "openai"
+  "openai",
+  "python-dotenv"
 ]
 requires-python = ">= 3.9"
 authors = [
