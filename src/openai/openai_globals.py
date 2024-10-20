@@ -26,3 +26,6 @@ default_assistants = [
         "tools": [{"type": "file_search"}],
     },
 ]
+
+MIN_CHARS_TO_UPDATE = 15
+MAX_CHARS_TO_UPDATE = 150
