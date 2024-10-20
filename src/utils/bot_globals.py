@@ -13,3 +13,5 @@ bot = aiogram.Bot(
     token=os.getenv("TG_BOT_TOKEN"),
     default=DefaultBotProperties(parse_mode=ParseMode.HTML),
 )
+
+bot_users = {}
