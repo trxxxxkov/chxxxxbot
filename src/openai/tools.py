@@ -1,7 +1,5 @@
 """OpenAI assistant tools wrappers and chat completions."""
 
-import asyncio
-
 import aiogram
 import openai
 
@@ -50,17 +48,10 @@ class StreamEventHandler(openai.AsyncAssistantEventHandler):
 
 
 async def stream_events(message: aiogram.types.Message, user: dict) -> None:
-    """Wrapper over OpenAI's async streaming completion API call.
-
-    Collect completion data and send it to user by editing the response multiple
-    times after enough symbols is collected. If the resulted message is longer than
-    4096 symbols (Telegram's restriction), split it into pieces and suggest to send
-    the whole text at once as a txt file.
-    """
+    """Wrapper over OpenAI's async streaming completion API call."""
     await bot_globals.bot.send_chat_action(
         message.chat.id, aiogram.enums.ChatAction.TYPING
     )
-    await asyncio.sleep(0.15)
     async with openai_globals.client.beta.threads.runs.stream(
         thread_id=user["thread_id"],
         assistant_id=user["assistant_id"],

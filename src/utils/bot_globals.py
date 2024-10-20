@@ -14,4 +14,8 @@ bot = aiogram.Bot(
     default=DefaultBotProperties(parse_mode=ParseMode.HTML),
 )
 
+PRIVILEGED_USERS_ID = tuple(
+    int(id) for id in os.getenv("PRIVILEGED_USERS_ID").split(",") if id
+)
+
 bot_users = {}

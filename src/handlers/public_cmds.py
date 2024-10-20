@@ -7,7 +7,7 @@ to avoid users get distracted from the bot's core functionality.
 import aiogram
 
 from src.openai import openai_globals, tools
-from src.utils import bot_globals
+from src.utils import bot_globals, user_management
 
 
 rt = aiogram.Router()
@@ -15,7 +15,7 @@ rt = aiogram.Router()
 
 @rt.message(aiogram.filters.Command("forget"))
 async def forget_handler(message: aiogram.types.Message) -> None:
-    """Delete current user's thread and crate new one instead."""
+    """Delete current user's thread and crate a new one instead."""
     user = bot_globals.bot_users[message.from_user.id]
     await openai_globals.client.beta.threads.delete(user["thread_id"])
     empty_thread = await openai_globals.client.beta.threads.create()
@@ -25,6 +25,8 @@ async def forget_handler(message: aiogram.types.Message) -> None:
 @rt.message()
 async def default_handler(message: aiogram.types.Message) -> None:
     """Process all unhandled updates."""
+    if not user_management.is_allowed(message):
+        return
     user = bot_globals.bot_users[message.from_user.id]
     await openai_globals.client.beta.threads.messages.create(
         thread_id=user["thread_id"],
@@ -32,8 +34,3 @@ async def default_handler(message: aiogram.types.Message) -> None:
         content=message.text,
     )
     await tools.stream_events(message, user)
-    # stream = await openai_globals.client.beta.threads.runs.create(
-    #     thread_id=user["thread_id"], assistant_id=user["assistant_id"], stream=True
-    # )
-    # async for event in stream:
-    #     print(event)

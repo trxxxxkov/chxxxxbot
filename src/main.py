@@ -12,9 +12,9 @@ from src.handlers import callbacks, hidden_cmds, public_cmds
 
 
 async def main() -> None:
-    """Initialize Bot instance and start polling.
+    """Initialize a Bot instance and start polling.
 
-    Initialize Bot instance with default bot properties which will be passed to
+    Initialize a Bot instance with default bot properties which will be passed to
     all API calls and run event dispatching.
     """
     dp = aiogram.Dispatcher()

@@ -16,7 +16,7 @@ async def initialize_assistants() -> None:
 async def get_assistant(
     *, name: str | None = None, identifier: str | None = None
 ) -> object | None:
-    """Get assistant with corresponding name or id from the list of all assistants."""
+    """Get an assistant with corresponding a name or an id from the list of all assistants."""
     available_assistants = await openai_globals.client.beta.assistants.list()
     for assistant in available_assistants.data:
         if assistant.name == name or assistant.id == identifier:

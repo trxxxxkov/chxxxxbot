@@ -1,5 +1,7 @@
 """Tools for user's accounts and data management."""
 
+import aiogram
+
 from src.utils import bot_globals
 from src.openai import openai_globals, assistants
 
@@ -14,3 +16,8 @@ async def user_initialization(new_user_id: int, new_user_lang: str) -> None:
         "language": new_user_lang,
         "balance_usd": 0.05,
     }
+
+
+def is_allowed(message: aiogram.types.Message) -> bool:
+    """Check if the user has rights to perform an operation."""
+    return message.from_user.id in bot_globals.PRIVILEGED_USERS_ID
