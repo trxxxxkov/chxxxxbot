@@ -17,6 +17,4 @@ async def start_handler(message: aiogram.types.Message) -> None:
     new_user_id = message.from_user.id
     new_user_lang = message.from_user.language_code
     if new_user_id not in bot_globals.bot_users:
-        await user_management.user_initialization(new_user_id, new_user_lang)
-    else:
-        pass  # TODO: Add welcome message
+        await user_management.initialize_user(new_user_id, new_user_lang)

@@ -8,8 +8,10 @@ import openai
 
 dotenv.load_dotenv()
 
+# Main OpenAI's API object.
 client = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+# List of assistants that are guaranteed to be present after bot launch.
 default_assistants = [
     {
         "name": "Default gpt-4o",
@@ -27,5 +29,7 @@ default_assistants = [
     },
 ]
 
+# Minimal number of characters needed to update message when streaming chat completion.
 MIN_CHARS_TO_UPDATE = 15
+# Maximum number of characters needed to update message when streaming chat completion.
 MAX_CHARS_TO_UPDATE = 150
