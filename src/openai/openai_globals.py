@@ -16,16 +16,19 @@ default_assistants = [
     {
         "name": "Default gpt-4o",
         "model": "gpt-4o",
-        "instructions": "You are a personal assistant. Strive to answer questions briefly, in a sentence or two.",
+        "instructions": "You are a personal assistant with an access to files provided by the user. Retrieve information from files and always answer in a sentence or two if possible.",
         "temperature": 0.4,
-        "tools": [{"type": "file_search"}, {"type": "code_interpreter"}],
+        "tools": [
+            {"type": "file_search", "file_search": {"max_num_results": 50}},
+            {"type": "code_interpreter"},
+        ],
     },
     {
         "name": "Default gpt-4o-mini",
         "model": "gpt-4o-mini",
-        "instructions": "You are a personal assistant. Strive to answer questions briefly, in a sentence or two.",
+        "instructions": "You are a personal assistant with an access to files provided by the user. Retrieve information from files and always answer in a sentence or two if possible.",
         "temperature": 0.4,
-        "tools": [{"type": "file_search"}],
+        "tools": [{"type": "file_search", "file_search": {"max_num_results": 50}}],
     },
 ]
 

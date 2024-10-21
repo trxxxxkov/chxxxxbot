@@ -3,7 +3,7 @@
 import aiogram
 import openai
 
-from src.utils import bot_globals, output_formatting
+from src.utils import bot_globals, text_formatting
 from src.openai import openai_globals
 
 
@@ -22,33 +22,18 @@ class StreamEventHandler(openai.AsyncAssistantEventHandler):
         """Send a text placeholder to a user until a response will be generated."""
         self.message = await self.message.answer("...")
 
-    async def on_text_delta(self, delta, snapshot):
+    async def on_text_delta(self, delta, snapshot) -> None:
         """Edit message each time when enough difference is accumulated."""
         self.response += delta.value
         self.delta_chars_num += len(delta.value)
         if self.delta_chars_num > self.chars_to_update:
             self.delta_chars_num = 0
-            self.chars_to_update = output_formatting.stream_increment(
-                len(self.response)
-            )
+            self.chars_to_update = text_formatting.stream_increment(len(self.response))
             self.message = await self.message.edit_text(self.response + "...")
 
-    async def on_text_done(self, text):
+    async def on_text_done(self, text) -> None:
         """After generation remove decorative '...' at the end of the message."""
         await self.message.edit_text(text.value)
-
-    async def on_tool_call_created(self, tool_call):
-        print(f"\nassistant > {tool_call.type}\n", flush=True)
-
-    async def on_tool_call_delta(self, delta, snapshot):
-        if delta.type == "code_interpreter":
-            if delta.code_interpreter.input:
-                print(delta.code_interpreter.input, end="", flush=True)
-            if delta.code_interpreter.outputs:
-                print("\n\noutput >", flush=True)
-                for output in delta.code_interpreter.outputs:
-                    if output.type == "logs":
-                        print(f"\n{output.logs}", flush=True)
 
 
 async def stream_events(message: aiogram.types.Message, user: dict) -> None:
@@ -62,3 +47,14 @@ async def stream_events(message: aiogram.types.Message, user: dict) -> None:
         event_handler=StreamEventHandler(message),
     ) as stream:
         await stream.until_done()
+
+
+async def upload_file(file: object, purpose: str) -> str:
+    """Upload the user provided file to OpenAI vector store."""
+    filepath = f"src/downloads/{file.file_name}"
+    await bot_globals.bot.download(file, filepath)
+    uploaded_file = await openai_globals.client.files.create(
+        file=open(filepath, "rb"),
+        purpose=purpose,
+    )
+    return uploaded_file.id
