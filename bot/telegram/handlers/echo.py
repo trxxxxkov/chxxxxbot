@@ -5,9 +5,10 @@ sent by the user. It serves as a fallback handler for messages that don't
 match any specific command handlers.
 """
 
-from aiogram import Router, types, F
-
-from utils.logging import get_logger
+from aiogram import F
+from aiogram import Router
+from aiogram import types
+from utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
 router = Router(name="echo")

@@ -7,13 +7,11 @@ for each update handler.
 """
 
 import time
-from typing import Callable, Dict, Any, Awaitable
+from typing import Any, Awaitable, Callable, Dict
 
 from aiogram import BaseMiddleware
 from aiogram.types import Update
-import structlog
-
-from utils.logging import get_logger
+from utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
 
@@ -27,12 +25,9 @@ class LoggingMiddleware(BaseMiddleware):
     errors that occur during processing.
     """
 
-    async def __call__(
-        self,
-        handler: Callable[[Update, Dict[str, Any]], Awaitable[Any]],
-        event: Update,
-        data: Dict[str, Any]
-    ) -> Any:
+    async def __call__(self, handler: Callable[[Update, Dict[str, Any]],
+                                               Awaitable[Any]], event: Update,
+                       data: Dict[str, Any]) -> Any:
         """Processes update with logging and execution time measurement.
 
         Extracts context from the update, binds it to the logger, logs the
@@ -71,10 +66,9 @@ class LoggingMiddleware(BaseMiddleware):
         )
 
         # Log incoming update
-        log.info(
-            "incoming_update",
-            update_type=event.event_type if hasattr(event, 'event_type') else "unknown"
-        )
+        log.info("incoming_update",
+                 update_type=event.event_type
+                 if hasattr(event, 'event_type') else "unknown")
 
         # Measure execution time
         start_time = time.time()
@@ -83,21 +77,17 @@ class LoggingMiddleware(BaseMiddleware):
             result = await handler(event, data)
             execution_time = time.time() - start_time
 
-            log.info(
-                "update_processed",
-                execution_time_ms=round(execution_time * 1000, 2)
-            )
+            log.info("update_processed",
+                     execution_time_ms=round(execution_time * 1000, 2))
 
             return result
 
         except Exception as e:
             execution_time = time.time() - start_time
 
-            log.error(
-                "update_error",
-                error=str(e),
-                error_type=type(e).__name__,
-                execution_time_ms=round(execution_time * 1000, 2),
-                exc_info=True
-            )
+            log.error("update_error",
+                      error=str(e),
+                      error_type=type(e).__name__,
+                      execution_time_ms=round(execution_time * 1000, 2),
+                      exc_info=True)
             raise

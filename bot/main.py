@@ -8,8 +8,10 @@ and starts polling for updates from Telegram.
 import asyncio
 from pathlib import Path
 
-from telegram.loader import create_bot, create_dispatcher
-from utils.logging import setup_logging, get_logger
+from telegram.loader import create_bot
+from telegram.loader import create_dispatcher
+from utils.structured_logging import get_logger
+from utils.structured_logging import setup_logging
 
 
 def read_secret(secret_name: str) -> str:
@@ -25,7 +27,7 @@ def read_secret(secret_name: str) -> str:
         FileNotFoundError: If secret file doesn't exist.
     """
     secret_path = Path(f"/run/secrets/{secret_name}")
-    return secret_path.read_text().strip()
+    return secret_path.read_text(encoding='utf-8').strip()
 
 
 async def main() -> None:

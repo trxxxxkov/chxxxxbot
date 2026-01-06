@@ -4,10 +4,10 @@ This module contains handlers for basic bot commands that provide
 information about bot functionality and available commands.
 """
 
-from aiogram import Router, types
+from aiogram import Router
+from aiogram import types
 from aiogram.filters import Command
-
-from utils.logging import get_logger
+from utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
 router = Router(name="start")
@@ -29,13 +29,11 @@ async def start_handler(message: types.Message) -> None:
         username=message.from_user.username if message.from_user else None,
     )
 
-    await message.answer(
-        "👋 Welcome! I'm an LLM bot.\n\n"
-        "Available commands:\n"
-        "/start - Show this message\n"
-        "/help - Get help\n\n"
-        "Send me any message and I'll echo it back!"
-    )
+    await message.answer("👋 Welcome! I'm an LLM bot.\n\n"
+                         "Available commands:\n"
+                         "/start - Show this message\n"
+                         "/help - Get help\n\n"
+                         "Send me any message and I'll echo it back!")
 
 
 @router.message(Command("help"))
@@ -62,5 +60,4 @@ async def help_handler(message: types.Message) -> None:
         "Just send me any text message and I'll echo it back.\n\n"
         "This is a minimal bot implementation. "
         "LLM integration coming soon!",
-        parse_mode="Markdown"
-    )
+        parse_mode="Markdown")

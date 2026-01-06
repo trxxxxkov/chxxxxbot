@@ -5,13 +5,14 @@ Bot and Dispatcher instances. It registers all handlers, middlewares,
 and routers in the correct order.
 """
 
-from aiogram import Bot, Dispatcher
+from aiogram import Bot
+from aiogram import Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-
-from telegram.handlers import start, echo
-from telegram.middlewares.logging import LoggingMiddleware
-from utils.logging import get_logger
+from telegram.handlers import echo
+from telegram.handlers import start
+from telegram.middlewares.logging_middleware import LoggingMiddleware
+from utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
 
@@ -25,12 +26,8 @@ def create_bot(token: str) -> Bot:
     Returns:
         Configured Bot instance with default properties.
     """
-    bot = Bot(
-        token=token,
-        default=DefaultBotProperties(
-            parse_mode=ParseMode.HTML
-        )
-    )
+    bot = Bot(token=token,
+              default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     logger.info("bot_created")
     return bot
 

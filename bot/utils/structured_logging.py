@@ -39,8 +39,7 @@ def setup_logging(level: str = "INFO") -> None:
             structlog.processors.JSONRenderer()
         ],
         wrapper_class=structlog.make_filtering_bound_logger(
-            getattr(logging, level.upper())
-        ),
+            getattr(logging, level.upper())),
         context_class=dict,
         logger_factory=structlog.PrintLoggerFactory(),
         cache_logger_on_first_use=True,

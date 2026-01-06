@@ -1,0 +1,57 @@
+# Pre-commit hooks for code quality and Google Python Style Guide
+repos:
+  # Code formatting with yapf (Google style)
+  - repo: https://github.com/google/yapf
+    rev: v0.40.2
+    hooks:
+      - id: yapf
+        args: [--style=google, --in-place]
+        files: \.py$
+
+  # Import sorting
+  - repo: https://github.com/PyCQA/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        args: [--profile=google]
+
+  # Linting with pylint
+  - repo: https://github.com/PyCQA/pylint
+    rev: v3.0.3
+    hooks:
+      - id: pylint
+        args:
+          - --max-line-length=100
+          - --good-names=i,j,k,ex,_,id,db,logger,log
+          - --disable=C0111,R0903,R0913,W0212,E0401,E1101
+        files: \.py$
+
+  # Docstring validation
+  - repo: https://github.com/PyCQA/pydocstyle
+    rev: 6.3.0
+    hooks:
+      - id: pydocstyle
+        args: [--convention=google]
+        files: \.py$
+
+  # Type checking with mypy
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.8.0
+    hooks:
+      - id: mypy
+        args: [--ignore-missing-imports, --no-strict-optional, --explicit-package-bases, --namespace-packages]
+        additional_dependencies:
+          - types-requests
+        files: \.py$
+
+  # General file checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+        args: [--maxkb=1000]
+      - id: check-merge-conflict
+      - id: debug-statements
