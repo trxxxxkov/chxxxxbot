@@ -1,0 +1,14 @@
+services:
+  bot:
+    build: ./bot
+    restart: unless-stopped
+    secrets:
+      - telegram_bot_token
+    volumes:
+      - ./bot:/app
+    environment:
+      - PYTHONUNBUFFERED=1
+
+secrets:
+  telegram_bot_token:
+    file: ./secrets/telegram_bot_token.txt
