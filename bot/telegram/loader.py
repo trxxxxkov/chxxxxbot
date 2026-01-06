@@ -1,4 +1,9 @@
-"""Bot and Dispatcher initialization"""
+"""Bot and Dispatcher initialization.
+
+This module provides factory functions for creating and configuring
+Bot and Dispatcher instances. It registers all handlers, middlewares,
+and routers in the correct order.
+"""
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
@@ -12,13 +17,13 @@ logger = get_logger(__name__)
 
 
 def create_bot(token: str) -> Bot:
-    """Create and configure Bot instance
+    """Creates and configures Bot instance.
 
     Args:
-        token: Telegram Bot API token
+        token: Telegram Bot API token from BotFather.
 
     Returns:
-        Configured Bot instance
+        Configured Bot instance with default properties.
     """
     bot = Bot(
         token=token,
@@ -31,19 +36,23 @@ def create_bot(token: str) -> Bot:
 
 
 def create_dispatcher() -> Dispatcher:
-    """Create and configure Dispatcher
+    """Creates and configures Dispatcher.
+
+    Registers all middlewares and routers in the correct order.
+    Middleware order: first registered is executed first.
+    Router order: first registered handler that matches wins.
 
     Returns:
-        Configured Dispatcher with routers and middlewares
+        Configured Dispatcher with all routers and middlewares.
     """
-    dp = Dispatcher()
+    dispatcher = Dispatcher()
 
     # Register middleware (order matters - first registered, first executed)
-    dp.update.middleware(LoggingMiddleware())
+    dispatcher.update.middleware(LoggingMiddleware())
 
     # Register routers (order matters - first match wins)
-    dp.include_router(start.router)
-    dp.include_router(echo.router)  # Catch-all should be last
+    dispatcher.include_router(start.router)
+    dispatcher.include_router(echo.router)  # Catch-all should be last
 
     logger.info("dispatcher_created", routers=["start", "echo"])
-    return dp
+    return dispatcher

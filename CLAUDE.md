@@ -158,6 +158,20 @@ All code is written with logging in mind from the first line.
 
 Common interface for all providers (Claude, OpenAI, Google) to easily add new ones.
 
+### Code Style
+
+All Python code must follow **Google Python Style Guide**.
+
+**Key requirements:**
+- Docstrings in Google format (Args:, Returns:, Raises:, Examples:)
+- Type hints for function parameters and returns
+- 4 spaces for indentation
+- Maximum line length: 80 characters (docstrings, comments), 100 characters (code)
+- Imports organized: standard library, third-party, local
+- Descriptive variable names (avoid abbreviations)
+
+**Reference:** https://google.github.io/styleguide/pyguide.html
+
 ### Documentation-first
 
 Before writing code — planning and documentation.

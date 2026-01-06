@@ -1,4 +1,9 @@
-"""Application configuration and constants"""
+"""Application configuration and constants.
+
+This module contains all configuration constants used throughout the bot
+application. No secrets should be stored here - they are read from Docker
+secrets in main.py.
+"""
 
 # Timeouts
 REQUEST_TIMEOUT = 30  # seconds

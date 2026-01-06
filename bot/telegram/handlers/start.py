@@ -1,4 +1,8 @@
-"""Handlers for /start and /help commands"""
+"""Handlers for /start and /help commands.
+
+This module contains handlers for basic bot commands that provide
+information about bot functionality and available commands.
+"""
 
 from aiogram import Router, types
 from aiogram.filters import Command
@@ -11,7 +15,14 @@ router = Router(name="start")
 
 @router.message(Command("start"))
 async def start_handler(message: types.Message) -> None:
-    """Handle /start command"""
+    """Handles /start command.
+
+    Sends a welcome message to the user with basic information about
+    available bot commands and functionality.
+
+    Args:
+        message: Incoming Telegram message with /start command.
+    """
     logger.info(
         "start_command",
         user_id=message.from_user.id if message.from_user else None,
@@ -29,7 +40,14 @@ async def start_handler(message: types.Message) -> None:
 
 @router.message(Command("help"))
 async def help_handler(message: types.Message) -> None:
-    """Handle /help command"""
+    """Handles /help command.
+
+    Sends detailed help information about bot usage, available commands,
+    and features to the user.
+
+    Args:
+        message: Incoming Telegram message with /help command.
+    """
     logger.info(
         "help_command",
         user_id=message.from_user.id if message.from_user else None,

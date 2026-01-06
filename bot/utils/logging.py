@@ -1,15 +1,25 @@
-"""Structured logging configuration using structlog"""
+"""Structured logging configuration using structlog.
+
+This module provides structured logging setup for the bot application.
+All logs are formatted as JSON for easy parsing by log aggregation systems
+like Loki.
+"""
 
 import logging
 import sys
+
 import structlog
 
 
 def setup_logging(level: str = "INFO") -> None:
-    """Configure structlog for JSON logging
+    """Configures structlog for JSON logging.
+
+    Sets up both standard library logging and structlog with processors
+    for structured logging output in JSON format. Includes context
+    variables, timestamps, and exception information.
 
     Args:
-        level: Log level (DEBUG, INFO, WARNING, ERROR)
+        level: Log level (DEBUG, INFO, WARNING, ERROR). Defaults to INFO.
     """
     # Configure standard library logging
     logging.basicConfig(
@@ -38,12 +48,12 @@ def setup_logging(level: str = "INFO") -> None:
 
 
 def get_logger(name: str) -> structlog.BoundLogger:
-    """Get a configured logger instance
+    """Gets a configured logger instance.
 
     Args:
-        name: Logger name (usually __name__)
+        name: Logger name (usually __name__ of the calling module).
 
     Returns:
-        Configured structlog logger
+        Configured structlog logger with all processors applied.
     """
     return structlog.get_logger(name)
