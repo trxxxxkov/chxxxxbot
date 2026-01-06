@@ -28,7 +28,7 @@ chxxxxbot/
 │   │   ├── models/             # SQLAlchemy models
 │   │   └── repositories/       # CRUD operations
 │   ├── utils/                  # Helper utilities
-│   │   └── logging.py          # structlog configuration
+│   │   └── structured_logging.py  # structlog configuration
 │   ├── Dockerfile
 │   └── pyproject.toml
 │
@@ -172,6 +172,12 @@ All Python code must follow **Google Python Style Guide**.
 
 **Reference:** https://google.github.io/styleguide/pyguide.html
 
+**Automated enforcement:**
+- Pre-commit hooks configured in `.pre-commit-config.yaml`
+- Runs automatically on every commit
+- Tools: yapf (formatting), isort (imports), pylint (linting), pydocstyle (docstrings), mypy (types)
+- Install: `pipx install pre-commit && pre-commit install`
+
 ### Documentation-first
 
 Before writing code — planning and documentation.
@@ -196,4 +202,11 @@ Before writing code — planning and documentation.
 
 ## Current Status
 
-**Phase 1.1:** Bot structure — agreed, created
+**Phase 1.1 (Minimal Bot):** ✅ Complete
+- Bot structure created and running
+- Echo handler working
+- Structured logging with structlog
+- Pre-commit hooks for Google Code Style
+- Docker containerization working
+
+**Next:** Phase 1.2 (PostgreSQL integration)
