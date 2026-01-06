@@ -151,7 +151,14 @@ See [CLAUDE.md](CLAUDE.md) for full architecture documentation.
 
 ## Secrets
 
-Files in `secrets/` (not committed):
+Files in `secrets/` (empty templates in repo, fill with your values):
 - `bot_token.txt` — Telegram Bot API token
 - `anthropic_token.txt` — Claude API key
+- `openai_token.txt` — OpenAI API key
+- `google_token.txt` — Google API key
 - `db_password.txt` — PostgreSQL password
+
+After filling in secrets, run to prevent accidental commits:
+```bash
+git update-index --skip-worktree secrets/*
+```

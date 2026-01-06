@@ -1,5 +1,5 @@
-# Secrets
-secrets/
+# Secrets (content is local, empty templates in repo)
+# Use: git update-index --skip-worktree secrets/* after filling in
 
 # Environment
 .env
