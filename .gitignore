@@ -1,9 +1,21 @@
-.venv
-.vscode
-__pycache__
-secrets/*
-src/utils/analytics/errors.json
-src/utils/temp/images/*
-src/utils/temp/documents/*
-!src/utils/temp/images/.gitignore
-!src/utils/temp/documents/.gitignore
+# Secrets
+secrets/
+
+# Environment
+.env
+.env.*
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Temp files
+*.tmp
+*.log

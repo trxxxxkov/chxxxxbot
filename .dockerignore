@@ -1,9 +1,0 @@
-secrets
-.dockerignore
-.env
-.gitignore
-.venv
-compose.yaml
-Dockerfile
-nginx.conf.template
-pgdb_scheme.sql
