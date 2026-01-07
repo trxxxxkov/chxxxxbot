@@ -1,13 +1,16 @@
 """Bot entry point.
 
 This module serves as the application entry point. It reads secrets from
-Docker secrets, initializes logging, creates bot and dispatcher instances,
-and starts polling for updates from Telegram.
+Docker secrets, initializes logging and database, creates bot and dispatcher
+instances, and starts polling for updates from Telegram.
 """
 
 import asyncio
 from pathlib import Path
 
+from config import get_database_url
+from db.engine import dispose_db
+from db.engine import init_db
 from telegram.loader import create_bot
 from telegram.loader import create_dispatcher
 from utils.structured_logging import get_logger
@@ -33,8 +36,8 @@ def read_secret(secret_name: str) -> str:
 async def main() -> None:
     """Main bot function.
 
-    Initializes logging, reads secrets, creates bot and dispatcher,
-    and starts polling for Telegram updates.
+    Initializes logging, database, reads secrets, creates bot and dispatcher,
+    and starts polling for Telegram updates. Ensures proper cleanup on shutdown.
 
     Raises:
         FileNotFoundError: If required secret file is missing.
@@ -47,6 +50,11 @@ async def main() -> None:
     logger.info("bot_starting")
 
     try:
+        # Initialize database
+        database_url = get_database_url()
+        init_db(database_url, echo=False)
+        logger.info("database_initialized")
+
         # Read secrets
         bot_token = read_secret("telegram_bot_token")
         logger.info("secrets_loaded")
@@ -65,6 +73,10 @@ async def main() -> None:
     except Exception as error:
         logger.error("startup_error", error=str(error), exc_info=True)
         raise
+    finally:
+        # Cleanup database connections
+        await dispose_db()
+        logger.info("bot_stopped")
 
 
 if __name__ == "__main__":

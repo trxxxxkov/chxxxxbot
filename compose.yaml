@@ -1,14 +1,53 @@
 services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    secrets:
+      - postgres_password
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_DB=postgres
+      - POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - botnet
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   bot:
     build: ./bot
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
     secrets:
       - telegram_bot_token
+      - postgres_password
     volumes:
       - ./bot:/app
+      - ./postgres:/postgres
     environment:
       - PYTHONUNBUFFERED=1
+      - DATABASE_HOST=postgres
+      - DATABASE_PORT=5432
+      - DATABASE_USER=postgres
+      - DATABASE_NAME=postgres
+    networks:
+      - botnet
+
+networks:
+  botnet:
+    driver: bridge
+
+volumes:
+  postgres_data:
 
 secrets:
   telegram_bot_token:
     file: ./secrets/telegram_bot_token.txt
+  postgres_password:
+    file: ./secrets/postgres_password.txt

@@ -11,6 +11,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from telegram.handlers import echo
 from telegram.handlers import start
+from telegram.middlewares.database_middleware import DatabaseMiddleware
 from telegram.middlewares.logging_middleware import LoggingMiddleware
 from utils.structured_logging import get_logger
 
@@ -46,6 +47,7 @@ def create_dispatcher() -> Dispatcher:
 
     # Register middleware (order matters - first registered, first executed)
     dispatcher.update.middleware(LoggingMiddleware())
+    dispatcher.update.middleware(DatabaseMiddleware())
 
     # Register routers (order matters - first match wins)
     dispatcher.include_router(start.router)
