@@ -131,6 +131,7 @@ class MessageRepository(BaseRepository[Message]):
             has_video=has_video,
             attachment_count=attachment_count,
             attachments=attachments,
+            created_at=date,  # Use message date as record creation timestamp
         )
         self.session.add(message)
         await self.session.flush()

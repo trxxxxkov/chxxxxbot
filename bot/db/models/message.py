@@ -18,6 +18,7 @@ from sqlalchemy import Enum
 from sqlalchemy import ForeignKey
 from sqlalchemy import Index
 from sqlalchemy import Integer
+from sqlalchemy import JSON
 from sqlalchemy import Text
 from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import JSONB
@@ -184,12 +185,13 @@ class Message(Base):
         doc="Total number of attachments",
     )
 
-    # JSONB for full attachment metadata
+    # JSONB for full attachment metadata (JSON for SQLite compatibility)
     attachments: Mapped[dict] = mapped_column(
-        JSONB,
+        JSON().with_variant(JSONB, "postgresql"),
         nullable=False,
-        server_default=text("'[]'::jsonb"),
-        doc="Full attachment metadata (JSONB array)",
+        server_default=text("'[]'"),
+        doc=
+        "Full attachment metadata (JSONB array for PostgreSQL, JSON for SQLite)",
     )
 
     # LLM token tracking
@@ -207,10 +209,11 @@ class Message(Base):
 
     # Timestamp (no TimestampMixin - we have date from Telegram)
     # But add created_at for record creation tracking
+    # Note: No server_default for cross-database compatibility
+    # Set in application code or use date field from Telegram
     created_at: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
-        server_default=text("extract(epoch from now())::integer"),
         doc="Record creation timestamp (Unix)",
     )
 

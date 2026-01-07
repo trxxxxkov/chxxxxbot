@@ -230,6 +230,118 @@ Plan → Documentation in docs/ → Implementation → Update docs if needed
 
 **README.md:** Contains project maintenance commands (start, logs, debug). Update when infrastructure changes.
 
+### Test-First Development
+
+**Policy:** All new functionality MUST have tests written alongside implementation.
+
+**Process:**
+1. Write tests first (TDD) or immediately after implementation
+2. Ensure tests pass before committing
+3. Maintain minimum 80% code coverage
+4. Run tests locally before pushing
+
+**Test Types:**
+- **Unit tests**: Fast, isolated, in-memory SQLite
+- **Integration tests**: Docker PostgreSQL, full stack
+- **End-to-end tests**: Full application flow
+
+**Test Structure:**
+
+```
+bot/tests/
+├── conftest.py                           # Shared fixtures, mocks
+├── db/                                   # Database layer tests
+│   ├── repositories/
+│   │   ├── test_user_repository.py       # UserRepository tests
+│   │   ├── test_chat_repository.py       # ChatRepository tests
+│   │   ├── test_thread_repository.py     # ThreadRepository tests
+│   │   ├── test_message_repository.py    # MessageRepository tests
+│   │   └── test_base_repository.py       # BaseRepository tests
+│   ├── models/
+│   │   └── test_base.py                  # Base and TimestampMixin tests
+│   ├── test_engine.py                    # Connection pool, session tests
+│   └── test_integration_db.py            # Full workflow tests
+├── telegram/                              # Telegram bot layer tests
+│   ├── handlers/
+│   │   ├── test_start.py                 # /start and /help handlers
+│   │   └── test_echo.py                  # Echo handler tests
+│   ├── middlewares/
+│   │   ├── test_logging_middleware.py    # Logging middleware tests
+│   │   └── test_database_middleware.py   # Database middleware tests
+│   └── test_loader.py                    # Bot and Dispatcher tests
+├── utils/
+│   └── test_structured_logging.py        # Logging configuration tests
+├── test_config.py                        # Configuration tests
+├── test_main.py                          # Application startup tests
+└── manual_test_script.py                 # Manual PostgreSQL validation
+```
+
+**Important:** NO `__init__.py` files - use namespace packages (Python 3.12+)
+
+**Running Tests:**
+
+```bash
+# All tests
+docker compose exec bot pytest
+
+# Specific test file
+docker compose exec bot pytest tests/db/repositories/test_user_repository.py
+
+# Specific test
+docker compose exec bot pytest tests/db/test_engine.py::test_init_db_creates_engine
+
+# With coverage report
+docker compose exec bot pytest --cov=bot --cov-report=html
+docker compose exec bot pytest --cov=bot --cov-report=term-missing
+
+# Fast (unit tests only, skip integration)
+docker compose exec bot pytest -m "not integration"
+
+# Verbose output
+docker compose exec bot pytest -v
+
+# Stop on first failure
+docker compose exec bot pytest -x
+
+# Show print statements
+docker compose exec bot pytest -s
+```
+
+**Test Naming Convention:**
+- Test files: `test_*.py`
+- Test functions: `test_<what_is_being_tested>`
+- Fixtures: `mock_<object>` or `sample_<object>`
+
+**Test Guidelines:**
+- Clear test names describing what is tested
+- Google-style docstrings with Args, Returns
+- One assertion per test (when possible)
+- Use fixtures for common setup
+- Mock external dependencies (API calls, file I/O)
+- Verify both success and failure paths
+
+**Coverage Targets:**
+- Database repositories: 90%+
+- Infrastructure (engine, config): 85%+
+- Telegram handlers: 80%+
+- Middlewares: 90%+
+- Overall project: 80%+
+
+**Current Test Coverage:** 201 tests across all components ✅
+
+**Manual Testing:**
+
+For live PostgreSQL validation:
+```bash
+docker compose exec bot python tests/manual_test_script.py
+```
+
+This script:
+- Tests all CRUD operations
+- Verifies constraints and indexes
+- Cleans up test data automatically
+- Provides colored output for debugging
+
 ---
 
 ## Current Status
@@ -250,12 +362,19 @@ Plan → Documentation in docs/ → Implementation → Update docs if needed
   - Bot API 9.3 support (thread_id, is_forum)
 - Repository pattern with BaseRepository[T]
   - UserRepository, ChatRepository, ThreadRepository, MessageRepository
+  - Enhanced structured logging in repositories
   - Ready for Redis caching (Phase 3)
 - DatabaseMiddleware for automatic session management
   - Auto-commit on success, auto-rollback on error
 - Alembic async migrations configuration
 - Docker Compose with PostgreSQL service
 - /start handler with database integration
+- **Comprehensive test coverage: 201 tests**
+  - Database layer: 69 tests (repositories, models, integration)
+  - Infrastructure: 57 tests (engine, config, logging, base)
+  - Telegram bot: 59 tests (handlers, middlewares, loader)
+  - Application: 16 tests (startup, secrets, error handling)
+  - Manual validation script for live PostgreSQL testing
 - Comprehensive documentation in docs/:
   - database.md (98KB) - complete architecture
   - telegram-api-mapping.md (25KB) - API to DB mapping

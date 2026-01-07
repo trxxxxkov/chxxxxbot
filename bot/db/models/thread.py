@@ -13,7 +13,6 @@ from db.models.base import Base
 from db.models.base import TimestampMixin
 from sqlalchemy import BigInteger
 from sqlalchemy import ForeignKey
-from sqlalchemy import func
 from sqlalchemy import Index
 from sqlalchemy import Integer
 from sqlalchemy import String
@@ -51,8 +50,9 @@ class Thread(Base, TimestampMixin):
     __tablename__ = "threads"
 
     # Internal ID for foreign keys
+    # Note: Integer for SQLite autoincrement, BigInteger for PostgreSQL
     id: Mapped[int] = mapped_column(
-        BigInteger,
+        Integer().with_variant(BigInteger, "postgresql"),
         primary_key=True,
         autoincrement=True,
         doc="Internal thread ID",
@@ -112,21 +112,18 @@ class Thread(Base, TimestampMixin):
     # Indexes and constraints
     __table_args__ = (
         # Unique constraint: one thread per user per topic
-        # Use COALESCE(thread_id, 0) to handle NULL values
+        # Note: This allows multiple NULL thread_id values (main chat threads)
+        # PostgreSQL partial unique index created via Alembic migration
         UniqueConstraint(
             "chat_id",
             "user_id",
-            func.coalesce(thread_id, 0),
+            "thread_id",
             name="uq_threads_chat_user_thread",
         ),
         # Index for finding threads by chat and user
         Index("idx_threads_chat_user", "chat_id", "user_id"),
         # Index for finding threads by thread_id
-        Index(
-            "idx_threads_thread_id",
-            "thread_id",
-            postgresql_where=(thread_id.isnot(None)),
-        ),
+        Index("idx_threads_thread_id", "thread_id"),
     )
 
     def __repr__(self) -> str:

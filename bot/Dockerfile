@@ -20,11 +20,14 @@ RUN pip install --no-cache-dir \
     pydantic>=2.0.0 \
     sqlalchemy[asyncio]>=2.0.0 \
     asyncpg>=0.29.0 \
-    alembic>=1.13.0
+    alembic>=1.13.0 \
+    pytest>=7.4.0 \
+    pytest-asyncio>=0.21.0 \
+    pytest-cov>=4.1.0 \
+    aiosqlite>=0.19.0
 
-# Copy application code and Alembic config
+# Copy application code
 COPY . .
-COPY ../postgres /postgres
 
-# Run migrations and start bot
-CMD ["sh", "-c", "cd /postgres && alembic upgrade head && cd /app && python main.py"]
+# Start bot (migrations run separately via postgres service)
+CMD ["python", "main.py"]

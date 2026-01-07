@@ -16,6 +16,9 @@ from db.repositories.base import BaseRepository
 from sqlalchemy import func
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from utils.structured_logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class UserRepository(BaseRepository[User]):
@@ -46,7 +49,13 @@ class UserRepository(BaseRepository[User]):
         Returns:
             User instance or None if not found.
         """
-        return await self.session.get(User, telegram_id)
+        logger.debug("user_repository.get_by_telegram_id",
+                     telegram_id=telegram_id)
+        user = await self.session.get(User, telegram_id)
+        logger.debug("user_repository.get_by_telegram_id.result",
+                     telegram_id=telegram_id,
+                     found=user is not None)
+        return user
 
     async def get_or_create(
         self,
@@ -80,10 +89,17 @@ class UserRepository(BaseRepository[User]):
             - was_created = True: New user created
             - was_created = False: Existing user returned (and updated)
         """
+        logger.info("user_repository.get_or_create.start",
+                    telegram_id=telegram_id,
+                    username=username)
+
         user = await self.get_by_telegram_id(telegram_id)
 
         if user:
             # Update user info if changed
+            logger.debug("user_repository.get_or_create.updating_existing",
+                         telegram_id=telegram_id,
+                         username=username)
             user.is_bot = is_bot
             user.first_name = first_name
             user.last_name = last_name
@@ -93,9 +109,17 @@ class UserRepository(BaseRepository[User]):
             user.added_to_attachment_menu = added_to_attachment_menu
             user.last_seen_at = datetime.now(timezone.utc)
             await self.session.flush()
+
+            logger.info("user_repository.get_or_create.complete",
+                        telegram_id=telegram_id,
+                        username=username,
+                        was_created=False)
             return user, False
 
         # Create new user
+        logger.debug("user_repository.get_or_create.creating_new",
+                     telegram_id=telegram_id,
+                     username=username)
         now = datetime.now(timezone.utc)
         user = User(
             id=telegram_id,
@@ -111,6 +135,11 @@ class UserRepository(BaseRepository[User]):
         )
         self.session.add(user)
         await self.session.flush()
+
+        logger.info("user_repository.get_or_create.complete",
+                    telegram_id=telegram_id,
+                    username=username,
+                    was_created=True)
         return user, True
 
     async def update_last_seen(self, telegram_id: int) -> None:
@@ -122,12 +151,20 @@ class UserRepository(BaseRepository[User]):
         Raises:
             ValueError: If user not found.
         """
+        logger.debug("user_repository.update_last_seen",
+                     telegram_id=telegram_id)
+
         user = await self.get_by_telegram_id(telegram_id)
         if not user:
+            logger.warning("user_repository.update_last_seen.user_not_found",
+                           telegram_id=telegram_id)
             raise ValueError(f"User {telegram_id} not found")
 
         user.last_seen_at = datetime.now(timezone.utc)
         await self.session.flush()
+
+        logger.debug("user_repository.update_last_seen.complete",
+                     telegram_id=telegram_id)
 
     async def get_users_count(self) -> int:
         """Get total number of users.
@@ -135,6 +172,12 @@ class UserRepository(BaseRepository[User]):
         Returns:
             Number of users in database.
         """
+        logger.debug("user_repository.get_users_count")
+
         stmt = select(func.count()).select_from(User)
         result = await self.session.execute(stmt)
-        return result.scalar_one()
+        count = result.scalar_one()
+
+        logger.info("user_repository.get_users_count.complete",
+                    total_users=count)
+        return count

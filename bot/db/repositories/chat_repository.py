@@ -13,6 +13,9 @@ from db.models.chat import Chat
 from db.repositories.base import BaseRepository
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from utils.structured_logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class ChatRepository(BaseRepository[Chat]):
@@ -75,10 +78,18 @@ class ChatRepository(BaseRepository[Chat]):
             - was_created = True: New chat created
             - was_created = False: Existing chat returned (and updated)
         """
+        logger.info("chat_repository.get_or_create.start",
+                    telegram_id=telegram_id,
+                    chat_type=chat_type,
+                    username=username)
+
         chat = await self.get_by_telegram_id(telegram_id)
 
         if chat:
             # Update chat info if changed
+            logger.debug("chat_repository.get_or_create.updating_existing",
+                         telegram_id=telegram_id,
+                         chat_type=chat_type)
             chat.type = chat_type
             chat.title = title
             chat.username = username
@@ -86,9 +97,17 @@ class ChatRepository(BaseRepository[Chat]):
             chat.last_name = last_name
             chat.is_forum = is_forum
             await self.session.flush()
+
+            logger.info("chat_repository.get_or_create.complete",
+                        telegram_id=telegram_id,
+                        chat_type=chat_type,
+                        was_created=False)
             return chat, False
 
         # Create new chat
+        logger.debug("chat_repository.get_or_create.creating_new",
+                     telegram_id=telegram_id,
+                     chat_type=chat_type)
         chat = Chat(
             id=telegram_id,
             type=chat_type,
@@ -100,6 +119,11 @@ class ChatRepository(BaseRepository[Chat]):
         )
         self.session.add(chat)
         await self.session.flush()
+
+        logger.info("chat_repository.get_or_create.complete",
+                    telegram_id=telegram_id,
+                    chat_type=chat_type,
+                    was_created=True)
         return chat, True
 
     async def get_by_username(self, username: str) -> Optional[Chat]:

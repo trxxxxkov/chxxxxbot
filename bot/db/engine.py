@@ -11,7 +11,6 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.ext.asyncio import create_async_engine
-from sqlalchemy.pool import QueuePool
 from utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
@@ -44,10 +43,10 @@ def init_db(database_url: str, echo: bool = False) -> None:
     # max_overflow=10: Allow up to 10 additional connections during spikes
     # pool_pre_ping=True: Test connections before using (auto-reconnect)
     # pool_recycle=3600: Recycle connections after 1 hour
+    # Note: create_async_engine uses AsyncAdaptedQueuePool by default
     _engine = create_async_engine(
         database_url,
         echo=echo,
-        poolclass=QueuePool,
         pool_size=5,
         max_overflow=10,
         pool_pre_ping=True,
