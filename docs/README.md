@@ -58,10 +58,11 @@ Brief description: what it is and why it's needed.
 
 | File | Description | Status |
 |------|-------------|--------|
-| [bot-structure.md](bot-structure.md) | Bot file structure, module purposes | agreed |
-| telegram-api.md | Handlers, middlewares, keyboards, Telegram features | planned |
+| [bot-structure.md](bot-structure.md) | Bot file structure, module purposes, dependency rules | **implemented** |
+| [database.md](database.md) | PostgreSQL architecture: models, repositories, migrations, patterns | **implemented** |
+| [telegram-api-mapping.md](telegram-api-mapping.md) | Field-by-field mapping between Telegram Bot API 9.3 and database | **implemented** |
+| telegram-api.md | Handlers, middlewares, keyboards, Telegram features (detailed) | planned |
 | llm-providers.md | Provider interface, Claude implementation | planned |
-| database.md | Models, repositories, migrations | planned |
 | infrastructure.md | Docker, Grafana, Loki, monitoring | planned |
 
 ---

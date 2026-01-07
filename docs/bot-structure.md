@@ -3,7 +3,7 @@
 File structure of the Telegram bot and purpose of each module.
 
 ## Status
-agreed
+implemented (Phase 1.2 - PostgreSQL integration complete)
 
 ---
 
@@ -13,25 +13,48 @@ The bot is a Python application on aiogram 3.24, running in a Docker container. 
 
 ```
 bot/
-├── main.py                 # Entry point
-├── config.py               # Constants and settings
-├── telegram/               # Telegram API
-│   ├── handlers/           # Handlers
-│   ├── middlewares/        # Middleware
-│   ├── keyboards/          # Keyboards
-│   └── loader.py           # Bot, Dispatcher
-├── core/                   # LLM providers
-│   ├── base.py             # Abstract interface
-│   └── claude/             # Claude implementation
-├── db/                     # PostgreSQL
-│   ├── engine.py           # Connection
-│   ├── models/             # SQLAlchemy models
-│   └── repositories/       # CRUD
-├── utils/                  # Utilities
-│   └── logging.py          # structlog
+├── main.py                       # Entry point
+├── config.py                     # Constants and settings
+├── telegram/                     # Telegram API
+│   ├── handlers/                 # Command and message handlers
+│   │   ├── start.py              # /start, /help commands
+│   │   └── echo.py               # Echo handler (catch-all)
+│   ├── middlewares/              # Middleware
+│   │   ├── logging_middleware.py     # Request logging
+│   │   └── database_middleware.py    # Session management
+│   ├── keyboards/                # Keyboards (inline, reply)
+│   └── loader.py                 # Bot, Dispatcher setup
+├── core/                         # LLM providers
+│   ├── base.py                   # Abstract interface
+│   └── claude/                   # Claude implementation (Phase 1.3)
+├── db/                           # PostgreSQL (Phase 1.2)
+│   ├── engine.py                 # Async engine, connection pool
+│   ├── models/                   # SQLAlchemy ORM models
+│   │   ├── base.py               # Base, TimestampMixin
+│   │   ├── user.py               # User model (Telegram users)
+│   │   ├── chat.py               # Chat model (chats/groups/channels)
+│   │   ├── thread.py             # Thread model (conversation threads)
+│   │   └── message.py            # Message model (with JSONB attachments)
+│   └── repositories/             # Repository pattern (CRUD)
+│       ├── base.py               # BaseRepository[T] generic
+│       ├── user_repository.py    # User operations
+│       ├── chat_repository.py    # Chat operations
+│       ├── thread_repository.py  # Thread operations
+│       └── message_repository.py # Message operations
+├── utils/                        # Utilities
+│   └── structured_logging.py     # structlog configuration
 ├── Dockerfile
 └── pyproject.toml
+
+postgres/                         # Alembic migrations
+├── alembic.ini                   # Alembic config
+└── alembic/
+    ├── env.py                    # Migration environment (async)
+    ├── script.py.mako            # Migration template
+    └── versions/                 # Migration files
 ```
+
+**Important:** NO __init__.py files - Python 3.12+ namespace packages with direct imports.
 
 ---
 
@@ -63,14 +86,61 @@ bot/
 ### telegram/
 **Purpose:** Everything related to Telegram Bot API.
 
+**Location:** `bot/telegram/`
+
 | File/folder | Description |
 |-------------|-------------|
-| `loader.py` | Creating Bot and Dispatcher objects |
+| `loader.py` | Creating Bot and Dispatcher objects, registering middleware and handlers |
 | `handlers/` | Command and message handlers |
-| `middlewares/` | Request logging, dependency injection |
+| `middlewares/` | Request processing middleware |
 | `keyboards/` | Inline and reply keyboards |
 
-**Principle:** Handlers do not contain business logic — they call methods from `core/` and `db/`.
+#### telegram/loader.py
+**Purpose:** Bot and Dispatcher initialization.
+
+**Responsibilities:**
+- Create Bot instance with default properties (HTML parse mode)
+- Create Dispatcher and register middleware
+- Register all routers (handlers)
+
+**Middleware Order (first registered = first executed):**
+1. LoggingMiddleware - Request logging
+2. DatabaseMiddleware - Session injection
+
+#### telegram/handlers/
+**Purpose:** Command and message handlers.
+
+| File | Description |
+|------|-------------|
+| `start.py` | /start and /help commands with database integration |
+| `echo.py` | Echo handler (catch-all) |
+
+**Handler Signature:**
+```python
+async def handler(message: Message, session: AsyncSession):
+    # session is injected by DatabaseMiddleware
+    user_repo = UserRepository(session)
+    # ... use repositories ...
+    # No commit needed - middleware handles it
+```
+
+#### telegram/middlewares/
+**Purpose:** Request processing middleware.
+
+| File | Middleware | Description |
+|------|------------|-------------|
+| `logging_middleware.py` | LoggingMiddleware | Logs all updates with context (user_id, message_id, execution time) |
+| `database_middleware.py` | DatabaseMiddleware | Injects AsyncSession, auto-commits on success, auto-rollbacks on error |
+
+**DatabaseMiddleware Flow:**
+1. Create AsyncSession for update
+2. Inject into `data['session']`
+3. Call handler
+4. **Auto-commit** on success
+5. **Auto-rollback** on exception
+6. Ensure cleanup
+
+**Principle:** Handlers do not contain business logic — they call methods from `core/` and `db/repositories/`.
 
 ---
 
@@ -87,15 +157,122 @@ bot/
 ---
 
 ### db/
-**Purpose:** Working with PostgreSQL.
+**Purpose:** PostgreSQL database layer with SQLAlchemy 2.0 async ORM.
 
-| File/folder | Description |
-|-------------|-------------|
-| `engine.py` | Async engine, session factory |
-| `models/` | SQLAlchemy models (tables) |
-| `repositories/` | CRUD operations for each model |
+**Location:** `bot/db/`
 
-**Principle:** Handlers work only through repositories, not directly with models.
+**Imports (NO __init__.py):**
+```python
+# Engine
+from db.engine import init_db, dispose_db, get_session_factory
+
+# Models
+from db.models.user import User
+from db.models.chat import Chat
+from db.models.thread import Thread
+from db.models.message import Message, MessageRole
+
+# Repositories
+from db.repositories.user_repository import UserRepository
+from db.repositories.chat_repository import ChatRepository
+from db.repositories.thread_repository import ThreadRepository
+from db.repositories.message_repository import MessageRepository
+```
+
+#### db/engine.py
+**Purpose:** Database connection pool management.
+
+**Provides:**
+- `init_db(database_url, echo)` - Initialize engine and session factory
+- `dispose_db()` - Close all connections on shutdown
+- `get_session()` - Context manager for manual session creation
+- `get_session_factory()` - Get session factory for middleware
+
+**Configuration:**
+```python
+# Connection pool (optimized for long-running bot)
+pool_size=5          # Base connections
+max_overflow=10      # Additional during spikes
+pool_pre_ping=True   # Auto-reconnect on stale connections
+pool_recycle=3600    # Recycle every hour
+```
+
+**Usage in main.py:**
+```python
+from config import get_database_url
+from db.engine import init_db, dispose_db
+
+async def main():
+    database_url = get_database_url()  # Reads /run/secrets/postgres_password
+    init_db(database_url, echo=False)
+    # ... bot polling ...
+    finally:
+        await dispose_db()
+```
+
+#### db/models/
+**Purpose:** SQLAlchemy ORM models (database schema).
+
+| File | Model | Description |
+|------|-------|-------------|
+| `base.py` | Base, TimestampMixin | Base class for all models |
+| `user.py` | User | Telegram users (PK: Telegram user_id) |
+| `chat.py` | Chat | Chats/groups/channels (PK: Telegram chat_id) |
+| `thread.py` | Thread | Conversation threads with Bot API 9.3 support |
+| `message.py` | Message | Messages with JSONB attachments (composite PK) |
+
+**Key Design Decisions:**
+- **Telegram IDs as PKs** - No surrogate keys where Telegram provides globally unique IDs
+- **Composite Keys** - Messages use (chat_id, message_id)
+- **JSONB + Denormalization** - Attachments in JSONB with boolean flags for fast queries
+- **Bot API 9.3** - Full field coverage including forum topics (thread_id, is_forum)
+
+**Schema Overview:**
+```
+users (id=telegram_user_id)
+  ↓ 1:N
+threads (id, user_id, chat_id, thread_id)
+  ↓ 1:N
+messages (chat_id, message_id) ← composite PK
+  ↓ N:1
+chats (id=telegram_chat_id)
+```
+
+**See:** [database.md](database.md) for complete schema documentation.
+
+#### db/repositories/
+**Purpose:** Repository pattern for database operations (abstraction layer).
+
+| File | Repository | Description |
+|------|------------|-------------|
+| `base.py` | BaseRepository[T] | Generic CRUD operations |
+| `user_repository.py` | UserRepository | User-specific operations |
+| `chat_repository.py` | ChatRepository | Chat-specific operations |
+| `thread_repository.py` | ThreadRepository | Thread management |
+| `message_repository.py` | MessageRepository | Message and attachment handling |
+
+**Key Methods:**
+```python
+# UserRepository
+await user_repo.get_or_create(telegram_id, first_name, ...)
+await user_repo.update_last_seen(telegram_id)
+
+# ThreadRepository
+await thread_repo.get_or_create_thread(chat_id, user_id, thread_id)
+await thread_repo.get_active_thread(chat_id, user_id, thread_id)
+
+# MessageRepository
+await msg_repo.create_message(chat_id, message_id, thread_id, ...)
+await msg_repo.get_thread_messages(thread_id, limit=100)
+await msg_repo.add_tokens(chat_id, message_id, input_tokens, output_tokens)
+```
+
+**Principle:**
+- Handlers work only through repositories, not directly with models
+- Repositories do NOT commit - DatabaseMiddleware handles commit/rollback
+- Ready for Redis caching (Phase 3)
+
+**See:** [database.md](database.md) for usage examples.
 
 ---
 
@@ -104,23 +281,78 @@ bot/
 
 | File | Description |
 |------|-------------|
-| `logging.py` | structlog configuration for JSON logs |
+| `structured_logging.py` | structlog configuration for JSON logs |
 
 **Extension:** When common functions appear — add them here.
+
+---
+
+### postgres/
+**Purpose:** Alembic database migrations.
+
+**Location:** `postgres/` (separate from bot code)
+
+| File/folder | Description |
+|-------------|-------------|
+| `alembic.ini` | Alembic configuration |
+| `alembic/env.py` | Migration environment (async support) |
+| `alembic/script.py.mako` | Migration template |
+| `alembic/versions/` | Migration files |
+
+**Key Features:**
+- Async migration support
+- Direct model imports (NO __init__.py)
+- Auto-run on bot startup (see Dockerfile CMD)
+
+**Commands:**
+```bash
+# Generate migration from model changes
+docker compose exec bot sh -c "cd /postgres && alembic revision --autogenerate -m 'description'"
+
+# Apply migrations
+docker compose exec bot sh -c "cd /postgres && alembic upgrade head"
+
+# Show current version
+docker compose exec bot sh -c "cd /postgres && alembic current"
+```
 
 ---
 
 ## Data Flow
 
 ```
-Telegram → main.py (polling) → telegram/handlers/
-                                    ↓
-                              core/ (LLM)
-                                    ↓
-                              db/ (persistence)
-                                    ↓
-                              telegram/handlers/ → Telegram
+Telegram
+  ↓
+main.py (polling)
+  ↓
+telegram/middlewares/
+  ├── LoggingMiddleware (logging)
+  └── DatabaseMiddleware (session injection)
+        ↓
+telegram/handlers/ (receives: message, session)
+        ↓
+db/repositories/ (use session)
+        ↓
+db/models/ (SQLAlchemy ORM)
+        ↓
+PostgreSQL
+        ↓
+core/ (LLM) - Phase 1.3
+        ↓
+telegram/handlers/ (send response)
+        ↓
+DatabaseMiddleware (auto-commit)
+        ↓
+Telegram
 ```
+
+**Session Lifecycle:**
+1. DatabaseMiddleware creates AsyncSession
+2. Session injected into handler via `data['session']`
+3. Handler uses repositories with session
+4. On success: middleware commits transaction
+5. On error: middleware rollbacks transaction
+6. Session cleaned up automatically
 
 ---
 
@@ -128,13 +360,37 @@ Telegram → main.py (polling) → telegram/handlers/
 
 ```
 main.py
-  ├── config.py
-  ├── utils/logging.py
+  ├── config.py (get_database_url)
+  ├── utils/structured_logging.py
+  ├── db/engine.py (init_db, dispose_db)
   └── telegram/loader.py
+        ├── telegram/middlewares/
+        │   ├── logging_middleware.py
+        │   └── database_middleware.py
+        │         └── db/engine.py (get_session_factory)
         └── telegram/handlers/*
-              ├── core/*
-              └── db/repositories/*
-                    └── db/models/*
+              ├── db/repositories/*
+              │     ├── db/models/*
+              │     └── sqlalchemy (AsyncSession)
+              └── core/* (Phase 1.3)
 ```
 
-**Rule:** Dependencies only go down the hierarchy. Lower-level modules do not import upper-level modules.
+**Dependency Rules:**
+1. Dependencies only go down the hierarchy
+2. Lower-level modules do not import upper-level modules
+3. Handlers do NOT import models directly - only repositories
+4. Repositories do NOT import handlers - only models
+5. Models do NOT import anything from bot code - only SQLAlchemy
+
+**Import Examples:**
+```python
+# ✅ CORRECT
+from db.repositories.user_repository import UserRepository
+from db.models.message import MessageRole
+
+# ❌ WRONG - don't import models in handlers
+from db.models.user import User  # Use UserRepository instead
+
+# ❌ WRONG - don't create sessions manually
+async with get_session() as session:  # Use middleware-injected session
+```
