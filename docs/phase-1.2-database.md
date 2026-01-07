@@ -946,6 +946,6 @@ await msg_repo.create_message(thread_id=thread.id, ...)
 
 ## Related Documents
 
-- [telegram-api-mapping.md](telegram-api-mapping.md) - Telegram API to database field mapping
-- [bot-structure.md](bot-structure.md) - File structure overview
+- [phase-1.2-telegram-api-mapping.md](phase-1.2-telegram-api-mapping.md) - Telegram API to database field mapping
+- [phase-1.1-bot-structure.md](phase-1.1-bot-structure.md) - File structure overview
 - [CLAUDE.md](../CLAUDE.md) - Project overview and current status

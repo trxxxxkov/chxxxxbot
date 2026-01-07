@@ -589,6 +589,6 @@ else:
 
 ## Related Documents
 
-- [database.md](database.md) - Complete database architecture
-- [bot-structure.md](bot-structure.md) - File structure overview
+- [phase-1.2-database.md](phase-1.2-database.md) - Complete database architecture
+- [phase-1.1-bot-structure.md](phase-1.1-bot-structure.md) - File structure overview
 - [CLAUDE.md](../CLAUDE.md) - Project overview and status

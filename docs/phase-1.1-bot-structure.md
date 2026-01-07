@@ -238,7 +238,7 @@ messages (chat_id, message_id) ← composite PK
 chats (id=telegram_chat_id)
 ```
 
-**See:** [database.md](database.md) for complete schema documentation.
+**See:** [phase-1.2-database.md](phase-1.2-database.md) for complete schema documentation.
 
 #### db/repositories/
 **Purpose:** Repository pattern for database operations (abstraction layer).
@@ -272,7 +272,7 @@ await msg_repo.add_tokens(chat_id, message_id, input_tokens, output_tokens)
 - Repositories do NOT commit - DatabaseMiddleware handles commit/rollback
 - Ready for Redis caching (Phase 3)
 
-**See:** [database.md](database.md) for usage examples.
+**See:** [phase-1.2-database.md](phase-1.2-database.md) for usage examples.
 
 ---
 
