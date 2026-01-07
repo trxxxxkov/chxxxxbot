@@ -182,19 +182,51 @@ All Python code must follow **Google Python Style Guide**.
 
 Before writing code — planning and documentation.
 
-**Process:**
-1. Discuss component architecture and structure
-2. Document agreed plan in `docs/`
-3. Implement code according to plan
-4. On changes — update documentation
+**Development Process (MANDATORY):**
+
+1. **Create Plan** - Discuss and agree on component architecture
+   - What needs to be implemented
+   - What files will be created/modified
+   - What design decisions need to be made
+   - What dependencies exist
+
+2. **Document Plan in `docs/`** - BEFORE writing any code
+   - Create or update relevant documentation
+   - Include file paths, imports, usage examples
+   - Document architectural decisions and rationale
+   - Optimize for LLM agent comprehension
+
+3. **Implement Code** - Follow the documented plan
+   - Write code according to documentation
+   - Ensure all design decisions from docs are reflected
+   - Follow Google Python Style Guide
+
+4. **Update Documentation** - If anything changes during implementation
+   - Update docs to reflect actual implementation
+   - Document any deviations from original plan
+   - Keep docs and code in sync
+
+**Golden Rule:**
+```
+Plan → Documentation in docs/ → Implementation → Update docs if needed
+```
+
+**Never:** Implementation first, then documentation. Always document BEFORE coding.
 
 **`docs/` folder:**
-- Stores plans for each component
+- Stores plans and architecture for each component
 - Source of truth for architectural decisions
 - Optimized for LLM-agents (see `docs/README.md`)
-- Always kept up to date
+- Always kept up to date with code
 
-**Rule:** Any code change affecting architecture must be reflected in the corresponding document.
+**Documentation must include:**
+- Specific file paths and imports
+- Code examples for common operations
+- Relationships between components
+- Architectural decisions with justification
+- Troubleshooting common issues
+
+**Rule:** Any code change affecting architecture must be reflected in the corresponding document in the same commit.
 
 **README.md:** Contains project maintenance commands (start, logs, debug). Update when infrastructure changes.
 
@@ -209,4 +241,24 @@ Before writing code — planning and documentation.
 - Pre-commit hooks for Google Code Style
 - Docker containerization working
 
-**Next:** Phase 1.2 (PostgreSQL integration)
+**Phase 1.2 (PostgreSQL Integration):** ✅ Complete
+- PostgreSQL 16 with SQLAlchemy 2.0 async ORM
+- 4 models: User, Chat, Thread, Message
+  - Telegram IDs as primary keys
+  - Composite key (chat_id, message_id) for messages
+  - JSONB attachments with denormalized flags
+  - Bot API 9.3 support (thread_id, is_forum)
+- Repository pattern with BaseRepository[T]
+  - UserRepository, ChatRepository, ThreadRepository, MessageRepository
+  - Ready for Redis caching (Phase 3)
+- DatabaseMiddleware for automatic session management
+  - Auto-commit on success, auto-rollback on error
+- Alembic async migrations configuration
+- Docker Compose with PostgreSQL service
+- /start handler with database integration
+- Comprehensive documentation in docs/:
+  - database.md (98KB) - complete architecture
+  - telegram-api-mapping.md (25KB) - API to DB mapping
+  - bot-structure.md (updated) - structure with db/
+
+**Next:** Phase 1.3 (Claude Integration)
