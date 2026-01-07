@@ -9,7 +9,7 @@ from aiogram import Bot
 from aiogram import Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from telegram.handlers import echo
+from telegram.handlers import claude
 from telegram.handlers import start
 from telegram.middlewares.database_middleware import DatabaseMiddleware
 from telegram.middlewares.logging_middleware import LoggingMiddleware
@@ -51,7 +51,7 @@ def create_dispatcher() -> Dispatcher:
 
     # Register routers (order matters - first match wins)
     dispatcher.include_router(start.router)
-    dispatcher.include_router(echo.router)  # Catch-all should be last
+    dispatcher.include_router(claude.router)  # Catch-all should be last
 
-    logger.info("dispatcher_created", routers=["start", "echo"])
+    logger.info("dispatcher_created", routers=["start", "claude"])
     return dispatcher

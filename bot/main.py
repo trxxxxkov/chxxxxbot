@@ -11,6 +11,7 @@ from pathlib import Path
 from config import get_database_url
 from db.engine import dispose_db
 from db.engine import init_db
+from telegram.handlers.claude import init_claude_provider
 from telegram.loader import create_bot
 from telegram.loader import create_dispatcher
 from utils.structured_logging import get_logger
@@ -57,7 +58,12 @@ async def main() -> None:
 
         # Read secrets
         bot_token = read_secret("telegram_bot_token")
+        anthropic_api_key = read_secret("anthropic_api_key")
         logger.info("secrets_loaded")
+
+        # Initialize Claude provider
+        init_claude_provider(anthropic_api_key)
+        logger.info("claude_provider_initialized")
 
         # Create bot and dispatcher
         bot = create_bot(token=bot_token)

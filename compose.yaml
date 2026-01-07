@@ -27,6 +27,7 @@ services:
     secrets:
       - telegram_bot_token
       - postgres_password
+      - anthropic_api_key
     volumes:
       - ./bot:/app
       - ./postgres:/postgres
@@ -51,3 +52,5 @@ secrets:
     file: ./secrets/telegram_bot_token.txt
   postgres_password:
     file: ./secrets/postgres_password.txt
+  anthropic_api_key:
+    file: ./secrets/anthropic_api_key.txt

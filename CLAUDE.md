@@ -57,7 +57,7 @@ chxxxxbot/
 
 ### Phase 1 — Working Prototype
 
-#### 1. Minimal Bot
+#### 1.1 Minimal Bot ✅ Complete
 | Component | Technology |
 |-----------|------------|
 | Framework | aiogram 3.24 |
@@ -66,7 +66,7 @@ chxxxxbot/
 | Validation/models | Pydantic v2 |
 | Containerization | Docker + Docker Compose |
 
-#### 2. PostgreSQL
+#### 1.2 PostgreSQL ✅ Complete
 | Component | Technology |
 |-----------|------------|
 | Database | PostgreSQL 16 |
@@ -74,43 +74,128 @@ chxxxxbot/
 | ORM | SQLAlchemy 2.0 (async) |
 | Migrations | Alembic |
 
-#### 3. Claude Integration
+#### 1.3 Claude Integration (Core) ✅ Complete
 | Component | Technology |
 |-----------|------------|
-| SDK | anthropic (official) |
+| SDK | anthropic>=0.40.0 (official) |
+| Model | Claude Sonnet 4.5 (claude-sonnet-4-5-20250929) |
+| Streaming | Real-time token streaming (no buffering) |
+| Context | Token-based window management (200K tokens) |
+| Error handling | Rate limits, timeouts, API errors |
+
+**Implemented Features:**
+- ✅ Text-only conversations with streaming responses
+- ✅ No buffering - each Claude chunk sent immediately to Telegram
+- ✅ Thread-based context (all messages that fit in token window)
+- ✅ Global system prompt (same for all users)
+- ✅ Basic cost tracking (input/output tokens per message)
+- ✅ Comprehensive structured logging
+- ✅ Regression tests for all bugs encountered
+
+**Bugs Fixed During Implementation:**
+1. ✅ User.telegram_id AttributeError → changed to user.id
+2. ✅ ChatRepository type parameter → changed to chat_type
+3. ✅ Missing role parameter in MessageRepository.create_message
+4. ✅ Wrong execution order (thread must be created before message)
+5. ✅ Incorrect model name (claude-sonnet-4-5-20250514 → claude-sonnet-4-5-20250929)
+
+**Test Coverage:**
+- 4 regression tests in tests/core/test_claude_handler_integration.py
+- All tests passing ✅
+
+**Out of scope for 1.3:**
+- Multimodal (images, voice, files)
+- Tools (code execution, image generation)
+- Payment system (balance blocking)
+- Prompt caching
+
+#### 1.4 Multimodal + Tools 📋 Planned
+**Multimodal support:**
+- Images (vision)
+- Voice messages (transcription + processing)
+- Arbitrary files (via tools)
+
+**Tools framework:**
+- Code execution (isolated container)
+- Image generation (external APIs)
+- File processing tools
+- Modular tool architecture (easy to add new tools)
+
+**Optimizations:**
+- Prompt caching (system prompt)
+- Extended thinking (for complex tasks)
+
+**Documentation:**
+- Full Claude API documentation review
+- Best practices implementation
+- Link to each API page with adopted patterns
+
+#### 1.5 Testing for Claude Integration 📋 Planned
+- Provider interface tests
+- Claude client tests (mocked API)
+- Context management tests
+- Token counting tests
+- Error handling tests
+- Integration tests with real API
+- Cost tracking validation
 
 ### Phase 2 — Telegram Features Expansion
-- Threads (Bot API 9.3)
-- Message streaming (Bot API 9.3)
-- Payments (Telegram Stars)
+
+#### 2.1 Payment System 📋 Planned
+**User balance:**
+- USD balance in database (User model)
+- Pre-request validation (block if insufficient funds)
+- Real-time cost calculation
+
+**Telegram Stars integration:**
+- Payment flow (deposit via Stars)
+- Refund mechanism (by transaction_id)
+- Invoice generation
+
+**Admin features:**
+- Privileged users list (in secrets)
+- Manual balance adjustment commands
+- Balance management by username/user_id
+
+**Cost tracking:**
+- All API calls tracked (LLM, tools, external APIs)
+- Cost attribution per user
+- Cost reporting and analytics
+
+#### 2.2 Additional Telegram Features 📋 Planned
+- Draft messages (Bot API 9.3)
+- Threads/topics (Bot API 9.3)
 - Keyboards (inline, reply)
-- Modalities (text, photo, video, audio, files)
 - Service messages
 - Commands, menus
+- Media handling improvements
 
 ### Phase 3 — Infrastructure
 
-#### Cache
+#### 3.1 Cache
 | Component | Technology |
 |-----------|------------|
 | Cache | Redis 7 |
 | Async client | redis-py (async) |
 
-#### Monitoring
+#### 3.2 Monitoring
 | Component | Technology |
 |-----------|------------|
 | Dashboards | Grafana |
 | Metrics | Prometheus |
 | Logs | Loki |
 
-#### DB Admin
+#### 3.3 DB Admin
 | Component | Technology |
 |-----------|------------|
 | Web interface | CloudBeaver |
 
-#### Other LLM Providers
-- OpenAI
-- Google
+#### 3.4 Other LLM Providers
+- OpenAI (latest models)
+- Google Gemini (latest models)
+- Unified provider interface
+- Per-provider pricing
+- Model selection per thread
 
 ---
 
@@ -239,6 +324,12 @@ Plan → Documentation in docs/ → Implementation → Update docs if needed
 2. Ensure tests pass before committing
 3. Maintain minimum 80% code coverage
 4. Run tests locally before pushing
+
+**CRITICAL: Bug Fix Policy:**
+- **After fixing ANY production bug, IMMEDIATELY write a test** that would have caught it
+- This test MUST be added BEFORE considering the bug fixed
+- The test ensures the bug never happens again
+- No exceptions - every bug fix must include a test
 
 **Test Types:**
 - **Unit tests**: Fast, isolated, in-memory SQLite
@@ -380,4 +471,24 @@ This script:
   - telegram-api-mapping.md (25KB) - API to DB mapping
   - bot-structure.md (updated) - structure with db/
 
-**Next:** Phase 1.3 (Claude Integration)
+**Phase 1.3 (Claude Integration - Core):** ✅ Complete
+- Claude Sonnet 4.5 integration (claude-sonnet-4-5-20250929)
+- Real-time streaming responses (no buffering)
+- Token-based context management (200K context window)
+- Thread-based conversation history
+- Global system prompt
+- Cost tracking (input/output tokens)
+- Comprehensive structured logging
+- **Regression tests: 4 tests** in tests/core/test_claude_handler_integration.py
+  - Bug fix tests for all issues encountered during development
+  - All tests passing ✅
+- Files created:
+  - bot/core/base.py - LLM provider interface
+  - bot/core/models.py - Pydantic models
+  - bot/core/exceptions.py - Custom exceptions
+  - bot/core/claude/client.py - Claude API client
+  - bot/core/claude/context.py - Context manager
+  - bot/telegram/handlers/claude.py - Main handler
+  - docs/claude-integration.md - Comprehensive architecture doc
+
+**Next:** Phase 1.4 (Multimodal + Tools)
