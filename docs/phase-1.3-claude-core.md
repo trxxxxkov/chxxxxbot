@@ -846,7 +846,8 @@ All logs include relevant context (user_id, tokens, timing) for debugging and mo
 
 ## Related Documents
 
-- **[phase-1.4-multimodal-tools.md](phase-1.4-multimodal-tools.md)** - Next phase: Multimodal support and tools
+- **[phase-1.4-best-practices.md](phase-1.4-best-practices.md)** - Next phase: Best practices &amp; optimization
+- **[phase-1.5-multimodal-tools.md](phase-1.5-multimodal-tools.md)** - Future: Multimodal support and tools
 - **[phase-2.1-payment-system.md](phase-2.1-payment-system.md)** - Future: Payment system with Telegram Stars
 - **[phase-1.2-database.md](phase-1.2-database.md)** - Database architecture and repository usage
 - **[phase-1.1-bot-structure.md](phase-1.1-bot-structure.md)** - Overall bot structure and dependencies

@@ -950,7 +950,8 @@ Must read before Phase 1.4 implementation:
 
 ## Related Documents
 
-- **[phase-1.3-claude-core.md](phase-1.3-claude-core.md)** - Previous phase (implemented)
+- **[phase-1.3-claude-core.md](phase-1.3-claude-core.md)** - Phase 1.3: Core implementation
+- **[phase-1.4-best-practices.md](phase-1.4-best-practices.md)** - Previous phase: Best practices
 - **[phase-2.1-payment-system.md](phase-2.1-payment-system.md)** - Next phase: Payment system
 - **[phase-1.2-database.md](phase-1.2-database.md)** - Database schema (attachments support)
 - **[phase-1.1-bot-structure.md](phase-1.1-bot-structure.md)** - File structure and dependencies
