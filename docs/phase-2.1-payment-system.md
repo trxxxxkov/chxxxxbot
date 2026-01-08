@@ -1177,7 +1177,7 @@ async def handle_usage(message: Message, session: AsyncSession):
 ## Related Documents
 
 - **[phase-1.3-claude-core.md](phase-1.3-claude-core.md)** - Phase 1.3: Core Claude integration
-- **[phase-1.4-best-practices.md](phase-1.4-best-practices.md)** - Phase 1.4: Best practices
+- **[phase-1.4-claude-advanced-api.md](phase-1.4-claude-advanced-api.md)** - Phase 1.4: Best practices
 - **[phase-1.5-multimodal-tools.md](phase-1.5-multimodal-tools.md)** - Phase 1.5: Multimodal + Tools
 - **[phase-1.2-database.md](phase-1.2-database.md)** - Database architecture
 - **[phase-1.1-bot-structure.md](phase-1.1-bot-structure.md)** - File structure

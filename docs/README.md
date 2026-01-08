@@ -66,7 +66,7 @@ Documents are organized by development phase for easy navigation.
 | [phase-1.2-database.md](phase-1.2-database.md) | PostgreSQL architecture: models, repositories, migrations, patterns | **implemented** |
 | [phase-1.2-telegram-api-mapping.md](phase-1.2-telegram-api-mapping.md) | Field-by-field mapping between Telegram Bot API 9.3 and database | **implemented** |
 | [phase-1.3-claude-core.md](phase-1.3-claude-core.md) | Claude integration (core): streaming, context management, error handling | **implemented** |
-| [phase-1.4-best-practices.md](phase-1.4-best-practices.md) | Best practices & optimization: prompt engineering, error handling, cost optimization | **in progress** |
+| [phase-1.4-claude-advanced-api.md](phase-1.4-claude-advanced-api.md) | Advanced API features: documentation review, best practices, optimizations | **in progress** |
 | [phase-1.5-multimodal-tools.md](phase-1.5-multimodal-tools.md) | Multimodal support (images, voice, files) and tools framework (code execution, image generation) | **planned** |
 
 ### Phase 2: Features Expansion
@@ -119,15 +119,12 @@ Documents are organized by development phase for easy navigation.
 - Comprehensive error handling
 - Regression tests (4 tests)
 
-### Phase 1.4: Best Practices & Optimization 🔄
+### Phase 1.4: Advanced API Features 🔄
 - Official Claude API documentation review
-- Prompt engineering best practices
-- Context management improvements
-- Error handling patterns
-- Streaming optimization
-- Logging and monitoring
-- Testing strategies
-- Cost optimization (without tools/caching)
+- Extract and document best practices
+- Implement advanced features discovered in docs
+- Optimize existing Phase 1.3 implementation
+- Incremental documentation-driven development
 
 ### Phase 1.5: Multimodal + Tools 📋
 - Vision (image analysis with Claude)
