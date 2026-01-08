@@ -21,6 +21,10 @@ htmlcov/
 .vscode/
 *.swp
 
+# Dev tools
+.claude/
+.mypy_cache/
+
 # Temp files
 *.tmp
 *.log
