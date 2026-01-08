@@ -1,359 +1,1188 @@
-# Claude Integration: Phase 1.5 (Multimodal + Tools)
-
-Multimodal support (images, voice, files) and tools framework (code execution, image generation) with prompt caching and extended thinking.
+# Phase 1.5: Multimodal + Tools
 
 **Status:** 📋 **PLANNED**
+
+**Purpose:** Add multimodal support (images, PDFs, documents) and tools framework (web search, web fetch, code execution) with Files API integration.
+
+**Reference:** See [phase-1.4-claude-advanced-api.md](phase-1.4-claude-advanced-api.md) for all best practices and API patterns.
+
+⚠️ **NOTE:** Phase 1.4 documentation review is IN PROGRESS. This document will need to be updated again after Phase 1.4 is complete with ALL best practices from the full Claude API documentation review.
 
 ---
 
 ## Table of Contents
 
 - [Overview](#overview)
-- [Multimodal Support](#multimodal-support)
-- [Tools Framework](#tools-framework)
-- [Optimizations](#optimizations)
-- [Implementation Plan](#implementation-plan)
+- [Files API Integration](#files-api-integration)
+- [Tools Architecture](#tools-architecture)
+- [Multimodal Tools](#multimodal-tools)
+- [Web Tools](#web-tools)
+- [Code Execution](#code-execution)
+- [System Prompt](#system-prompt)
+- [Implementation Details](#implementation-details)
 - [Related Documents](#related-documents)
 
 ---
 
 ## Overview
 
-Phase 1.5 adds multimodal inputs and tools framework to the bot.
+Phase 1.5 adds multimodal file handling and tools framework using Files API + Tool Runner pattern from Phase 1.4.
 
 ### Prerequisites
 
-- ✅ Phase 1.3 complete (text conversations)
-- ✅ Phase 1.4 complete (advanced API features, best practices)
-- ✅ Database supports attachments (JSONB)
-- ✅ Telegram file download working
+- ✅ Phase 1.3: Text conversations with streaming
+- ✅ Phase 1.4: Best practices documented
+- ✅ Database: `user_files` table (will be added)
 
-### Scope
+### Key Decisions (from Phase 1.4)
 
-**Multimodal:**
-- Images (vision) - user sends photo, Claude analyzes
-- Voice messages - transcribe and process
-- Files (PDF, code, data) - extract content and discuss
+1. **Always Files API** - all files uploaded to Claude Files API
+2. **Tool Runner** - use SDK beta for all tools
+3. **Selective processing** - files uploaded but NOT sent to Claude immediately
+4. **Tools choose files** - Claude decides which files to process via tools
 
-**Tools:**
-- Abstract tool interface
-- Tool registry (easy to add/remove tools)
-- Code execution tool (sandboxed)
-- Image generation tool (DALL-E or similar)
+### Architecture Summary
 
-**Optimizations:**
-- Prompt caching (cache system prompt)
-- Extended thinking (for complex tasks)
-
----
-
-## Multimodal Support
-
-### Vision (Images)
-
-**Flow:**
-1. User sends photo to Telegram
-2. Download and encode to base64
-3. Add image block to Claude request
-4. Stream response
-5. Save metadata in database
-
-**Claude API format:**
-```python
-{
-    "role": "user",
-    "content": [
-        {
-            "type": "image",
-            "source": {
-                "type": "base64",
-                "media_type": "image/jpeg",
-                "data": "<base64_image>"
-            }
-        },
-        {
-            "type": "text",
-            "text": "What's in this image?"
-        }
-    ]
-}
 ```
+User uploads file → Telegram → Bot
+                              ↓
+                   Download from Telegram
+                              ↓
+                   Upload to Files API → get claude_file_id
+                              ↓
+                   Save to user_files table
+                              ↓
+        Add metadata to system prompt: "Available files: photo.jpg, doc.pdf"
 
-**Implementation:**
-- Handler: `bot/telegram/handlers/vision.py`
-- Download largest photo from Telegram
-- Encode to base64
-- Add to conversation context
-- Track in `Message.attachments` JSONB
-
----
-
-### Voice Messages
-
-**Flow:**
-1. User sends voice message
-2. Download audio file
-3. Transcribe (Whisper API or similar)
-4. Send transcribed text to Claude
-5. Save audio metadata
-
-**Options:**
-- **Option A:** OpenAI Whisper API (accurate, external)
-- **Option B:** Local Whisper (privacy, requires GPU)
-- **Option C:** Claude audio if available (check docs)
-
-**Implementation:**
-- Handler: `bot/telegram/handlers/voice.py`
-- Transcription service wrapper
-- Send transcribed text as regular message
-- Track in `Message.attachments`
-
----
-
-### Files (Documents)
-
-**Flow:**
-1. User sends file (PDF, code, CSV, etc.)
-2. Download file
-3. Extract content based on type:
-   - Text files → read directly
-   - PDFs → extract text (PyPDF2)
-   - Office → extract (python-docx, openpyxl)
-   - Code → include with syntax highlighting
-4. Add to message context
-5. Save metadata
-
-**Implementation:**
-- Handler: `bot/telegram/handlers/document.py`
-- File processors registry by MIME type
-- Security: size limits, sandboxing
-- Track in `Message.attachments`
-
----
-
-## Tools Framework
-
-### Architecture
-
-**Components:**
-1. **Abstract Tool interface** - base class for all tools
-2. **Tool registry** - central registry, easy to add/remove
-3. **Execution flow** - Claude requests tool → execute → continue
-
-**Base interface:**
-```python
-class Tool(ABC):
-    @property
-    @abstractmethod
-    def name(self) -> str:
-        """Tool name for Claude."""
-
-    @property
-    @abstractmethod
-    def description(self) -> str:
-        """When and how to use this tool."""
-
-    @property
-    @abstractmethod
-    def input_schema(self) -> Dict[str, Any]:
-        """JSON schema for input validation."""
-
-    @abstractmethod
-    async def execute(self, **kwargs) -> str:
-        """Execute tool, return result."""
+User asks question → Claude sees available files in system prompt
+                              ↓
+                   Claude calls tool: analyze_image(file_id, question)
+                              ↓
+                   Bot executes tool → sends file to Claude API
+                              ↓
+                   Claude analyzes → returns result
 ```
 
 ---
 
-### Tool Registry
+## Files API Integration
 
-**Purpose:** Central place to register/unregister tools.
+### user_files Table
 
-**Key methods:**
-- `register(tool)` - add tool
-- `unregister(name)` - remove tool
-- `get_tool_definitions()` - for Claude API
-- `execute_tool(name, input)` - run tool
-
-**Usage:**
 ```python
-# Global registry
-tool_registry = ToolRegistry()
+# bot/db/models/user_file.py
 
-# Register tools
-tool_registry.register(CodeExecutionTool())
-tool_registry.register(ImageGenerationTool())
+from sqlalchemy import Column, Integer, String, DateTime, BigInteger, Enum, JSON
+from sqlalchemy.sql import func
+from bot.db.models.base import Base
+import enum
 
-# Pass to Claude
-tools = tool_registry.get_tool_definitions()
+class FileType(enum.Enum):
+    IMAGE = "image"
+    PDF = "pdf"
+    DOCUMENT = "document"
+    GENERATED = "generated"
+
+class FileSource(enum.Enum):
+    USER = "user"
+    ASSISTANT = "assistant"
+
+class UserFile(Base):
+    """User-uploaded files stored in Files API."""
+
+    __tablename__ = "user_files"
+
+    id = Column(Integer, primary_key=True)
+    message_id = Column(BigInteger, nullable=False)  # FK to messages
+
+    # Telegram data
+    telegram_file_id = Column(String, nullable=True)  # If from user upload
+    telegram_file_unique_id = Column(String, nullable=True)
+
+    # Claude Files API data
+    claude_file_id = Column(String, nullable=False, unique=True)
+
+    # Metadata
+    filename = Column(String, nullable=False)
+    file_type = Column(Enum(FileType), nullable=False)
+    mime_type = Column(String, nullable=False)
+    file_size = Column(Integer, nullable=False)  # bytes
+
+    # Lifecycle
+    uploaded_at = Column(DateTime, server_default=func.now(), nullable=False)
+    expires_at = Column(DateTime, nullable=False)  # uploaded_at + FILES_API_TTL_HOURS
+
+    # Source
+    source = Column(Enum(FileSource), nullable=False)  # 'user' or 'assistant'
+
+    # Optional metadata (JSONB)
+    metadata = Column(JSON, nullable=True)  # {width, height, page_count, generated_by_tool, ...}
+```
+
+### File Upload Handler
+
+```python
+# bot/telegram/handlers/files.py
+
+from aiogram import Router, F
+from aiogram.types import Message, PhotoSize, Document
+from bot.core.files_api import upload_to_files_api
+from bot.db.repositories.user_file_repository import UserFileRepository
+from bot.config import FILES_API_TTL_HOURS
+from datetime import datetime, timedelta
+import structlog
+
+router = Router()
+logger = structlog.get_logger()
+
+@router.message(F.photo)
+async def handle_photo(
+    message: Message,
+    user_file_repo: UserFileRepository
+):
+    """Handle photo uploads with Files API integration."""
+
+    # Get largest photo
+    photo: PhotoSize = message.photo[-1]
+
+    logger.info(
+        "photo_received",
+        user_id=message.from_user.id,
+        file_id=photo.file_id,
+        file_size=photo.file_size
+    )
+
+    # Check file size (Files API limit: 500MB, but Telegram photos < 10MB usually)
+    if photo.file_size and photo.file_size > 500 * 1024 * 1024:
+        await message.answer("File too large (max 500MB)")
+        return
+
+    try:
+        # 1. Download from Telegram
+        file = await message.bot.get_file(photo.file_id)
+        file_bytes = await message.bot.download_file(file.file_path)
+
+        # 2. Upload to Files API (BLOCKING - critical!)
+        claude_file_id = await upload_to_files_api(
+            file_bytes=file_bytes.read(),
+            filename=f"photo_{photo.file_id[:8]}.jpg",
+            mime_type="image/jpeg"
+        )
+
+        logger.info(
+            "file_uploaded_to_claude",
+            telegram_file_id=photo.file_id,
+            claude_file_id=claude_file_id
+        )
+
+        # 3. Save to database
+        await user_file_repo.create(
+            message_id=message.message_id,
+            telegram_file_id=photo.file_id,
+            telegram_file_unique_id=photo.file_unique_id,
+            claude_file_id=claude_file_id,
+            filename=f"photo_{photo.file_id[:8]}.jpg",
+            file_type=FileType.IMAGE,
+            mime_type="image/jpeg",
+            file_size=photo.file_size,
+            source=FileSource.USER,
+            expires_at=datetime.utcnow() + timedelta(hours=FILES_API_TTL_HOURS),
+            metadata={"width": photo.width, "height": photo.height}
+        )
+
+        # 4. Create message with file mention
+        await message_repo.create_message(
+            chat_id=message.chat.id,
+            message_id=message.message_id,
+            role="user",
+            content=f"User uploaded: photo_{photo.file_id[:8]}.jpg (image/jpeg, {format_size(photo.file_size)})",
+            metadata={"file_id": claude_file_id}
+        )
+
+        # File ready for processing via tools
+        await message.answer("Photo uploaded successfully. You can ask me questions about it!")
+
+    except Exception as e:
+        logger.error("file_upload_failed", error=str(e), exc_info=True)
+        await message.answer("Failed to upload file. Please try again.")
+
+
+@router.message(F.document)
+async def handle_document(
+    message: Message,
+    user_file_repo: UserFileRepository
+):
+    """Handle document uploads (PDFs, Office, code files)."""
+
+    document: Document = message.document
+
+    logger.info(
+        "document_received",
+        user_id=message.from_user.id,
+        filename=document.file_name,
+        mime_type=document.mime_type,
+        file_size=document.file_size
+    )
+
+    # Check file size
+    if document.file_size > 500 * 1024 * 1024:
+        await message.answer("File too large (max 500MB)")
+        return
+
+    # Determine file type
+    if document.mime_type == "application/pdf":
+        file_type = FileType.PDF
+    elif document.mime_type.startswith("image/"):
+        file_type = FileType.IMAGE
+    else:
+        file_type = FileType.DOCUMENT
+
+    try:
+        # 1. Download from Telegram
+        file = await message.bot.get_file(document.file_id)
+        file_bytes = await message.bot.download_file(file.file_path)
+
+        # 2. Upload to Files API
+        claude_file_id = await upload_to_files_api(
+            file_bytes=file_bytes.read(),
+            filename=document.file_name,
+            mime_type=document.mime_type
+        )
+
+        # 3. Save to database
+        await user_file_repo.create(
+            message_id=message.message_id,
+            telegram_file_id=document.file_id,
+            telegram_file_unique_id=document.file_unique_id,
+            claude_file_id=claude_file_id,
+            filename=document.file_name,
+            file_type=file_type,
+            mime_type=document.mime_type,
+            file_size=document.file_size,
+            source=FileSource.USER,
+            expires_at=datetime.utcnow() + timedelta(hours=FILES_API_TTL_HOURS),
+            metadata={}
+        )
+
+        # 4. Create message mention
+        await message_repo.create_message(
+            chat_id=message.chat.id,
+            message_id=message.message_id,
+            role="user",
+            content=f"User uploaded: {document.file_name} ({document.mime_type}, {format_size(document.file_size)})",
+            metadata={"file_id": claude_file_id}
+        )
+
+        await message.answer(f"File '{document.file_name}' uploaded successfully!")
+
+    except Exception as e:
+        logger.error("document_upload_failed", error=str(e), exc_info=True)
+        await message.answer("Failed to upload document. Please try again.")
+```
+
+### Files API Client
+
+```python
+# bot/core/files_api.py
+
+import anthropic
+from bot.config import ANTHROPIC_API_KEY
+import structlog
+
+logger = structlog.get_logger()
+client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+
+async def upload_to_files_api(
+    file_bytes: bytes,
+    filename: str,
+    mime_type: str
+) -> str:
+    """Upload file to Claude Files API, return claude_file_id."""
+
+    try:
+        # Upload to Files API
+        file_response = client.beta.files.upload(
+            file=file_bytes,
+            filename=filename
+        )
+
+        logger.info(
+            "files_api_upload_success",
+            claude_file_id=file_response.id,
+            filename=filename,
+            size=len(file_bytes)
+        )
+
+        return file_response.id
+
+    except anthropic.APIError as e:
+        logger.error(
+            "files_api_upload_failed",
+            error=str(e),
+            status_code=getattr(e, 'status_code', None)
+        )
+        raise
+
+
+async def delete_from_files_api(claude_file_id: str):
+    """Delete file from Files API."""
+
+    try:
+        client.beta.files.delete(file_id=claude_file_id)
+        logger.info("files_api_delete_success", claude_file_id=claude_file_id)
+    except anthropic.APIError as e:
+        logger.error("files_api_delete_failed", claude_file_id=claude_file_id, error=str(e))
+
+
+async def cleanup_expired_files(user_file_repo):
+    """Cron job: delete expired files from Files API and database."""
+
+    expired_files = await user_file_repo.get_expired_files()
+
+    for file in expired_files:
+        try:
+            # Delete from Files API
+            await delete_from_files_api(file.claude_file_id)
+
+            # Delete from database
+            await user_file_repo.delete(file.id)
+
+            logger.info(
+                "expired_file_cleaned",
+                file_id=file.id,
+                claude_file_id=file.claude_file_id,
+                filename=file.filename
+            )
+        except Exception as e:
+            logger.error(
+                "file_cleanup_failed",
+                file_id=file.id,
+                error=str(e)
+            )
 ```
 
 ---
 
-### Code Execution Tool
+## Tools Architecture
 
-**Purpose:** Run Python code in isolated Docker container.
+### Tool Runner Pattern (from Phase 1.4)
 
-**Features:**
-- Sandboxed execution (no network, memory limits)
-- Common libraries available (numpy, pandas)
-- 30 second timeout
-- Return stdout/stderr
+All tools use SDK's `@beta_tool` decorator with Tool Runner:
 
-**Implementation:**
-- Use Docker API
-- Pre-built image with dependencies
-- Auto-cleanup after execution
-- Security: no persistence, no network
-
----
-
-### Image Generation Tool
-
-**Purpose:** Generate images from text descriptions.
-
-**Options:**
-- DALL-E 3 via OpenAI API
-- Stable Diffusion (local or API)
-- Other image generation services
-
-**Flow:**
-1. Claude calls tool with prompt
-2. Generate image via API
-3. Return base64 or URL
-4. Handler sends image to Telegram
-
----
-
-### Tool Execution Flow
-
-**Multi-turn conversation:**
-1. Claude streams response and requests tool
-2. Pause stream, extract tool request
-3. Execute tool via registry
-4. Add tool result to conversation
-5. Claude continues with result
-
-**Handler updates:**
-- Detect tool use in stream
-- Execute tools
-- Continue conversation with results
-- Max iterations to prevent loops
-
----
-
-## Optimizations
-
-### Prompt Caching
-
-**Goal:** Cache system prompt to reduce cost and latency.
-
-**How it works:**
-- Mark system prompt with `cache_control`
-- Claude caches for ~5 minutes
-- Subsequent requests read from cache (~90% cheaper)
-
-**Implementation:**
 ```python
-{
-    "system": [
-        {
-            "type": "text",
-            "text": SYSTEM_PROMPT,
-            "cache_control": {"type": "ephemeral"}
-        }
-    ],
-    "messages": [...]
-}
-```
+# bot/core/tools/__init__.py
 
-**Benefits:**
-- 90% cost reduction on cached tokens
-- Faster responses
-- Especially useful for long system prompts
+from anthropic import beta_tool
+from bot.core.tools.analyze_image import analyze_image
+from bot.core.tools.analyze_pdf import analyze_pdf
+from bot.core.tools.execute_python import execute_python
 
----
-
-### Extended Thinking
-
-**Goal:** Better reasoning for complex tasks.
-
-**How it works:**
-- Enable thinking budget in request
-- Claude uses tokens for internal reasoning
-- Not shown to user
-- Better results for complex problems
-
-**Implementation:**
-```python
-{
-    "model": "claude-sonnet-4-5-20250929",
-    "thinking": {
-        "type": "enabled",
-        "budget_tokens": 2000
+# Server-side tools (managed by Anthropic, no implementation needed)
+SERVER_TOOLS = [
+    {
+        "type": "web_search_20250305",
+        "name": "web_search"
+        # Minimal config: no max_uses, no user_location, no domain filtering
+        # Claude decides how many searches needed
+        # Cost: $0.01 per search (tracked in usage.server_tool_use.web_search_requests)
     },
-    "messages": [...]
+    {
+        "type": "web_fetch_20250910",
+        "name": "web_fetch"
+        # No max_uses limit (users have token budget)
+        # No citations (not showing to users)
+        # No domain filtering (allow all public URLs)
+        # Cost: FREE (only tokens)
+    }
+]
+
+# Client-side tools (implemented by us)
+CLIENT_TOOLS = [
+    analyze_image,    # Analyze user-uploaded images
+    analyze_pdf,      # Analyze user-uploaded PDFs
+    execute_python    # Execute code via E2B/Modal
+]
+
+ALL_TOOLS = SERVER_TOOLS + CLIENT_TOOLS
+
+# Total: 5 tools (2 server-side, 3 client-side)
+```
+
+### Tool Descriptions Template (from Phase 1.4)
+
+Each tool must have detailed description (3-4+ sentences):
+
+```python
+"""<Tool purpose and capabilities>
+
+Use this tool when <specific use cases>. The tool <how it works>.
+It <what parameters do> and returns <output format>.
+
+When to use: <specific scenarios>
+When NOT to use: <limitations>
+
+Limitations: <important caveats>
+Token cost: <if applicable>
+
+Args:
+    param1: <detailed description>
+    param2: <detailed description>
+
+Returns:
+    <format and structure of return value>
+"""
+```
+
+---
+
+## Multimodal Tools
+
+### analyze_image Tool
+
+```python
+# bot/core/tools/analyze_image.py
+
+from anthropic import beta_tool
+import anthropic
+import json
+from bot.config import ANTHROPIC_API_KEY
+import structlog
+
+logger = structlog.get_logger()
+client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+
+@beta_tool
+def analyze_image(claude_file_id: str, question: str) -> str:
+    """Analyze an image using Claude's vision capabilities.
+
+    Use this tool for photos, screenshots, diagrams, charts when you need
+    visual understanding. The tool uses Claude's vision API to analyze the
+    image and answer questions about its content. It can identify objects,
+    read text (OCR), describe scenes, analyze visual data, understand charts
+    and diagrams, and extract information from screenshots.
+
+    When to use: User asks about image content, wants to extract text from
+    images, needs description of visual elements, wants to analyze charts/diagrams,
+    or asks questions about photos they uploaded.
+
+    When NOT to use: For text-only questions, when image is not relevant to
+    the query, or when file is a PDF (use analyze_pdf instead).
+
+    Limitations: Cannot identify people by name (AUP violation), limited
+    spatial reasoning (analog clocks, chess positions), approximate counting
+    only (not precise for many small objects), cannot detect AI-generated images,
+    no healthcare diagnostics (CTs, MRIs, X-rays).
+
+    Token cost: Approximately 1600 tokens per 1092x1092px image. Larger images
+    consume proportionally more tokens.
+
+    Args:
+        claude_file_id: File ID from available files list in conversation.
+            This is the claude_file_id stored in database after Files API upload.
+        question: What to analyze or extract from the image. Be specific about
+            what information is needed (e.g., "What objects are visible?",
+            "Extract all text from this screenshot", "What does this chart show?").
+
+    Returns:
+        JSON string with analysis results containing 'analysis' key with
+        Claude's response about the image.
+    """
+
+    try:
+        logger.info(
+            "analyze_image_called",
+            claude_file_id=claude_file_id,
+            question=question
+        )
+
+        # Call Claude Vision API
+        response = client.messages.create(
+            model="claude-sonnet-4-5",
+            max_tokens=2048,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "file",
+                            "file_id": claude_file_id
+                        }
+                    },
+                    {
+                        "type": "text",
+                        "text": question
+                    }
+                ]
+            }]
+        )
+
+        analysis = response.content[0].text
+
+        logger.info(
+            "analyze_image_success",
+            claude_file_id=claude_file_id,
+            tokens_used=response.usage.input_tokens + response.usage.output_tokens
+        )
+
+        return json.dumps({
+            "analysis": analysis,
+            "tokens_used": response.usage.input_tokens + response.usage.output_tokens
+        })
+
+    except Exception as e:
+        logger.error(
+            "analyze_image_failed",
+            claude_file_id=claude_file_id,
+            error=str(e),
+            exc_info=True
+        )
+        # Let Tool Runner handle error with is_error: true
+        raise
+```
+
+**Note about analyze_image:** This tool is for user-uploaded images (Telegram → Files API). For images from URLs, Claude can use `web_fetch` if the image is embedded in a webpage.
+
+---
+
+### analyze_pdf Tool
+
+**Important:** This tool is for **user-uploaded PDFs** (Telegram files → Files API). For PDFs from URLs (e.g., "Analyze https://arxiv.org/paper.pdf"), Claude uses the `web_fetch` server-side tool instead (no custom implementation needed).
+
+```python
+# bot/core/tools/analyze_pdf.py
+
+from anthropic import beta_tool
+import anthropic
+import json
+from bot.config import ANTHROPIC_API_KEY
+import structlog
+
+logger = structlog.get_logger()
+client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+
+@beta_tool
+def analyze_pdf(claude_file_id: str, question: str, pages: str = "all") -> str:
+    """Analyze a PDF document using Claude's vision and text extraction.
+
+    Use this when the user asks about PDF content, wants to extract information,
+    or needs to understand document structure. The tool processes both text and
+    visual elements (charts, diagrams, tables) using Claude's multimodal
+    capabilities. Each page is converted to both text and image for comprehensive
+    analysis.
+
+    It accepts page ranges to analyze specific sections for cost optimization.
+    For large documents, analyzing specific pages is much cheaper than processing
+    the entire document.
+
+    Returns extracted text and analysis. Does NOT support password-protected or
+    encrypted PDFs. Best for documents under 100 pages (larger documents may hit
+    200K context limits).
+
+    When to use: User asks about PDF content, wants to summarize a document,
+    needs to extract specific information, wants to analyze charts/tables in PDFs,
+    or asks questions about uploaded PDFs.
+
+    When NOT to use: For images (use analyze_image), for very large PDFs without
+    specifying pages (suggest user to specify page range first), for password-protected
+    PDFs (inform user it's not supported).
+
+    Token cost: Approximately 3,000-5,000 tokens per page depending on content
+    density. A 10-page PDF costs ~40,000 tokens. Use page ranges to reduce cost.
+
+    Args:
+        claude_file_id: File ID from available files list in conversation.
+        question: What to analyze or extract from the PDF. Be specific.
+        pages: Page range to analyze. Format: '1-5' for pages 1 through 5,
+            '3' for page 3 only, 'all' for entire document (default).
+            Using specific pages dramatically reduces token cost for large PDFs.
+
+    Returns:
+        JSON string with analysis results containing 'analysis' key with
+        Claude's response and 'tokens_used' key with cost information.
+    """
+
+    try:
+        logger.info(
+            "analyze_pdf_called",
+            claude_file_id=claude_file_id,
+            question=question,
+            pages=pages
+        )
+
+        # Call Claude PDF API with prompt caching
+        response = client.messages.create(
+            model="claude-sonnet-4-5",
+            max_tokens=4096,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {
+                        "type": "document",
+                        "source": {
+                            "type": "file",
+                            "file_id": claude_file_id
+                        },
+                        "cache_control": {"type": "ephemeral"}  # Cache PDF content!
+                    },
+                    {
+                        "type": "text",
+                        "text": f"Question: {question}\nAnalyze pages: {pages}"
+                    }
+                ]
+            }]
+        )
+
+        analysis = response.content[0].text
+
+        logger.info(
+            "analyze_pdf_success",
+            claude_file_id=claude_file_id,
+            tokens_used=response.usage.input_tokens + response.usage.output_tokens,
+            cache_hit=response.usage.cache_read_input_tokens > 0
+        )
+
+        return json.dumps({
+            "analysis": analysis,
+            "tokens_used": response.usage.input_tokens + response.usage.output_tokens,
+            "cached_tokens": response.usage.cache_read_input_tokens
+        })
+
+    except Exception as e:
+        logger.error(
+            "analyze_pdf_failed",
+            claude_file_id=claude_file_id,
+            error=str(e),
+            exc_info=True
+        )
+        raise
+```
+
+---
+
+## Web Tools
+
+### Web Search (Official Server-Side Tool)
+
+**Decision: Use official `web_search_20250305` with minimal configuration**
+
+**What it does:**
+- Real-time web search with citations
+- Server-side tool managed by Anthropic (no implementation needed)
+- Returns search results: URLs, titles, snippets
+- Always includes citations (automatically)
+
+**Configuration:**
+
+```python
+# Already included in SERVER_TOOLS (see Tools Architecture section)
+{
+    "type": "web_search_20250305",
+    "name": "web_search"
+    # Minimal config: no max_uses, no user_location, no domain filtering
 }
 ```
+
+**Pricing:**
+- **$0.01 per search** ($10 per 1,000 searches)
+- Plus standard token costs for results
+- Tracked in `usage.server_tool_use.web_search_requests`
+- Must be accounted in user balance (Phase 2.1)
 
 **Use cases:**
-- Complex code generation
-- Multi-step reasoning
-- Mathematical problems
-- Technical analysis
+- User: "What's the latest news about AI?"
+- User: "Find recent research on quantum computing"
+- User: "Compare prices of iPhone models"
+
+**Typical costs:**
+- Simple search: 1 search ($0.01) + ~2K tokens
+- Deep research: 2-3 searches ($0.02-0.03) + ~5-10K tokens
+- Multi-topic comparison: 3-5 searches ($0.03-0.05) + ~10K tokens
+
+**Why minimal configuration:**
+- No max_uses: Claude decides optimal number
+- No user_location: No localization needed
+- No domain filtering: Allow all public sources
+
+**Citations:**
+- Always enabled (required)
+- `cited_text`, `title`, `url` don't count as tokens (free!)
+- Must be preserved in multi-turn conversations
+
+**See Phase 1.4 documentation for full details.**
+
+---
+
+### Web Fetch (Official Server-Side Tool)
+
+**Decision: Use official `web_fetch_20250910` instead of custom implementation**
+
+**What it does:**
+- Fetches full content from URLs (web pages + PDFs)
+- Server-side tool managed by Anthropic (no implementation needed)
+- Automatic PDF text extraction
+- Built-in caching
+- Free (only pay for tokens)
+
+**Configuration:**
+
+```python
+# Already included in SERVER_TOOLS (see Tools Architecture section)
+{
+    "type": "web_fetch_20250910",
+    "name": "web_fetch",
+    # No max_uses limit (users have token budget)
+    # No citations (not showing to users)
+    # No domain filtering (allow all public URLs)
+}
+```
+
+**Why official tool instead of custom:**
+- ✅ Zero implementation code
+- ✅ Automatic PDF extraction (no PyPDF2 needed)
+- ✅ Built-in caching by Anthropic
+- ✅ Built-in error handling
+- ✅ Same cost (only tokens)
+- ✅ Officially maintained
+
+**Use cases:**
+- User: "Analyze this article: https://example.com/article"
+- User: "What's in this PDF? https://arxiv.org/paper.pdf"
+- Combined with web_search: Claude finds URLs → fetches full content
+
+**Typical token costs:**
+- Average web page (10KB): ~2,500 tokens
+- Large documentation (100KB): ~25,000 tokens
+- Research paper PDF (500KB): ~125,000 tokens
+
+**Limitations:**
+- ❌ No JavaScript rendering (static HTML only)
+- ✅ Can only fetch URLs from conversation context (security feature)
+
+**See Phase 1.4 documentation for full details.**
+
+---
+
+## Code Execution (External Service)
+
+**Decision:** Use external code execution service instead of Claude's built-in tool.
+
+**Why not Claude's code execution:**
+- ❌ No internet access (cannot make API calls, pip install packages)
+- ❌ Limited to pre-installed libraries
+- ❌ Not suitable for universal bot use cases
+
+**Alternative: E2B or Modal**
+
+To be decided during Phase 1.5 implementation. Options:
+
+**Option A: E2B (e2b.dev)** - Recommended
+- Code interpreter API with internet access
+- Sandboxed Python/Node.js environments
+- File system access
+- Pip install any packages
+- Pay-as-you-go pricing
+
+**Option B: Modal (modal.com)**
+- Serverless containers
+- GPU support (for ML tasks)
+- Custom Docker images
+- Internet access
+- Free tier + pay per second
+
+**Option C: Self-hosted Docker**
+- Full control
+- More complex to maintain
+
+### execute_python Tool (Implementation pending)
+
+```python
+# bot/core/tools/execute_python.py
+
+from anthropic import beta_tool
+# from e2b import Sandbox  # To be decided
+import json
+import structlog
+
+logger = structlog.get_logger()
+
+@beta_tool
+def execute_python(
+    code: str,
+    requirements: list[str] = None,
+    timeout: int = 30
+) -> str:
+    """Execute Python code with internet access and arbitrary packages.
+
+    Use this tool when the user wants to run Python code, analyze data with
+    custom libraries, make HTTP requests, call external APIs, or perform
+    computational tasks. This tool provides a sandboxed Python environment
+    with full internet access and ability to install any pip package.
+
+    Unlike Claude's built-in code execution, this tool can:
+    - Install any pip package via requirements
+    - Make HTTP requests to external APIs
+    - Download data from the internet
+    - Use custom libraries not available in Claude's environment
+
+    When to use: User wants to run code with specific libraries, needs to
+    access external APIs, wants to download and process data from the internet,
+    or needs computational capabilities beyond what's available in other tools.
+
+    When NOT to use: For simple calculations (Claude can do those directly),
+    when user just wants to understand code (no execution needed), or when
+    the task can be done with other tools (analyze_image, analyze_pdf, etc.).
+
+    Security: Code runs in isolated sandbox with resource limits (CPU, memory, time).
+    All executions are logged for security monitoring.
+
+    Args:
+        code: Python code to execute. Can be multi-line script.
+        requirements: Optional list of pip packages to install before execution.
+            Example: ["requests", "beautifulsoup4", "pandas"]
+        timeout: Maximum execution time in seconds (default: 30, max: 300)
+
+    Returns:
+        JSON string with stdout, stderr, and return_code from execution.
+    """
+
+    try:
+        logger.info(
+            "execute_python_called",
+            code_length=len(code),
+            requirements=requirements,
+            timeout=timeout
+        )
+
+        # TODO: Implement with chosen service (E2B/Modal)
+        # Example with E2B:
+        # sandbox = Sandbox()
+        # if requirements:
+        #     sandbox.run_code(f"pip install {' '.join(requirements)}")
+        # result = sandbox.run_code(code, timeout=timeout)
+
+        # Placeholder implementation
+        return json.dumps({
+            "stdout": "Code execution not yet implemented. Choose E2B or Modal in Phase 1.5.",
+            "stderr": "",
+            "return_code": 0
+        })
+
+    except Exception as e:
+        logger.error(
+            "execute_python_failed",
+            error=str(e),
+            exc_info=True
+        )
+        raise
+```
+
+### Service Evaluation Criteria (Phase 1.5)
+
+When choosing between E2B, Modal, or self-hosted:
+
+**Evaluate:**
+1. **Pricing** - cost per execution, free tier limits
+2. **Latency** - cold start time, execution speed
+3. **Reliability** - uptime, SLA guarantees
+4. **Features** - file system, GPU, package management
+5. **Integration** - SDK quality, documentation
+6. **Security** - isolation, sandboxing, monitoring
+7. **Maintenance** - self-hosted vs managed
+
+**Testing during Phase 1.5:**
+- Benchmark simple execution (print hello)
+- Test pip install custom packages
+- Test HTTP requests
+- Test file I/O
+- Measure cold start vs warm start
+- Compare pricing for expected usage
+
+**Final decision documented in Phase 1.5 after implementation.**
+
+---
+
+## System Prompt
+
+Dynamic system prompt with available files and tool selection guidance:
+
+```python
+# bot/core/claude/prompts.py
+
+from bot.db.repositories.user_file_repository import UserFileRepository
+
+GLOBAL_SYSTEM_PROMPT = """You are a helpful AI assistant integrated into a Telegram bot.
+You can analyze images, PDFs, search the web, fetch URLs, and execute Python code.
+Be concise but thorough. Format responses for Telegram (Markdown supported)."""
+
+TOOL_SELECTION_PROMPT = """
+Answer the user's request using relevant tools (if they are available).
+Before calling a tool, do some analysis. First, think about which of the
+provided tools is the relevant tool to answer the user's request. Second,
+go through each of the required parameters of the relevant tool and determine
+if the user has directly provided or given enough information to infer a value.
+When deciding if the parameter can be inferred, carefully consider all the
+context to see if it supports a specific value. If all of the required
+parameters are present or can be reasonably inferred, proceed with the tool call.
+BUT, if one of the values for a required parameter is missing, DO NOT invoke
+the function (not even with fillers for the missing params) and instead,
+ask the user to provide the missing parameters. DO NOT ask for more information
+on optional parameters if it is not provided.
+"""
+
+async def generate_system_prompt(
+    thread_id: int,
+    user_file_repo: UserFileRepository
+) -> str:
+    """Generate dynamic system prompt with available files."""
+
+    # Get files for this thread
+    files = await user_file_repo.get_by_thread_id(thread_id)
+
+    # Generate files list
+    if files:
+        files_list = "\n".join([
+            f"- {f.filename} ({f.file_type.value}, {format_size(f.file_size)}, "
+            f"uploaded {format_time_ago(f.uploaded_at)}, claude_file_id: {f.claude_file_id})"
+            for f in files
+        ])
+        files_section = f"\nAvailable files in this conversation:\n{files_list}\n"
+    else:
+        files_section = ""
+
+    return f"""{GLOBAL_SYSTEM_PROMPT}
+{files_section}
+{TOOL_SELECTION_PROMPT}"""
+
+def format_size(bytes: int) -> str:
+    """Format file size."""
+    for unit in ['B', 'KB', 'MB']:
+        if bytes < 1024:
+            return f"{bytes:.1f} {unit}"
+        bytes /= 1024
+    return f"{bytes:.1f} GB"
+
+def format_time_ago(dt: datetime) -> str:
+    """Format time ago."""
+    delta = datetime.utcnow() - dt
+    if delta.seconds < 60:
+        return "just now"
+    elif delta.seconds < 3600:
+        return f"{delta.seconds // 60} min ago"
+    elif delta.seconds < 86400:
+        return f"{delta.seconds // 3600} hours ago"
+    else:
+        return f"{delta.days} days ago"
+```
+
+---
+
+## Implementation Details
+
+### Claude Handler with Tool Runner
+
+```python
+# bot/telegram/handlers/claude.py
+
+from aiogram import Router, F
+from aiogram.types import Message
+from anthropic import Anthropic, beta_tool
+from bot.core.tools import ALL_TOOLS
+from bot.core.claude.prompts import generate_system_prompt
+from bot.db.repositories import MessageRepository, UserFileRepository
+import structlog
+
+router = Router()
+logger = structlog.get_logger()
+client = Anthropic()
+
+@router.message(F.text)
+async def handle_message(
+    message: Message,
+    message_repo: MessageRepository,
+    user_file_repo: UserFileRepository
+):
+    """Handle user messages with tool runner."""
+
+    try:
+        # Get thread for this chat
+        thread = await get_or_create_thread(message.chat.id)
+
+        # Generate system prompt with available files
+        system_prompt = await generate_system_prompt(thread.id, user_file_repo)
+
+        # Get conversation history
+        history = await get_conversation_history(thread.id, message_repo)
+
+        # Add current message
+        history.append({
+            "role": "user",
+            "content": message.text
+        })
+
+        # Save user message
+        await message_repo.create_message(
+            chat_id=message.chat.id,
+            message_id=message.message_id,
+            role="user",
+            content=message.text
+        )
+
+        # Use tool runner with streaming
+        runner = client.beta.messages.tool_runner(
+            model="claude-sonnet-4-5",
+            max_tokens=4096,
+            system=system_prompt,
+            tools=ALL_TOOLS,
+            messages=history,
+            stream=True
+        )
+
+        # Stream responses to Telegram
+        telegram_message = None
+        accumulated_text = ""
+
+        for message_stream in runner:
+            for event in message_stream:
+                if event.type == "content_block_delta":
+                    if event.delta.type == "text_delta":
+                        accumulated_text += event.delta.text
+
+                        # Update Telegram message every 20 chars
+                        if len(accumulated_text) % 20 == 0:
+                            if telegram_message:
+                                telegram_message = await telegram_message.edit_text(accumulated_text)
+                            else:
+                                telegram_message = await message.answer(accumulated_text)
+
+            # Final message update
+            final_message = message_stream.get_final_message()
+            if telegram_message:
+                await telegram_message.edit_text(final_message.content[0].text)
+            else:
+                telegram_message = await message.answer(final_message.content[0].text)
+
+        # Save assistant response
+        final_response = runner.until_done()
+        await message_repo.create_message(
+            chat_id=message.chat.id,
+            message_id=telegram_message.message_id,
+            role="assistant",
+            content=final_response.content[0].text,
+            tokens_input=final_response.usage.input_tokens,
+            tokens_output=final_response.usage.output_tokens
+        )
+
+    except Exception as e:
+        logger.error("message_handler_failed", error=str(e), exc_info=True)
+        await message.answer("Sorry, I encountered an error. Please try again.")
+```
+
+### Configuration
+
+```python
+# bot/config.py
+
+# Files API settings
+FILES_API_TTL_HOURS = get_env("FILES_API_TTL_HOURS", 24)
+
+# Tool settings
+TOOL_RUNNER_BETA = "advanced-tool-use-2025-11-20"
+
+# Model settings
+DEFAULT_MODEL = "claude-sonnet-4-5"
+MAX_TOKENS_DEFAULT = 4096
+
+# Rate limits (Phase 2.1)
+# MAX_FILES_PER_THREAD = 20
+```
 
 ---
 
 ## Implementation Plan
 
-### Phase 1.5 Checklist
+### Phase 1.5 Tasks
 
-#### Multimodal Support
-- [ ] Vision handler for photos
-- [ ] Voice transcription (choose service)
-- [ ] Document handlers (PDF, Office, code)
-- [ ] File size limits and validation
-- [ ] Update database for multimodal messages
+**Files API Integration:**
+- [ ] Create `user_files` table (Alembic migration)
+- [ ] Implement UserFileRepository
+- [ ] Implement files_api.py client
+- [ ] File upload handlers (photos, documents)
+- [ ] Cleanup cron job for expired files
 
-#### Tools Framework
-- [ ] Abstract Tool interface
-- [ ] Tool registry
-- [ ] Code execution tool (Docker sandbox)
-- [ ] Image generation tool (choose service)
-- [ ] Tool execution flow in handler
-- [ ] Max iterations protection
+**Tools Implementation:**
+- [ ] analyze_image tool (@beta_tool)
+- [ ] analyze_pdf tool (@beta_tool)
+- [ ] web_search (server-side, just config)
+- [ ] web_fetch (server-side, just config)
+- [ ] execute_python tool (@beta_tool + external service)
+  - [ ] Evaluate E2B vs Modal vs self-hosted
+  - [ ] Choose service and implement integration
+  - [ ] Test with various use cases
+- [ ] Tools registry/module organization
 
-#### Optimizations
-- [ ] Implement prompt caching
-- [ ] Add extended thinking support
-- [ ] Update token usage tracking
-- [ ] Configuration for when to use features
+**System Prompt:**
+- [ ] Dynamic system prompt generation
+- [ ] Available files listing
+- [ ] Tool selection prompt integration
 
-#### Testing & Documentation
-- [ ] Tests for each tool
-- [ ] Tests for multimodal handlers
-- [ ] Security testing for code execution
-- [ ] Update CLAUDE.md with status
-- [ ] Document usage examples
+**Claude Handler:**
+- [ ] Update handler to use tool runner
+- [ ] Streaming with tools
+- [ ] Error handling for tools
+- [ ] Token tracking with tools
+- [ ] Cost tracking for web_search (usage.server_tool_use.web_search_requests)
+
+**Testing:**
+- [ ] Test file upload flow
+- [ ] Test each tool individually
+- [ ] Test tool combinations
+- [ ] Test error scenarios
+- [ ] Integration tests with real files
+
+**Documentation:**
+- [ ] Update CLAUDE.md with Phase 1.5 status
+- [ ] Tool usage examples
+- [ ] Troubleshooting guide
 
 ---
 
 ## Related Documents
 
-- **[phase-1.3-claude-core.md](phase-1.3-claude-core.md)** - Phase 1.3: Core implementation
-- **[phase-1.4-claude-advanced-api.md](phase-1.4-claude-advanced-api.md)** - Previous phase: Advanced API
-- **[phase-2.1-payment-system.md](phase-2.1-payment-system.md)** - Next phase: Payment system
-- **[phase-1.2-database.md](phase-1.2-database.md)** - Database schema
+- **[phase-1.4-claude-advanced-api.md](phase-1.4-claude-advanced-api.md)** - ⚠️ **REQUIRED READING** - All best practices and API patterns
+- **[phase-1.3-claude-core.md](phase-1.3-claude-core.md)** - Core implementation foundation
+- **[phase-1.6-rag.md](phase-1.6-rag.md)** - Next phase: Vector search and search_user_files tool
+- **[phase-1.2-database.md](phase-1.2-database.md)** - Database architecture
 - **[CLAUDE.md](../CLAUDE.md)** - Project overview
 
 ---
 
 ## Summary
 
-Phase 1.5 extends the bot from text-only to full multimodal with tools:
+Phase 1.5 implements multimodal support and tools using:
 
-- **Multimodal** - Images, voice, files
-- **Tools** - Code execution, image generation, extensible framework
-- **Optimizations** - Caching and extended thinking
+**Files API** - Universal file storage:
+- All files → Files API (images, PDFs, documents)
+- Eager upload, selective processing
+- 24-hour lifecycle, automatic cleanup
 
-This phase builds on optimized Phase 1.4 implementation.
+**Tool Runner** - Simple implementation:
+- @beta_tool decorator for all tools
+- Automatic tool loop and error handling
+- Streaming support
+
+**Tools** - 5 total:
+- web_search (server-side, Claude) - $0.01/search
+- web_fetch (server-side, Claude) - FREE (tokens only)
+- analyze_image (custom, vision) - tokens only
+- analyze_pdf (custom, PDF support) - tokens only
+- execute_python (custom, external service - E2B or Modal)
+
+**Best Practices** (from Phase 1.4):
+- Detailed tool descriptions (3-4+ sentences)
+- input_examples for complex tools
+- Chain of thought prompting
+- Default parallel tool behavior
+- Pass errors to Claude
+
+Ready to implement after Phase 1.4 documentation review is complete.

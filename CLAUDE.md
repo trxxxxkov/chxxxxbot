@@ -162,7 +162,46 @@ chxxxxbot/
 - Cost attribution per user
 - Cost reporting and analytics
 
-#### 2.2 Additional Telegram Features 📋 Planned
+#### 2.2 DevOps Agent 📋 Planned
+
+**Self-healing bot with autonomous code editing via Agent SDK.**
+
+**Core capabilities:**
+- 🔧 Auto-fix errors detected in production logs
+- 🚀 Implement features on owner's request via Telegram
+- 📊 Code review and suggestions
+- 🔄 Create GitHub PRs with fixes/features
+- ⚙️ Deploy changes after owner approval
+
+**Architecture:**
+- Agent Service container (Claude Agent SDK + FastAPI)
+- Full filesystem access to bot code (shared volume)
+- GitHub API integration (branches, PRs, merge)
+- Docker socket access (restart containers)
+- Loki alert webhook (auto-fix trigger)
+
+**Telegram commands:**
+- `/agent <task>` - Owner requests feature/fix/refactor
+- `/approve_pr <number>` - Approve and deploy PR
+- `/agent_status` - Check agent service health
+
+**Security:**
+- Owner-only access (OWNER_TELEGRAM_ID validation)
+- Protected files (secrets/, .env, compose.yaml)
+- Review before merge (always creates PRs, never direct commits)
+- Audit logging (all operations logged)
+- Rate limiting (prevent abuse)
+
+**Use cases:**
+1. Self-healing: Error in logs → Agent fixes → PR → Owner approves → Deployed
+2. Feature dev: `/agent add /stats command` → Agent implements → PR → Review → Merged
+3. Code review: `/agent review last commit` → Agent analyzes → Suggestions PR
+
+**Cost:** ~$3-40/month depending on usage (Agent SDK operations)
+
+See [docs/phase-2.2-devops-agent.md](docs/phase-2.2-devops-agent.md) for full architecture.
+
+#### 2.3 Additional Telegram Features 📋 Planned
 - Draft messages (Bot API 9.3)
 - Threads/topics (Bot API 9.3)
 - Keyboards (inline, reply)

@@ -68,12 +68,14 @@ Documents are organized by development phase for easy navigation.
 | [phase-1.3-claude-core.md](phase-1.3-claude-core.md) | Claude integration (core): streaming, context management, error handling | **implemented** |
 | [phase-1.4-claude-advanced-api.md](phase-1.4-claude-advanced-api.md) | Advanced API features: documentation review, best practices, optimizations | **in progress** |
 | [phase-1.5-multimodal-tools.md](phase-1.5-multimodal-tools.md) | Multimodal support (images, voice, files) and tools framework (code execution, image generation) | **planned** |
+| [phase-1.6-rag.md](phase-1.6-rag.md) | RAG (Retrieval-Augmented Generation): vector search, Qdrant, embeddings, search_user_files tool | **planned** |
 
 ### Phase 2: Features Expansion
 
 | File | Description | Status |
 |------|-------------|--------|
 | [phase-2.1-payment-system.md](phase-2.1-payment-system.md) | Payment system: user balance, Telegram Stars integration, admin tools, cost tracking | **planned** |
+| [phase-2.2-devops-agent.md](phase-2.2-devops-agent.md) | DevOps Agent: self-healing bot with Agent SDK, auto-fix errors, feature development via Telegram, GitHub PRs | **planned** |
 
 ### Phase 3: Infrastructure
 
@@ -130,9 +132,17 @@ Documents are organized by development phase for easy navigation.
 - Vision (image analysis with Claude)
 - Voice messages (transcription + processing)
 - File handling (PDF, code, data files)
-- Tools framework (code execution, image generation)
+- Tools framework (code execution, image generation, web_search, url_fetch)
 - Prompt caching optimization
 - Extended thinking for complex tasks
+
+### Phase 1.6: RAG (Retrieval-Augmented Generation) 📋
+- Vector database (Qdrant container)
+- Embeddings service (OpenAI or sentence-transformers)
+- File indexing pipeline (PDF, images, text)
+- search_user_files tool (semantic search)
+- Hybrid search (user files + web search + url fetch)
+- Citations handling (internal use only)
 
 ### Phase 2.1: Payment System 📋
 - User balance in USD
@@ -141,6 +151,15 @@ Documents are organized by development phase for easy navigation.
 - Admin commands (balance management)
 - Cost reporting and analytics
 - Transaction audit trail
+
+### Phase 2.2: DevOps Agent 📋
+- Agent SDK integration (autonomous code editing)
+- Self-healing (auto-fix errors from logs)
+- Feature development via Telegram (/agent add feature)
+- GitHub integration (create PRs, merge, deploy)
+- Docker control (restart containers)
+- Security (owner-only, protected files, audit)
+- Cost: ~$3-40/month depending on usage
 
 ### Phase 3: Infrastructure 📋
 - Redis caching
