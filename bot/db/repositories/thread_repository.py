@@ -180,13 +180,12 @@ class ThreadRepository(BaseRepository[Thread]):
         await self.session.delete(thread)
         await self.session.flush()
 
-    async def update_thread_model(self, thread_id: int,
-                                  model_name: str) -> None:
+    async def update_thread_model(self, thread_id: int, model_id: str) -> None:
         """Update LLM model for thread.
 
         Args:
             thread_id: Internal thread ID.
-            model_name: New model name (claude/openai/google).
+            model_id: New model ID (e.g., "claude:sonnet", "openai:gpt4").
 
         Raises:
             ValueError: If thread not found.
@@ -195,5 +194,5 @@ class ThreadRepository(BaseRepository[Thread]):
         if not thread:
             raise ValueError(f"Thread {thread_id} not found")
 
-        thread.model_name = model_name
+        thread.model_id = model_id
         await self.session.flush()

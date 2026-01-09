@@ -72,7 +72,7 @@ async def model_command(  # pylint: disable=too-many-locals
 
     # Get or create thread
     thread_id = message.message_thread_id  # None for non-forum chats
-    db_thread, was_created = await thread_repo.get_or_create(
+    db_thread, was_created = await thread_repo.get_or_create_thread(
         chat_id=db_chat.id,
         user_id=db_user.id,
         thread_id=thread_id,
