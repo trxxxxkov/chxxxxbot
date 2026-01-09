@@ -42,7 +42,6 @@ class ThreadRepository(BaseRepository[Thread]):
         user_id: int,
         thread_id: Optional[int] = None,
         title: Optional[str] = None,
-        system_prompt: Optional[str] = None,
     ) -> tuple[Thread, bool]:
         """Get existing thread or create new one.
 
@@ -50,17 +49,18 @@ class ThreadRepository(BaseRepository[Thread]):
         - thread_id = None → main chat (no forum topic)
         - thread_id = 123 → forum topic with ID 123
 
-        If thread exists, updates its metadata (title, prompt).
+        If thread exists, updates its metadata (title).
         If thread doesn't exist, creates new thread.
 
         Note: Model selection is per user (User.model_id), not per thread.
+        Note: System prompt will be composed in Phase 1.4.2:
+              GLOBAL_SYSTEM_PROMPT + User.custom_prompt + thread.files_context
 
         Args:
             chat_id: Telegram chat ID.
             user_id: Telegram user ID.
             thread_id: Telegram thread/topic ID (None for main chat).
             title: Thread title. Defaults to None.
-            system_prompt: Custom system prompt. Defaults to None.
 
         Returns:
             Tuple of (Thread instance, was_created boolean).
@@ -73,8 +73,6 @@ class ThreadRepository(BaseRepository[Thread]):
             # Update thread metadata if explicitly provided
             if title is not None:
                 thread.title = title
-            if system_prompt is not None:
-                thread.system_prompt = system_prompt
             await self.session.flush()
             return thread, False
 
@@ -84,7 +82,6 @@ class ThreadRepository(BaseRepository[Thread]):
             user_id=user_id,
             thread_id=thread_id,
             title=title,
-            system_prompt=system_prompt,
         )
         self.session.add(thread)
         await self.session.flush()

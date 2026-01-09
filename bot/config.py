@@ -242,8 +242,27 @@ MODEL_REGISTRY: dict[str, ModelConfig] = {
 # Default model (Claude Sonnet 4.5 - best balance of intelligence, speed, cost)
 DEFAULT_MODEL_ID = "claude:sonnet"
 
-# Global system prompt (same for all users in Phase 1.3)
-# Phase 1.4 will support per-thread system prompts from database
+# ============================================================================
+# System Prompt Architecture
+# ============================================================================
+# Phase 1.4.2 will implement 3-level system prompt composition:
+#
+# 1. GLOBAL_SYSTEM_PROMPT (below) - Always cached, same for all users
+#    - Base instructions for Claude
+#    - Tool descriptions (code execution, image generation, etc.)
+#    - General behavior guidelines
+#
+# 2. User.custom_prompt (per user) - Rarely changes, can be cached
+#    - Personal preferences (language, tone, style)
+#    - User-specific instructions
+#
+# 3. Thread.files_context (per thread) - Dynamic, NOT cached
+#    - List of files available in current thread
+#    - Auto-generated when files are added
+#
+# Final prompt = GLOBAL + User.custom_prompt + Thread.files_context
+# ============================================================================
+
 GLOBAL_SYSTEM_PROMPT = (
     "You are a helpful AI assistant powered by Claude. "
     "You provide clear, accurate, and helpful responses to user questions.\n\n"
