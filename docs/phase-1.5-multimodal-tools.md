@@ -1101,49 +1101,192 @@ MAX_TOKENS_DEFAULT = 4096
 
 ## Implementation Plan
 
-### Phase 1.5 Tasks
+**Status:** 🚧 **IN PROGRESS** (started 2026-01-09)
 
-**Files API Integration:**
-- [ ] Create `user_files` table (Alembic migration)
-- [ ] Implement UserFileRepository
-- [ ] Implement files_api.py client
-- [ ] File upload handlers (photos, documents)
-- [ ] Cleanup cron job for expired files
+**Decisions:**
+- ✅ E2B for code execution (internet access, pip install support)
+- ✅ Extended Thinking ENABLED (requires thinking_blocks in DB)
+- ✅ Interleaved Thinking ENABLED (already done in Phase 1.4)
+- ✅ Testing strategy: parallel with development
+- ✅ Implementation order: Variant C (tools individually, independent first)
 
-**Tools Implementation:**
-- [ ] analyze_image tool (@beta_tool)
-- [ ] analyze_pdf tool (@beta_tool)
-- [ ] web_search (server-side, just config)
-- [ ] web_fetch (server-side, just config)
-- [ ] execute_python tool (@beta_tool + external service)
-  - [ ] Evaluate E2B vs Modal vs self-hosted
-  - [ ] Choose service and implement integration
-  - [ ] Test with various use cases
-- [ ] Tools registry/module organization
+**Order of implementation:**
+1. Files API → 2. analyze_image → 3. analyze_pdf → 4. Web tools → 5. Code execution → 6. Integration
 
-**System Prompt:**
-- [ ] Dynamic system prompt generation
-- [ ] Available files listing
-- [ ] Tool selection prompt integration
+---
 
-**Claude Handler:**
-- [ ] Update handler to use tool runner
-- [ ] Streaming with tools
-- [ ] Error handling for tools
-- [ ] Token tracking with tools
-- [ ] Cost tracking for web_search (usage.server_tool_use.web_search_requests)
+### ✅ Stage 1: Database & Files API (Foundation) - COMPLETE
+**Goal:** Enable file uploads and storage in Files API
 
-**Testing:**
-- [ ] Test file upload flow
-- [ ] Test each tool individually
-- [ ] Test tool combinations
-- [ ] Test error scenarios
-- [ ] Integration tests with real files
+- [x] Database migration (Alembic)
+  - [x] Create `user_files` table
+  - [x] Add `thinking_blocks` column to `messages` (for Extended Thinking)
+  - [x] Add cache tracking columns (`cache_creation_input_tokens`, `cache_read_input_tokens`, `thinking_tokens`)
+- [x] Files API client (`bot/core/files_api.py`)
+  - [x] upload_to_files_api() function
+  - [x] delete_from_files_api() function
+  - [x] cleanup_expired_files() cron job
+  - [x] Beta header: `files-api-2025-04-14`
+  - [x] Lazy client initialization with secret reading
+- [x] UserFileRepository (`bot/db/repositories/user_file_repository.py`)
+  - [x] CRUD operations
+  - [x] get_by_thread_id() for system prompt
+  - [x] get_expired_files() for cleanup
+  - [x] Additional queries (by_file_type, recent_files, total_size)
+- [x] File upload handlers (`bot/telegram/handlers/files.py`)
+  - [x] Photos handler (F.photo)
+  - [x] Documents handler (F.document)
+  - [x] File type detection (IMAGE, PDF, DOCUMENT)
+  - [x] Save to DB + create message mention
+  - [x] User confirmation messages
+- [x] Configuration
+  - [x] FILES_API_TTL_HOURS in config.py
+  - [x] Router registration in loader.py
+- [ ] Tests for Stage 1 (deferred to later)
 
-**Documentation:**
-- [ ] Update CLAUDE.md with Phase 1.5 status
-- [ ] Tool usage examples
-- [ ] Troubleshooting guide
+**Result:** Users can upload files, they're saved to Files API and DB. ✅
+
+**Note:** Fixed SQLAlchemy reserved name conflict (`metadata` → `file_metadata` in model, `metadata` in DB column).
+
+---
+
+### Stage 2: analyze_image Tool
+**Goal:** Claude can analyze uploaded images
+
+- [ ] Tool implementation (`bot/core/tools/analyze_image.py`)
+  - [ ] @beta_tool decorator
+  - [ ] Detailed description (3-4+ sentences, limitations!)
+  - [ ] Vision API call with file_id
+  - [ ] Error handling
+- [ ] Tools registry (`bot/core/tools/__init__.py`)
+  - [ ] Import analyze_image
+  - [ ] CLIENT_TOOLS list
+- [ ] Tests for Stage 2
+  - [ ] Unit test: analyze_image tool
+  - [ ] Integration test: upload image + analyze
+
+**Result:** Claude can analyze uploaded images via tool.
+
+---
+
+### Stage 3: analyze_pdf Tool
+**Goal:** Claude can analyze uploaded PDFs
+
+- [ ] Tool implementation (`bot/core/tools/analyze_pdf.py`)
+  - [ ] @beta_tool decorator
+  - [ ] Detailed description
+  - [ ] PDF API call with cache_control
+  - [ ] Page range support (optional parameter)
+  - [ ] Error handling
+- [ ] Update tools registry
+  - [ ] Add analyze_pdf to CLIENT_TOOLS
+- [ ] Tests for Stage 3
+  - [ ] Unit test: analyze_pdf tool
+  - [ ] Integration test: upload PDF + analyze
+  - [ ] Test cache hit rate
+
+**Result:** Claude can analyze uploaded PDFs with prompt caching.
+
+---
+
+### Stage 4: Web Tools (Server-side)
+**Goal:** Claude can search web and fetch URLs
+
+- [ ] Update tools registry
+  - [ ] Add web_search to SERVER_TOOLS
+  - [ ] Add web_fetch to SERVER_TOOLS
+  - [ ] Beta headers: `web-search-2025-03-05`, `web-fetch-2025-09-10`
+- [ ] Cost tracking preparation
+  - [ ] Track `usage.server_tool_use.web_search_requests` (for Phase 2.1)
+- [ ] Tests for Stage 4
+  - [ ] Integration test: web_search
+  - [ ] Integration test: web_fetch
+  - [ ] Test web_search + web_fetch combination
+
+**Result:** Claude can search internet and fetch content from URLs.
+
+---
+
+### Stage 5: execute_python Tool (E2B)
+**Goal:** Claude can execute Python code with internet access
+
+- [ ] E2B integration
+  - [ ] Research E2B SDK and API
+  - [ ] Add e2b_api_key.txt to secrets/
+  - [ ] Update .gitignore (skip-worktree for e2b_api_key.txt)
+  - [ ] Install E2B SDK in requirements
+- [ ] Tool implementation (`bot/core/tools/execute_python.py`)
+  - [ ] @beta_tool decorator
+  - [ ] Detailed description
+  - [ ] E2B Sandbox integration
+  - [ ] Pip install requirements support
+  - [ ] Timeout parameter
+  - [ ] Error handling
+- [ ] Update tools registry
+  - [ ] Add execute_python to CLIENT_TOOLS
+- [ ] Tests for Stage 5
+  - [ ] Unit test: execute_python tool
+  - [ ] Integration test: simple code execution
+  - [ ] Integration test: code with pip install
+  - [ ] Integration test: code with HTTP requests
+  - [ ] Benchmark: latency, cold start vs warm start
+
+**Result:** Claude can execute Python code with full internet access and pip.
+
+---
+
+### Stage 6: Integration & System Prompt
+**Goal:** Integrate all tools into main Claude handler
+
+- [ ] Dynamic system prompt (`bot/core/claude/prompts.py`)
+  - [ ] GLOBAL_SYSTEM_PROMPT (update for tools)
+  - [ ] TOOL_SELECTION_PROMPT (chain of thought)
+  - [ ] generate_system_prompt() with available files list
+  - [ ] format_size() and format_time_ago() helpers
+- [ ] Claude handler updates (`bot/telegram/handlers/claude.py`)
+  - [ ] Import Tool Runner from SDK
+  - [ ] Use client.beta.messages.tool_runner()
+  - [ ] Pass ALL_TOOLS to tool runner
+  - [ ] Streaming with tools
+  - [ ] Save thinking blocks to DB
+  - [ ] Include thinking blocks with tool_result (CRITICAL!)
+  - [ ] Token/cost tracking for tools
+- [ ] Enable Extended Thinking
+  - [ ] Uncomment thinking parameter in client.py
+  - [ ] thinking: {"type": "enabled", "budget_tokens": 10000}
+  - [ ] Save thinking blocks to messages.thinking_blocks
+- [ ] Tests for Stage 6
+  - [ ] Integration test: text conversation with tools
+  - [ ] Integration test: multi-tool scenario
+  - [ ] Integration test: parallel tool calls
+  - [ ] Integration test: tool errors
+  - [ ] Integration test: Extended Thinking with tools
+
+**Result:** Full integration of all tools with conversations.
+
+---
+
+### Stage 7: Testing & Documentation
+**Goal:** Ensure everything works and is documented
+
+- [ ] Comprehensive testing
+  - [ ] All unit tests passing
+  - [ ] All integration tests passing
+  - [ ] Manual testing of each tool
+  - [ ] Manual testing of tool combinations
+  - [ ] Error scenarios
+- [ ] Documentation
+  - [ ] Update CLAUDE.md (Phase 1.5 complete)
+  - [ ] Update phase-1.5-multimodal-tools.md (status)
+  - [ ] Usage examples for each tool
+  - [ ] Troubleshooting guide
+  - [ ] E2B integration notes
+- [ ] Performance review
+  - [ ] Latency measurements
+  - [ ] Token usage analysis
+  - [ ] Cost calculations
+
+**Result:** Phase 1.5 complete, tested, and documented.
 
 ---
 

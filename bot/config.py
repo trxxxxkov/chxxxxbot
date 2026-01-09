@@ -35,6 +35,9 @@ CLAUDE_TEMPERATURE = 1.0  # Sampling temperature (0.0-2.0)
 CLAUDE_TIMEOUT = 60  # API request timeout in seconds
 CLAUDE_TOKEN_BUFFER_PERCENT = 0.10  # Safety buffer for token counting
 
+# Files API settings (Phase 1.5)
+FILES_API_TTL_HOURS = int(os.getenv("FILES_API_TTL_HOURS", "24"))
+
 
 @dataclass
 class ModelConfig:  # pylint: disable=too-many-instance-attributes

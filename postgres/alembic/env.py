@@ -17,7 +17,8 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 # Add bot/ directory to Python path for imports
-bot_path = Path(__file__).parent.parent.parent / "bot"
+# In Docker: ./bot mounted at /app, ./postgres mounted at /postgres
+bot_path = Path("/app")
 sys.path.insert(0, str(bot_path))
 
 # Import Base and all models (NO __init__.py - direct imports)

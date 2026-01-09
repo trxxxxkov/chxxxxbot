@@ -207,6 +207,32 @@ class Message(Base):
         doc="LLM output tokens (for billing)",
     )
 
+    # Phase 1.4.2: Prompt Caching token tracking
+    cache_creation_input_tokens: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        nullable=True,
+        doc="Cache creation tokens (5m: 1.25x, 1h: 1.05x)",
+    )
+
+    cache_read_input_tokens: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        nullable=True,
+        doc="Cache read tokens (0.1x for reads)",
+    )
+
+    # Phase 1.5: Extended Thinking support
+    thinking_tokens: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        nullable=True,
+        doc="Extended thinking tokens (for billing)",
+    )
+
+    thinking_blocks: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        doc="Extended thinking content (can be large, full reasoning)",
+    )
+
     # Timestamp (no TimestampMixin - we have date from Telegram)
     # But add created_at for record creation tracking
     # Note: No server_default for cross-database compatibility

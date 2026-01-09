@@ -10,6 +10,7 @@ from aiogram import Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from telegram.handlers import claude
+from telegram.handlers import files
 from telegram.handlers import model
 from telegram.handlers import personality
 from telegram.handlers import start
@@ -55,8 +56,9 @@ def create_dispatcher() -> Dispatcher:
     dispatcher.include_router(start.router)
     dispatcher.include_router(model.router)
     dispatcher.include_router(personality.router)
+    dispatcher.include_router(files.router)  # Phase 1.5: File uploads
     dispatcher.include_router(claude.router)  # Catch-all should be last
 
     logger.info("dispatcher_created",
-                routers=["start", "model", "personality", "claude"])
+                routers=["start", "model", "personality", "files", "claude"])
     return dispatcher
