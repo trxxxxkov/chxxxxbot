@@ -63,6 +63,155 @@ class ClaudeProvider(LLMProvider):
                     ])
 
     # pylint: disable=too-many-locals,too-many-branches,too-many-statements
+    async def get_message(self, request: LLMRequest) -> anthropic.types.Message:
+        """Get complete message from Claude API (non-streaming).
+
+        Used for tool use where we need the complete response before
+        proceeding. Does not stream - waits for full response.
+
+        Args:
+            request: LLM request with messages and configuration.
+
+        Returns:
+            Complete Message object with content, usage, stop_reason.
+
+        Raises:
+            RateLimitError: Rate limit exceeded (429).
+            APIConnectionError: Connection to API failed.
+            APITimeoutError: API request timed out.
+            InvalidModelError: Model not supported or wrong provider.
+
+        Examples:
+            >>> request = LLMRequest(messages=[...], tools=[...])
+            >>> response = await provider.get_message(request)
+            >>> if response.stop_reason == "tool_use":
+            ...     # Extract and execute tools
+        """
+        start_time = time.time()
+
+        # Get model configuration
+        try:
+            model_config = get_model(request.model)
+        except KeyError as e:
+            raise InvalidModelError(
+                f"Model '{request.model}' not found in registry. {e}") from e
+
+        if model_config.provider != "claude":
+            raise InvalidModelError(
+                f"ClaudeProvider can only handle 'claude' models, "
+                f"got provider '{model_config.provider}' for model "
+                f"'{request.model}'")
+
+        logger.info("claude.get_message.start",
+                    model_full_id=request.model,
+                    model_api_id=model_config.model_id,
+                    message_count=len(request.messages),
+                    has_tools=request.tools is not None,
+                    tool_count=len(request.tools) if request.tools else 0)
+
+        # Convert messages to Anthropic format
+        api_messages = [{
+            "role": msg.role,
+            "content": msg.content
+        } for msg in request.messages]
+
+        # Prepare API parameters
+        api_params = {
+            "model": model_config.model_id,
+            "max_tokens": request.max_tokens,
+            "temperature": request.temperature,
+            "messages": api_messages,
+        }
+
+        # Add tools if provided
+        if request.tools:
+            api_params["tools"] = request.tools
+            logger.info("claude.get_message.tools_enabled",
+                        tool_count=len(request.tools))
+
+        # System prompt with conditional caching
+        if request.system_prompt:
+            estimated_tokens = len(request.system_prompt) // 4
+            use_caching = estimated_tokens >= 1024
+
+            if use_caching:
+                api_params["system"] = [{
+                    "type": "text",
+                    "text": request.system_prompt,
+                    "cache_control": {
+                        "type": "ephemeral"
+                    }
+                }]
+            else:
+                api_params["system"] = request.system_prompt
+
+        # Effort parameter for Opus 4.5
+        if model_config.has_capability("effort"):
+            api_params["effort"] = "high"
+
+        try:
+            # Non-streaming API call
+            response = await self.client.messages.create(**api_params)
+
+            # Store usage and message
+            self.last_usage = TokenUsage(
+                input_tokens=response.usage.input_tokens,
+                output_tokens=response.usage.output_tokens,
+                cache_read_tokens=getattr(response.usage,
+                                          'cache_read_input_tokens', 0),
+                cache_creation_tokens=getattr(response.usage,
+                                              'cache_creation_input_tokens', 0),
+                thinking_tokens=0  # Non-streaming doesn't separate thinking
+            )
+            self.last_message = response
+
+            duration_ms = (time.time() - start_time) * 1000
+
+            logger.info("claude.get_message.complete",
+                        model_full_id=request.model,
+                        input_tokens=response.usage.input_tokens,
+                        output_tokens=response.usage.output_tokens,
+                        stop_reason=response.stop_reason,
+                        content_blocks=len(response.content),
+                        duration_ms=round(duration_ms, 2))
+
+            return response
+
+        except anthropic.RateLimitError as e:
+            duration_ms = (time.time() - start_time) * 1000
+            logger.error("claude.get_message.rate_limit",
+                         error=str(e),
+                         duration_ms=round(duration_ms, 2),
+                         exc_info=True)
+            raise RateLimitError("Rate limit exceeded. Please try again later.",
+                                 retry_after=None) from e
+
+        except anthropic.APIConnectionError as e:
+            duration_ms = (time.time() - start_time) * 1000
+            logger.error("claude.get_message.connection_error",
+                         error=str(e),
+                         duration_ms=round(duration_ms, 2),
+                         exc_info=True)
+            raise APIConnectionError("Failed to connect to Claude API.") from e
+
+        except anthropic.APITimeoutError as e:
+            duration_ms = (time.time() - start_time) * 1000
+            logger.error("claude.get_message.timeout",
+                         error=str(e),
+                         duration_ms=round(duration_ms, 2),
+                         exc_info=True)
+            raise APITimeoutError("Request to Claude API timed out.") from e
+
+        except Exception as e:
+            duration_ms = (time.time() - start_time) * 1000
+            logger.error("claude.get_message.unexpected_error",
+                         error=str(e),
+                         error_type=type(e).__name__,
+                         duration_ms=round(duration_ms, 2),
+                         exc_info=True)
+            raise
+
+    # pylint: disable=too-many-locals,too-many-branches,too-many-statements
     async def stream_message(self, request: LLMRequest) -> AsyncIterator[str]:
         """Stream response from Claude API.
 

@@ -25,11 +25,18 @@ from core.exceptions import RateLimitError
 from core.message_queue import MessageQueueManager
 from core.models import LLMRequest
 from core.models import Message
+from core.tools import execute_tool
+from core.tools import TOOL_DEFINITIONS
+from core.tools.helpers import extract_tool_uses
+from core.tools.helpers import format_files_section
+from core.tools.helpers import format_tool_results
+from core.tools.helpers import get_available_files
 from db.engine import get_session
 from db.models.message import MessageRole
 from db.repositories.chat_repository import ChatRepository
 from db.repositories.message_repository import MessageRepository
 from db.repositories.thread_repository import ThreadRepository
+from db.repositories.user_file_repository import UserFileRepository
 from db.repositories.user_repository import UserRepository
 from sqlalchemy.ext.asyncio import AsyncSession
 from utils.structured_logging import get_logger
@@ -102,6 +109,195 @@ def init_message_queue_manager() -> None:
         process_callback=_process_message_batch)
 
     logger.info("claude_handler.message_queue_initialized")
+
+
+# pylint: disable=too-many-locals,too-many-branches,too-many-statements
+async def _handle_with_tools(request: LLMRequest, first_message: types.Message,
+                             thread_id: int) -> str:
+    """Handle request with tool use loop.
+
+    Implements tool use pattern:
+    1. Call Claude API (non-streaming)
+    2. Check stop_reason
+    3. If tool_use: execute tools, add results, repeat
+    4. If end_turn: return final text
+
+    Args:
+        request: LLMRequest with tools configured.
+        first_message: First Telegram message (for status updates).
+        thread_id: Thread ID for logging.
+
+    Returns:
+        Final text response from Claude (ready for streaming).
+
+    Raises:
+        LLMError: If tool loop exceeds max iterations or API errors.
+    """
+    max_iterations = 10
+    status_message = None
+
+    # Build conversation history for tool loop
+    # Convert Message objects to dict format for API
+    conversation = [{
+        "role": msg.role,
+        "content": msg.content
+    } for msg in request.messages]
+
+    logger.info("tools.loop.start",
+                thread_id=thread_id,
+                max_iterations=max_iterations,
+                has_tools=request.tools is not None)
+
+    for iteration in range(max_iterations):
+        logger.info("tools.loop.iteration",
+                    thread_id=thread_id,
+                    iteration=iteration + 1)
+
+        # Create request for this iteration
+        iter_request = LLMRequest(messages=[
+            Message(role=msg["role"], content=msg["content"])
+            for msg in conversation
+        ],
+                                  system_prompt=request.system_prompt,
+                                  model=request.model,
+                                  max_tokens=request.max_tokens,
+                                  temperature=request.temperature,
+                                  tools=request.tools)
+
+        # Call Claude API (non-streaming)
+        try:
+            response = await claude_provider.get_message(iter_request)
+        except Exception as e:
+            logger.error("tools.loop.api_error",
+                         thread_id=thread_id,
+                         iteration=iteration + 1,
+                         error=str(e),
+                         exc_info=True)
+            raise
+
+        # Check stop reason
+        stop_reason = response.stop_reason
+
+        logger.info("tools.loop.response",
+                    thread_id=thread_id,
+                    iteration=iteration + 1,
+                    stop_reason=stop_reason,
+                    content_blocks=len(response.content))
+
+        if stop_reason == "end_turn":
+            # Final answer - extract text
+            final_text = ""
+            for block in response.content:
+                if block.type == "text":
+                    final_text += block.text
+
+            logger.info("tools.loop.complete",
+                        thread_id=thread_id,
+                        total_iterations=iteration + 1,
+                        final_length=len(final_text))
+
+            return final_text
+
+        if stop_reason == "tool_use":
+            # Extract tool calls
+            tool_uses = extract_tool_uses(response.content)
+
+            if not tool_uses:
+                logger.error("tools.loop.no_tools_found",
+                             thread_id=thread_id,
+                             iteration=iteration + 1)
+                return ("⚠️ Internal error: Claude requested tool use but "
+                        "no tools found in response.")
+
+            logger.info("tools.loop.executing_tools",
+                        thread_id=thread_id,
+                        iteration=iteration + 1,
+                        tool_count=len(tool_uses))
+
+            # Execute each tool
+            results = []
+            for idx, tool_use in enumerate(tool_uses):
+                tool_name = tool_use["name"]
+                tool_input = tool_use["input"]
+
+                # Update user with status
+                status_text = f"🔧 {tool_name}..."
+                if status_message:
+                    try:
+                        status_message = await status_message.edit_text(
+                            status_text)
+                    except Exception:  # pylint: disable=broad-exception-caught
+                        pass
+                else:
+                    status_message = await first_message.answer(status_text)
+
+                logger.info("tools.loop.executing_tool",
+                            thread_id=thread_id,
+                            iteration=iteration + 1,
+                            tool_index=idx + 1,
+                            tool_name=tool_name)
+
+                # Execute tool
+                try:
+                    result = await execute_tool(tool_name, tool_input)
+                    results.append(result)
+
+                    logger.info("tools.loop.tool_success",
+                                thread_id=thread_id,
+                                tool_name=tool_name,
+                                result_keys=list(result.keys()))
+
+                except Exception as e:  # pylint: disable=broad-exception-caught
+                    # Tool execution failed - return error in tool_result
+                    error_msg = f"Tool execution failed: {str(e)}"
+                    results.append({"error": error_msg})
+
+                    logger.error("tools.loop.tool_failed",
+                                 thread_id=thread_id,
+                                 tool_name=tool_name,
+                                 error=str(e),
+                                 exc_info=True)
+
+            # Format tool results for API
+            tool_results = format_tool_results(tool_uses, results)
+
+            # Add assistant response + tool results to conversation
+            # CRITICAL: Include ALL content blocks (thinking + tool_use)
+            conversation.append({
+                "role": "assistant",
+                "content": response.content
+            })
+            conversation.append({"role": "user", "content": tool_results})
+
+            logger.info("tools.loop.tool_results_added",
+                        thread_id=thread_id,
+                        iteration=iteration + 1,
+                        result_count=len(tool_results))
+
+        else:
+            # Other stop reasons (max_tokens, refusal, etc.)
+            logger.warning("tools.loop.unexpected_stop_reason",
+                           thread_id=thread_id,
+                           iteration=iteration + 1,
+                           stop_reason=stop_reason)
+
+            # Extract text anyway
+            final_text = ""
+            for block in response.content:
+                if block.type == "text":
+                    final_text += block.text
+
+            return final_text or f"⚠️ Unexpected stop reason: {stop_reason}"
+
+    # Max iterations reached
+    logger.error("tools.loop.max_iterations",
+                 thread_id=thread_id,
+                 max_iterations=max_iterations)
+
+    return (
+        f"⚠️ Tool loop exceeded maximum iterations ({max_iterations}). "
+        "The task might be too complex or there's an issue with tool execution."
+    )
 
 
 # pylint: disable=too-many-locals,too-many-branches,too-many-statements
@@ -183,6 +379,15 @@ async def _process_message_batch(thread_id: int,
                     "User not found. Please contact administrator.")
                 return
 
+            # 3.5. Get available files for this thread (Phase 1.5)
+            user_file_repo = UserFileRepository(session)
+            available_files = await get_available_files(thread_id,
+                                                        user_file_repo)
+
+            logger.info("claude_handler.files_retrieved",
+                        thread_id=thread_id,
+                        file_count=len(available_files))
+
             # 4. Get thread history (includes newly saved messages)
             history = await msg_repo.get_thread_messages(thread_id)
 
@@ -200,11 +405,15 @@ async def _process_message_batch(thread_id: int,
                          model_id=user.model_id,
                          model_name=model_config.display_name)
 
-            # Phase 1.4.2: Compose 3-level system prompt
+            # Phase 1.5: Generate files section for system prompt
+            files_section = format_files_section(
+                available_files) if available_files else None
+
+            # Phase 1.4.2: Compose 3-level system prompt (+ Phase 1.5 files)
             composed_prompt = compose_system_prompt(
                 global_prompt=GLOBAL_SYSTEM_PROMPT,
                 custom_prompt=user.custom_prompt,
-                files_context=thread.files_context)
+                files_context=files_section)
 
             logger.info("claude_handler.system_prompt_composed",
                         thread_id=thread_id,
@@ -231,99 +440,140 @@ async def _process_message_batch(thread_id: int,
                         included_messages=len(context),
                         total_messages=len(llm_messages))
 
-            # 6. Prepare Claude request
-            request = LLMRequest(messages=context,
-                                 system_prompt=composed_prompt,
-                                 model=user.model_id,
-                                 max_tokens=config.CLAUDE_MAX_TOKENS,
-                                 temperature=config.CLAUDE_TEMPERATURE)
+            # 6. Prepare Claude request (Phase 1.5: add tools if files available)
+            request = LLMRequest(
+                messages=context,
+                system_prompt=composed_prompt,
+                model=user.model_id,
+                max_tokens=config.CLAUDE_MAX_TOKENS,
+                temperature=config.CLAUDE_TEMPERATURE,
+                tools=TOOL_DEFINITIONS if available_files else None)
+
+            logger.info("claude_handler.request_prepared",
+                        thread_id=thread_id,
+                        has_tools=request.tools is not None,
+                        tool_count=len(request.tools) if request.tools else 0)
 
             # 7. Show typing indicator (only when starting processing)
             await first_message.bot.send_chat_action(first_message.chat.id,
                                                      "typing")
 
-            # 8. Stream response with time-based buffering
-            response_text = ""
-            last_sent_text = ""
-            bot_message = None
-            last_edit_time = 0.0
-            edit_buffer_ms = 0.5
+            # 8. Handle request (Phase 1.5: with or without tools)
+            if request.tools:
+                # Tool loop (non-streaming until final answer)
+                logger.info("claude_handler.using_tools",
+                            thread_id=thread_id,
+                            tool_count=len(request.tools))
 
-            async for chunk in claude_provider.stream_message(request):
-                response_text += chunk
-                current_time = time.time()
+                try:
+                    response_text = await _handle_with_tools(
+                        request, first_message, thread_id)
 
-                time_since_last_edit = current_time - last_edit_time
-                should_update = (time_since_last_edit >= edit_buffer_ms or
-                                 bot_message is None)
+                    # Send final response (no streaming, already processed)
+                    bot_message = await first_message.answer(response_text)
 
-                # Check if message needs to be split
-                if len(response_text) > 4000:
-                    text_to_send = response_text[:4000]
+                    logger.info("claude_handler.tool_response_sent",
+                                thread_id=thread_id,
+                                response_length=len(response_text))
 
-                    if bot_message is None:
-                        bot_message = await first_message.answer(text_to_send)
-                        last_sent_text = text_to_send
-                        last_edit_time = current_time
-                    elif text_to_send != last_sent_text:
-                        try:
-                            await bot_message.edit_text(text_to_send)
+                except Exception as e:  # pylint: disable=broad-exception-caught
+                    logger.error("claude_handler.tool_loop_failed",
+                                 thread_id=thread_id,
+                                 error=str(e),
+                                 exc_info=True)
+                    bot_message = await first_message.answer(
+                        "⚠️ Tool execution failed. Please try again.")
+                    return
+
+            else:
+                # Direct streaming (no tools)
+                logger.info("claude_handler.streaming_response",
+                            thread_id=thread_id)
+
+                response_text = ""
+                last_sent_text = ""
+                bot_message = None
+                last_edit_time = 0.0
+                edit_buffer_ms = 0.5
+
+                async for chunk in claude_provider.stream_message(request):
+                    response_text += chunk
+                    current_time = time.time()
+
+                    time_since_last_edit = current_time - last_edit_time
+                    should_update = (time_since_last_edit >= edit_buffer_ms or
+                                     bot_message is None)
+
+                    # Check if message needs to be split
+                    if len(response_text) > 4000:
+                        text_to_send = response_text[:4000]
+
+                        if bot_message is None:
+                            bot_message = await first_message.answer(
+                                text_to_send)
                             last_sent_text = text_to_send
                             last_edit_time = current_time
-                        except Exception as e:  # pylint: disable=broad-exception-caught
-                            logger.warning("claude_handler.edit_failed",
-                                           error=str(e))
+                        elif text_to_send != last_sent_text:
+                            try:
+                                await bot_message.edit_text(text_to_send)
+                                last_sent_text = text_to_send
+                                last_edit_time = current_time
+                            except Exception as e:  # pylint: disable=broad-exception-caught
+                                logger.warning("claude_handler.edit_failed",
+                                               error=str(e))
 
-                    # Start new message with remaining text
-                    response_text = response_text[4000:]
-                    bot_message = None
-                    last_sent_text = ""
-                    last_edit_time = 0.0
-                elif should_update:
+                        # Start new message with remaining text
+                        response_text = response_text[4000:]
+                        bot_message = None
+                        last_sent_text = ""
+                        last_edit_time = 0.0
+                    elif should_update:
+                        if bot_message is None:
+                            bot_message = await first_message.answer(
+                                response_text)
+                            last_sent_text = response_text
+                            last_edit_time = current_time
+                        elif response_text != last_sent_text:
+                            try:
+                                await bot_message.edit_text(response_text)
+                                last_sent_text = response_text
+                                last_edit_time = current_time
+                            except Exception as e:  # pylint: disable=broad-exception-caught
+                                logger.warning("claude_handler.edit_failed",
+                                               error=str(e))
+
+                # Final update if there's remaining text
+                if response_text:
                     if bot_message is None:
                         bot_message = await first_message.answer(response_text)
-                        last_sent_text = response_text
-                        last_edit_time = current_time
                     elif response_text != last_sent_text:
                         try:
                             await bot_message.edit_text(response_text)
-                            last_sent_text = response_text
-                            last_edit_time = current_time
                         except Exception as e:  # pylint: disable=broad-exception-caught
-                            logger.warning("claude_handler.edit_failed",
+                            logger.warning("claude_handler.final_edit_failed",
                                            error=str(e))
+                            # Try sending as plain text (no HTML parsing)
+                            try:
+                                bot_message = await first_message.answer(
+                                    response_text, parse_mode=None)
+                                logger.info("claude_handler.sent_as_plain_text",
+                                            thread_id=thread_id)
+                            except Exception as plain_error:  # pylint: disable=broad-exception-caught
+                                logger.error("claude_handler.plain_text_failed",
+                                             thread_id=thread_id,
+                                             error=str(plain_error),
+                                             exc_info=True)
+                                raise
+                else:
+                    # Handle empty response from Claude
+                    logger.warning("claude_handler.empty_response",
+                                   thread_id=thread_id,
+                                   batch_size=len(messages))
+                    bot_message = await first_message.answer(
+                        "⚠️ Claude returned an empty response. "
+                        "Please try rephrasing your message.")
 
-            # Final update if there's remaining text
-            if response_text:
-                if bot_message is None:
-                    bot_message = await first_message.answer(response_text)
-                elif response_text != last_sent_text:
-                    try:
-                        await bot_message.edit_text(response_text)
-                    except Exception as e:  # pylint: disable=broad-exception-caught
-                        logger.warning("claude_handler.final_edit_failed",
-                                       error=str(e))
-                        # Try sending as plain text (no HTML parsing)
-                        try:
-                            bot_message = await first_message.answer(
-                                response_text, parse_mode=None)
-                            logger.info("claude_handler.sent_as_plain_text",
-                                        thread_id=thread_id)
-                        except Exception as plain_error:  # pylint: disable=broad-exception-caught
-                            logger.error("claude_handler.plain_text_failed",
-                                         thread_id=thread_id,
-                                         error=str(plain_error),
-                                         exc_info=True)
-                            raise
-            else:
-                # Handle empty response from Claude
-                logger.warning("claude_handler.empty_response",
-                               thread_id=thread_id,
-                               batch_size=len(messages))
-                bot_message = await first_message.answer(
-                    "⚠️ Claude returned an empty response. "
-                    "Please try rephrasing your message.")
-
+            # Check bot_message exists (for both tools and streaming paths)
             if not bot_message:
                 logger.error("claude_handler.no_bot_message",
                              thread_id=thread_id)
