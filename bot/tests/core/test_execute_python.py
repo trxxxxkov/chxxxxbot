@@ -65,7 +65,7 @@ class TestExecutePython:
         mock_sandbox.run_code.assert_called_once()
         call_kwargs = mock_sandbox.run_code.call_args[1]
         assert call_kwargs["code"] == "print('Hello, world!')"
-        assert call_kwargs["timeout"] == 30.0
+        assert call_kwargs["timeout"] == 180.0
 
     @pytest.mark.asyncio
     @patch('core.tools.execute_python.Sandbox')

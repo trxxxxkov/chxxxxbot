@@ -50,7 +50,7 @@ def get_e2b_api_key() -> str:
 
 async def execute_python(code: str,
                          requirements: Optional[str] = None,
-                         timeout: Optional[float] = 30.0) -> Dict[str, str]:
+                         timeout: Optional[float] = 180.0) -> Dict[str, str]:
     """Execute Python code in E2B sandbox with internet access.
 
     Runs Python code in a secure, isolated E2B sandbox environment.
@@ -61,7 +61,8 @@ async def execute_python(code: str,
         code: Python code to execute. Can be multiple lines, imports, etc.
         requirements: Optional space-separated list of pip packages to install
             before execution (e.g., "numpy pandas matplotlib").
-        timeout: Maximum execution time in seconds. Default: 30 seconds.
+        timeout: Maximum execution time in seconds. Default: 180 seconds
+            (3 minutes). Can be increased up to 3600 seconds (1 hour).
 
     Returns:
         Dictionary with execution results:
@@ -189,9 +190,9 @@ When NOT to use: For simple arithmetic (use your built-in capabilities),
 when code execution is not required, or when user explicitly asks NOT
 to run code.
 
-Limitations: 30 second timeout by default, sandbox starts fresh each time
-(no persistence between calls), limited CPU/RAM (1 vCPU, reasonable memory),
-no GUI/display output (headless environment).
+Limitations: 180 second timeout by default (3 minutes, configurable up to 1 hour),
+sandbox starts fresh each time (no persistence between calls), limited CPU/RAM
+(1 vCPU, reasonable memory), no GUI/display output (headless environment).
 
 Cost: ~$0.05 per hour of sandbox runtime. Typical execution: <1 second,
 so cost per execution is <$0.0001. Free tier: $100 credit (~2000 hours).""",
@@ -218,9 +219,10 @@ so cost per execution is <$0.0001. Free tier: $100 credit (~2000 hours).""",
             "timeout": {
                 "type":
                     "number",
-                "description":
-                    ("Maximum execution time in seconds. Default: 30. "
-                     "Increase for long-running tasks.")
+                "description": (
+                    "Maximum execution time in seconds. Default: 180 (3 minutes). "
+                    "Can be increased up to 3600 (1 hour) for long-running tasks."
+                )
             }
         },
         "required": ["code"]
