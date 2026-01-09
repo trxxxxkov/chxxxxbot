@@ -6,11 +6,9 @@ for Claude's tool use feature.
 Currently implements:
 - analyze_image: Analyze images using Claude Vision API
 - analyze_pdf: Analyze PDF documents using Claude PDF API
-
-Future tools (Phase 1.5):
-- web_search: Search the web (server-side)
-- web_fetch: Fetch web pages (server-side)
-- execute_python: Execute Python code via E2B
+- execute_python: Execute Python code via E2B sandbox
+- web_search: Search the web (server-side, managed by Anthropic)
+- web_fetch: Fetch web pages (server-side, managed by Anthropic)
 
 NO __init__.py - use direct import:
     from core.tools.registry import TOOL_DEFINITIONS, execute_tool
@@ -22,6 +20,8 @@ from core.tools.analyze_image import analyze_image
 from core.tools.analyze_image import ANALYZE_IMAGE_TOOL
 from core.tools.analyze_pdf import analyze_pdf
 from core.tools.analyze_pdf import ANALYZE_PDF_TOOL
+from core.tools.execute_python import execute_python
+from core.tools.execute_python import EXECUTE_PYTHON_TOOL
 from utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
@@ -50,18 +50,17 @@ TOOL_DEFINITIONS: List[Dict[str, Any]] = [
     ANALYZE_PDF_TOOL,
     WEB_SEARCH_TOOL,
     WEB_FETCH_TOOL,
-    # Future tools:
-    # EXECUTE_PYTHON_TOOL,
+    EXECUTE_PYTHON_TOOL,
 ]
 
 # Tool executors mapping (tool name -> execution function)
 TOOL_EXECUTORS: Dict[str, Any] = {
     "analyze_image": analyze_image,
     "analyze_pdf": analyze_pdf,
-    # Future tools:
-    # "web_search": web_search,
-    # "web_fetch": web_fetch,
-    # "execute_python": execute_python,
+    "execute_python": execute_python,
+    # Server-side tools NOT included (managed by Anthropic):
+    # "web_search": (server-side)
+    # "web_fetch": (server-side)
 }
 
 
@@ -82,6 +81,8 @@ async def execute_tool(tool_name: str, tool_input: Dict[str,
         For analyze_image: {"analysis": str, "tokens_used": str}
         For analyze_pdf: {"analysis": str, "tokens_used": str,
             "cached_tokens": str}
+        For execute_python: {"stdout": str, "stderr": str, "results": str,
+            "error": str, "success": str}
 
     Raises:
         ValueError: If tool_name not found in TOOL_EXECUTORS.

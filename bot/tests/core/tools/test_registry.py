@@ -7,7 +7,7 @@ Tests registry module functionality:
 - execute_tool dispatcher
 """
 
-from unittest.mock import AsyncMock
+from unittest.mock import Mock
 from unittest.mock import patch
 
 from core.tools.registry import execute_tool
@@ -24,7 +24,7 @@ class TestToolDefinitions:
     def test_tool_definitions_is_list(self):
         """Test that TOOL_DEFINITIONS is a list."""
         assert isinstance(TOOL_DEFINITIONS, list)
-        assert len(TOOL_DEFINITIONS) >= 4  # 2 client + 2 server
+        assert len(TOOL_DEFINITIONS) >= 5  # 3 client + 2 server
 
     def test_all_tools_have_required_fields(self):
         """Test that all tools have name field."""
@@ -34,7 +34,7 @@ class TestToolDefinitions:
 
     def test_client_side_tools_have_description(self):
         """Test that client-side tools have description and input_schema."""
-        client_tools = ["analyze_image", "analyze_pdf"]
+        client_tools = ["analyze_image", "analyze_pdf", "execute_python"]
         for tool in TOOL_DEFINITIONS:
             if tool["name"] in client_tools:
                 assert "description" in tool
@@ -95,6 +95,7 @@ class TestToolExecutors:
         """Test that client-side tools have executors."""
         assert "analyze_image" in TOOL_EXECUTORS
         assert "analyze_pdf" in TOOL_EXECUTORS
+        assert "execute_python" in TOOL_EXECUTORS
 
     def test_server_tools_have_no_executors(self):
         """Test that server-side tools have NO executors."""
@@ -115,7 +116,6 @@ class TestExecuteTool:
     async def test_execute_client_tool_success(self, mock_get_client):
         """Test executing client-side tool successfully."""
         # Setup mock client
-        from unittest.mock import Mock
         mock_client = Mock()
         mock_response = Mock()
         mock_response.content = [Mock(text="Test result")]
@@ -154,7 +154,6 @@ class TestExecuteTool:
     async def test_execute_tool_with_error(self, mock_get_client):
         """Test that tool execution errors are propagated."""
         # Setup mock to raise error
-        from unittest.mock import Mock
         mock_client = Mock()
         mock_client.messages.create.side_effect = Exception("API error")
         mock_get_client.return_value = mock_client
@@ -172,7 +171,6 @@ class TestExecuteTool:
     async def test_execute_tool_passes_all_parameters(self, mock_get_client):
         """Test that all input parameters are passed to tool."""
         # Setup mock
-        from unittest.mock import Mock
         mock_client = Mock()
         mock_response = Mock()
         mock_response.content = [Mock(text="OK")]
@@ -190,3 +188,28 @@ class TestExecuteTool:
         # Verify result returned correctly
         assert result["analysis"] == "OK"
         assert result["tokens_used"] == "60"
+
+    @pytest.mark.asyncio
+    @patch('core.tools.execute_python.Sandbox')
+    @patch('core.tools.execute_python.get_e2b_api_key')
+    async def test_execute_python_tool_via_dispatcher(self, mock_get_api_key,
+                                                      mock_sandbox_class):
+        """Test executing execute_python tool via dispatcher."""
+        # Setup mocks
+        mock_get_api_key.return_value = "test_api_key"
+
+        mock_sandbox = Mock()
+        mock_execution = Mock()
+        mock_execution.error = None
+        mock_execution.results = []
+        mock_sandbox.run_code.return_value = mock_execution
+        mock_sandbox_class.return_value = mock_sandbox
+
+        # Execute via dispatcher
+        result = await execute_tool(tool_name="execute_python",
+                                    tool_input={"code": "print('Hello')"})
+
+        # Verify
+        assert result["success"] == "true"
+        assert "stdout" in result
+        assert "stderr" in result
