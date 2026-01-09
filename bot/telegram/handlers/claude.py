@@ -6,6 +6,8 @@ and streams responses back to Telegram in real-time.
 NO __init__.py - use direct import: from telegram.handlers.claude import router
 """
 
+import time
+
 from aiogram import F
 from aiogram import Router
 from aiogram import types
@@ -20,8 +22,10 @@ from core.exceptions import APITimeoutError
 from core.exceptions import ContextWindowExceededError
 from core.exceptions import LLMError
 from core.exceptions import RateLimitError
+from core.message_queue import MessageQueueManager
 from core.models import LLMRequest
 from core.models import Message
+from db.engine import get_session
 from db.models.message import MessageRole
 from db.repositories.chat_repository import ChatRepository
 from db.repositories.message_repository import MessageRepository
@@ -38,6 +42,38 @@ router = Router(name="claude")
 # Global Claude provider instance (initialized in main.py)
 claude_provider: ClaudeProvider = None
 
+# Global message queue manager (initialized in main.py)
+# Phase 1.4.3: Per-thread message batching
+message_queue_manager: MessageQueueManager = None
+
+
+def compose_system_prompt(global_prompt: str, custom_prompt: str | None,
+                          files_context: str | None) -> str:
+    """Compose system prompt from 3 levels.
+
+    Phase 1.4.2 architecture:
+    - GLOBAL_SYSTEM_PROMPT (always cached) - base instructions
+    - User.custom_prompt (cached) - personal preferences
+    - Thread.files_context (NOT cached) - available files list
+
+    Args:
+        global_prompt: Base system prompt (same for all users).
+        custom_prompt: User's personal instructions (or None).
+        files_context: List of files in thread (or None).
+
+    Returns:
+        Composed system prompt with all parts joined by double newlines.
+    """
+    parts = [global_prompt]
+
+    if custom_prompt:
+        parts.append(custom_prompt)
+
+    if files_context:
+        parts.append(files_context)
+
+    return "\n\n".join(parts)
+
 
 def init_claude_provider(api_key: str) -> None:
     """Initialize global Claude provider.
@@ -52,26 +88,432 @@ def init_claude_provider(api_key: str) -> None:
     logger.info("claude_handler.provider_initialized")
 
 
-@router.message(F.text)
+def init_message_queue_manager() -> None:
+    """Initialize global message queue manager.
+
+    Must be called once during application startup, after init_claude_provider.
+
+    Phase 1.4.3: Per-thread message batching with smart accumulation.
+    """
+    global message_queue_manager  # pylint: disable=global-statement
+
+    # Create queue manager with processing callback
+    message_queue_manager = MessageQueueManager(
+        process_callback=_process_message_batch)
+
+    logger.info("claude_handler.message_queue_initialized")
+
+
 # pylint: disable=too-many-locals,too-many-branches,too-many-statements
+async def _process_message_batch(thread_id: int,
+                                 messages: list[types.Message]) -> None:
+    """Process batch of messages for a thread.
+
+    This function is called by MessageQueueManager when it's time to process
+    accumulated messages. Creates its own database session and handles the
+    complete flow from saving messages to streaming Claude response.
+
+    Phase 1.4.3: Batch processing with smart accumulation.
+
+    Args:
+        thread_id: Database thread ID.
+        messages: List of Telegram messages to process as one batch.
+    """
+    if not messages:
+        logger.warning("claude_handler.empty_batch", thread_id=thread_id)
+        return
+
+    if claude_provider is None:
+        logger.error("claude_handler.provider_not_initialized")
+        # Send error to first message
+        await messages[0].answer(
+            "Bot is not properly configured. Please contact administrator.")
+        return
+
+    # Use first message for bot/chat context
+    first_message = messages[0]
+
+    logger.info("claude_handler.batch_received",
+                thread_id=thread_id,
+                batch_size=len(messages),
+                message_lengths=[len(msg.text or "") for msg in messages],
+                telegram_thread_id=first_message.message_thread_id)
+
+    try:
+        # Create new database session for this batch
+        async with get_session() as session:
+            # 1. Get thread (to retrieve user_id, chat_id, model_id)
+            thread_repo = ThreadRepository(session)
+            thread = await thread_repo.get_by_id(thread_id)
+
+            if not thread:
+                logger.error("claude_handler.thread_not_found",
+                             thread_id=thread_id)
+                await first_message.answer(
+                    "Thread not found. Please contact administrator.")
+                return
+
+            # 2. Save all messages to database
+            msg_repo = MessageRepository(session)
+            for message in messages:
+                await msg_repo.create_message(
+                    chat_id=thread.chat_id,
+                    message_id=message.message_id,
+                    thread_id=thread_id,
+                    from_user_id=thread.user_id,
+                    date=message.date.timestamp(),
+                    role=MessageRole.USER,
+                    text_content=message.text,
+                )
+
+            await session.commit()
+
+            logger.debug("claude_handler.batch_messages_saved",
+                         thread_id=thread_id,
+                         batch_size=len(messages))
+
+            # 3. Get user for model config and custom prompt
+            user_repo = UserRepository(session)
+            user = await user_repo.get_by_id(thread.user_id)
+
+            if not user:
+                logger.error("claude_handler.user_not_found",
+                             user_id=thread.user_id)
+                await first_message.answer(
+                    "User not found. Please contact administrator.")
+                return
+
+            # 4. Get thread history (includes newly saved messages)
+            history = await msg_repo.get_thread_messages(thread_id)
+
+            logger.debug("claude_handler.history_retrieved",
+                         thread_id=thread_id,
+                         message_count=len(history))
+
+            # 5. Build context
+            context_mgr = ContextManager(claude_provider)
+
+            # Get model config from user
+            model_config = get_model(user.model_id)
+
+            logger.debug("claude_handler.using_model",
+                         model_id=user.model_id,
+                         model_name=model_config.display_name)
+
+            # Phase 1.4.2: Compose 3-level system prompt
+            composed_prompt = compose_system_prompt(
+                global_prompt=GLOBAL_SYSTEM_PROMPT,
+                custom_prompt=user.custom_prompt,
+                files_context=thread.files_context)
+
+            logger.info("claude_handler.system_prompt_composed",
+                        thread_id=thread_id,
+                        telegram_thread_id=thread.thread_id,
+                        has_custom_prompt=user.custom_prompt is not None,
+                        has_files_context=thread.files_context is not None,
+                        total_length=len(composed_prompt))
+
+            # Convert DB messages to LLM messages
+            llm_messages = [
+                Message(role="user" if msg.from_user_id else "assistant",
+                        content=msg.text_content) for msg in history
+            ]
+
+            context = await context_mgr.build_context(
+                messages=llm_messages,
+                model_context_window=model_config.context_window,
+                system_prompt=composed_prompt,
+                max_output_tokens=config.CLAUDE_MAX_TOKENS,
+                buffer_percent=CLAUDE_TOKEN_BUFFER_PERCENT)
+
+            logger.info("claude_handler.context_built",
+                        thread_id=thread_id,
+                        included_messages=len(context),
+                        total_messages=len(llm_messages))
+
+            # 6. Prepare Claude request
+            request = LLMRequest(messages=context,
+                                 system_prompt=composed_prompt,
+                                 model=user.model_id,
+                                 max_tokens=config.CLAUDE_MAX_TOKENS,
+                                 temperature=config.CLAUDE_TEMPERATURE)
+
+            # 7. Show typing indicator (only when starting processing)
+            await first_message.bot.send_chat_action(first_message.chat.id,
+                                                     "typing")
+
+            # 8. Stream response with time-based buffering
+            response_text = ""
+            last_sent_text = ""
+            bot_message = None
+            last_edit_time = 0.0
+            edit_buffer_ms = 0.5
+
+            async for chunk in claude_provider.stream_message(request):
+                response_text += chunk
+                current_time = time.time()
+
+                time_since_last_edit = current_time - last_edit_time
+                should_update = (time_since_last_edit >= edit_buffer_ms or
+                                 bot_message is None)
+
+                # Check if message needs to be split
+                if len(response_text) > 4000:
+                    text_to_send = response_text[:4000]
+
+                    if bot_message is None:
+                        bot_message = await first_message.answer(text_to_send)
+                        last_sent_text = text_to_send
+                        last_edit_time = current_time
+                    elif text_to_send != last_sent_text:
+                        try:
+                            await bot_message.edit_text(text_to_send)
+                            last_sent_text = text_to_send
+                            last_edit_time = current_time
+                        except Exception as e:  # pylint: disable=broad-exception-caught
+                            logger.warning("claude_handler.edit_failed",
+                                           error=str(e))
+
+                    # Start new message with remaining text
+                    response_text = response_text[4000:]
+                    bot_message = None
+                    last_sent_text = ""
+                    last_edit_time = 0.0
+                elif should_update:
+                    if bot_message is None:
+                        bot_message = await first_message.answer(response_text)
+                        last_sent_text = response_text
+                        last_edit_time = current_time
+                    elif response_text != last_sent_text:
+                        try:
+                            await bot_message.edit_text(response_text)
+                            last_sent_text = response_text
+                            last_edit_time = current_time
+                        except Exception as e:  # pylint: disable=broad-exception-caught
+                            logger.warning("claude_handler.edit_failed",
+                                           error=str(e))
+
+            # Final update if there's remaining text
+            if response_text:
+                if bot_message is None:
+                    bot_message = await first_message.answer(response_text)
+                elif response_text != last_sent_text:
+                    try:
+                        await bot_message.edit_text(response_text)
+                    except Exception as e:  # pylint: disable=broad-exception-caught
+                        logger.warning("claude_handler.final_edit_failed",
+                                       error=str(e))
+                        # Try sending as plain text (no HTML parsing)
+                        try:
+                            bot_message = await first_message.answer(
+                                response_text, parse_mode=None)
+                            logger.info("claude_handler.sent_as_plain_text",
+                                        thread_id=thread_id)
+                        except Exception as plain_error:  # pylint: disable=broad-exception-caught
+                            logger.error("claude_handler.plain_text_failed",
+                                         thread_id=thread_id,
+                                         error=str(plain_error),
+                                         exc_info=True)
+                            raise
+            else:
+                # Handle empty response from Claude
+                logger.warning("claude_handler.empty_response",
+                               thread_id=thread_id,
+                               batch_size=len(messages))
+                bot_message = await first_message.answer(
+                    "⚠️ Claude returned an empty response. "
+                    "Please try rephrasing your message.")
+
+            if not bot_message:
+                logger.error("claude_handler.no_bot_message",
+                             thread_id=thread_id)
+                await first_message.answer("Failed to send response.")
+                return
+
+            # 9. Get usage stats, stop_reason, and calculate cost
+            usage = await claude_provider.get_usage()
+            stop_reason = claude_provider.get_stop_reason()
+
+            cost_usd = (
+                (usage.input_tokens / 1_000_000) * model_config.pricing_input +
+                ((usage.output_tokens + usage.thinking_tokens) / 1_000_000) *
+                model_config.pricing_output)
+
+            logger.info("claude_handler.response_complete",
+                        thread_id=thread_id,
+                        model_id=user.model_id,
+                        input_tokens=usage.input_tokens,
+                        output_tokens=usage.output_tokens,
+                        thinking_tokens=usage.thinking_tokens,
+                        cost_usd=round(cost_usd, 6),
+                        response_length=len(response_text),
+                        stop_reason=stop_reason)
+
+            # Phase 1.4.4: Handle special stop reasons
+            if stop_reason == "model_context_window_exceeded":
+                logger.warning("claude_handler.context_overflow",
+                               thread_id=thread_id,
+                               input_tokens=usage.input_tokens,
+                               context_window=model_config.context_window)
+
+                # Add warning message to user
+                warning_msg = (
+                    "\n\n⚠️ **Context window exceeded**\n\n"
+                    f"The conversation has exceeded the {model_config.context_window:,} "
+                    f"token limit for {model_config.display_name}. "
+                    "Consider starting a new thread or switching to a model with a larger "
+                    "context window.")
+                response_text += warning_msg
+
+                # Update bot message with warning
+                if bot_message:
+                    try:
+                        await bot_message.edit_text(response_text)
+                    except Exception as e:  # pylint: disable=broad-exception-caught
+                        logger.warning("claude_handler.warning_edit_failed",
+                                       error=str(e))
+
+            elif stop_reason == "refusal":
+                logger.warning("claude_handler.refusal", thread_id=thread_id)
+
+                # Add explanation to user
+                refusal_msg = (
+                    "\n\n⚠️ **Response refused**\n\n"
+                    "Claude declined to provide a response to your request. "
+                    "This typically happens when the request violates usage policies. "
+                    "Please rephrase your question or request.")
+                response_text += refusal_msg
+
+                # Update bot message with explanation
+                if bot_message:
+                    try:
+                        await bot_message.edit_text(response_text)
+                    except Exception as e:  # pylint: disable=broad-exception-caught
+                        logger.warning("claude_handler.refusal_edit_failed",
+                                       error=str(e))
+
+            elif stop_reason == "max_tokens":
+                logger.info("claude_handler.max_tokens_reached",
+                            thread_id=thread_id,
+                            max_tokens=config.CLAUDE_MAX_TOKENS)
+
+            # 10. Save Claude response
+            await msg_repo.create_message(
+                chat_id=thread.chat_id,
+                message_id=bot_message.message_id,
+                thread_id=thread_id,
+                from_user_id=None,  # Bot message
+                date=bot_message.date.timestamp(),
+                role=MessageRole.ASSISTANT,
+                text_content=response_text,
+            )
+
+            # 11. Add token usage for billing
+            await msg_repo.add_tokens(
+                chat_id=thread.chat_id,
+                message_id=bot_message.message_id,
+                input_tokens=usage.input_tokens,
+                output_tokens=usage.output_tokens,
+            )
+
+            await session.commit()
+
+            logger.info("claude_handler.bot_message_saved",
+                        thread_id=thread_id,
+                        message_id=bot_message.message_id,
+                        input_tokens=usage.input_tokens,
+                        output_tokens=usage.output_tokens)
+
+    except ContextWindowExceededError as e:
+        logger.error("claude_handler.context_exceeded",
+                     thread_id=thread_id,
+                     tokens_used=e.tokens_used,
+                     tokens_limit=e.tokens_limit,
+                     exc_info=True)
+
+        await first_message.answer(
+            f"⚠️ Context window exceeded.\n\n"
+            f"Your conversation is too long ({e.tokens_used:,} tokens). "
+            f"Please start a new thread or reduce message history.")
+
+    except RateLimitError as e:
+        logger.error("claude_handler.rate_limit",
+                     thread_id=thread_id,
+                     error=str(e),
+                     retry_after=e.retry_after,
+                     exc_info=True)
+
+        retry_msg = ""
+        if e.retry_after:
+            retry_msg = f"\n\nPlease try again in {e.retry_after} seconds."
+
+        await first_message.answer(
+            f"⚠️ Rate limit exceeded.{retry_msg}\n\n"
+            f"Too many requests. Please wait a moment and try again.")
+
+    except APIConnectionError as e:
+        logger.error("claude_handler.connection_error",
+                     thread_id=thread_id,
+                     error=str(e),
+                     exc_info=True)
+
+        await first_message.answer(
+            "⚠️ Connection error.\n\n"
+            "Failed to connect to Claude API. Please check your internet "
+            "connection and try again.")
+
+    except APITimeoutError as e:
+        logger.error("claude_handler.timeout",
+                     thread_id=thread_id,
+                     error=str(e),
+                     exc_info=True)
+
+        await first_message.answer(
+            "⚠️ Request timed out.\n\n"
+            "The request took too long. Please try again with a shorter "
+            "message or simpler question.")
+
+    except LLMError as e:
+        logger.error("claude_handler.llm_error",
+                     thread_id=thread_id,
+                     error=str(e),
+                     error_type=type(e).__name__,
+                     exc_info=True)
+
+        await first_message.answer(
+            f"⚠️ Error: {str(e)}\n\n"
+            f"Please try again or contact administrator if the problem "
+            f"persists.")
+
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        logger.error("claude_handler.unexpected_error",
+                     thread_id=thread_id,
+                     error=str(e),
+                     error_type=type(e).__name__,
+                     exc_info=True)
+
+        await first_message.answer("⚠️ Unexpected error occurred.\n\n"
+                                   "Please try again or contact administrator.")
+
+
+@router.message(F.text)
 async def handle_claude_message(message: types.Message,
                                 session: AsyncSession) -> None:
-    """Handle text message and generate Claude response.
+    """Handle text message and add to processing queue.
+
+    Phase 1.4.3: Per-thread message batching with smart accumulation.
 
     Flow:
-    1. Save user message to database
-    2. Get or create thread
-    3. Build context from thread history
-    4. Stream response from Claude
-    5. Send/update message in Telegram
-    6. Save Claude response to database
+    1. Get or create user, chat, thread
+    2. Add message to thread's queue
+    3. Queue manager decides when to process (immediately or after 300ms)
 
     Args:
         message: Incoming Telegram message.
         session: Database session (injected by middleware).
     """
-    if claude_provider is None:
-        logger.error("claude_handler.provider_not_initialized")
+    if message_queue_manager is None:
+        logger.error("claude_handler.queue_not_initialized")
         await message.answer(
             "Bot is not properly configured. Please contact administrator.")
         return
@@ -80,6 +522,8 @@ async def handle_claude_message(message: types.Message,
                 chat_id=message.chat.id,
                 user_id=message.from_user.id if message.from_user else None,
                 message_id=message.message_id,
+                message_thread_id=message.message_thread_id,
+                is_topic_message=message.is_topic_message,
                 text_length=len(message.text or ""))
 
     try:
@@ -116,236 +560,42 @@ async def handle_claude_message(message: types.Message,
                         chat_id=chat.id,
                         telegram_id=chat.id)
 
-        # 3. Get or create thread
+        # 3. Get or create thread (Phase 1.4.3: Telegram Topics support)
+        # message.message_thread_id from Bot API 9.3
+        # - None for regular chats (one thread per chat)
+        # - Integer for forum topics (separate context per topic)
         thread_repo = ThreadRepository(session)
         thread, was_created = await thread_repo.get_or_create_thread(
             chat_id=chat.id,
             user_id=user.id,
-            thread_id=None,  # Phase 1.3: no forum threads yet
-            # Don't pass model_id - preserve existing thread's model selection
+            thread_id=message.message_thread_id,  # Telegram forum thread ID
         )
 
         if was_created:
-            logger.info("claude_handler.thread_created", thread_id=thread.id)
+            logger.info("claude_handler.thread_created",
+                        thread_id=thread.id,
+                        telegram_thread_id=message.message_thread_id)
 
-        # 4. Save user message
-        msg_repo = MessageRepository(session)
-        await msg_repo.create_message(
-            chat_id=chat.id,
-            message_id=message.message_id,
-            thread_id=thread.id,
-            from_user_id=user.id,
-            date=message.date.timestamp(),
-            role=MessageRole.USER,
-            text_content=message.text,
-        )
+        # CRITICAL: Commit immediately so queue manager can see the thread
+        # Phase 1.4.3: Avoid race condition between parallel sessions
+        await session.commit()
 
-        logger.debug("claude_handler.user_message_saved",
+        # 4. Add message to queue (queue manager handles the rest)
+        # Phase 1.4.3: Smart batching
+        # - Long messages (>4000 chars) → wait 300ms for split parts
+        # - Short messages → process immediately
+        # - During processing → accumulate for next batch
+        await message_queue_manager.add_message(thread.id, message)
+
+        logger.debug("claude_handler.message_queued",
+                     thread_id=thread.id,
                      message_id=message.message_id)
 
-        # 5. Get thread history
-        history = await msg_repo.get_thread_messages(thread.id)
-
-        logger.debug("claude_handler.history_retrieved",
-                     thread_id=thread.id,
-                     message_count=len(history))
-
-        # 6. Build context
-        context_mgr = ContextManager(claude_provider)
-
-        # Get model config from user (Phase 1.4.1: per-user model selection)
-        model_config = get_model(user.model_id)
-
-        logger.debug("claude_handler.using_model",
-                     model_id=user.model_id,
-                     model_name=model_config.display_name)
-
-        # Convert DB messages to LLM messages
-        llm_messages = [
-            Message(role="user" if msg.from_user_id else "assistant",
-                    content=msg.text_content) for msg in history
-        ]
-
-        context = await context_mgr.build_context(
-            messages=llm_messages,
-            model_context_window=model_config.context_window,
-            system_prompt=GLOBAL_SYSTEM_PROMPT,
-            max_output_tokens=config.CLAUDE_MAX_TOKENS,
-            buffer_percent=CLAUDE_TOKEN_BUFFER_PERCENT)
-
-        logger.info("claude_handler.context_built",
-                    included_messages=len(context),
-                    total_messages=len(llm_messages))
-
-        # 7. Prepare Claude request (use user's model_id)
-        request = LLMRequest(
-            messages=context,
-            system_prompt=GLOBAL_SYSTEM_PROMPT,
-            model=user.
-            model_id,  # Full ID: "claude:sonnet", "claude:haiku", etc.
-            max_tokens=config.CLAUDE_MAX_TOKENS,
-            temperature=config.CLAUDE_TEMPERATURE)
-
-        # 8. Show typing indicator
-        await message.bot.send_chat_action(message.chat.id, "typing")
-
-        # 9. Stream response (no buffering - update on every chunk)
-        response_text = ""
-        last_sent_text = ""  # Track last sent text to avoid redundant edits
-        bot_message = None
-
-        async for chunk in claude_provider.stream_message(request):
-            response_text += chunk
-
-            # Check if message needs to be split
-            if len(response_text) > 4000:
-                # Send current part and start new message
-                text_to_send = response_text[:4000]
-
-                if bot_message is None:
-                    bot_message = await message.answer(text_to_send)
-                    last_sent_text = text_to_send
-                elif text_to_send != last_sent_text:
-                    try:
-                        await bot_message.edit_text(text_to_send)
-                        last_sent_text = text_to_send
-                    except Exception as e:  # pylint: disable=broad-exception-caught
-                        logger.warning("claude_handler.edit_failed",
-                                       error=str(e))
-
-                # Start new message with remaining text
-                response_text = response_text[4000:]
-                bot_message = None
-                last_sent_text = ""
-            else:
-                # Update message with every chunk (no buffering)
-                if bot_message is None:
-                    bot_message = await message.answer(response_text)
-                    last_sent_text = response_text
-                elif response_text != last_sent_text:
-                    try:
-                        await bot_message.edit_text(response_text)
-                        last_sent_text = response_text
-                    except Exception as e:  # pylint: disable=broad-exception-caught
-                        logger.warning("claude_handler.edit_failed",
-                                       error=str(e))
-
-        # Final update if there's remaining text
-        if response_text:
-            if bot_message is None:
-                bot_message = await message.answer(response_text)
-            elif response_text != last_sent_text:
-                try:
-                    await bot_message.edit_text(response_text)
-                except Exception as e:  # pylint: disable=broad-exception-caught
-                    logger.warning("claude_handler.final_edit_failed",
-                                   error=str(e))
-                    # If edit fails, send as new message
-                    bot_message = await message.answer(response_text)
-
-        if not bot_message:
-            logger.error("claude_handler.no_bot_message")
-            await message.answer("Failed to send response.")
-            return
-
-        # 10. Get usage stats and calculate cost
-        usage = await claude_provider.get_usage()
-
-        # Calculate cost using model-specific pricing (Phase 1.4.1)
-        cost_usd = (
-            (usage.input_tokens / 1_000_000) * model_config.pricing_input +
-            (usage.output_tokens / 1_000_000) * model_config.pricing_output)
-
-        logger.info("claude_handler.response_complete",
-                    model_id=user.model_id,
-                    input_tokens=usage.input_tokens,
-                    output_tokens=usage.output_tokens,
-                    cost_usd=round(cost_usd, 6),
-                    response_length=len(response_text))
-
-        # 11. Save Claude response
-        await msg_repo.create_message(
-            chat_id=chat.id,
-            message_id=bot_message.message_id,
-            thread_id=thread.id,
-            from_user_id=None,  # Bot message
-            date=bot_message.date.timestamp(),
-            role=MessageRole.ASSISTANT,
-            text_content=response_text,
-        )
-
-        # 12. Add token usage for billing
-        await msg_repo.add_tokens(
-            chat_id=chat.id,
-            message_id=bot_message.message_id,
-            input_tokens=usage.input_tokens,
-            output_tokens=usage.output_tokens,
-        )
-
-        logger.info("claude_handler.bot_message_saved",
-                    message_id=bot_message.message_id,
-                    input_tokens=usage.input_tokens,
-                    output_tokens=usage.output_tokens)
-
-    except ContextWindowExceededError as e:
-        logger.error("claude_handler.context_exceeded",
-                     tokens_used=e.tokens_used,
-                     tokens_limit=e.tokens_limit,
-                     exc_info=True)
-
-        await message.answer(
-            f"⚠️ Context window exceeded.\n\n"
-            f"Your conversation is too long ({e.tokens_used:,} tokens). "
-            f"Please start a new thread or reduce message history.")
-
-    except RateLimitError as e:
-        logger.error("claude_handler.rate_limit",
-                     error=str(e),
-                     retry_after=e.retry_after,
-                     exc_info=True)
-
-        retry_msg = ""
-        if e.retry_after:
-            retry_msg = f"\n\nPlease try again in {e.retry_after} seconds."
-
-        await message.answer(
-            f"⚠️ Rate limit exceeded.{retry_msg}\n\n"
-            f"Too many requests. Please wait a moment and try again.")
-
-    except APIConnectionError as e:
-        logger.error("claude_handler.connection_error",
-                     error=str(e),
-                     exc_info=True)
-
-        await message.answer(
-            "⚠️ Connection error.\n\n"
-            "Failed to connect to Claude API. Please check your internet "
-            "connection and try again.")
-
-    except APITimeoutError as e:
-        logger.error("claude_handler.timeout", error=str(e), exc_info=True)
-
-        await message.answer(
-            "⚠️ Request timed out.\n\n"
-            "The request took too long. Please try again with a shorter "
-            "message or simpler question.")
-
-    except LLMError as e:
-        logger.error("claude_handler.llm_error",
-                     error=str(e),
-                     error_type=type(e).__name__,
-                     exc_info=True)
-
-        await message.answer(
-            f"⚠️ Error: {str(e)}\n\n"
-            f"Please try again or contact administrator if the problem "
-            f"persists.")
-
     except Exception as e:  # pylint: disable=broad-exception-caught
-        logger.error("claude_handler.unexpected_error",
+        logger.error("claude_handler.queue_error",
                      error=str(e),
                      error_type=type(e).__name__,
                      exc_info=True)
 
-        await message.answer("⚠️ Unexpected error occurred.\n\n"
+        await message.answer("⚠️ Failed to queue message.\n\n"
                              "Please try again or contact administrator.")

@@ -60,22 +60,25 @@ class TokenUsage(BaseModel):
     """Token usage statistics.
 
     Tracks token usage for billing and analytics. Includes cache tokens
-    for providers that support prompt caching (Phase 1.4).
+    for providers that support prompt caching (Phase 1.4.2) and thinking
+    tokens for extended thinking (Phase 1.4.3).
 
     Attributes:
         input_tokens: Input tokens (user messages + system prompt).
-        output_tokens: Output tokens (LLM response).
-        cache_read_tokens: Tokens read from cache (Phase 1.4).
-        cache_creation_tokens: Tokens written to cache (Phase 1.4).
+        output_tokens: Output tokens (LLM response text only).
+        cache_read_tokens: Tokens read from cache (Phase 1.4.2).
+        cache_creation_tokens: Tokens written to cache (Phase 1.4.2).
+        thinking_tokens: Tokens used for extended thinking (Phase 1.4.3).
     """
 
     input_tokens: int = Field(..., ge=0, description="Input tokens")
     output_tokens: int = Field(..., ge=0, description="Output tokens")
-    cache_read_tokens: int = Field(default=0,
-                                   ge=0,
-                                   description="Cache read tokens (Phase 1.4)")
+    cache_read_tokens: int = Field(
+        default=0, ge=0, description="Cache read tokens (Phase 1.4.2)")
     cache_creation_tokens: int = Field(
-        default=0, ge=0, description="Cache creation tokens (Phase 1.4)")
+        default=0, ge=0, description="Cache creation tokens (Phase 1.4.2)")
+    thinking_tokens: int = Field(
+        default=0, ge=0, description="Extended thinking tokens (Phase 1.4.3)")
 
 
 class LLMResponse(BaseModel):

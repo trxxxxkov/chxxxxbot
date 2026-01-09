@@ -35,10 +35,10 @@ class Thread(Base, TimestampMixin):
     - LLM context = all messages in this thread
     - Model selection is per user (User.model_id), not per thread
 
-    Phase 1.4.2 will add:
-    - files_context: List of files available in this thread (per thread)
-    - User.custom_prompt: Personal instructions from user (per user)
-    - GLOBAL_SYSTEM_PROMPT will be cached for all users
+    Phase 1.4.2 system prompt architecture (3-level):
+    - GLOBAL_SYSTEM_PROMPT (config.py) - cached, same for all
+    - User.custom_prompt (per user) - cached, personal instructions
+    - Thread.files_context (per thread) - NOT cached, auto-generated file list
 
     Attributes:
         id: Internal thread ID (auto-increment).
@@ -46,6 +46,7 @@ class Thread(Base, TimestampMixin):
         user_id: Which user this thread belongs to.
         thread_id: Telegram thread/topic ID (NULL for main chat).
         title: Thread title (manual or from first message).
+        files_context: List of files available in this thread.
         created_at: When thread started (from TimestampMixin).
         updated_at: Last message timestamp (from TimestampMixin).
     """
@@ -90,7 +91,13 @@ class Thread(Base, TimestampMixin):
         doc="Thread title",
     )
 
-    # Phase 1.4.2: Will add files_context here (list of available files)
+    # Phase 1.4.2: 3-level system prompt architecture
+    files_context: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        doc="Auto-generated list of files available in this thread. "
+        "Added to system prompt. NOT cached (changes frequently).",
+    )
 
     # Relationships
     # chat: Mapped["Chat"] = relationship("Chat", back_populates="threads")

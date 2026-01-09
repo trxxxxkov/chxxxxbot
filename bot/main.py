@@ -12,6 +12,7 @@ from config import get_database_url
 from db.engine import dispose_db
 from db.engine import init_db
 from telegram.handlers.claude import init_claude_provider
+from telegram.handlers.claude import init_message_queue_manager
 from telegram.loader import create_bot
 from telegram.loader import create_dispatcher
 from utils.structured_logging import get_logger
@@ -64,6 +65,10 @@ async def main() -> None:
         # Initialize Claude provider
         init_claude_provider(anthropic_api_key)
         logger.info("claude_provider_initialized")
+
+        # Initialize message queue manager (Phase 1.4.3: message batching)
+        init_message_queue_manager()
+        logger.info("message_queue_initialized")
 
         # Create bot and dispatcher
         bot = create_bot(token=bot_token)

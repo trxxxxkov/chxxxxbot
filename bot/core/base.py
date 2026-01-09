@@ -77,3 +77,20 @@ class LLMProvider(ABC):
             ValueError: If called before any API call completed.
         """
         pass  # pylint: disable=unnecessary-pass
+
+    def get_stop_reason(self) -> str | None:
+        """Get stop reason from last API call.
+
+        Phase 1.4.4: Stop reason handling for better error messages.
+        Common stop reasons across providers:
+        - "end_turn": Normal completion
+        - "max_tokens": Output length limit reached
+        - "model_context_window_exceeded": Input too large (Claude 4.5+)
+        - "refusal": Model refused to answer (Claude 4.5+)
+        - "stop_sequence": Stop sequence encountered
+        - "tool_use": Tool call requested (Phase 1.5)
+
+        Returns:
+            Stop reason string or None if not available or no call made yet.
+        """
+        return None  # Default implementation returns None

@@ -2,7 +2,7 @@
 
 Review Claude API documentation, extract best practices and advanced features, implement improvements to Phase 1.3.
 
-**Status:** 📋 **IN PROGRESS** (Documentation review)
+**Status:** ✅ **COMPLETE** (2026-01-09)
 
 ---
 
@@ -1506,69 +1506,53 @@ All handled by Tool Runner automatically.
 
 ## Implementation Plan
 
-*This section will be updated as we review more pages.*
+### ✅ Phase 1.4.1: Model Registry (Completed)
+- ✅ Create model registry with characteristics (model_id, display_name, provider, context_window, max_output, pricing_input, pricing_output, latency_tier)
+- ✅ Add model selection field to User model in database
+- ✅ Implement `/model` command handler with inline keyboard for model selection
+- ✅ Update ClaudeClient to use selected model characteristics (max_tokens, max_output)
+- ✅ Update cost tracking to use model-specific pricing
+- ✅ Ensure architecture supports adding non-Claude providers later
+- ✅ Extend model registry with capability flags: `extended_thinking`, `interleaved_thinking`, `effort`, `context_awareness`, `vision`, `streaming`, `prompt_caching`
+- ✅ Extend model registry with cache pricing: `pricing_cache_write_5m`, `pricing_cache_write_1h`, `pricing_cache_read`
 
-### From Models Overview page:
-- [ ] Create model registry with characteristics (model_id, display_name, provider, context_window, max_output, pricing_input, pricing_output, latency_tier)
-- [ ] Add model selection field to User or Thread model in database
-- [ ] Implement `/model` command handler with inline keyboard for model selection
-- [ ] Update ClaudeClient to use selected model characteristics (max_tokens, max_output)
-- [ ] Update cost tracking to use model-specific pricing
-- [ ] Ensure architecture supports adding non-Claude providers later
+### ✅ Phase 1.4.2: Prompt Caching (Completed)
+- ✅ Add cache_control to system prompt: `{"type": "ephemeral"}` (5-minute, 10x cost reduction)
+- ✅ Conditional caching: only when system prompt ≥ 1024 tokens (Sonnet 4.5 minimum)
+- ✅ Update Message model: `cache_creation_input_tokens`, `cache_read_input_tokens` fields
+- ✅ Update cost calculation: cache-aware pricing (0.1x reads, 1.25x writes)
+- ✅ Display cache hit rate in monitoring logs
+- ✅ 3-level system prompt composition: GLOBAL + User.custom_prompt + Thread.files_context
 
-### From What's new in Claude 4.5 page:
-- [ ] Add Extended Thinking support: always enable for all 4.5 models (details after reviewing dedicated page)
-- [ ] Add Interleaved Thinking beta header: `interleaved-thinking-2025-05-14`
-- [ ] Add Effort parameter for Opus 4.5: always set `effort: "high"`, beta header `effort-2025-11-24`
-- [ ] Update stop_reason handling: add cases for `model_context_window_exceeded` and `refusal`
-- [ ] Extend model registry with capability flags: `supports_extended_thinking`, `supports_interleaved_thinking`, `supports_effort_parameter`, `supports_context_awareness`
-- [ ] Update system prompt to align with Claude 4 communication style (explicit instructions, concise responses)
-- [ ] Consider UI for showing remaining context tokens to user (optional)
+### ✅ Phase 1.4.3: Extended Thinking & Message Batching (Completed)
+- ✅ Add Interleaved Thinking beta header: `interleaved-thinking-2025-05-14`
+- ✅ Handle `thinking_delta` and `signature_delta` events in streaming
+- ✅ Track thinking tokens separately in usage/cost calculations
+- ✅ Extended Thinking parameter: **DISABLED** until Phase 1.5 (requires saving thinking blocks to DB)
+- ✅ Time-based message batching (200ms accumulation window for split messages)
+- ✅ Per-thread message queues with independent processing
 
-### From Pricing + Prompt Caching pages:
-- [ ] Add cache_control to system prompt: `{"type": "ephemeral"}` (5-minute, 10x cost reduction)
-- [ ] Verify system prompt ≥ 1024 tokens (Sonnet 4.5 minimum)
-- [ ] Extend model registry: `pricing_cache_write_5m`, `pricing_cache_write_1h`, `pricing_cache_read`
-- [ ] Update Message model: `cache_creation_input_tokens`, `cache_read_input_tokens` fields
-- [ ] Update cost calculation: cache-aware pricing (0.1x reads, 1.25x writes)
-- [ ] Display cache hit rate in monitoring
+### ✅ Phase 1.4.4: Best Practices & Optimization (Completed)
+- ✅ **System prompt rewrite**: Claude 4 style (explicit instructions, context/motivation, model identity, concise)
+- ✅ **Thinking vocabulary**: use "consider"/"evaluate" instead of "think"
+- ✅ **Effort parameter**: `effort: "high"` for Opus 4.5, beta header `effort-2025-11-24`
+- ✅ **Token Counting API**: for requests >150K tokens, checks context window overflow
+- ✅ **Cache hit rate monitoring**: logged with every request
+- ✅ **Stop reason handling**: `model_context_window_exceeded`, `refusal`, `max_tokens`
 
-### From Context Windows page:
-- [ ] Context Awareness: No implementation needed (works automatically), optionally display remaining context in UI
-- [ ] Extended Thinking context handling: Pass full conversation history with thinking blocks, API auto-strips previous thinking
-- [ ] Implement Token Counting API usage before sending large messages to avoid context overflow
-- [ ] (Phase 1.5) Tool use + Extended Thinking: Preserve thinking block unmodified when posting tool_result, never modify thinking blocks
+### ⏸️ Deferred to Phase 1.5
+- ⏸️ **Extended Thinking enabled**: Requires saving thinking blocks to DB (currently disabled at line 163-166 in client.py)
+- ⏸️ **Context Management parameter**: `clear_thinking_20251015` - SDK doesn't support yet
+- ⏸️ **Error recovery in streaming**: Complex partial response reconstruction
+- ⏸️ **Tool use + thinking blocks**: Preserve unmodified thinking blocks when posting tool_result
+- ⏸️ **Extended thinking prompting**: Reflection after tool use
 
-### From Claude 4 Best Practices page:
-- [ ] Rewrite system prompt for Claude 4 style: explicit instructions, context/motivation, model identity, communication style
-- [ ] Add extended thinking prompting: encourage reflection after tool use (Phase 1.5)
-- [ ] Thinking vocabulary: avoid "think" when extended thinking disabled for Opus 4.5, use "consider"/"evaluate"
-- [ ] (Optional) Add context awareness guidance to system prompt for long sessions
-- [ ] (Phase 1.5) Add tool usage patterns to system prompt: proactive vs conservative, parallel tool calling, avoid aggressive "MUST" language
-
-### From Context Editing page:
-- [ ] Add thinking block clearing: `clear_thinking_20251015` with `keep: "all"` (maximize cache hits)
-- [ ] Add beta header: `context-management-2025-06-27`
-- [ ] (Phase 1.5) Consider tool result clearing for long tool sessions: `clear_tool_uses_20250919`
-
-### From Extended Thinking page:
-- [ ] Always enable extended thinking: `thinking: {"type": "enabled", "budget_tokens": 10000}`
-- [ ] Handle `thinking_delta` events in streaming responses
-- [ ] (Phase 1.5) Preserve thinking blocks when posting tool_result - include complete unmodified blocks
-- [ ] Add budget_tokens to model configuration (default 10K, adjustable)
-- [ ] Track thinking tokens separately in usage/cost calculations (billed for full, not summary)
-
-### From Streaming page:
-- [ ] Handle `thinking_delta` and `signature_delta` events in streaming (Extended Thinking)
-- [ ] Implement error recovery: capture partial response, construct continuation request
-- [ ] Handle cumulative usage counts in message_delta (not incremental)
-- [ ] Add error event handling in stream (overloaded_error, etc.)
-- [ ] (Phase 1.5) Handle `input_json_delta` events for tool use streaming
-
-### From Token Counting page:
-- [ ] Implement token counting before large requests (when thread history >150K tokens estimated)
-- [ ] Use for cost estimation before actual API calls
-- [ ] Note: Previous thinking blocks don't count (auto-stripped), current turn thinking does count
+### 📊 Implementation Stats
+- **Files modified**: 5 files (client.py, config.py, claude.py, message_queue.py, base.py)
+- **Beta headers**: 3 enabled (interleaved-thinking, context-management, effort)
+- **Stop reasons handled**: 3 (model_context_window_exceeded, refusal, max_tokens)
+- **Cache types**: 2 (5-minute ephemeral, 1-hour available but unused)
+- **Token counting threshold**: 150K tokens
 
 ---
 
@@ -1582,33 +1566,71 @@ All handled by Tool Runner automatically.
 
 ## Summary
 
-Phase 1.4 is documentation-driven optimization. We review official Claude API docs, document **our decisions** (what to implement, what to skip, why), and establish relationships between features. Implementation happens after review is complete.
+**Phase 1.4 is COMPLETE** (2026-01-09)
 
-**Documentation approach:**
-- Each page documents **our decisions**, not feature details (details are in official docs - agent will re-read during implementation)
-- Focus on: what we implement, what we skip, why, and how features relate to each other
-- Agent will visit original docs during implementation for technical details
+Phase 1.4 was a documentation-driven optimization phase. We reviewed 15 pages of official Claude API documentation, documented decisions for each feature, and implemented all features that don't require Phase 1.5 infrastructure (tool use, file storage).
 
-**Current status:** Reviewing documentation (15 pages completed).
+### Completed Features
 
-**Pages reviewed:**
-1. ✅ Models Overview - 3 models support decision, model registry architecture
-2. ✅ What's New in 4.5 - extended thinking (always on), interleaved thinking, effort=high for Opus
-3. ✅ Pricing - prompt caching critical (10x savings), cache pricing in registry
-4. ✅ Features Overview - roadmap of topics for future review
-5. ✅ Context Windows - automatic context awareness, thinking auto-stripping, token counting API
-6. ✅ Claude 4 Best Practices - system prompt rewrite guidelines, thinking vocabulary
-7. ✅ Prompt Caching (Detailed) - 5-min cache for system prompt, usage tracking, invalidation triggers
-8. ✅ Context Editing - thinking block clearing (keep all for cache), tool result clearing (Phase 1.5)
-9. ✅ Extended Thinking - always enable (10K budget), streaming handling, tool use preservation
-10. ✅ Effort - always high for Opus 4.5, affects all tokens (text/tools/thinking)
-11. ✅ Streaming - thinking_delta/signature_delta, error recovery, cumulative usage counts
-12. ✅ Citations - defer to Phase 1.5 (document processing), incompatible with structured outputs
-13. ✅ Token Counting - use before large requests, free but rate-limited, for cost estimation
-14. ✅ Vision (Images) - Phase 1.5, Telegram photos, URL/base64, limitations (no people ID, spatial reasoning)
-15. ✅ PDF Support - Phase 1.5, text+image per page, ~3-5K tokens/page, prompt caching recommended
+**Phase 1.4.1 - Model Registry:**
+- 3 Claude 4.5 models with full characteristics
+- Capability flags for feature detection
+- Cache pricing and cost tracking
+- `/model` command for model selection
 
-**High-priority topics for continued review:**
-- Structured outputs, Search results, Files API
+**Phase 1.4.2 - Prompt Caching:**
+- Conditional system prompt caching (≥1024 tokens)
+- 5-minute ephemeral cache (10x cost reduction)
+- Cache hit rate monitoring
+- 3-level prompt composition
 
-**Next step:** Continue reviewing documentation pages in detail.
+**Phase 1.4.3 - Extended Thinking & Message Batching:**
+- Interleaved thinking beta header
+- `thinking_delta` streaming support
+- Thinking token tracking
+- Time-based message batching (200ms window)
+- Extended Thinking parameter DISABLED until Phase 1.5
+
+**Phase 1.4.4 - Best Practices & Optimization:**
+- System prompt rewritten for Claude 4 style
+- Effort parameter for Opus 4.5 (`effort: "high"`)
+- Token Counting API (>150K tokens)
+- Cache hit rate monitoring
+- Stop reason handling (context overflow, refusal, max_tokens)
+
+### Documentation Pages Reviewed (15 total)
+
+1. ✅ Models Overview - model registry architecture
+2. ✅ What's New in 4.5 - extended thinking, interleaved thinking, effort
+3. ✅ Pricing - prompt caching economics
+4. ✅ Features Overview - roadmap
+5. ✅ Context Windows - automatic context awareness, token counting
+6. ✅ Claude 4 Best Practices - prompt engineering for Claude 4
+7. ✅ Prompt Caching (Detailed) - cache invalidation, multipliers
+8. ✅ Context Editing - thinking block clearing strategies
+9. ✅ Extended Thinking - budget tokens, streaming, tool use
+10. ✅ Effort - quality parameter for Opus 4.5
+11. ✅ Streaming - thinking_delta, error recovery patterns
+12. ✅ Citations - document processing with sources (Phase 1.5)
+13. ✅ Token Counting - accurate token estimation API
+14. ✅ Vision (Images) - Files API architecture (Phase 1.5)
+15. ✅ PDF Support - document processing patterns (Phase 1.5)
+
+### Deferred to Phase 1.5
+
+- Extended Thinking parameter (requires DB schema for thinking blocks)
+- Context Management parameter (SDK doesn't support yet)
+- Tool use implementation (separate phase)
+- Vision, PDF, Files API (require tool framework)
+- Web Search, Web Fetch (server-side tools)
+- Error recovery in streaming (complex, low priority)
+
+### Key Metrics
+
+- **Files modified**: 5 (client.py, config.py, claude.py, message_queue.py, base.py)
+- **Beta headers**: 3 (interleaved-thinking, context-management, effort)
+- **Stop reasons**: 3 handled (context overflow, refusal, max_tokens)
+- **Cache hit rate**: Monitored in logs
+- **Token threshold**: 150K for token counting API
+
+**Next phase:** Phase 1.5 (Multimodal + Tools)

@@ -37,6 +37,7 @@ class User(Base, TimestampMixin):
         is_premium: Whether user has Telegram Premium subscription.
         added_to_attachment_menu: Whether bot added to attachment menu.
         model_id: Selected LLM model (e.g., "claude:sonnet", "openai:gpt4").
+        custom_prompt: Personal instructions (personality, tone, style).
         first_seen_at: When user first interacted with bot.
         last_seen_at: Last activity timestamp.
         created_at: Record creation timestamp (from TimestampMixin).
@@ -107,6 +108,14 @@ class User(Base, TimestampMixin):
         default="claude:sonnet",  # Default: Claude Sonnet 4.5
         doc="Model identifier in format 'provider:alias' "
         "(e.g., 'claude:sonnet', 'openai:gpt4')",
+    )
+
+    # Phase 1.4.2: 3-level system prompt architecture
+    custom_prompt: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        doc="User's personal instructions (personality, tone, style). "
+        "Added to GLOBAL_SYSTEM_PROMPT. Can be cached.",
     )
 
     # Activity tracking

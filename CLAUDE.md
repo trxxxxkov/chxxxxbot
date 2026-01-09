@@ -109,35 +109,63 @@ chxxxxbot/
 - Payment system (balance blocking)
 - Prompt caching
 
-#### 1.4 Multimodal + Tools 📋 Planned
+#### 1.4 Claude Advanced API ✅ Complete
+**Status:** Complete (2026-01-09)
+
+**Phase 1.4.1 - Model Registry:**
+- ✅ 3 Claude 4.5 models (Haiku, Sonnet, Opus)
+- ✅ Capability flags for feature detection
+- ✅ Cache pricing in model registry
+- ✅ `/model` command for model selection
+- ✅ Cost tracking with model-specific pricing
+
+**Phase 1.4.2 - Prompt Caching:**
+- ✅ Conditional system prompt caching (≥1024 tokens)
+- ✅ 5-minute ephemeral cache (10x cost reduction)
+- ✅ Cache hit rate monitoring in logs
+- ✅ 3-level prompt composition (GLOBAL + User + Thread)
+
+**Phase 1.4.3 - Extended Thinking & Message Batching:**
+- ✅ Interleaved thinking beta header
+- ✅ `thinking_delta` streaming support
+- ✅ Thinking token tracking
+- ✅ Time-based message batching (200ms window)
+- ⏸️ Extended Thinking parameter DISABLED (requires Phase 1.5 DB schema)
+
+**Phase 1.4.4 - Best Practices & Optimization:**
+- ✅ System prompt rewritten for Claude 4 style
+- ✅ Effort parameter for Opus 4.5 (`effort: "high"`)
+- ✅ Token Counting API for large requests (>150K tokens)
+- ✅ Stop reason handling (context overflow, refusal, max_tokens)
+
+**Documentation:**
+- ✅ 15 Claude API pages reviewed and documented
+- ✅ Best practices adopted (explicit instructions, thinking vocabulary)
+- ✅ See [docs/phase-1.4-claude-advanced-api.md](docs/phase-1.4-claude-advanced-api.md)
+
+#### 1.5 Multimodal + Tools 📋 Planned
 **Multimodal support:**
-- Images (vision)
+- Images (vision via Files API)
 - Voice messages (transcription + processing)
+- PDF documents (text + visual analysis)
 - Arbitrary files (via tools)
 
 **Tools framework:**
-- Code execution (isolated container)
-- Image generation (external APIs)
-- File processing tools
+- Tool Runner (SDK beta) for all custom tools
+- analyze_image, analyze_pdf (Claude Vision/PDF API)
+- web_search, web_fetch (server-side tools)
+- Code execution (external service: E2B/Modal/self-hosted)
 - Modular tool architecture (easy to add new tools)
 
-**Optimizations:**
-- Prompt caching (system prompt)
-- Extended thinking (for complex tasks)
+**Database schema:**
+- user_files table (telegram_file_id, claude_file_id, metadata)
+- thinking_blocks column in messages (for Extended Thinking)
+- Files API lifecycle management (24h TTL)
 
-**Documentation:**
-- Full Claude API documentation review
-- Best practices implementation
-- Link to each API page with adopted patterns
-
-#### 1.5 Testing for Claude Integration 📋 Planned
-- Provider interface tests
-- Claude client tests (mocked API)
-- Context management tests
-- Token counting tests
-- Error handling tests
-- Integration tests with real API
-- Cost tracking validation
+**Out of scope:**
+- Claude's code execution tool (no internet access)
+- Citations feature (not critical for Phase 1.5)
+- RAG with vector DB (Phase 1.6)
 
 ### Phase 2 — Telegram Features Expansion
 
@@ -530,4 +558,33 @@ This script:
   - bot/telegram/handlers/claude.py - Main handler
   - docs/claude-integration.md - Comprehensive architecture doc
 
-**Next:** Phase 1.4 (Multimodal + Tools)
+**Phase 1.4 (Claude Advanced API):** ✅ Complete (2026-01-09)
+- **Documentation review**: 15 Claude API pages reviewed and decisions documented
+- **Phase 1.4.1 - Model Registry**:
+  - 3 Claude 4.5 models (Haiku, Sonnet, Opus) with characteristics
+  - Capability flags and cache pricing in registry
+  - `/model` command for model selection
+- **Phase 1.4.2 - Prompt Caching**:
+  - Conditional system prompt caching (≥1024 tokens, 5-minute TTL)
+  - 10x cost reduction on cache reads
+  - Cache hit rate monitoring
+  - 3-level prompt composition (GLOBAL + User + Thread)
+- **Phase 1.4.3 - Extended Thinking & Message Batching**:
+  - Interleaved thinking beta header
+  - `thinking_delta` streaming support
+  - Time-based message batching (200ms window for split messages)
+  - Extended Thinking parameter DISABLED until Phase 1.5 (requires DB schema)
+- **Phase 1.4.4 - Best Practices & Optimization**:
+  - System prompt rewritten for Claude 4 style (explicit, concise)
+  - Effort parameter for Opus 4.5 (`effort: "high"`)
+  - Token Counting API for large requests (>150K tokens)
+  - Stop reason handling (context overflow, refusal, max_tokens)
+- **Files modified**:
+  - bot/core/claude/client.py - beta headers, effort, token counting, stop reasons
+  - bot/config.py - model registry, system prompt rewrite
+  - bot/telegram/handlers/claude.py - stop reason handling, 3-level prompts
+  - bot/core/message_queue.py - time-based batching
+  - bot/core/base.py - get_stop_reason() method
+- **Documentation**: docs/phase-1.4-claude-advanced-api.md (comprehensive guide)
+
+**Next:** Phase 1.5 (Multimodal + Tools)
