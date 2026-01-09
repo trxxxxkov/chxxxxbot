@@ -122,30 +122,7 @@ class ModelConfig:  # pylint: disable=too-many-instance-attributes
 
 MODEL_REGISTRY: dict[str, ModelConfig] = {
     # ============ Claude 4.5 Models (Phase 1.4.1) ============
-    "claude:sonnet":
-        ModelConfig(
-            provider="claude",
-            model_id="claude-sonnet-4-5-20250929",
-            alias="sonnet",
-            display_name="Claude Sonnet 4.5",
-            context_window=200_000,  # 200K (1M with beta, but we use 200K)
-            max_output=64_000,
-            pricing_input=3.0,
-            pricing_output=15.0,
-            pricing_cache_write_5m=3.75,  # 1.25x multiplier
-            pricing_cache_write_1h=6.0,  # 2x multiplier
-            pricing_cache_read=0.30,  # 0.1x multiplier
-            latency_tier="fast",
-            capabilities={
-                "extended_thinking": True,
-                "interleaved_thinking": True,
-                "effort": False,
-                "context_awareness": True,
-                "vision": True,
-                "streaming": True,
-                "prompt_caching": True,
-            },
-        ),
+    # Ordered by capability: Haiku (fastest) -> Sonnet (balanced) -> Opus (most capable)
     "claude:haiku":
         ModelConfig(
             provider="claude",
@@ -160,6 +137,30 @@ MODEL_REGISTRY: dict[str, ModelConfig] = {
             pricing_cache_write_1h=2.0,  # 2x multiplier
             pricing_cache_read=0.10,  # 0.1x multiplier
             latency_tier="fastest",
+            capabilities={
+                "extended_thinking": True,
+                "interleaved_thinking": True,
+                "effort": False,
+                "context_awareness": True,
+                "vision": True,
+                "streaming": True,
+                "prompt_caching": True,
+            },
+        ),
+    "claude:sonnet":
+        ModelConfig(
+            provider="claude",
+            model_id="claude-sonnet-4-5-20250929",
+            alias="sonnet",
+            display_name="Claude Sonnet 4.5",
+            context_window=200_000,  # 200K (1M with beta, but we use 200K)
+            max_output=64_000,
+            pricing_input=3.0,
+            pricing_output=15.0,
+            pricing_cache_write_5m=3.75,  # 1.25x multiplier
+            pricing_cache_write_1h=6.0,  # 2x multiplier
+            pricing_cache_read=0.30,  # 0.1x multiplier
+            latency_tier="fast",
             capabilities={
                 "extended_thinking": True,
                 "interleaved_thinking": True,
@@ -318,17 +319,19 @@ def get_models_by_provider(provider: str) -> list[ModelConfig]:
         provider: Provider name ("claude", "openai", "google").
 
     Returns:
-        List of ModelConfig objects for this provider, sorted by alias.
+        List of ModelConfig objects for this provider, in registry order
+        (Haiku -> Sonnet -> Opus for Claude).
 
     Examples:
         >>> claude_models = get_models_by_provider("claude")
         >>> len(claude_models)
         3
     """
+    # Preserve order from MODEL_REGISTRY (dict preserves insertion order in Python 3.7+)
     models = [
         model for model in MODEL_REGISTRY.values() if model.provider == provider
     ]
-    return sorted(models, key=lambda m: m.alias)
+    return models
 
 
 def get_default_model() -> ModelConfig:

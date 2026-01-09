@@ -71,7 +71,9 @@ async def model_command(  # pylint: disable=too-many-locals
     )
 
     # Get or create thread
-    thread_id = message.message_thread_id  # None for non-forum chats
+    # For private chats, always use thread_id=None (single conversation per user)
+    # For forum chats, use message.message_thread_id (forum topic ID)
+    thread_id = None if chat.type == "private" else message.message_thread_id
     db_thread, was_created = await thread_repo.get_or_create_thread(
         chat_id=db_chat.id,
         user_id=db_user.id,
@@ -174,8 +176,11 @@ async def model_selection_callback(  # pylint: disable=too-many-locals
         await callback.answer("⚠️ Chat not found. Use /model first.")
         return
 
-    thread_id = (callback.message.message_thread_id if hasattr(
-        callback.message, 'message_thread_id') else None)
+    # For private chats, always use thread_id=None (single conversation per user)
+    # For forum chats, use message.message_thread_id (forum topic ID)
+    thread_id = None if message_chat.type == "private" else (
+        callback.message.message_thread_id
+        if hasattr(callback.message, 'message_thread_id') else None)
 
     # Find thread by chat_id, user_id, and thread_id
     db_thread = await thread_repo.get_active_thread(
