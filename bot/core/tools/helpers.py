@@ -40,6 +40,10 @@ async def get_available_files(thread_id: int,
         >>> if files:
         ...     print(f"Found {len(files)} files")
     """
+    logger.debug("tools.helpers.get_available_files.calling_repo",
+                 thread_id=thread_id,
+                 repo_type=type(user_file_repo).__name__)
+
     files = await user_file_repo.get_by_thread_id(thread_id)
 
     logger.info("tools.helpers.get_available_files",
@@ -131,10 +135,16 @@ def format_files_section(files: List[Any]) -> str:
         # Add claude_file_id on next line (indented)
         lines.append(f"  claude_file_id: {file.claude_file_id}")
 
-    # Add usage note
+    # Add usage instructions
+    lines.append("")
+    lines.append(f"Total files available: {len(files)}")
     lines.append("")
     lines.append("To analyze these files, use the appropriate tool "
                  "(analyze_image for images, analyze_pdf for PDFs).")
+    lines.append("")
+    lines.append("IMPORTANT: If user asks about multiple files (e.g., 'these images', "
+                 "'all photos', 'these files'), analyze ALL files from the list above. "
+                 "Call the tool once for each file.")
 
     result = "\n".join(lines)
 

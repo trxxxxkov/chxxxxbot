@@ -23,8 +23,8 @@ from sqlalchemy import Enum
 from sqlalchemy import func
 from sqlalchemy import Index
 from sqlalchemy import Integer
+from sqlalchemy import JSON
 from sqlalchemy import String
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
 
@@ -124,7 +124,7 @@ class UserFile(Base):
     )
 
     file_type: Mapped[FileType] = mapped_column(
-        Enum(FileType),
+        Enum(FileType, name='filetype', values_callable=lambda x: [e.value for e in x]),
         nullable=False,
         doc="File type classification",
     )
@@ -157,16 +157,16 @@ class UserFile(Base):
 
     # Source
     source: Mapped[FileSource] = mapped_column(
-        Enum(FileSource),
+        Enum(FileSource, name='filesource', values_callable=lambda x: [e.value for e in x]),
         nullable=False,
         doc="Who created the file (user/assistant)",
     )
 
-    # Optional file metadata (JSONB for PostgreSQL)
+    # Optional file metadata (JSON - compatible with PostgreSQL and SQLite)
     # Note: 'metadata' name is reserved by SQLAlchemy, use 'file_metadata'
     file_metadata: Mapped[Optional[dict]] = mapped_column(
         "metadata",  # Column name in database
-        JSONB,
+        JSON,
         nullable=True,
         doc="Optional metadata (width, height, page_count, etc.)",
     )

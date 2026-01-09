@@ -1,47 +1,64 @@
-"""Tools module for Claude tool use (Phase 1.5).
+"""Tool registry and execution dispatcher (Phase 1.5).
 
-This module provides tool definitions and execution dispatcher for Claude's
-tool use feature. Currently implements:
+This module provides centralized tool definitions and execution dispatcher
+for Claude's tool use feature.
+
+Currently implements:
 - analyze_image: Analyze images using Claude Vision API
+- analyze_pdf: Analyze PDF documents using Claude PDF API
 
 Future tools (Phase 1.5):
-- analyze_pdf: Analyze PDF documents
-- web_search: Search the web
-- web_fetch: Fetch web pages
+- web_search: Search the web (server-side)
+- web_fetch: Fetch web pages (server-side)
 - execute_python: Execute Python code via E2B
 
-Tool architecture:
-1. Each tool is a separate module with async function and TOOL definition
-2. TOOL_DEFINITIONS list contains all tool schemas for Claude API
-3. TOOL_EXECUTORS dict maps tool names to execution functions
-4. execute_tool() dispatcher calls the appropriate tool function
-
-NO __init__.py pattern - this file exists to export tools.
+NO __init__.py - use direct import:
+    from core.tools.registry import TOOL_DEFINITIONS, execute_tool
 """
 
 from typing import Any, Dict, List
 
 from core.tools.analyze_image import analyze_image
 from core.tools.analyze_image import ANALYZE_IMAGE_TOOL
+from core.tools.analyze_pdf import analyze_pdf
+from core.tools.analyze_pdf import ANALYZE_PDF_TOOL
 from utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
 
+# Server-side tools (managed by Anthropic, no executor needed)
+# Phase 1.5 Stage 4
+WEB_SEARCH_TOOL = {
+    "type": "web_search_20250305",
+    "name": "web_search"
+    # Server-side tool: Anthropic executes searches automatically
+    # Cost: $0.01 per search (tracked in usage.server_tool_use.web_search_requests)
+    # No max_uses: Claude decides optimal search count
+}
+
+WEB_FETCH_TOOL = {
+    "type": "web_fetch_20250910",
+    "name": "web_fetch"
+    # Server-side tool: Anthropic fetches URLs automatically
+    # Cost: FREE (only tokens for fetched content)
+    # Supports web pages and PDFs
+}
+
 # Tool definitions for Claude API (list of tool schemas)
 TOOL_DEFINITIONS: List[Dict[str, Any]] = [
     ANALYZE_IMAGE_TOOL,
-    # Future tools will be added here:
-    # ANALYZE_PDF_TOOL,
-    # WEB_SEARCH_TOOL,
-    # WEB_FETCH_TOOL,
+    ANALYZE_PDF_TOOL,
+    WEB_SEARCH_TOOL,
+    WEB_FETCH_TOOL,
+    # Future tools:
     # EXECUTE_PYTHON_TOOL,
 ]
 
 # Tool executors mapping (tool name -> execution function)
 TOOL_EXECUTORS: Dict[str, Any] = {
     "analyze_image": analyze_image,
+    "analyze_pdf": analyze_pdf,
     # Future tools:
-    # "analyze_pdf": analyze_pdf,
     # "web_search": web_search,
     # "web_fetch": web_fetch,
     # "execute_python": execute_python,
@@ -56,12 +73,15 @@ async def execute_tool(tool_name: str, tool_input: Dict[str,
     Handles errors and logging for all tool executions.
 
     Args:
-        tool_name: Name of the tool to execute (e.g., "analyze_image").
+        tool_name: Name of the tool to execute (e.g., "analyze_image",
+            "analyze_pdf").
         tool_input: Tool input parameters as dictionary.
 
     Returns:
         Tool execution result as dictionary.
         For analyze_image: {"analysis": str, "tokens_used": str}
+        For analyze_pdf: {"analysis": str, "tokens_used": str,
+            "cached_tokens": str}
 
     Raises:
         ValueError: If tool_name not found in TOOL_EXECUTORS.
@@ -108,12 +128,3 @@ async def execute_tool(tool_name: str, tool_input: Dict[str,
                      exc_info=True)
         # Re-raise to let handler decide what to do
         raise
-
-
-__all__ = [
-    "TOOL_DEFINITIONS",
-    "TOOL_EXECUTORS",
-    "execute_tool",
-    "analyze_image",
-    "ANALYZE_IMAGE_TOOL",
-]

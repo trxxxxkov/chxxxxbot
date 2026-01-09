@@ -31,7 +31,7 @@ class UserFileRepository(BaseRepository[UserFile]):
         Args:
             session: Async SQLAlchemy session.
         """
-        super().__init__(UserFile, session)
+        super().__init__(session, UserFile)
 
     # pylint: disable=arguments-differ
     async def create(
@@ -158,14 +158,31 @@ class UserFileRepository(BaseRepository[UserFile]):
         # Import here to avoid circular dependency
         from db.models.message import \
             Message  # pylint: disable=import-outside-toplevel
+        from utils.structured_logging import \
+            get_logger  # pylint: disable=import-outside-toplevel
+
+        logger = get_logger(__name__)
+        logger.debug("user_file_repo.get_by_thread_id.start",
+                     thread_id=thread_id)
 
         stmt = (select(UserFile).join(
             Message, UserFile.message_id == Message.message_id).where(
                 Message.thread_id == thread_id).order_by(
                     UserFile.uploaded_at.desc()))
 
+        logger.debug("user_file_repo.get_by_thread_id.executing",
+                     thread_id=thread_id)
         result = await self.session.execute(stmt)
-        return list(result.scalars().all())
+
+        logger.debug("user_file_repo.get_by_thread_id.extracting",
+                     thread_id=thread_id)
+        files = list(result.scalars().all())
+
+        logger.debug("user_file_repo.get_by_thread_id.complete",
+                     thread_id=thread_id,
+                     file_count=len(files))
+
+        return files
 
     async def get_expired_files(self) -> list[UserFile]:
         """Get all expired files (expires_at < now).

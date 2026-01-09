@@ -58,8 +58,9 @@ async def upload_to_files_api(file_bytes: bytes, filename: str,
                     size_bytes=len(file_bytes))
 
         client = get_client()
-        file_response = client.files.create(file=BytesIO(file_bytes),
-                                            filename=filename)
+        # FileTypes accepts tuple: (filename, file_content)
+        file_response = client.beta.files.upload(
+            file=(filename, BytesIO(file_bytes)))
 
         logger.info("files_api.upload_success",
                     filename=filename,
@@ -84,7 +85,7 @@ async def delete_from_files_api(claude_file_id: str) -> None:
         logger.info("files_api.delete_start", claude_file_id=claude_file_id)
 
         client = get_client()
-        client.files.delete(file_id=claude_file_id)
+        client.beta.files.delete(file_id=claude_file_id)
 
         logger.info("files_api.delete_success", claude_file_id=claude_file_id)
 
