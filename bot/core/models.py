@@ -6,7 +6,7 @@ All models use Pydantic v2 for validation and serialization.
 NO __init__.py - use direct import: from core.models import LLMRequest
 """
 
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel
 from pydantic import Field
@@ -39,6 +39,7 @@ class LLMRequest(BaseModel):
         model: Model identifier (e.g., "claude-sonnet-4-5-20250514").
         max_tokens: Maximum tokens to generate in response.
         temperature: Sampling temperature (0.0-2.0, higher = more random).
+        tools: Optional list of tool definitions (Phase 1.5).
     """
 
     messages: List[Message] = Field(
@@ -54,6 +55,8 @@ class LLMRequest(BaseModel):
                                ge=0.0,
                                le=2.0,
                                description="Sampling temperature")
+    tools: Optional[List[Dict[str, Any]]] = Field(
+        default=None, description="Tool definitions for tool use (Phase 1.5)")
 
 
 class TokenUsage(BaseModel):

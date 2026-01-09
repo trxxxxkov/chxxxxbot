@@ -123,6 +123,13 @@ class ClaudeProvider(LLMProvider):
             "messages": api_messages,
         }
 
+        # Phase 1.5: Add tools if provided
+        if request.tools:
+            api_params["tools"] = request.tools
+            logger.info("claude.tools.enabled",
+                        model_full_id=request.model,
+                        tool_count=len(request.tools))
+
         # Phase 1.4.4: Token Counting API for large requests
         # Estimate tokens first (rough calculation: ~4 chars per token)
         total_text = (request.system_prompt or "") + "".join(
