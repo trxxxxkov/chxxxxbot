@@ -21,7 +21,7 @@ import pytest
 def reset_api_key():
     """Reset global API key before and after each test."""
     # Reset before test
-    import core.tools.execute_python
+    import core.tools.execute_python  # pylint: disable=import-outside-toplevel
     core.tools.execute_python._e2b_api_key = None
     yield
     # Reset after test
@@ -40,13 +40,23 @@ class TestExecutePython:
         # Setup mock API key
         mock_get_api_key.return_value = "test_api_key"
 
-        # Setup mock sandbox
+        # Setup mock sandbox with context manager support
         mock_sandbox = Mock()
+
+        # E2B v1.0+ API: execution.logs.stdout/stderr
+        mock_logs = Mock()
+        mock_logs.stdout = ["Hello, world!\n"]
+        mock_logs.stderr = []
+
         mock_execution = Mock()
         mock_execution.error = None
         mock_execution.results = []
+        mock_execution.logs = mock_logs
+
         mock_sandbox.run_code.return_value = mock_execution
-        mock_sandbox_class.return_value = mock_sandbox
+        mock_sandbox.__enter__ = Mock(return_value=mock_sandbox)
+        mock_sandbox.__exit__ = Mock(return_value=None)
+        mock_sandbox_class.create.return_value = mock_sandbox
 
         # Test
         result = await execute_python(code="print('Hello, world!')")
@@ -56,10 +66,12 @@ class TestExecutePython:
         assert result["error"] == ""
         assert "stdout" in result
         assert "stderr" in result
+        assert "Hello, world!" in result["stdout"]
 
-        # Verify sandbox was created and closed
-        mock_sandbox_class.assert_called_once_with(api_key="test_api_key")
-        mock_sandbox.close.assert_called_once()
+        # Verify sandbox was created and context manager was used
+        mock_sandbox_class.create.assert_called_once()
+        mock_sandbox.__enter__.assert_called_once()
+        mock_sandbox.__exit__.assert_called_once()
 
         # Verify run_code was called
         mock_sandbox.run_code.assert_called_once()
@@ -76,18 +88,27 @@ class TestExecutePython:
         # Setup mock API key
         mock_get_api_key.return_value = "test_api_key"
 
-        # Setup mock sandbox
+        # Setup mock sandbox with context manager support
         mock_sandbox = Mock()
         mock_install_result = Mock()
         mock_install_result.exit_code = 0
         mock_install_result.stdout = "Successfully installed numpy"
         mock_sandbox.commands.run.return_value = mock_install_result
 
+        # E2B v1.0+ API
+        mock_logs = Mock()
+        mock_logs.stdout = ["1.24.0\n"]
+        mock_logs.stderr = []
+
         mock_execution = Mock()
         mock_execution.error = None
         mock_execution.results = []
+        mock_execution.logs = mock_logs
+
         mock_sandbox.run_code.return_value = mock_execution
-        mock_sandbox_class.return_value = mock_sandbox
+        mock_sandbox.__enter__ = Mock(return_value=mock_sandbox)
+        mock_sandbox.__exit__ = Mock(return_value=None)
+        mock_sandbox_class.create.return_value = mock_sandbox
 
         # Test
         result = await execute_python(
@@ -99,8 +120,9 @@ class TestExecutePython:
         # Verify pip install was called
         mock_sandbox.commands.run.assert_called_once_with("pip install numpy")
 
-        # Verify sandbox was closed
-        mock_sandbox.close.assert_called_once()
+        # Verify context manager was used
+        mock_sandbox.__enter__.assert_called_once()
+        mock_sandbox.__exit__.assert_called_once()
 
     @pytest.mark.asyncio
     @patch('core.tools.execute_python.Sandbox')
@@ -111,14 +133,24 @@ class TestExecutePython:
         # Setup mock API key
         mock_get_api_key.return_value = "test_api_key"
 
-        # Setup mock sandbox
+        # Setup mock sandbox with context manager support
         mock_sandbox = Mock()
+
+        # E2B v1.0+ API
+        mock_logs = Mock()
+        mock_logs.stdout = []
+        mock_logs.stderr = []
+
         mock_execution = Mock()
         mock_execution.error = Exception(
             "NameError: name 'undefined_var' is not defined")
         mock_execution.results = []
+        mock_execution.logs = mock_logs
+
         mock_sandbox.run_code.return_value = mock_execution
-        mock_sandbox_class.return_value = mock_sandbox
+        mock_sandbox.__enter__ = Mock(return_value=mock_sandbox)
+        mock_sandbox.__exit__ = Mock(return_value=None)
+        mock_sandbox_class.create.return_value = mock_sandbox
 
         # Test
         result = await execute_python(code="print(undefined_var)")
@@ -127,8 +159,9 @@ class TestExecutePython:
         assert result["success"] == "false"
         assert "NameError" in result["error"]
 
-        # Verify sandbox was closed even after error
-        mock_sandbox.close.assert_called_once()
+        # Verify context manager was used even after error
+        mock_sandbox.__enter__.assert_called_once()
+        mock_sandbox.__exit__.assert_called_once()
 
     @pytest.mark.asyncio
     @patch('core.tools.execute_python.Sandbox')
@@ -139,24 +172,23 @@ class TestExecutePython:
         # Setup mock API key
         mock_get_api_key.return_value = "test_api_key"
 
-        # Setup mock sandbox
+        # Setup mock sandbox with context manager support
         mock_sandbox = Mock()
+
+        # E2B v1.0+ API: execution.logs contains stdout/stderr lists
+        mock_logs = Mock()
+        mock_logs.stdout = ["Hello from stdout\n"]
+        mock_logs.stderr = ["Warning from stderr\n"]
+
         mock_execution = Mock()
         mock_execution.error = None
         mock_execution.results = []
+        mock_execution.logs = mock_logs
 
-        # Capture stdout/stderr callbacks
-        def mock_run_code(**kwargs):
-            on_stdout = kwargs.get("on_stdout")
-            on_stderr = kwargs.get("on_stderr")
-            if on_stdout:
-                on_stdout("Hello from stdout\n")
-            if on_stderr:
-                on_stderr("Warning from stderr\n")
-            return mock_execution
-
-        mock_sandbox.run_code = mock_run_code
-        mock_sandbox_class.return_value = mock_sandbox
+        mock_sandbox.run_code.return_value = mock_execution
+        mock_sandbox.__enter__ = Mock(return_value=mock_sandbox)
+        mock_sandbox.__exit__ = Mock(return_value=None)
+        mock_sandbox_class.create.return_value = mock_sandbox
 
         # Test
         result = await execute_python(code="print('test')")
@@ -175,13 +207,23 @@ class TestExecutePython:
         # Setup mock API key
         mock_get_api_key.return_value = "test_api_key"
 
-        # Setup mock sandbox
+        # Setup mock sandbox with context manager support
         mock_sandbox = Mock()
+
+        # E2B v1.0+ API
+        mock_logs = Mock()
+        mock_logs.stdout = []
+        mock_logs.stderr = []
+
         mock_execution = Mock()
         mock_execution.error = None
         mock_execution.results = []
+        mock_execution.logs = mock_logs
+
         mock_sandbox.run_code.return_value = mock_execution
-        mock_sandbox_class.return_value = mock_sandbox
+        mock_sandbox.__enter__ = Mock(return_value=mock_sandbox)
+        mock_sandbox.__exit__ = Mock(return_value=None)
+        mock_sandbox_class.create.return_value = mock_sandbox
 
         # Test
         result = await execute_python(code="import time; time.sleep(1)",
@@ -203,8 +245,9 @@ class TestExecutePython:
         # Setup mock API key
         mock_get_api_key.return_value = "test_api_key"
 
-        # Setup mock to raise exception
-        mock_sandbox_class.side_effect = Exception("Sandbox creation failed")
+        # Setup mock to raise exception on create()
+        mock_sandbox_class.create.side_effect = Exception(
+            "Sandbox creation failed")
 
         # Test
         with pytest.raises(Exception, match="Sandbox creation failed"):
@@ -219,17 +262,26 @@ class TestExecutePython:
         # Setup mock API key
         mock_get_api_key.return_value = "test_api_key"
 
-        # Setup mock sandbox
+        # Setup mock sandbox with context manager support
         mock_sandbox = Mock()
+
+        # E2B v1.0+ API
+        mock_logs = Mock()
+        mock_logs.stdout = []
+        mock_logs.stderr = []
+
         mock_result_obj = Mock()
-        mock_result_obj.type = "image"
         mock_result_obj.__str__ = lambda self: "<matplotlib plot>"
 
         mock_execution = Mock()
         mock_execution.error = None
         mock_execution.results = [mock_result_obj]
+        mock_execution.logs = mock_logs
+
         mock_sandbox.run_code.return_value = mock_execution
-        mock_sandbox_class.return_value = mock_sandbox
+        mock_sandbox.__enter__ = Mock(return_value=mock_sandbox)
+        mock_sandbox.__exit__ = Mock(return_value=None)
+        mock_sandbox_class.create.return_value = mock_sandbox
 
         # Test
         result = await execute_python(
@@ -238,6 +290,7 @@ class TestExecutePython:
         # Verify
         assert result["success"] == "true"
         assert result["results"] != "[]"  # Should contain serialized results
+        assert "<matplotlib plot>" in result["results"]
 
 
 class TestExecutePythonToolDefinition:
@@ -287,7 +340,8 @@ class TestExecutePythonToolDefinition:
         assert "when not to use" in description.lower()
 
         # Should mention limitations
-        assert "limitations" in description.lower() or "timeout" in description.lower()
+        assert "limitations" in description.lower(
+        ) or "timeout" in description.lower()
 
     def test_tool_description_mentions_features(self):
         """Test that description includes key features."""

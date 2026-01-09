@@ -3,6 +3,8 @@
 This module handles all text messages from users, sends them to Claude API,
 and streams responses back to Telegram in real-time.
 
+# pylint: disable=too-many-lines
+
 NO __init__.py - use direct import: from telegram.handlers.claude import router
 """
 
@@ -26,12 +28,12 @@ from core.exceptions import RateLimitError
 from core.message_queue import MessageQueueManager
 from core.models import LLMRequest
 from core.models import Message
-from core.tools.registry import execute_tool
-from core.tools.registry import TOOL_DEFINITIONS
 from core.tools.helpers import extract_tool_uses
 from core.tools.helpers import format_files_section
 from core.tools.helpers import format_tool_results
 from core.tools.helpers import get_available_files
+from core.tools.registry import execute_tool
+from core.tools.registry import TOOL_DEFINITIONS
 from db.engine import get_session
 from db.models.message import MessageRole
 from db.repositories.chat_repository import ChatRepository
@@ -130,10 +132,11 @@ def init_message_queue_manager() -> None:
 
 
 # pylint: disable=too-many-locals,too-many-branches,too-many-statements
-async def _handle_with_tools(
-        request: LLMRequest, first_message: types.Message, thread_id: int,
-        session: AsyncSession, user_file_repo: UserFileRepository,
-        chat_id: int, user_id: int) -> str:
+# pylint: disable=too-many-nested-blocks,unused-argument
+async def _handle_with_tools(request: LLMRequest, first_message: types.Message,
+                             thread_id: int, session: AsyncSession,
+                             user_file_repo: UserFileRepository, chat_id: int,
+                             user_id: int) -> str:
     """Handle request with tool use loop.
 
     Implements tool use pattern:
@@ -293,16 +296,21 @@ async def _handle_with_tools(
                                     mime_type=mime_type)
 
                                 # 1. Upload to Files API
-                                from core.claude.files_api import upload_to_files_api  # pylint: disable=import-outside-toplevel
+                                from core.claude.files_api import \
+                                    upload_to_files_api  # pylint: disable=import-outside-toplevel
                                 claude_file_id = await upload_to_files_api(
                                     file_bytes=file_bytes,
                                     filename=filename,
                                     mime_type=mime_type)
 
                                 # 2. Save to database (source=ASSISTANT)
-                                from datetime import datetime, timedelta  # pylint: disable=import-outside-toplevel
-                                from config import FILES_API_TTL_HOURS  # pylint: disable=import-outside-toplevel
-                                from db.models.user_file import FileSource, FileType  # pylint: disable=import-outside-toplevel
+                                # pylint: disable=import-outside-toplevel
+                                from datetime import datetime
+                                from datetime import timedelta
+
+                                from config import FILES_API_TTL_HOURS
+                                from db.models.user_file import FileSource
+                                from db.models.user_file import FileType
 
                                 # Determine file type
                                 if mime_type.startswith("image/"):
@@ -329,8 +337,6 @@ async def _handle_with_tools(
                                 )
 
                                 # 3. Send to Telegram user
-                                from io import BytesIO  # pylint: disable=import-outside-toplevel
-
                                 # Send as photo if image, otherwise as document
                                 if file_type == FileType.IMAGE and mime_type in [
                                         "image/jpeg", "image/png", "image/gif",
@@ -365,7 +371,8 @@ async def _handle_with_tools(
                         if delivered_files:
                             result["files_delivered"] = (
                                 f"Successfully sent {len(delivered_files)} "
-                                f"file(s) to user: {', '.join(delivered_files)}")
+                                f"file(s) to user: {', '.join(delivered_files)}"
+                            )
 
                     results.append(result)
 
@@ -577,13 +584,12 @@ async def _process_message_batch(thread_id: int,
             # 6. Prepare Claude request (Phase 1.5: tools always available)
             # Server-side tools (web_search, web_fetch) work without files
             # Client-side tools (analyze_image, analyze_pdf) require uploaded files
-            request = LLMRequest(
-                messages=context,
-                system_prompt=composed_prompt,
-                model=user.model_id,
-                max_tokens=model_config.max_output,
-                temperature=config.CLAUDE_TEMPERATURE,
-                tools=TOOL_DEFINITIONS)  # Always pass tools
+            request = LLMRequest(messages=context,
+                                 system_prompt=composed_prompt,
+                                 model=user.model_id,
+                                 max_tokens=model_config.max_output,
+                                 temperature=config.CLAUDE_TEMPERATURE,
+                                 tools=TOOL_DEFINITIONS)  # Always pass tools
 
             logger.info("claude_handler.request_prepared",
                         thread_id=thread_id,
@@ -619,7 +625,7 @@ async def _process_message_batch(thread_id: int,
                     if len(safe_text) > 4000:
                         # Send in chunks
                         for i in range(0, len(safe_text), 4000):
-                            chunk = safe_text[i:i+4000]
+                            chunk = safe_text[i:i + 4000]
                             bot_message = await first_message.answer(chunk)
                     else:
                         bot_message = await first_message.answer(safe_text)
@@ -737,7 +743,8 @@ async def _process_message_batch(thread_id: int,
             # 9. Get usage stats, stop_reason, thinking, and calculate cost
             usage = await claude_provider.get_usage()
             stop_reason = claude_provider.get_stop_reason()
-            thinking = claude_provider.get_thinking()  # Phase 1.4.3: Extended Thinking
+            thinking = claude_provider.get_thinking(
+            )  # Phase 1.4.3: Extended Thinking
 
             cost_usd = (
                 (usage.input_tokens / 1_000_000) * model_config.pricing_input +
@@ -932,11 +939,11 @@ async def handle_claude_message(message: types.Message,
     # Phase 1.5: If photo/document with caption, upload file first
     if message.photo or message.document:
         logger.info("claude_handler.file_with_caption_received",
-                   chat_id=message.chat.id,
-                   user_id=message.from_user.id if message.from_user else None,
-                   has_photo=bool(message.photo),
-                   has_document=bool(message.document),
-                   caption_length=len(message.caption or ""))
+                    chat_id=message.chat.id,
+                    user_id=message.from_user.id if message.from_user else None,
+                    has_photo=bool(message.photo),
+                    has_document=bool(message.document),
+                    caption_length=len(message.caption or ""))
 
         try:
             # Upload file to Files API and save to database
@@ -944,8 +951,8 @@ async def handle_claude_message(message: types.Message,
             # Continue processing caption as text below
         except Exception as e:  # pylint: disable=broad-exception-caught
             logger.error("claude_handler.file_upload_failed",
-                        error=str(e),
-                        exc_info=True)
+                         error=str(e),
+                         exc_info=True)
             await message.answer("❌ Failed to upload file. Please try again.")
             return
 

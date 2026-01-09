@@ -50,11 +50,11 @@ def get_e2b_api_key() -> str:
     return _e2b_api_key
 
 
-async def execute_python(
-        code: str,
-        file_inputs: Optional[List[Dict[str, str]]] = None,
-        requirements: Optional[str] = None,
-        timeout: Optional[float] = 180.0) -> Dict[str, Any]:
+# pylint: disable=too-many-locals,too-many-statements
+async def execute_python(code: str,
+                         file_inputs: Optional[List[Dict[str, str]]] = None,
+                         requirements: Optional[str] = None,
+                         timeout: Optional[float] = 180.0) -> Dict[str, Any]:
     """Execute Python code in E2B sandbox with file support.
 
     Runs Python code in secure E2B sandbox (Linux, Python 3.11+, headless).
@@ -99,7 +99,9 @@ async def execute_python(
 
         >>> # With input files
         >>> result = await execute_python(
-        ...     code="import pandas as pd; df = pd.read_csv('/tmp/inputs/data.csv'); print(df.head())",
+        ...     code=("import pandas as pd; "
+        ...           "df = pd.read_csv('/tmp/inputs/data.csv'); "
+        ...           "print(df.head())"),
         ...     file_inputs=[{"file_id": "file_xyz", "name": "data.csv"}],
         ...     requirements="pandas"
         ... )
@@ -120,10 +122,12 @@ async def execute_python(
 
         api_key = get_e2b_api_key()
 
-        # Create sandbox
-        sandbox = Sandbox(api_key=api_key)
+        # Set E2B_API_KEY environment variable for Sandbox.create()
+        import os  # pylint: disable=import-outside-toplevel
+        os.environ["E2B_API_KEY"] = api_key
 
-        try:
+        # Create sandbox (new API in v1.0+ with context manager)
+        with Sandbox.create() as sandbox:
             # Upload input files to sandbox if specified
             if file_inputs:
                 logger.info("tools.execute_python.uploading_input_files",
@@ -164,31 +168,41 @@ async def execute_python(
                             exit_code=install_output.exit_code,
                             stdout_length=len(install_output.stdout))
 
-            # Execute code
+            # Execute code (E2B v1.0+ API)
             logger.info("tools.execute_python.executing_code",
-                        code_length=len(code))
+                        code_length=len(code),
+                        timeout=timeout)
 
-            # Collect stdout and stderr
-            stdout_lines: List[str] = []
-            stderr_lines: List[str] = []
+            execution = sandbox.run_code(code=code, timeout=timeout)
 
-            execution = sandbox.run_code(code=code,
-                                         timeout=timeout,
-                                         on_stdout=stdout_lines.append,
-                                         on_stderr=stderr_lines.append)
+            # E2B v1.0+ API: execution.logs.stdout/stderr are lists of strings
+            stdout_list = execution.logs.stdout if execution.logs else []
+            stderr_list = execution.logs.stderr if execution.logs else []
 
-            # Build result
-            stdout_str = "".join(stdout_lines)
-            stderr_str = "".join(stderr_lines)
+            logger.info("tools.execute_python.execution_complete",
+                        stdout_lines=len(stdout_list),
+                        stderr_lines=len(stderr_list),
+                        has_error=bool(execution.error),
+                        has_results=bool(execution.results))
+
+            # Build result strings
+            stdout_str = "".join(stdout_list)
+            stderr_str = "".join(stderr_list)
             error_str = str(execution.error) if execution.error else ""
             success = execution.error is None
 
-            # Serialize results (matplotlib plots, return values, etc.)
-            results_serialized = json.dumps([{
-                "type": r.type,
-                "data": str(r)[:1000]
-            } for r in (execution.results or [])],
-                                            ensure_ascii=False)
+            # Serialize results
+            # execution.results is a list of result objects
+            results_list = []
+            if execution.results:
+                for r in execution.results:
+                    # Log result structure for debugging
+                    logger.debug("tools.execute_python.result_object",
+                                 result_type=type(r).__name__,
+                                 result_str=str(r)[:200])
+                    results_list.append(str(r)[:1000])
+
+            results_serialized = json.dumps(results_list, ensure_ascii=False)
 
             # Scan for generated files in /tmp/ (excluding /tmp/inputs/)
             generated_files: List[Dict[str, Any]] = []
@@ -239,7 +253,7 @@ async def execute_python(
                 logger.info("tools.execute_python.output_files_scanned",
                             file_count=len(generated_files))
 
-            except Exception as scan_error:
+            except Exception as scan_error:  # pylint: disable=broad-exception-caught
                 logger.warning("tools.execute_python.output_scan_failed",
                                error=str(scan_error),
                                exc_info=True)
@@ -262,20 +276,24 @@ async def execute_python(
                         has_error=bool(error_str))
 
             return {
-                "stdout": stdout_str,
-                "stderr": stderr_str,
-                "results": results_serialized,
-                "error": error_str,
-                "success": str(success).lower(),
+                "stdout":
+                    stdout_str,
+                "stderr":
+                    stderr_str,
+                "results":
+                    results_serialized,
+                "error":
+                    error_str,
+                "success":
+                    str(success).lower(),
                 "generated_files":
                     json.dumps(generated_files_meta, ensure_ascii=False),
-                "_file_contents": generated_files  # Internal: raw bytes
+                "_file_contents":
+                    generated_files  # Internal: raw bytes
             }
 
-        finally:
-            # Always close sandbox
-            sandbox.close()
-            logger.info("tools.execute_python.sandbox_closed")
+        # Context manager automatically closes sandbox
+        logger.info("tools.execute_python.sandbox_closed")
 
     except Exception as e:
         logger.error("tools.execute_python.failed", error=str(e), exc_info=True)
@@ -359,8 +377,7 @@ Free tier: $100 credit (~2000 hours).""",
                 "type":
                     "array",
                 "items": {
-                    "type":
-                        "object",
+                    "type": "object",
                     "properties": {
                         "file_id": {
                             "type":
@@ -380,11 +397,11 @@ Free tier: $100 credit (~2000 hours).""",
                     },
                     "required": ["file_id", "name"]
                 },
-                "description": (
-                    "List of input files to upload to sandbox. "
-                    "Use file_id and name from 'Available files' section. "
-                    "Files uploaded to /tmp/inputs/ before code execution. "
-                    "Optional - omit if no file inputs needed.")
+                "description":
+                    ("List of input files to upload to sandbox. "
+                     "Use file_id and name from 'Available files' section. "
+                     "Files uploaded to /tmp/inputs/ before code execution. "
+                     "Optional - omit if no file inputs needed.")
             },
             "requirements": {
                 "type":

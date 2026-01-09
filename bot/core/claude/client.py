@@ -63,7 +63,8 @@ class ClaudeProvider(LLMProvider):
         self.last_usage: Optional[TokenUsage] = None
         self.last_message: Optional[
             anthropic.types.Message] = None  # Phase 1.5: for tool use
-        self.last_thinking: Optional[str] = None  # Phase 1.4.3: Extended Thinking
+        self.last_thinking: Optional[
+            str] = None  # Phase 1.4.3: Extended Thinking
 
         logger.info("claude_provider.initialized",
                     beta_features=[
@@ -182,8 +183,7 @@ class ClaudeProvider(LLMProvider):
                                           'cache_read_input_tokens', 0),
                 cache_creation_tokens=getattr(response.usage,
                                               'cache_creation_input_tokens', 0),
-                thinking_tokens=thinking_tokens
-            )
+                thinking_tokens=thinking_tokens)
             self.last_message = response
 
             duration_ms = (time.time() - start_time) * 1000
