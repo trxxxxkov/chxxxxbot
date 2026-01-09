@@ -1207,62 +1207,75 @@ MAX_TOKENS_DEFAULT = 4096
 
 ---
 
-### Stage 5: execute_python Tool (E2B)
+### Stage 5: execute_python Tool (E2B) ✅ COMPLETE
+**Status:** Complete (2026-01-09)
 **Goal:** Claude can execute Python code with internet access
 
-- [ ] E2B integration
-  - [ ] Research E2B SDK and API
-  - [ ] Add e2b_api_key.txt to secrets/
-  - [ ] Update .gitignore (skip-worktree for e2b_api_key.txt)
-  - [ ] Install E2B SDK in requirements
-- [ ] Tool implementation (`bot/core/tools/execute_python.py`)
-  - [ ] @beta_tool decorator
-  - [ ] Detailed description
-  - [ ] E2B Sandbox integration
-  - [ ] Pip install requirements support
-  - [ ] Timeout parameter
-  - [ ] Error handling
-- [ ] Update tools registry
-  - [ ] Add execute_python to CLIENT_TOOLS
-- [ ] Tests for Stage 5
-  - [ ] Unit test: execute_python tool
-  - [ ] Integration test: simple code execution
-  - [ ] Integration test: code with pip install
-  - [ ] Integration test: code with HTTP requests
-  - [ ] Benchmark: latency, cold start vs warm start
+- [x] E2B integration
+  - [x] Research E2B SDK and API
+  - [x] Add e2b_api_key.txt to secrets/
+  - [x] Install e2b-code-interpreter>=1.0.0 in Dockerfile
+- [x] Tool implementation (`bot/core/tools/execute_python.py`)
+  - [x] execute_python(code, requirements, timeout=180.0)
+  - [x] E2B Sandbox integration (lazy API key loading)
+  - [x] Pip install requirements support
+  - [x] Timeout parameter (default 180s, max 3600s)
+  - [x] Stdout/stderr capture via callbacks
+  - [x] Error handling and logging
+  - [x] Results serialization (matplotlib plots)
+- [x] Update tools registry
+  - [x] Add EXECUTE_PYTHON_TOOL to TOOL_DEFINITIONS
+  - [x] Add execute_python to TOOL_EXECUTORS
+- [x] Tests for Stage 5
+  - [x] 10 unit tests (test_execute_python.py)
+  - [x] Tool definition validation
+  - [x] Integration via registry (test_registry.py)
 
 **Result:** Claude can execute Python code with full internet access and pip.
 
 ---
 
-### Stage 6: Integration & System Prompt
-**Goal:** Integrate all tools into main Claude handler
+### Stage 6: File Generation & Download (execute_python File I/O) ✅ COMPLETE
+**Status:** Complete (2026-01-09)
+**Goal:** Universal file I/O for execute_python tool - Claude can generate and return files to users
 
-- [ ] Dynamic system prompt (`bot/core/claude/prompts.py`)
-  - [ ] GLOBAL_SYSTEM_PROMPT (update for tools)
-  - [ ] TOOL_SELECTION_PROMPT (chain of thought)
-  - [ ] generate_system_prompt() with available files list
-  - [ ] format_size() and format_time_ago() helpers
-- [ ] Claude handler updates (`bot/telegram/handlers/claude.py`)
-  - [ ] Import Tool Runner from SDK
-  - [ ] Use client.beta.messages.tool_runner()
-  - [ ] Pass ALL_TOOLS to tool runner
-  - [ ] Streaming with tools
-  - [ ] Save thinking blocks to DB
-  - [ ] Include thinking blocks with tool_result (CRITICAL!)
-  - [ ] Token/cost tracking for tools
-- [ ] Enable Extended Thinking
-  - [ ] Uncomment thinking parameter in client.py
-  - [ ] thinking: {"type": "enabled", "budget_tokens": 10000}
-  - [ ] Save thinking blocks to messages.thinking_blocks
-- [ ] Tests for Stage 6
-  - [ ] Integration test: text conversation with tools
-  - [ ] Integration test: multi-tool scenario
-  - [ ] Integration test: parallel tool calls
-  - [ ] Integration test: tool errors
-  - [ ] Integration test: Extended Thinking with tools
+- [x] Files API enhancements
+  - [x] Add download_from_files_api(file_id) function
+  - [x] Uses client.beta.files.retrieve_content()
+- [x] execute_python tool enhancements
+  - [x] Add file_inputs parameter: `[{file_id, name}]`
+  - [x] Download from Files API → upload to /tmp/inputs/ in sandbox
+  - [x] Scan /tmp/ for output files (excluding /tmp/inputs/)
+  - [x] Download output files from sandbox
+  - [x] Return `_file_contents` with raw bytes + metadata
+  - [x] Comprehensive tool description (ENVIRONMENT, INPUT FILES, OUTPUT FILES, WORKFLOW EXAMPLE)
+- [x] System prompt updates (config.py)
+  - [x] Add "Working with Files" section in GLOBAL_SYSTEM_PROMPT
+  - [x] Explain input/output file workflow
+  - [x] Emphasize execute_python as ONLY way to return files to users
+- [x] Claude handler updates (claude.py)
+  - [x] Extend _handle_with_tools() signature (session, user_file_repo, chat_id, user_id)
+  - [x] Process _file_contents after tool execution
+  - [x] For each generated file:
+    - [x] Upload to Files API
+    - [x] Save to DB (source=ASSISTANT, message_id, expires_at)
+    - [x] Send to Telegram user (send_photo for images, send_document otherwise)
+    - [x] Add delivery confirmation to tool result feedback
+  - [x] Generated files appear in "Available files" for future operations
+- [x] Tests for Stage 6
+  - [x] All 74 Phase 1.5 tests passing
+  - [x] files_api, execute_python, tools, helpers, user_file_repository
 
-**Result:** Full integration of all tools with conversations.
+**Workflow:**
+1. User: "Convert data.csv to PDF report with chart"
+2. Claude calls execute_python with file_inputs=[{file_id, name="data.csv"}]
+3. Bot downloads data.csv from Files API → uploads to /tmp/inputs/
+4. Code executes: reads /tmp/inputs/data.csv, generates /tmp/report.pdf and /tmp/chart.png
+5. Bot scans /tmp/, downloads new files
+6. Bot uploads to Files API → saves to DB → sends to Telegram → confirms delivery
+7. Files appear in "Available files", Claude can reference: "I created report.pdf..."
+
+**Result:** Claude can generate and return arbitrary files to users (PDF, PNG, CSV, XLSX, etc.) via execute_python.
 
 ---
 
