@@ -11,6 +11,7 @@ import time
 from typing import AsyncIterator, Optional
 
 import anthropic
+from config import get_model
 from core.base import LLMProvider
 from core.exceptions import APIConnectionError
 from core.exceptions import APITimeoutError
@@ -54,6 +55,7 @@ class ClaudeProvider(LLMProvider):
 
         Args:
             request: LLM request with messages and configuration.
+                     request.model should be full_id (e.g., "claude:sonnet").
 
         Yields:
             Text chunks as they arrive from API.
@@ -62,12 +64,29 @@ class ClaudeProvider(LLMProvider):
             RateLimitError: Rate limit exceeded (429).
             APIConnectionError: Connection to API failed.
             APITimeoutError: API request timed out.
-            InvalidModelError: Model not supported.
+            InvalidModelError: Model not supported or wrong provider.
         """
         start_time = time.time()
 
+        # Get model configuration from registry
+        try:
+            model_config = get_model(request.model)
+        except KeyError as e:
+            raise InvalidModelError(
+                f"Model '{request.model}' not found in registry. {e}") from e
+
+        # Validate provider (ClaudeProvider only handles Claude models)
+        if model_config.provider != "claude":
+            raise InvalidModelError(
+                f"ClaudeProvider can only handle 'claude' models, "
+                f"got provider '{model_config.provider}' for model "
+                f"'{request.model}'")
+
         logger.info("claude.stream.start",
-                    model=request.model,
+                    model_full_id=request.model,
+                    model_display_name=model_config.display_name,
+                    model_api_id=model_config.model_id,
+                    provider=model_config.provider,
                     message_count=len(request.messages),
                     system_prompt_length=len(request.system_prompt or ""),
                     max_tokens=request.max_tokens,
@@ -79,9 +98,10 @@ class ClaudeProvider(LLMProvider):
             "content": msg.content
         } for msg in request.messages]
 
-        # Prepare request parameters
+        # Prepare request parameters (use exact model_id for API)
         api_params = {
-            "model": request.model,
+            "model":
+                model_config.model_id,  # e.g., "claude-sonnet-4-5-20250929"
             "max_tokens": request.max_tokens,
             "temperature": request.temperature,
             "messages": api_messages,
@@ -120,7 +140,8 @@ class ClaudeProvider(LLMProvider):
             duration_ms = (time.time() - start_time) * 1000
 
             logger.info("claude.stream.complete",
-                        model=request.model,
+                        model_full_id=request.model,
+                        model_api_id=model_config.model_id,
                         input_tokens=self.last_usage.input_tokens,
                         output_tokens=self.last_usage.output_tokens,
                         total_chunks=total_chunks,
@@ -132,7 +153,8 @@ class ClaudeProvider(LLMProvider):
             duration_ms = (time.time() - start_time) * 1000
 
             logger.error("claude.stream.rate_limit",
-                         model=request.model,
+                         model_full_id=request.model,
+                         model_api_id=model_config.model_id,
                          error=str(e),
                          duration_ms=round(duration_ms, 2),
                          exc_info=True)
@@ -146,7 +168,8 @@ class ClaudeProvider(LLMProvider):
             duration_ms = (time.time() - start_time) * 1000
 
             logger.error("claude.stream.connection_error",
-                         model=request.model,
+                         model_full_id=request.model,
+                         model_api_id=model_config.model_id,
                          error=str(e),
                          duration_ms=round(duration_ms, 2),
                          exc_info=True)
@@ -159,7 +182,8 @@ class ClaudeProvider(LLMProvider):
             duration_ms = (time.time() - start_time) * 1000
 
             logger.error("claude.stream.timeout",
-                         model=request.model,
+                         model_full_id=request.model,
+                         model_api_id=model_config.model_id,
                          error=str(e),
                          duration_ms=round(duration_ms, 2),
                          exc_info=True)
@@ -171,19 +195,22 @@ class ClaudeProvider(LLMProvider):
             duration_ms = (time.time() - start_time) * 1000
 
             logger.error("claude.stream.invalid_model",
-                         model=request.model,
+                         model_full_id=request.model,
+                         model_api_id=model_config.model_id,
                          error=str(e),
                          duration_ms=round(duration_ms, 2),
                          exc_info=True)
 
             raise InvalidModelError(
-                f"Model '{request.model}' not found or not accessible.") from e
+                f"Model '{model_config.display_name}' ({model_config.model_id}) "
+                f"not found or not accessible.") from e
 
         except Exception as e:
             duration_ms = (time.time() - start_time) * 1000
 
             logger.error("claude.stream.unexpected_error",
-                         model=request.model,
+                         model_full_id=request.model,
+                         model_api_id=model_config.model_id,
                          error=str(e),
                          error_type=type(e).__name__,
                          duration_ms=round(duration_ms, 2),

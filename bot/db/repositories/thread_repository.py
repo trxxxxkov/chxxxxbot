@@ -42,7 +42,7 @@ class ThreadRepository(BaseRepository[Thread]):
         user_id: int,
         thread_id: Optional[int] = None,
         title: Optional[str] = None,
-        model_name: str = "claude",
+        model_id: str = "claude:sonnet",
         system_prompt: Optional[str] = None,
     ) -> tuple[Thread, bool]:
         """Get existing thread or create new one.
@@ -59,7 +59,8 @@ class ThreadRepository(BaseRepository[Thread]):
             user_id: Telegram user ID.
             thread_id: Telegram thread/topic ID (None for main chat).
             title: Thread title. Defaults to None.
-            model_name: LLM model name. Defaults to "claude".
+            model_id: Model identifier (e.g., "claude:sonnet"). Defaults to
+                     "claude:sonnet".
             system_prompt: Custom system prompt. Defaults to None.
 
         Returns:
@@ -73,7 +74,7 @@ class ThreadRepository(BaseRepository[Thread]):
             # Update thread metadata if changed
             if title is not None:
                 thread.title = title
-            thread.model_name = model_name
+            thread.model_id = model_id
             if system_prompt is not None:
                 thread.system_prompt = system_prompt
             await self.session.flush()
@@ -85,7 +86,7 @@ class ThreadRepository(BaseRepository[Thread]):
             user_id=user_id,
             thread_id=thread_id,
             title=title,
-            model_name=model_name,
+            model_id=model_id,
             system_prompt=system_prompt,
         )
         self.session.add(thread)

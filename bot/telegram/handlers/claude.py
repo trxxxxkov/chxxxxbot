@@ -10,9 +10,9 @@ from aiogram import F
 from aiogram import Router
 from aiogram import types
 import config
-from config import CLAUDE_MODELS
 from config import CLAUDE_TOKEN_BUFFER_PERCENT
-from config import DEFAULT_MODEL
+from config import DEFAULT_MODEL_ID
+from config import get_model
 from config import GLOBAL_SYSTEM_PROMPT
 from core.claude.client import ClaudeProvider
 from core.claude.context import ContextManager
@@ -123,11 +123,13 @@ async def handle_claude_message(message: types.Message,
             chat_id=chat.id,
             user_id=user.id,
             thread_id=None,  # Phase 1.3: no forum threads yet
-            model_name=DEFAULT_MODEL,
+            model_id=DEFAULT_MODEL_ID,  # Phase 1.4.1: use new model_id format
         )
 
         if was_created:
-            logger.info("claude_handler.thread_created", thread_id=thread.id)
+            logger.info("claude_handler.thread_created",
+                        thread_id=thread.id,
+                        model_id=thread.model_id)
 
         # 4. Save user message
         msg_repo = MessageRepository(session)
@@ -154,8 +156,12 @@ async def handle_claude_message(message: types.Message,
         # 6. Build context
         context_mgr = ContextManager(claude_provider)
 
-        # Get model config
-        model_config = CLAUDE_MODELS[DEFAULT_MODEL]
+        # Get model config from thread (Phase 1.4.1: per-thread model selection)
+        model_config = get_model(thread.model_id)
+
+        logger.debug("claude_handler.using_model",
+                     model_id=thread.model_id,
+                     model_name=model_config.display_name)
 
         # Convert DB messages to LLM messages
         llm_messages = [
@@ -174,12 +180,13 @@ async def handle_claude_message(message: types.Message,
                     included_messages=len(context),
                     total_messages=len(llm_messages))
 
-        # 7. Prepare Claude request
-        request = LLMRequest(messages=context,
-                             system_prompt=GLOBAL_SYSTEM_PROMPT,
-                             model=model_config.name,
-                             max_tokens=config.CLAUDE_MAX_TOKENS,
-                             temperature=config.CLAUDE_TEMPERATURE)
+        # 7. Prepare Claude request (use thread's model_id)
+        request = LLMRequest(
+            messages=context,
+            system_prompt=GLOBAL_SYSTEM_PROMPT,
+            model=thread.model_id,  # Full ID: "claude:sonnet"
+            max_tokens=config.CLAUDE_MAX_TOKENS,
+            temperature=config.CLAUDE_TEMPERATURE)
 
         # 8. Show typing indicator
         await message.bot.send_chat_action(message.chat.id, "typing")
@@ -243,12 +250,19 @@ async def handle_claude_message(message: types.Message,
             await message.answer("Failed to send response.")
             return
 
-        # 10. Get usage stats
+        # 10. Get usage stats and calculate cost
         usage = await claude_provider.get_usage()
 
+        # Calculate cost using model-specific pricing (Phase 1.4.1)
+        cost_usd = (
+            (usage.input_tokens / 1_000_000) * model_config.pricing_input +
+            (usage.output_tokens / 1_000_000) * model_config.pricing_output)
+
         logger.info("claude_handler.response_complete",
+                    model_id=thread.model_id,
                     input_tokens=usage.input_tokens,
                     output_tokens=usage.output_tokens,
+                    cost_usd=round(cost_usd, 6),
                     response_length=len(response_text))
 
         # 11. Save Claude response
