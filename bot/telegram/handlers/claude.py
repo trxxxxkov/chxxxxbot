@@ -126,9 +126,7 @@ async def handle_claude_message(message: types.Message,
         )
 
         if was_created:
-            logger.info("claude_handler.thread_created",
-                        thread_id=thread.id,
-                        model_id=thread.model_id)
+            logger.info("claude_handler.thread_created", thread_id=thread.id)
 
         # 4. Save user message
         msg_repo = MessageRepository(session)
@@ -155,11 +153,11 @@ async def handle_claude_message(message: types.Message,
         # 6. Build context
         context_mgr = ContextManager(claude_provider)
 
-        # Get model config from thread (Phase 1.4.1: per-thread model selection)
-        model_config = get_model(thread.model_id)
+        # Get model config from user (Phase 1.4.1: per-user model selection)
+        model_config = get_model(user.model_id)
 
         logger.debug("claude_handler.using_model",
-                     model_id=thread.model_id,
+                     model_id=user.model_id,
                      model_name=model_config.display_name)
 
         # Convert DB messages to LLM messages
@@ -179,11 +177,12 @@ async def handle_claude_message(message: types.Message,
                     included_messages=len(context),
                     total_messages=len(llm_messages))
 
-        # 7. Prepare Claude request (use thread's model_id)
+        # 7. Prepare Claude request (use user's model_id)
         request = LLMRequest(
             messages=context,
             system_prompt=GLOBAL_SYSTEM_PROMPT,
-            model=thread.model_id,  # Full ID: "claude:sonnet"
+            model=user.
+            model_id,  # Full ID: "claude:sonnet", "claude:haiku", etc.
             max_tokens=config.CLAUDE_MAX_TOKENS,
             temperature=config.CLAUDE_TEMPERATURE)
 
@@ -258,7 +257,7 @@ async def handle_claude_message(message: types.Message,
             (usage.output_tokens / 1_000_000) * model_config.pricing_output)
 
         logger.info("claude_handler.response_complete",
-                    model_id=thread.model_id,
+                    model_id=user.model_id,
                     input_tokens=usage.input_tokens,
                     output_tokens=usage.output_tokens,
                     cost_usd=round(cost_usd, 6),

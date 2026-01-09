@@ -15,7 +15,6 @@ from sqlalchemy import BigInteger
 from sqlalchemy import ForeignKey
 from sqlalchemy import Index
 from sqlalchemy import Integer
-from sqlalchemy import String
 from sqlalchemy import Text
 from sqlalchemy import UniqueConstraint
 from sqlalchemy.orm import Mapped
@@ -34,6 +33,7 @@ class Thread(Base, TimestampMixin):
     - thread_id = 123 → Telegram forum topic with ID 123
     - Each user has separate threads per topic for personalized context
     - LLM context = all messages in this thread
+    - Model selection is per user (User.model_id), not per thread
 
     Attributes:
         id: Internal thread ID (auto-increment).
@@ -41,7 +41,6 @@ class Thread(Base, TimestampMixin):
         user_id: Which user this thread belongs to.
         thread_id: Telegram thread/topic ID (NULL for main chat).
         title: Thread title (manual or from first message).
-        model_name: LLM model for this thread (claude/openai/google).
         system_prompt: Custom system prompt for this thread.
         created_at: When thread started (from TimestampMixin).
         updated_at: Last message timestamp (from TimestampMixin).
@@ -85,14 +84,6 @@ class Thread(Base, TimestampMixin):
         Text,
         nullable=True,
         doc="Thread title",
-    )
-
-    model_id: Mapped[str] = mapped_column(
-        String(100),  # Fits "provider:alias" format (e.g., "claude:sonnet")
-        nullable=False,
-        default="claude:sonnet",  # Default: Claude Sonnet 4.5
-        doc="Model identifier in format 'provider:alias' "
-        "(e.g., 'claude:sonnet', 'openai:gpt4')",
     )
 
     system_prompt: Mapped[Optional[str]] = mapped_column(

@@ -36,7 +36,7 @@ class User(Base, TimestampMixin):
         language_code: IETF language tag (e.g., "en", "ru-RU").
         is_premium: Whether user has Telegram Premium subscription.
         added_to_attachment_menu: Whether bot added to attachment menu.
-        current_model: Selected LLM model (claude/openai/google).
+        model_id: Selected LLM model (e.g., "claude:sonnet", "openai:gpt4").
         first_seen_at: When user first interacted with bot.
         last_seen_at: Last activity timestamp.
         created_at: Record creation timestamp (from TimestampMixin).
@@ -100,12 +100,13 @@ class User(Base, TimestampMixin):
         doc="Bot added to attachment menu",
     )
 
-    # Bot-specific settings
-    current_model: Mapped[str] = mapped_column(
-        String(50),
+    # Bot-specific settings (per user, not per thread!)
+    model_id: Mapped[str] = mapped_column(
+        String(100),  # Fits "provider:alias" format (e.g., "claude:sonnet")
         nullable=False,
-        default="claude",
-        doc="Selected LLM model (claude/openai/google)",
+        default="claude:sonnet",  # Default: Claude Sonnet 4.5
+        doc="Model identifier in format 'provider:alias' "
+        "(e.g., 'claude:sonnet', 'openai:gpt4')",
     )
 
     # Activity tracking

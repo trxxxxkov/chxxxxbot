@@ -42,7 +42,6 @@ class ThreadRepository(BaseRepository[Thread]):
         user_id: int,
         thread_id: Optional[int] = None,
         title: Optional[str] = None,
-        model_id: str = "claude:sonnet",
         system_prompt: Optional[str] = None,
     ) -> tuple[Thread, bool]:
         """Get existing thread or create new one.
@@ -51,16 +50,16 @@ class ThreadRepository(BaseRepository[Thread]):
         - thread_id = None → main chat (no forum topic)
         - thread_id = 123 → forum topic with ID 123
 
-        If thread exists, updates its metadata (title, model, prompt).
+        If thread exists, updates its metadata (title, prompt).
         If thread doesn't exist, creates new thread.
+
+        Note: Model selection is per user (User.model_id), not per thread.
 
         Args:
             chat_id: Telegram chat ID.
             user_id: Telegram user ID.
             thread_id: Telegram thread/topic ID (None for main chat).
             title: Thread title. Defaults to None.
-            model_id: Model identifier (e.g., "claude:sonnet"). Defaults to
-                     "claude:sonnet".
             system_prompt: Custom system prompt. Defaults to None.
 
         Returns:
@@ -71,8 +70,7 @@ class ThreadRepository(BaseRepository[Thread]):
         thread = await self.get_active_thread(chat_id, user_id, thread_id)
 
         if thread:
-            # Update thread metadata if explicitly provided (but not model_id!)
-            # Model should only be changed via /model command, not auto-updated
+            # Update thread metadata if explicitly provided
             if title is not None:
                 thread.title = title
             if system_prompt is not None:
@@ -86,7 +84,6 @@ class ThreadRepository(BaseRepository[Thread]):
             user_id=user_id,
             thread_id=thread_id,
             title=title,
-            model_id=model_id,
             system_prompt=system_prompt,
         )
         self.session.add(thread)
@@ -178,21 +175,4 @@ class ThreadRepository(BaseRepository[Thread]):
             raise ValueError(f"Thread {thread_id} not found")
 
         await self.session.delete(thread)
-        await self.session.flush()
-
-    async def update_thread_model(self, thread_id: int, model_id: str) -> None:
-        """Update LLM model for thread.
-
-        Args:
-            thread_id: Internal thread ID.
-            model_id: New model ID (e.g., "claude:sonnet", "openai:gpt4").
-
-        Raises:
-            ValueError: If thread not found.
-        """
-        thread = await self.get_by_id(thread_id)
-        if not thread:
-            raise ValueError(f"Thread {thread_id} not found")
-
-        thread.model_id = model_id
         await self.session.flush()

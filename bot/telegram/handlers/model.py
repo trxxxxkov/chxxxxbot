@@ -88,16 +88,16 @@ async def model_command(  # pylint: disable=too-many-locals
                     chat_id=db_chat.id,
                     telegram_thread_id=thread_id)
 
-    # Get current model info
+    # Get current model info from user (Phase 1.4.1: model is per user)
     try:
-        current_model = get_model(db_thread.model_id)
+        current_model = get_model(db_user.model_id)
     except KeyError:
-        # Fallback to default if thread has invalid model_id
-        logger.warning("thread.invalid_model_id",
-                       thread_id=db_thread.id,
-                       invalid_model_id=db_thread.model_id)
+        # Fallback to default if user has invalid model_id
+        logger.warning("user.invalid_model_id",
+                       user_id=db_user.id,
+                       invalid_model_id=db_user.model_id)
         current_model = get_default_model()
-        db_thread.model_id = current_model.get_full_id()
+        db_user.model_id = current_model.get_full_id()
         await session.commit()
 
     # Format message
@@ -107,13 +107,13 @@ async def model_command(  # pylint: disable=too-many-locals
     message_text += "\n\n👇 Select new model:"
 
     # Send keyboard
-    keyboard = get_model_keyboard(current=db_thread.model_id)
+    keyboard = get_model_keyboard(current=db_user.model_id)
 
     logger.info("model_command",
                 user_id=user.id,
                 chat_id=chat.id,
                 thread_id=db_thread.id,
-                current_model=db_thread.model_id)
+                current_model=db_user.model_id)
 
     await message.answer(message_text,
                          reply_markup=keyboard.as_markup(),
@@ -156,7 +156,6 @@ async def model_selection_callback(  # pylint: disable=too-many-locals
 
     # Get repositories
     user_repo = UserRepository(session)
-    thread_repo = ThreadRepository(session)
 
     # Get user
     db_user = await user_repo.get_by_telegram_id(user.id)
@@ -164,42 +163,12 @@ async def model_selection_callback(  # pylint: disable=too-many-locals
         await callback.answer("⚠️ User not found")
         return
 
-    # Get thread (should exist from /model command)
-    # For callback, we need to get chat from message
-    message_chat = callback.message.chat
-
-    # Get chat from database
-    chat_repo = ChatRepository(session)
-    db_chat = await chat_repo.get_by_telegram_id(message_chat.id)
-
-    if not db_chat:
-        await callback.answer("⚠️ Chat not found. Use /model first.")
-        return
-
-    # For private chats, always use thread_id=None (single conversation per user)
-    # For forum chats, use message.message_thread_id (forum topic ID)
-    thread_id = None if message_chat.type == "private" else (
-        callback.message.message_thread_id
-        if hasattr(callback.message, 'message_thread_id') else None)
-
-    # Find thread by chat_id, user_id, and thread_id
-    db_thread = await thread_repo.get_active_thread(
-        chat_id=db_chat.id,
-        user_id=db_user.id,
-        thread_id=thread_id,
-    )
-
-    if not db_thread:
-        await callback.answer("⚠️ Thread not found. Use /model first.")
-        return
-
-    # Update thread model
-    old_model_id = db_thread.model_id
-    db_thread.model_id = new_model_id
+    # Update user model (Phase 1.4.1: model is per user, not per thread)
+    old_model_id = db_user.model_id
+    db_user.model_id = new_model_id
     await session.commit()
 
     logger.info("model.changed",
-                thread_id=db_thread.id,
                 user_id=db_user.id,
                 old_model=old_model_id,
                 new_model=new_model_id)
