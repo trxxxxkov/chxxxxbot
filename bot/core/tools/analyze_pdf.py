@@ -183,27 +183,25 @@ density. A 10-page PDF costs ~40,000 tokens. Use page ranges to reduce cost.""",
             "claude_file_id": {
                 "type":
                     "string",
-                "description":
-                    ("File ID from Files API (claude_file_id from "
-                     "available files list in conversation)")
+                "description": ("File ID from Files API (claude_file_id from "
+                                "available files list in conversation)")
             },
             "question": {
                 "type":
                     "string",
-                "description":
-                    ("What to analyze or extract from the PDF. "
-                     "Be specific about what information is needed "
-                     "(e.g., 'Summarize this document', "
-                     "'Extract all tables from this PDF', "
-                     "'What are the main conclusions?')")
+                "description": ("What to analyze or extract from the PDF. "
+                                "Be specific about what information is needed "
+                                "(e.g., 'Summarize this document', "
+                                "'Extract all tables from this PDF', "
+                                "'What are the main conclusions?')")
             },
             "pages": {
                 "type":
                     "string",
-                "description":
-                    ("Page range to analyze. Format: '1-5' for pages 1 through 5, "
-                     "'3' for page 3 only, 'all' for entire document. "
-                     "Default: 'all'. Using specific pages reduces token cost.")
+                "description": (
+                    "Page range to analyze. Format: '1-5' for pages 1 through 5, "
+                    "'3' for page 3 only, 'all' for entire document. "
+                    "Default: 'all'. Using specific pages reduces token cost.")
             }
         },
         "required": ["claude_file_id", "question"]

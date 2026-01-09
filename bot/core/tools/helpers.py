@@ -142,9 +142,10 @@ def format_files_section(files: List[Any]) -> str:
     lines.append("To analyze these files, use the appropriate tool "
                  "(analyze_image for images, analyze_pdf for PDFs).")
     lines.append("")
-    lines.append("IMPORTANT: If user asks about multiple files (e.g., 'these images', "
-                 "'all photos', 'these files'), analyze ALL files from the list above. "
-                 "Call the tool once for each file.")
+    lines.append(
+        "IMPORTANT: If user asks about multiple files (e.g., 'these images', "
+        "'all photos', 'these files'), analyze ALL files from the list above. "
+        "Call the tool once for each file.")
 
     result = "\n".join(lines)
 

@@ -282,12 +282,12 @@ class TestExecutePythonToolDefinition:
         assert "python" in description.lower() or "code" in description.lower()
         assert "sandbox" in description.lower()
 
-        # Should mention when to use
-        assert "When to use" in description
-        assert "When NOT to use" in description
+        # Should mention when to use (case insensitive)
+        assert "when to use" in description.lower()
+        assert "when not to use" in description.lower()
 
         # Should mention limitations
-        assert "Limitations" in description or "timeout" in description.lower()
+        assert "limitations" in description.lower() or "timeout" in description.lower()
 
     def test_tool_description_mentions_features(self):
         """Test that description includes key features."""

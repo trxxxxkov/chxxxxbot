@@ -6,7 +6,7 @@ All models use Pydantic v2 for validation and serialization.
 NO __init__.py - use direct import: from core.models import LLMRequest
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel
 from pydantic import Field
@@ -20,11 +20,12 @@ class Message(BaseModel):
 
     Attributes:
         role: Message role ("user" or "assistant").
-        content: Message text content.
+        content: Message content (string for text, list for tool use).
     """
 
     role: str = Field(..., description="Message role: 'user' or 'assistant'")
-    content: str = Field(..., description="Message text content")
+    content: Union[str, List[Any]] = Field(
+        ..., description="Message content (string or list of content blocks)")
 
 
 class LLMRequest(BaseModel):
@@ -47,9 +48,9 @@ class LLMRequest(BaseModel):
     system_prompt: Optional[str] = Field(
         None, description="System prompt for LLM behavior")
     model: str = Field(..., description="Model identifier")
-    max_tokens: int = Field(default=4096,
+    max_tokens: int = Field(default=64000,
                             ge=1,
-                            le=8192,
+                            le=64000,
                             description="Max tokens to generate")
     temperature: float = Field(default=1.0,
                                ge=0.0,

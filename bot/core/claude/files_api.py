@@ -59,8 +59,8 @@ async def upload_to_files_api(file_bytes: bytes, filename: str,
 
         client = get_client()
         # FileTypes accepts tuple: (filename, file_content)
-        file_response = client.beta.files.upload(
-            file=(filename, BytesIO(file_bytes)))
+        file_response = client.beta.files.upload(file=(filename,
+                                                       BytesIO(file_bytes)))
 
         logger.info("files_api.upload_success",
                     filename=filename,
@@ -73,6 +73,45 @@ async def upload_to_files_api(file_bytes: bytes, filename: str,
         logger.error("files_api.upload_failed",
                      filename=filename,
                      mime_type=mime_type,
+                     error=str(e),
+                     status_code=getattr(e, 'status_code', None),
+                     exc_info=True)
+        raise
+
+
+async def download_from_files_api(claude_file_id: str) -> bytes:
+    """Download file from Claude Files API.
+
+    Args:
+        claude_file_id: Claude file ID (e.g., 'file_abc123').
+
+    Returns:
+        File content as bytes.
+
+    Raises:
+        anthropic.NotFoundError: If file not found.
+        anthropic.APIError: If download fails.
+    """
+    try:
+        logger.info("files_api.download_start", claude_file_id=claude_file_id)
+
+        client = get_client()
+        content = client.beta.files.retrieve_content(file_id=claude_file_id)
+
+        logger.info("files_api.download_success",
+                    claude_file_id=claude_file_id,
+                    size_bytes=len(content))
+
+        return content
+
+    except anthropic.NotFoundError:
+        logger.error("files_api.download_not_found",
+                     claude_file_id=claude_file_id)
+        raise
+
+    except anthropic.APIError as e:
+        logger.error("files_api.download_failed",
+                     claude_file_id=claude_file_id,
                      error=str(e),
                      status_code=getattr(e, 'status_code', None),
                      exc_info=True)

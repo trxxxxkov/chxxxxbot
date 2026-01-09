@@ -124,7 +124,9 @@ class UserFile(Base):
     )
 
     file_type: Mapped[FileType] = mapped_column(
-        Enum(FileType, name='filetype', values_callable=lambda x: [e.value for e in x]),
+        Enum(FileType,
+             name='filetype',
+             values_callable=lambda x: [e.value for e in x]),
         nullable=False,
         doc="File type classification",
     )
@@ -157,7 +159,9 @@ class UserFile(Base):
 
     # Source
     source: Mapped[FileSource] = mapped_column(
-        Enum(FileSource, name='filesource', values_callable=lambda x: [e.value for e in x]),
+        Enum(FileSource,
+             name='filesource',
+             values_callable=lambda x: [e.value for e in x]),
         nullable=False,
         doc="Who created the file (user/assistant)",
     )

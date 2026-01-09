@@ -94,3 +94,15 @@ class LLMProvider(ABC):
             Stop reason string or None if not available or no call made yet.
         """
         return None  # Default implementation returns None
+
+    def get_thinking(self) -> str | None:
+        """Get thinking text from last API call.
+
+        Phase 1.4.3: Extended Thinking support.
+        Returns the full thinking content if Extended Thinking was enabled
+        and model used thinking mode.
+
+        Returns:
+            Thinking text string or None if no thinking or not supported.
+        """
+        return None  # Default implementation returns None (not all providers support)

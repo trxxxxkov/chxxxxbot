@@ -56,10 +56,8 @@ def format_size(size_bytes: int) -> str:
     return f"{size:.1f} TB"
 
 
-async def process_file_upload(
-    message: types.Message,
-    session: AsyncSession
-) -> tuple[str, int]:
+async def process_file_upload(message: types.Message,
+                              session: AsyncSession) -> tuple[str, int]:
     """Upload file to Files API and save to database.
 
     Helper function for both photo and document uploads.
@@ -124,21 +122,19 @@ async def process_file_upload(
     file_bytes = file_bytes_io.read()
 
     logger.info("file_upload.download_complete",
-               user_id=user_id,
-               filename=filename,
-               size_bytes=len(file_bytes))
+                user_id=user_id,
+                filename=filename,
+                size_bytes=len(file_bytes))
 
     # Upload to Files API
-    claude_file_id = await upload_to_files_api(
-        file_bytes=file_bytes,
-        filename=filename,
-        mime_type=mime_type
-    )
+    claude_file_id = await upload_to_files_api(file_bytes=file_bytes,
+                                               filename=filename,
+                                               mime_type=mime_type)
 
     logger.info("file_upload.files_api_complete",
-               user_id=user_id,
-               filename=filename,
-               claude_file_id=claude_file_id)
+                user_id=user_id,
+                filename=filename,
+                claude_file_id=claude_file_id)
 
     # Get or create thread
     chat_repo = ChatRepository(session)
@@ -150,14 +146,11 @@ async def process_file_upload(
     telegram_thread_id = message.message_thread_id
 
     thread, _ = await thread_repo.get_or_create_thread(
-        chat_id=chat_id,
-        user_id=user_id,
-        thread_id=telegram_thread_id
-    )
+        chat_id=chat_id, user_id=user_id, thread_id=telegram_thread_id)
 
     logger.info("file_upload.thread_resolved",
-               thread_id=thread.id,
-               telegram_thread_id=telegram_thread_id)
+                thread_id=thread.id,
+                telegram_thread_id=telegram_thread_id)
 
     # Save to database
     user_file_repo = UserFileRepository(session)
@@ -177,10 +170,10 @@ async def process_file_upload(
     )
 
     logger.info("file_upload.complete",
-               user_id=user_id,
-               filename=filename,
-               claude_file_id=claude_file_id,
-               thread_id=thread.id)
+                user_id=user_id,
+                filename=filename,
+                claude_file_id=claude_file_id,
+                thread_id=thread.id)
 
     return claude_file_id, thread.id
 
@@ -270,14 +263,11 @@ async def handle_photo(message: types.Message, session: AsyncSession) -> None:
 
         # Get or create thread
         thread, _ = await thread_repo.get_or_create_thread(
-            chat_id=chat_id,
-            user_id=user_id,
-            thread_id=telegram_thread_id
-        )
+            chat_id=chat_id, user_id=user_id, thread_id=telegram_thread_id)
 
         logger.info("photo_handler.thread_resolved",
-                   thread_id=thread.id,
-                   telegram_thread_id=telegram_thread_id)
+                    thread_id=thread.id,
+                    telegram_thread_id=telegram_thread_id)
 
         # 4. Save to database
         user_file_repo = UserFileRepository(session)
@@ -305,13 +295,13 @@ async def handle_photo(message: types.Message, session: AsyncSession) -> None:
         if message.caption:
             text_content = message.caption
             logger.info("photo_handler.caption_provided",
-                       user_id=user_id,
-                       caption_length=len(message.caption))
+                        user_id=user_id,
+                        caption_length=len(message.caption))
         else:
             # No caption - just file mention
             text_content = (f"📷 User uploaded: {filename} "
-                           f"(image/jpeg, {format_size(len(photo_bytes))}) "
-                           f"[Files API ID: {claude_file_id}]")
+                            f"(image/jpeg, {format_size(len(photo_bytes))}) "
+                            f"[Files API ID: {claude_file_id}]")
 
         await message_repo.create_message(
             chat_id=chat_id,
@@ -437,14 +427,11 @@ async def handle_document(message: types.Message,
 
         # Get or create thread
         thread, _ = await thread_repo.get_or_create_thread(
-            chat_id=chat_id,
-            user_id=user_id,
-            thread_id=telegram_thread_id
-        )
+            chat_id=chat_id, user_id=user_id, thread_id=telegram_thread_id)
 
         logger.info("document_handler.thread_resolved",
-                   thread_id=thread.id,
-                   telegram_thread_id=telegram_thread_id)
+                    thread_id=thread.id,
+                    telegram_thread_id=telegram_thread_id)
 
         # 4. Save to database
         user_file_repo = UserFileRepository(session)
@@ -469,8 +456,8 @@ async def handle_document(message: types.Message,
         if message.caption:
             text_content = message.caption
             logger.info("document_handler.caption_provided",
-                       user_id=user_id,
-                       caption_length=len(message.caption))
+                        user_id=user_id,
+                        caption_length=len(message.caption))
         else:
             # No caption - just file mention
             text_content = (

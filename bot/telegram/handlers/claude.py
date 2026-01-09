@@ -6,6 +6,7 @@ and streams responses back to Telegram in real-time.
 NO __init__.py - use direct import: from telegram.handlers.claude import router
 """
 
+import html as html_lib
 import time
 
 from aiogram import F
@@ -25,8 +26,8 @@ from core.exceptions import RateLimitError
 from core.message_queue import MessageQueueManager
 from core.models import LLMRequest
 from core.models import Message
-from core.tools import execute_tool
-from core.tools import TOOL_DEFINITIONS
+from core.tools.registry import execute_tool
+from core.tools.registry import TOOL_DEFINITIONS
 from core.tools.helpers import extract_tool_uses
 from core.tools.helpers import format_files_section
 from core.tools.helpers import format_tool_results
@@ -39,12 +40,29 @@ from db.repositories.thread_repository import ThreadRepository
 from db.repositories.user_file_repository import UserFileRepository
 from db.repositories.user_repository import UserRepository
 from sqlalchemy.ext.asyncio import AsyncSession
+from telegram.handlers.files import process_file_upload
 from utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
 
 # Create router with name
 router = Router(name="claude")
+
+
+def safe_html(text: str) -> str:
+    """Escape HTML special characters for Telegram parse_mode=HTML.
+
+    Prevents "can't parse entities" errors when Claude response contains
+    <, >, & symbols (e.g., in code, math, comparisons).
+
+    Args:
+        text: Raw text from Claude.
+
+    Returns:
+        HTML-escaped text safe for Telegram.
+    """
+    return html_lib.escape(text)
+
 
 # Global Claude provider instance (initialized in main.py)
 claude_provider: ClaudeProvider = None
@@ -112,8 +130,10 @@ def init_message_queue_manager() -> None:
 
 
 # pylint: disable=too-many-locals,too-many-branches,too-many-statements
-async def _handle_with_tools(request: LLMRequest, first_message: types.Message,
-                             thread_id: int) -> str:
+async def _handle_with_tools(
+        request: LLMRequest, first_message: types.Message, thread_id: int,
+        session: AsyncSession, user_file_repo: UserFileRepository,
+        chat_id: int, user_id: int) -> str:
     """Handle request with tool use loop.
 
     Implements tool use pattern:
@@ -122,10 +142,17 @@ async def _handle_with_tools(request: LLMRequest, first_message: types.Message,
     3. If tool_use: execute tools, add results, repeat
     4. If end_turn: return final text
 
+    Phase 1.5 Stage 6: Processes generated files from execute_python tool,
+    uploads to Files API, saves to DB, sends to user via Telegram.
+
     Args:
         request: LLMRequest with tools configured.
         first_message: First Telegram message (for status updates).
         thread_id: Thread ID for logging.
+        session: Database session (for saving generated files).
+        user_file_repo: UserFileRepository (for saving file metadata).
+        chat_id: Telegram chat ID (for sending files).
+        user_id: User ID (for file ownership).
 
     Returns:
         Final text response from Claude (ready for streaming).
@@ -154,13 +181,14 @@ async def _handle_with_tools(request: LLMRequest, first_message: types.Message,
                     iteration=iteration + 1)
 
         # Create request for this iteration
+        # Use 20K max_tokens for non-streaming (balance between completeness and SDK timeout)
         iter_request = LLMRequest(messages=[
             Message(role=msg["role"], content=msg["content"])
             for msg in conversation
         ],
                                   system_prompt=request.system_prompt,
                                   model=request.model,
-                                  max_tokens=request.max_tokens,
+                                  max_tokens=min(20480, request.max_tokens),
                                   temperature=request.temperature,
                                   tools=request.tools)
 
@@ -240,6 +268,105 @@ async def _handle_with_tools(request: LLMRequest, first_message: types.Message,
                 # Execute tool
                 try:
                     result = await execute_tool(tool_name, tool_input)
+
+                    # Phase 1.5 Stage 6: Process generated files (if any)
+                    if "_file_contents" in result:
+                        file_contents = result.pop("_file_contents")
+
+                        logger.info("tools.loop.processing_generated_files",
+                                    thread_id=thread_id,
+                                    tool_name=tool_name,
+                                    file_count=len(file_contents))
+
+                        delivered_files = []
+
+                        for file_data in file_contents:
+                            try:
+                                filename = file_data["filename"]
+                                file_bytes = file_data["content"]
+                                mime_type = file_data["mime_type"]
+
+                                logger.info(
+                                    "tools.loop.uploading_generated_file",
+                                    filename=filename,
+                                    size=len(file_bytes),
+                                    mime_type=mime_type)
+
+                                # 1. Upload to Files API
+                                from core.claude.files_api import upload_to_files_api  # pylint: disable=import-outside-toplevel
+                                claude_file_id = await upload_to_files_api(
+                                    file_bytes=file_bytes,
+                                    filename=filename,
+                                    mime_type=mime_type)
+
+                                # 2. Save to database (source=ASSISTANT)
+                                from datetime import datetime, timedelta  # pylint: disable=import-outside-toplevel
+                                from config import FILES_API_TTL_HOURS  # pylint: disable=import-outside-toplevel
+                                from db.models.user_file import FileSource, FileType  # pylint: disable=import-outside-toplevel
+
+                                # Determine file type
+                                if mime_type.startswith("image/"):
+                                    file_type = FileType.IMAGE
+                                elif mime_type == "application/pdf":
+                                    file_type = FileType.PDF
+                                else:
+                                    file_type = FileType.DOCUMENT
+
+                                await user_file_repo.create(
+                                    message_id=first_message.message_id,
+                                    telegram_file_id=
+                                    None,  # No Telegram file ID for generated files
+                                    telegram_file_unique_id=None,
+                                    claude_file_id=claude_file_id,
+                                    filename=filename,
+                                    file_type=file_type,
+                                    mime_type=mime_type,
+                                    file_size=len(file_bytes),
+                                    source=FileSource.ASSISTANT,
+                                    expires_at=datetime.utcnow() +
+                                    timedelta(hours=FILES_API_TTL_HOURS),
+                                    file_metadata={},
+                                )
+
+                                # 3. Send to Telegram user
+                                from io import BytesIO  # pylint: disable=import-outside-toplevel
+
+                                # Send as photo if image, otherwise as document
+                                if file_type == FileType.IMAGE and mime_type in [
+                                        "image/jpeg", "image/png", "image/gif",
+                                        "image/webp"
+                                ]:
+                                    await first_message.bot.send_photo(
+                                        chat_id=chat_id,
+                                        photo=types.BufferedInputFile(
+                                            file_bytes, filename=filename))
+                                else:
+                                    await first_message.bot.send_document(
+                                        chat_id=chat_id,
+                                        document=types.BufferedInputFile(
+                                            file_bytes, filename=filename))
+
+                                delivered_files.append(filename)
+
+                                logger.info(
+                                    "tools.loop.generated_file_delivered",
+                                    filename=filename,
+                                    claude_file_id=claude_file_id,
+                                    file_type=file_type.value)
+
+                            except Exception as file_error:  # pylint: disable=broad-exception-caught
+                                logger.error(
+                                    "tools.loop.failed_to_deliver_file",
+                                    filename=filename,
+                                    error=str(file_error),
+                                    exc_info=True)
+
+                        # Add delivery confirmation to tool result
+                        if delivered_files:
+                            result["files_delivered"] = (
+                                f"Successfully sent {len(delivered_files)} "
+                                f"file(s) to user: {', '.join(delivered_files)}")
+
                     results.append(result)
 
                     logger.info("tools.loop.tool_success",
@@ -352,6 +479,8 @@ async def _process_message_batch(thread_id: int,
             # 2. Save all messages to database
             msg_repo = MessageRepository(session)
             for message in messages:
+                # Phase 1.5: For photos/documents with caption, use caption as text
+                text_content = message.text or message.caption
                 await msg_repo.create_message(
                     chat_id=thread.chat_id,
                     message_id=message.message_id,
@@ -359,7 +488,7 @@ async def _process_message_batch(thread_id: int,
                     from_user_id=thread.user_id,
                     date=message.date.timestamp(),
                     role=MessageRole.USER,
-                    text_content=message.text,
+                    text_content=text_content,
                 )
 
             await session.commit()
@@ -380,7 +509,12 @@ async def _process_message_batch(thread_id: int,
                 return
 
             # 3.5. Get available files for this thread (Phase 1.5)
+            logger.debug("claude_handler.creating_file_repo",
+                         thread_id=thread_id)
             user_file_repo = UserFileRepository(session)
+            logger.debug("claude_handler.calling_get_available_files",
+                         thread_id=thread_id,
+                         repo_type=type(user_file_repo).__name__)
             available_files = await get_available_files(thread_id,
                                                         user_file_repo)
 
@@ -419,7 +553,7 @@ async def _process_message_batch(thread_id: int,
                         thread_id=thread_id,
                         telegram_thread_id=thread.thread_id,
                         has_custom_prompt=user.custom_prompt is not None,
-                        has_files_context=thread.files_context is not None,
+                        has_files_context=files_section is not None,
                         total_length=len(composed_prompt))
 
             # Convert DB messages to LLM messages
@@ -432,7 +566,7 @@ async def _process_message_batch(thread_id: int,
                 messages=llm_messages,
                 model_context_window=model_config.context_window,
                 system_prompt=composed_prompt,
-                max_output_tokens=config.CLAUDE_MAX_TOKENS,
+                max_output_tokens=model_config.max_output,
                 buffer_percent=CLAUDE_TOKEN_BUFFER_PERCENT)
 
             logger.info("claude_handler.context_built",
@@ -440,14 +574,16 @@ async def _process_message_batch(thread_id: int,
                         included_messages=len(context),
                         total_messages=len(llm_messages))
 
-            # 6. Prepare Claude request (Phase 1.5: add tools if files available)
+            # 6. Prepare Claude request (Phase 1.5: tools always available)
+            # Server-side tools (web_search, web_fetch) work without files
+            # Client-side tools (analyze_image, analyze_pdf) require uploaded files
             request = LLMRequest(
                 messages=context,
                 system_prompt=composed_prompt,
                 model=user.model_id,
-                max_tokens=config.CLAUDE_MAX_TOKENS,
+                max_tokens=model_config.max_output,
                 temperature=config.CLAUDE_TEMPERATURE,
-                tools=TOOL_DEFINITIONS if available_files else None)
+                tools=TOOL_DEFINITIONS)  # Always pass tools
 
             logger.info("claude_handler.request_prepared",
                         thread_id=thread_id,
@@ -458,7 +594,11 @@ async def _process_message_batch(thread_id: int,
             await first_message.bot.send_chat_action(first_message.chat.id,
                                                      "typing")
 
-            # 8. Handle request (Phase 1.5: with or without tools)
+            # 8. Handle request (Phase 1.5: always with tools)
+            # Tools are always passed for:
+            # - Prompt caching stability (tools = part of cached prompt)
+            # - Model awareness (can suggest tools proactively)
+            # - Server-side tools work without files (web_search, web_fetch)
             if request.tools:
                 # Tool loop (non-streaming until final answer)
                 logger.info("claude_handler.using_tools",
@@ -467,10 +607,22 @@ async def _process_message_batch(thread_id: int,
 
                 try:
                     response_text = await _handle_with_tools(
-                        request, first_message, thread_id)
+                        request, first_message, thread_id, session,
+                        user_file_repo, thread.chat_id, thread.user_id)
 
                     # Send final response (no streaming, already processed)
-                    bot_message = await first_message.answer(response_text)
+                    # Escape HTML to prevent Telegram parse errors with <, >, & symbols
+                    # IMPORTANT: Escape BEFORE length check (escape increases length)
+                    safe_text = html_lib.escape(response_text)
+
+                    # Split if too long (Telegram limit: 4096 chars)
+                    if len(safe_text) > 4000:
+                        # Send in chunks
+                        for i in range(0, len(safe_text), 4000):
+                            chunk = safe_text[i:i+4000]
+                            bot_message = await first_message.answer(chunk)
+                    else:
+                        bot_message = await first_message.answer(safe_text)
 
                     logger.info("claude_handler.tool_response_sent",
                                 thread_id=thread_id,
@@ -504,18 +656,19 @@ async def _process_message_batch(thread_id: int,
                     should_update = (time_since_last_edit >= edit_buffer_ms or
                                      bot_message is None)
 
-                    # Check if message needs to be split
-                    if len(response_text) > 4000:
-                        text_to_send = response_text[:4000]
+                    # Check if message needs to be split (use smaller limit due to escape)
+                    # Escape can increase length up to 5x for special chars
+                    if len(response_text) > 3500:
+                        text_to_send = response_text[:3500]
+                        safe_text = safe_html(text_to_send)
 
                         if bot_message is None:
-                            bot_message = await first_message.answer(
-                                text_to_send)
+                            bot_message = await first_message.answer(safe_text)
                             last_sent_text = text_to_send
                             last_edit_time = current_time
                         elif text_to_send != last_sent_text:
                             try:
-                                await bot_message.edit_text(text_to_send)
+                                await bot_message.edit_text(safe_text)
                                 last_sent_text = text_to_send
                                 last_edit_time = current_time
                             except Exception as e:  # pylint: disable=broad-exception-caught
@@ -523,19 +676,19 @@ async def _process_message_batch(thread_id: int,
                                                error=str(e))
 
                         # Start new message with remaining text
-                        response_text = response_text[4000:]
+                        response_text = response_text[3500:]
                         bot_message = None
                         last_sent_text = ""
                         last_edit_time = 0.0
                     elif should_update:
+                        safe_text = safe_html(response_text)
                         if bot_message is None:
-                            bot_message = await first_message.answer(
-                                response_text)
+                            bot_message = await first_message.answer(safe_text)
                             last_sent_text = response_text
                             last_edit_time = current_time
                         elif response_text != last_sent_text:
                             try:
-                                await bot_message.edit_text(response_text)
+                                await bot_message.edit_text(safe_text)
                                 last_sent_text = response_text
                                 last_edit_time = current_time
                             except Exception as e:  # pylint: disable=broad-exception-caught
@@ -544,11 +697,12 @@ async def _process_message_batch(thread_id: int,
 
                 # Final update if there's remaining text
                 if response_text:
+                    safe_text = safe_html(response_text)
                     if bot_message is None:
-                        bot_message = await first_message.answer(response_text)
+                        bot_message = await first_message.answer(safe_text)
                     elif response_text != last_sent_text:
                         try:
-                            await bot_message.edit_text(response_text)
+                            await bot_message.edit_text(safe_text)
                         except Exception as e:  # pylint: disable=broad-exception-caught
                             logger.warning("claude_handler.final_edit_failed",
                                            error=str(e))
@@ -580,9 +734,10 @@ async def _process_message_batch(thread_id: int,
                 await first_message.answer("Failed to send response.")
                 return
 
-            # 9. Get usage stats, stop_reason, and calculate cost
+            # 9. Get usage stats, stop_reason, thinking, and calculate cost
             usage = await claude_provider.get_usage()
             stop_reason = claude_provider.get_stop_reason()
+            thinking = claude_provider.get_thinking()  # Phase 1.4.3: Extended Thinking
 
             cost_usd = (
                 (usage.input_tokens / 1_000_000) * model_config.pricing_input +
@@ -647,7 +802,7 @@ async def _process_message_batch(thread_id: int,
                             thread_id=thread_id,
                             max_tokens=config.CLAUDE_MAX_TOKENS)
 
-            # 10. Save Claude response
+            # 10. Save Claude response (Phase 1.4.3: with thinking blocks)
             await msg_repo.create_message(
                 chat_id=thread.chat_id,
                 message_id=bot_message.message_id,
@@ -656,14 +811,18 @@ async def _process_message_batch(thread_id: int,
                 date=bot_message.date.timestamp(),
                 role=MessageRole.ASSISTANT,
                 text_content=response_text,
+                thinking_blocks=thinking,  # Phase 1.4.3: Extended Thinking
             )
 
-            # 11. Add token usage for billing
+            # 11. Add token usage for billing (Phase 1.4.2 & 1.4.3)
             await msg_repo.add_tokens(
                 chat_id=thread.chat_id,
                 message_id=bot_message.message_id,
                 input_tokens=usage.input_tokens,
                 output_tokens=usage.output_tokens,
+                cache_creation_tokens=usage.cache_creation_tokens,
+                cache_read_tokens=usage.cache_read_tokens,
+                thinking_tokens=usage.thinking_tokens,
             )
 
             await session.commit()
@@ -746,20 +905,22 @@ async def _process_message_batch(thread_id: int,
                                    "Please try again or contact administrator.")
 
 
-@router.message(F.text)
+@router.message(F.text | (F.photo & F.caption) | (F.document & F.caption))
 async def handle_claude_message(message: types.Message,
                                 session: AsyncSession) -> None:
-    """Handle text message and add to processing queue.
+    """Handle text message or file with caption.
 
+    Phase 1.5: Support for photos/documents with caption.
     Phase 1.4.3: Per-thread message batching with smart accumulation.
 
     Flow:
-    1. Get or create user, chat, thread
-    2. Add message to thread's queue
-    3. Queue manager decides when to process (immediately or after 300ms)
+    1. If photo/document with caption → upload to Files API first
+    2. Get or create user, chat, thread
+    3. Add message to thread's queue
+    4. Queue manager decides when to process (immediately or after 300ms)
 
     Args:
-        message: Incoming Telegram message.
+        message: Incoming Telegram message (text or file with caption).
         session: Database session (injected by middleware).
     """
     if message_queue_manager is None:
@@ -768,13 +929,33 @@ async def handle_claude_message(message: types.Message,
             "Bot is not properly configured. Please contact administrator.")
         return
 
+    # Phase 1.5: If photo/document with caption, upload file first
+    if message.photo or message.document:
+        logger.info("claude_handler.file_with_caption_received",
+                   chat_id=message.chat.id,
+                   user_id=message.from_user.id if message.from_user else None,
+                   has_photo=bool(message.photo),
+                   has_document=bool(message.document),
+                   caption_length=len(message.caption or ""))
+
+        try:
+            # Upload file to Files API and save to database
+            await process_file_upload(message, session)
+            # Continue processing caption as text below
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.error("claude_handler.file_upload_failed",
+                        error=str(e),
+                        exc_info=True)
+            await message.answer("❌ Failed to upload file. Please try again.")
+            return
+
     logger.info("claude_handler.message_received",
                 chat_id=message.chat.id,
                 user_id=message.from_user.id if message.from_user else None,
                 message_id=message.message_id,
                 message_thread_id=message.message_thread_id,
                 is_topic_message=message.is_topic_message,
-                text_length=len(message.text or ""))
+                text_length=len(message.text or message.caption or ""))
 
     try:
         # 1. Get or create user

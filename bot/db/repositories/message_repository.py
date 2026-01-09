@@ -66,6 +66,7 @@ class MessageRepository(BaseRepository[Message]):
         media_group_id: Optional[str] = None,
         attachments: Optional[list[dict]] = None,
         edit_date: Optional[int] = None,
+        thinking_blocks: Optional[str] = None,
     ) -> Message:
         """Create new message with attachments.
 
@@ -85,6 +86,7 @@ class MessageRepository(BaseRepository[Message]):
             media_group_id: Media group ID. Defaults to None.
             attachments: List of attachment dicts. Defaults to None.
             edit_date: Unix timestamp of last edit. Defaults to None.
+            thinking_blocks: Extended thinking content (Phase 1.4.3). Defaults to None.
 
         Returns:
             Created Message instance.
@@ -131,6 +133,7 @@ class MessageRepository(BaseRepository[Message]):
             has_video=has_video,
             attachment_count=attachment_count,
             attachments=attachments,
+            thinking_blocks=thinking_blocks,  # Phase 1.4.3: Extended Thinking
             created_at=date,  # Use message date as record creation timestamp
         )
         self.session.add(message)
@@ -227,14 +230,23 @@ class MessageRepository(BaseRepository[Message]):
         message_id: int,
         input_tokens: Optional[int] = None,
         output_tokens: Optional[int] = None,
+        cache_creation_tokens: Optional[int] = None,
+        cache_read_tokens: Optional[int] = None,
+        thinking_tokens: Optional[int] = None,
     ) -> None:
         """Track LLM token usage for billing.
+
+        Phase 1.4.2: Includes cache tokens (creation, read).
+        Phase 1.4.3: Includes thinking tokens.
 
         Args:
             chat_id: Telegram chat ID.
             message_id: Telegram message ID.
             input_tokens: Number of input tokens. Defaults to None.
             output_tokens: Number of output tokens. Defaults to None.
+            cache_creation_tokens: Cache creation tokens (Phase 1.4.2). Defaults to None.
+            cache_read_tokens: Cache read tokens (Phase 1.4.2). Defaults to None.
+            thinking_tokens: Extended thinking tokens (Phase 1.4.3). Defaults to None.
 
         Raises:
             ValueError: If message not found.
@@ -247,6 +259,12 @@ class MessageRepository(BaseRepository[Message]):
             message.input_tokens = input_tokens
         if output_tokens is not None:
             message.output_tokens = output_tokens
+        if cache_creation_tokens is not None:
+            message.cache_creation_input_tokens = cache_creation_tokens
+        if cache_read_tokens is not None:
+            message.cache_read_input_tokens = cache_read_tokens
+        if thinking_tokens is not None:
+            message.thinking_tokens = thinking_tokens
 
         await self.session.flush()
 

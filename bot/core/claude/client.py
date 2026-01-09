@@ -42,24 +42,33 @@ class ClaudeProvider(LLMProvider):
         Args:
             api_key: Anthropic API key.
         """
-        # Phase 1.4: Add beta headers for advanced features
+        # Phase 1.4 & 1.5: Add beta headers for advanced features
         # - interleaved-thinking: Extended Thinking feature
         # - context-management: Context editing (thinking block clearing)
         # - effort: Effort parameter for Opus 4.5
+        # Phase 1.5: Files API and Web Tools
+        # - files-api: Files API for multimodal content
+        # - web-search: Server-side web search tool
+        # - web-fetch: Server-side web page/PDF fetching tool
         self.client = anthropic.AsyncAnthropic(
             api_key=api_key,
             default_headers={
                 "anthropic-beta": ("interleaved-thinking-2025-05-14,"
                                    "context-management-2025-06-27,"
-                                   "effort-2025-11-24")
+                                   "effort-2025-11-24,"
+                                   "files-api-2025-04-14,"
+                                   "web-search-2025-03-05,"
+                                   "web-fetch-2025-09-10")
             })
         self.last_usage: Optional[TokenUsage] = None
         self.last_message: Optional[
             anthropic.types.Message] = None  # Phase 1.5: for tool use
+        self.last_thinking: Optional[str] = None  # Phase 1.4.3: Extended Thinking
 
         logger.info("claude_provider.initialized",
                     beta_features=[
-                        "interleaved-thinking", "context-management", "effort"
+                        "interleaved-thinking", "context-management", "effort",
+                        "files-api", "web-search", "web-fetch"
                     ])
 
     # pylint: disable=too-many-locals,too-many-branches,too-many-statements
@@ -149,11 +158,23 @@ class ClaudeProvider(LLMProvider):
         if model_config.has_capability("effort"):
             api_params["effort"] = "high"
 
+        # Phase 1.4.3: Extended Thinking (for tool loop)
+        # NOW ENABLED: thinking blocks are saved to DB and properly handled
+        api_params["thinking"] = {"type": "enabled", "budget_tokens": 10000}
+
         try:
             # Non-streaming API call
             response = await self.client.messages.create(**api_params)
 
+            # Phase 1.4.3: Extract thinking blocks from non-streaming response
+            thinking_text = ""
+            for block in response.content:
+                if hasattr(block, 'type') and block.type == "thinking":
+                    thinking_text += block.thinking
+            self.last_thinking = thinking_text if thinking_text else None
+
             # Store usage and message
+            thinking_tokens = getattr(response.usage, 'thinking_tokens', 0)
             self.last_usage = TokenUsage(
                 input_tokens=response.usage.input_tokens,
                 output_tokens=response.usage.output_tokens,
@@ -161,7 +182,7 @@ class ClaudeProvider(LLMProvider):
                                           'cache_read_input_tokens', 0),
                 cache_creation_tokens=getattr(response.usage,
                                               'cache_creation_input_tokens', 0),
-                thinking_tokens=0  # Non-streaming doesn't separate thinking
+                thinking_tokens=thinking_tokens
             )
             self.last_message = response
 
@@ -171,6 +192,7 @@ class ClaudeProvider(LLMProvider):
                         model_full_id=request.model,
                         input_tokens=response.usage.input_tokens,
                         output_tokens=response.usage.output_tokens,
+                        thinking_tokens=thinking_tokens,
                         stop_reason=response.stop_reason,
                         content_blocks=len(response.content),
                         duration_ms=round(duration_ms, 2))
@@ -321,10 +343,8 @@ class ClaudeProvider(LLMProvider):
                                error=str(e))
 
         # Phase 1.4.3: Extended Thinking
-        # TODO: Re-enable when thinking blocks are saved to DB (Phase 1.5)  # pylint: disable=fixme
-        # Currently disabled to avoid "assistant message must start with thinking"
-        # error when loading message history
-        # api_params["thinking"] = {"type": "enabled", "budget_tokens": 10000}
+        # NOW ENABLED: thinking blocks are saved to DB and properly handled
+        api_params["thinking"] = {"type": "enabled", "budget_tokens": 10000}
 
         # Note: context_management not supported in current SDK version
         # Will be added in Phase 1.5 when SDK supports it
@@ -416,6 +436,9 @@ class ClaudeProvider(LLMProvider):
             # Phase 1.5: Save final_message for tool use (contains thinking blocks)
             # When tools call back, we'll need to include thinking block with tool_result
             self.last_message = final_message
+
+            # Phase 1.4.3: Save thinking text for database storage
+            self.last_thinking = thinking_text if thinking_text else None
 
             # Track usage (Phase 1.4.2: cache, Phase 1.4.3: thinking)
             usage = final_message.usage
@@ -593,3 +616,18 @@ class ClaudeProvider(LLMProvider):
         if self.last_message is None:
             return None
         return self.last_message.stop_reason
+
+    def get_thinking(self) -> Optional[str]:
+        """Get thinking text from last API response.
+
+        Phase 1.4.3: Extended Thinking support.
+
+        Returns:
+            Thinking text string or None if no thinking was used.
+
+        Examples:
+            >>> thinking = provider.get_thinking()
+            >>> if thinking:
+            >>>     # Save to database
+        """
+        return self.last_thinking
