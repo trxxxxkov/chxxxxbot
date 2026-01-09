@@ -71,10 +71,10 @@ class ThreadRepository(BaseRepository[Thread]):
         thread = await self.get_active_thread(chat_id, user_id, thread_id)
 
         if thread:
-            # Update thread metadata if changed
+            # Update thread metadata if explicitly provided (but not model_id!)
+            # Model should only be changed via /model command, not auto-updated
             if title is not None:
                 thread.title = title
-            thread.model_id = model_id
             if system_prompt is not None:
                 thread.system_prompt = system_prompt
             await self.session.flush()

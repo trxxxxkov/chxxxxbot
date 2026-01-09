@@ -32,10 +32,7 @@ def get_model_keyboard(current: str) -> InlineKeyboardBuilder:
     """
     builder = InlineKeyboardBuilder()
 
-    # Claude models section
-    builder.row(
-        InlineKeyboardButton(text="🤖 Claude 4.5 Models", callback_data="noop"))
-
+    # Claude models section (no header - info is in model display_name)
     claude_models = get_models_by_provider("claude")
     for model in claude_models:
         full_id = model.get_full_id()

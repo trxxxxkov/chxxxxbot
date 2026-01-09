@@ -11,7 +11,6 @@ from aiogram import Router
 from aiogram import types
 import config
 from config import CLAUDE_TOKEN_BUFFER_PERCENT
-from config import DEFAULT_MODEL_ID
 from config import get_model
 from config import GLOBAL_SYSTEM_PROMPT
 from core.claude.client import ClaudeProvider
@@ -123,7 +122,7 @@ async def handle_claude_message(message: types.Message,
             chat_id=chat.id,
             user_id=user.id,
             thread_id=None,  # Phase 1.3: no forum threads yet
-            model_id=DEFAULT_MODEL_ID,  # Phase 1.4.1: use new model_id format
+            # Don't pass model_id - preserve existing thread's model selection
         )
 
         if was_created:
