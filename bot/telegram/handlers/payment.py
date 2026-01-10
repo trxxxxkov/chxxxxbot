@@ -541,11 +541,10 @@ async def cmd_balance(message: Message, session: AsyncSession):
                 "usage": "🔋",
                 "refund": "↩️",
                 "admin_topup": "👑",
-            }.get(op.operation_type.value, "•")
+            }.get(op.operation_type, "•")
 
             history_lines.append(
-                f"{type_emoji} {date}: {amount_str} ({op.operation_type.value})"
-            )
+                f"{type_emoji} {date}: {amount_str} ({op.operation_type})")
 
         history_text = ("\n".join(history_lines)
                         if history_lines else "No history yet")
