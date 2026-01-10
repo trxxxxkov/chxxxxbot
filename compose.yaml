@@ -31,6 +31,7 @@ services:
       - e2b_api_key
       - openai_api_key
       - google_api_key
+      - privileged_users
     volumes:
       - ./bot:/app
       - ./postgres:/postgres
@@ -63,3 +64,5 @@ secrets:
     file: ./secrets/openai_api_key.txt
   google_api_key:
     file: ./secrets/google_api_key.txt
+  privileged_users:
+    file: ./secrets/privileged_users.txt
