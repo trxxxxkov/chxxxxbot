@@ -32,16 +32,13 @@ async def test_get_or_create_thread_main_chat(
         chat_id=sample_chat.id,
         user_id=sample_user.id,
         thread_id=None,  # Main chat
-        model_name='claude',
-        system_prompt='You are a helpful assistant.',
     )
 
     assert was_created is True
     assert thread.chat_id == sample_chat.id
     assert thread.user_id == sample_user.id
     assert thread.thread_id is None
-    assert thread.model_name == 'claude'
-    assert thread.system_prompt == 'You are a helpful assistant.'
+    # Phase 1.4.2: model_id moved to User, system_prompt removed
 
 
 @pytest.mark.asyncio
@@ -66,7 +63,6 @@ async def test_get_or_create_thread_forum_topic(
         user_id=sample_user.id,
         thread_id=12345,  # Forum topic ID
         title='General Discussion',
-        model_name='claude',
     )
 
     assert was_created is True
@@ -225,33 +221,7 @@ async def test_get_chat_threads(
     assert all(thread.chat_id == sample_chat.id for thread in threads)
 
 
-@pytest.mark.asyncio
-async def test_update_thread_model(test_session, sample_thread):
-    """Test updating LLM model for thread.
-
-    Args:
-        test_session: Async session fixture.
-        sample_thread: Sample thread fixture.
-    """
-    repo = ThreadRepository(test_session)
-
-    await repo.update_thread_model(sample_thread.id, 'openai')
-
-    updated_thread = await repo.get_by_id(sample_thread.id)
-    assert updated_thread.model_name == 'openai'
-
-
-@pytest.mark.asyncio
-async def test_update_thread_model_missing(test_session):
-    """Test updating model for non-existent thread raises ValueError.
-
-    Args:
-        test_session: Async session fixture.
-    """
-    repo = ThreadRepository(test_session)
-
-    with pytest.raises(ValueError, match='Thread 999999999 not found'):
-        await repo.update_thread_model(999999999, 'openai')
+# Phase 1.4.2: update_thread_model() removed - model_id now in User, not Thread
 
 
 @pytest.mark.asyncio

@@ -215,6 +215,38 @@ chxxxxbot/
 
 **See:** [docs/phase-1.6-multimodal-support.md](docs/phase-1.6-multimodal-support.md)
 
+#### 1.7 Image Generation (Nano Banana Pro) ✅ Complete
+**Status:** Complete (2026-01-10)
+
+**Tool:**
+- ✅ `generate_image` - High-quality image generation up to 4K
+- ✅ Google Nano Banana Pro (gemini-3-pro-image-preview)
+- ✅ Google Search grounding for reference images
+- ✅ Flexible parameters (aspect ratio, resolution, content policy)
+
+**Integration:**
+- ✅ Automatic delivery via `_file_contents` pattern
+- ✅ Upload to Files API (24h TTL)
+- ✅ Save to database (source=ASSISTANT, type=GENERATED)
+- ✅ Send to Telegram as photo
+- ✅ Added to context ("Available files")
+
+**Pricing:**
+- ✅ $0.134 per image (1K/2K resolution)
+- ✅ $0.240 per image (4K resolution)
+- ✅ Cost tracking in logs and tool results
+
+**Files:**
+- core/tools/generate_image.py - Tool implementation
+- core/tools/registry.py - Tool registration
+- config.py - System prompt update
+- pyproject.toml, Dockerfile - Dependencies (google-genai, pillow)
+- compose.yaml - Google API key secret
+
+**Testing:** Manual testing ready (send prompt to bot)
+
+**See:** [docs/phase-1.7-image-generation.md](docs/phase-1.7-image-generation.md)
+
 ### Phase 2 — Telegram Features Expansion
 
 #### 2.1 Payment System 📋 Planned
@@ -705,4 +737,13 @@ This script:
   - config.py - Updated GLOBAL_SYSTEM_PROMPT
 - **Documentation**: docs/phase-1.6-multimodal-support.md
 
-**Next:** Phase 2.1 (Payment System)
+**Phase 1.7 (Image Generation - Nano Banana Pro):** ✅ Complete (2026-01-10)
+- Google Nano Banana Pro integration (gemini-3-pro-image-preview)
+- generate_image tool with flexible parameters (aspect ratio, resolution, content policy)
+- Automatic delivery via _file_contents pattern
+- Cost tracking ($0.134 for 1K/2K, $0.240 for 4K)
+- Documentation: docs/phase-1.7-image-generation.md
+- **Testing**: Ready for manual testing (send image generation prompts to bot)
+- **Files**: core/tools/generate_image.py, updated registry, system prompt, dependencies
+
+**Next:** Manual testing of Phase 1.7, then Phase 2.1 (Payment System)

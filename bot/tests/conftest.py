@@ -113,6 +113,7 @@ async def sample_user(test_session: AsyncSession) -> User:
         username='test_user',
         language_code='en',
         is_premium=False,
+        model_id='claude:sonnet',  # Phase 1.4.2: per-user model selection
         first_seen_at=datetime.now(timezone.utc),
         last_seen_at=datetime.now(timezone.utc),
     )
@@ -165,8 +166,6 @@ async def sample_thread(
         chat_id=sample_chat.id,
         user_id=sample_user.id,
         thread_id=None,  # Main chat (not forum topic)
-        model_name='claude',
-        system_prompt='You are a helpful assistant.',
     )
     test_session.add(thread)
     await test_session.flush()

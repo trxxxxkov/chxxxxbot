@@ -194,9 +194,9 @@ class TestAnalyzePdfToolDefinition:
         assert "token" in description.lower()
         assert "chart" in description.lower() or "visual" in description.lower()
 
-        # Should mention when to use
-        assert "When to use" in description
-        assert "When NOT to use" in description
+        # Should mention when to use (XML format)
+        assert "<when_to_use>" in description
+        assert "<when_not_to_use>" in description
 
         # Should mention cost
         assert "cost" in description.lower() or "token" in description.lower()

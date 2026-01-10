@@ -174,12 +174,12 @@ class TestAnalyzeImageToolDefinition:
         assert "vision" in description.lower(
         ) or "analyze" in description.lower()
 
-        # Should mention when to use
-        assert "When to use" in description
-        assert "When NOT to use" in description
+        # Should mention when to use (XML format)
+        assert "<when_to_use>" in description
+        assert "<when_not_to_use>" in description
 
-        # Should mention limitations
-        assert "Limitations" in description
+        # Should mention limitations (XML format)
+        assert "<limitations>" in description
         assert "token" in description.lower()
 
     def test_tool_description_mentions_use_cases(self):

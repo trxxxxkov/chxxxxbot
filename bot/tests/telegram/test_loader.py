@@ -22,14 +22,26 @@ def reset_routers():
 
     This prevents "Router is already attached" errors when
     create_dispatcher() is called multiple times in different tests.
+
+    Phase 1.4+: Includes all routers (start, model, personality, files,
+    media_handlers, claude).
     """
     yield
     # After each test, detach routers from their parent
-    from telegram.handlers import start, echo
-    if hasattr(start.router, '_parent_router') and start.router._parent_router:
-        start.router._parent_router = None
-    if hasattr(echo.router, '_parent_router') and echo.router._parent_router:
-        echo.router._parent_router = None
+    from telegram.handlers import start, model, personality, files, media_handlers, claude
+
+    routers = [
+        start.router,
+        model.router,
+        personality.router,
+        files.router,
+        media_handlers.router,
+        claude.router,
+    ]
+
+    for router in routers:
+        if hasattr(router, '_parent_router') and router._parent_router:
+            router._parent_router = None
 
 
 def test_create_bot_valid_token():
@@ -154,7 +166,7 @@ def test_create_dispatcher_middleware_order():
 def test_create_dispatcher_router_order():
     """Test create_dispatcher registers routers in correct order.
 
-    Verifies start router is registered before echo router (catch-all).
+    Phase 1.4+: Verifies all routers registered with claude as catch-all last.
     """
     with patch('telegram.loader.logger'):
         dispatcher = create_dispatcher()
@@ -162,19 +174,20 @@ def test_create_dispatcher_router_order():
         # Check routers registered
         routers = list(dispatcher.sub_routers)
 
-        # Should have 2 routers
-        assert len(routers) == 2
+        # Phase 1.4+: Should have 6 routers
+        assert len(routers) == 6
 
-        # Check router names (order matters)
+        # Check router names (order matters - claude must be last)
         router_names = [r.name for r in routers]
-        assert router_names == ["start", "echo"], \
-            "Routers should be in order: start, echo"
+        expected = ["start", "model", "personality", "files", "media", "claude"]
+        assert router_names == expected, \
+            f"Routers should be in order: {expected}"
 
 
 def test_create_dispatcher_router_names():
     """Test that routers have correct names.
 
-    Verifies start and echo routers are present.
+    Phase 1.4+: Verifies all routers present.
     """
     with patch('telegram.loader.logger'):
         dispatcher = create_dispatcher()
@@ -182,21 +195,29 @@ def test_create_dispatcher_router_names():
         routers = list(dispatcher.sub_routers)
         router_names = [r.name for r in routers]
 
-        assert "start" in router_names
-        assert "echo" in router_names
+        # Phase 1.4+: Check all routers present
+        expected_routers = [
+            "start", "model", "personality", "files", "media", "claude"
+        ]
+        for router_name in expected_routers:
+            assert router_name in router_names, \
+                f"Router '{router_name}' should be present"
 
 
 def test_create_dispatcher_logging():
     """Test that create_dispatcher logs dispatcher creation.
 
-    Verifies logging with router names.
+    Phase 1.4+: Verifies logging with all router names.
     """
     with patch('telegram.loader.logger') as mock_logger:
         create_dispatcher()
 
-        # Verify logging
+        # Verify logging (Phase 1.4+: 6 routers)
+        expected_routers = [
+            "start", "model", "personality", "files", "media", "claude"
+        ]
         mock_logger.info.assert_called_once_with("dispatcher_created",
-                                                 routers=["start", "echo"])
+                                                 routers=expected_routers)
 
 
 def test_create_dispatcher_returns_type():

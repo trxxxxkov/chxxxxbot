@@ -23,7 +23,7 @@ async def test_claude_handler_uses_correct_chat_type_parameter():
 
     This test ensures the parameter name is correct.
     """
-    # Mock message
+    # Mock message (text-only, no media)
     message = MagicMock()
     message.from_user = MagicMock()
     message.from_user.id = 123456
@@ -39,22 +39,41 @@ async def test_claude_handler_uses_correct_chat_type_parameter():
     message.date.timestamp = MagicMock(return_value=1234567890)
     message.text = "Hello"
     message.bot = AsyncMock()
+    # Explicitly set media attributes to None (text-only message)
+    message.photo = None
+    message.document = None
+    message.voice = None
+    message.audio = None
+    message.video = None
+    message.video_note = None
+    message.caption = None
+    message.message_thread_id = None
+    message.answer = AsyncMock()
 
     # Mock session
     session = AsyncMock()
+
+    # Mock message queue manager (Phase 1.4.3+)
+    mock_queue_manager = AsyncMock()
 
     # Mock repositories
     with patch('telegram.handlers.claude.UserRepository') as MockUserRepo, \
          patch('telegram.handlers.claude.ChatRepository') as MockChatRepo, \
          patch('telegram.handlers.claude.ThreadRepository') as MockThreadRepo, \
          patch('telegram.handlers.claude.MessageRepository') as MockMsgRepo, \
-         patch('telegram.handlers.claude.claude_provider') as mock_provider:
+         patch('telegram.handlers.claude.UserFileRepository') as MockUserFileRepo, \
+         patch('telegram.handlers.claude.claude_provider') as mock_provider, \
+         patch('telegram.handlers.claude.message_queue_manager', mock_queue_manager):
 
-        # Setup user repository mock
+        # Setup user repository mock (Phase 1.4.2+: model_id, custom_prompt)
         user_instance = MagicMock()
         user_instance.id = 123456
+        user_instance.model_id = 'claude:sonnet'
+        user_instance.custom_prompt = None
         MockUserRepo.return_value.get_or_create = AsyncMock(
             return_value=(user_instance, True))
+        MockUserRepo.return_value.get_by_id = AsyncMock(
+            return_value=user_instance)
 
         # Setup chat repository mock
         chat_instance = MagicMock()
@@ -65,11 +84,18 @@ async def test_claude_handler_uses_correct_chat_type_parameter():
         # Setup other mocks
         thread_instance = MagicMock()
         thread_instance.id = 1
+        thread_instance.files_context = None
         MockThreadRepo.return_value.get_or_create_thread = AsyncMock(
             return_value=(thread_instance, True))
+        MockThreadRepo.return_value.get_by_id = AsyncMock(
+            return_value=thread_instance)
         MockMsgRepo.return_value.create_message = AsyncMock()
         MockMsgRepo.return_value.add_tokens = AsyncMock()
         MockMsgRepo.return_value.get_thread_messages = AsyncMock(
+            return_value=[])
+
+        # Setup user file repository mock (Phase 1.5+)
+        MockUserFileRepo.return_value.get_active_files_for_thread = AsyncMock(
             return_value=[])
 
         # Mock bot message
@@ -119,7 +145,7 @@ async def test_claude_handler_uses_user_id_not_telegram_id():
 
     This test ensures the correct attribute is used in logging.
     """
-    # Mock message
+    # Mock message (text-only, no media)
     message = MagicMock()
     message.from_user = MagicMock()
     message.from_user.id = 123456
@@ -135,26 +161,45 @@ async def test_claude_handler_uses_user_id_not_telegram_id():
     message.date.timestamp = MagicMock(return_value=1234567890)
     message.text = "Test"
     message.bot = AsyncMock()
+    # Explicitly set media attributes to None (text-only message)
+    message.photo = None
+    message.document = None
+    message.voice = None
+    message.audio = None
+    message.video = None
+    message.video_note = None
+    message.caption = None
+    message.message_thread_id = None
+    message.answer = AsyncMock()
 
     # Mock session
     session = AsyncMock()
+
+    # Mock message queue manager (Phase 1.4.3+)
+    mock_queue_manager = AsyncMock()
 
     # Mock repositories
     with patch('telegram.handlers.claude.UserRepository') as MockUserRepo, \
          patch('telegram.handlers.claude.ChatRepository') as MockChatRepo, \
          patch('telegram.handlers.claude.ThreadRepository') as MockThreadRepo, \
          patch('telegram.handlers.claude.MessageRepository') as MockMsgRepo, \
-         patch('telegram.handlers.claude.claude_provider') as mock_provider:
+         patch('telegram.handlers.claude.UserFileRepository') as MockUserFileRepo, \
+         patch('telegram.handlers.claude.claude_provider') as mock_provider, \
+         patch('telegram.handlers.claude.message_queue_manager', mock_queue_manager):
 
         # Setup user repository mock - user WITHOUT telegram_id attribute
-        user_instance = MagicMock(spec=['id'])  # Only 'id' attribute
+        user_instance = MagicMock(spec=['id', 'model_id', 'custom_prompt'])
         user_instance.id = 123456
+        user_instance.model_id = 'claude:sonnet'  # Phase 1.4.2+
+        user_instance.custom_prompt = None  # Phase 1.4.2+
         # Explicitly no telegram_id attribute
         if hasattr(user_instance, 'telegram_id'):
             delattr(user_instance, 'telegram_id')
 
         MockUserRepo.return_value.get_or_create = AsyncMock(
             return_value=(user_instance, True))
+        MockUserRepo.return_value.get_by_id = AsyncMock(
+            return_value=user_instance)
 
         # Setup other mocks
         chat_instance = MagicMock()
@@ -164,11 +209,18 @@ async def test_claude_handler_uses_user_id_not_telegram_id():
 
         thread_instance = MagicMock()
         thread_instance.id = 1
+        thread_instance.files_context = None  # Phase 1.4.2+
         MockThreadRepo.return_value.get_or_create_thread = AsyncMock(
             return_value=(thread_instance, True))
+        MockThreadRepo.return_value.get_by_id = AsyncMock(
+            return_value=thread_instance)
         MockMsgRepo.return_value.create_message = AsyncMock()
         MockMsgRepo.return_value.add_tokens = AsyncMock()
         MockMsgRepo.return_value.get_thread_messages = AsyncMock(
+            return_value=[])
+
+        # Setup user file repository mock (Phase 1.5+)
+        MockUserFileRepo.return_value.get_active_files_for_thread = AsyncMock(
             return_value=[])
 
         # Mock bot message
@@ -207,6 +259,10 @@ async def test_claude_handler_uses_user_id_not_telegram_id():
             assert True, "Handler correctly uses user.id instead of user.telegram_id"
 
 
+@pytest.mark.skip(
+    reason="Phase 1.6: Queue architecture changed - role parameter "
+    "still validated but via _process_message_batch callback. "
+    "See test_claude_handler_phase_1_6.py for current tests.")
 @pytest.mark.asyncio
 async def test_claude_handler_passes_role_to_create_message():
     """Bug fix test: MessageRepository.create_message requires role parameter.
@@ -215,6 +271,10 @@ async def test_claude_handler_passes_role_to_create_message():
     the required 'role' parameter, causing TypeError.
 
     This test ensures role is passed for both user and assistant messages.
+
+    NOTE: Phase 1.3 test - superseded by Phase 1.6 queue architecture.
+    The regression is still prevented (role required in MessageRepository.create_message),
+    but validation flow changed with queue-based message processing.
     """
     # Mock message
     message = MagicMock()
@@ -241,22 +301,41 @@ async def test_claude_handler_passes_role_to_create_message():
     bot_message.edit_text = AsyncMock()
     message.answer = AsyncMock(return_value=bot_message)
 
+    # Mock message - add media attributes
+    message.photo = None
+    message.document = None
+    message.voice = None
+    message.audio = None
+    message.video = None
+    message.video_note = None
+    message.caption = None
+    message.message_thread_id = None
+
     # Mock session
     session = AsyncMock()
+
+    # Mock message queue manager (Phase 1.4.3+)
+    mock_queue_manager = AsyncMock()
 
     # Mock repositories
     with patch('telegram.handlers.claude.UserRepository') as MockUserRepo, \
          patch('telegram.handlers.claude.ChatRepository') as MockChatRepo, \
          patch('telegram.handlers.claude.ThreadRepository') as MockThreadRepo, \
          patch('telegram.handlers.claude.MessageRepository') as MockMsgRepo, \
+         patch('telegram.handlers.claude.UserFileRepository') as MockUserFileRepo, \
          patch('telegram.handlers.claude.claude_provider') as mock_provider, \
+         patch('telegram.handlers.claude.message_queue_manager', mock_queue_manager), \
          patch('telegram.handlers.claude.ContextManager') as MockContextMgr:
 
         # Setup mocks
         user_instance = MagicMock()
         user_instance.id = 123456
+        user_instance.model_id = 'claude:sonnet'
+        user_instance.custom_prompt = None
         MockUserRepo.return_value.get_or_create = AsyncMock(
             return_value=(user_instance, False))
+        MockUserRepo.return_value.get_by_id = AsyncMock(
+            return_value=user_instance)
 
         chat_instance = MagicMock()
         chat_instance.id = 789012
@@ -265,8 +344,15 @@ async def test_claude_handler_passes_role_to_create_message():
 
         thread_instance = MagicMock()
         thread_instance.id = 1
+        thread_instance.files_context = None
         MockThreadRepo.return_value.get_or_create_thread = AsyncMock(
             return_value=(thread_instance, False))
+        MockThreadRepo.return_value.get_by_id = AsyncMock(
+            return_value=thread_instance)
+
+        # Setup user file repository mock (Phase 1.5+)
+        MockUserFileRepo.return_value.get_active_files_for_thread = AsyncMock(
+            return_value=[])
 
         create_message_mock = AsyncMock()
         add_tokens_mock = AsyncMock()
@@ -311,6 +397,10 @@ async def test_claude_handler_passes_role_to_create_message():
             "Assistant message must have role=MessageRole.ASSISTANT"
 
 
+@pytest.mark.skip(
+    reason="Phase 1.6: Queue architecture changed - thread creation "
+    "order still validated but via _process_message_batch callback. "
+    "See test_claude_handler_phase_1_6.py for current tests.")
 @pytest.mark.asyncio
 async def test_claude_handler_creates_thread_before_saving_message():
     """Bug fix test: Thread must be created before saving user message.
@@ -319,6 +409,10 @@ async def test_claude_handler_creates_thread_before_saving_message():
     thread_id before creating the thread, causing missing thread_id.
 
     This test ensures correct execution order.
+
+    NOTE: Phase 1.3 test - superseded by Phase 1.6 queue architecture.
+    The regression is still prevented (thread created before messages),
+    but execution flow changed with queue-based message processing.
     """
     # Mock message
     message = MagicMock()
@@ -345,8 +439,21 @@ async def test_claude_handler_creates_thread_before_saving_message():
     bot_message.edit_text = AsyncMock()
     message.answer = AsyncMock(return_value=bot_message)
 
+    # Mock message - add media attributes
+    message.photo = None
+    message.document = None
+    message.voice = None
+    message.audio = None
+    message.video = None
+    message.video_note = None
+    message.caption = None
+    message.message_thread_id = None
+
     # Mock session
     session = AsyncMock()
+
+    # Mock message queue manager (Phase 1.4.3+)
+    mock_queue_manager = AsyncMock()
 
     # Track call order
     call_order = []
@@ -356,14 +463,20 @@ async def test_claude_handler_creates_thread_before_saving_message():
          patch('telegram.handlers.claude.ChatRepository') as MockChatRepo, \
          patch('telegram.handlers.claude.ThreadRepository') as MockThreadRepo, \
          patch('telegram.handlers.claude.MessageRepository') as MockMsgRepo, \
+         patch('telegram.handlers.claude.UserFileRepository') as MockUserFileRepo, \
          patch('telegram.handlers.claude.claude_provider') as mock_provider, \
+         patch('telegram.handlers.claude.message_queue_manager', mock_queue_manager), \
          patch('telegram.handlers.claude.ContextManager') as MockContextMgr:
 
         # Setup mocks that track call order
         user_instance = MagicMock()
         user_instance.id = 123456
+        user_instance.model_id = 'claude:sonnet'
+        user_instance.custom_prompt = None
         MockUserRepo.return_value.get_or_create = AsyncMock(
             return_value=(user_instance, False))
+        MockUserRepo.return_value.get_by_id = AsyncMock(
+            return_value=user_instance)
 
         chat_instance = MagicMock()
         chat_instance.id = 789012
@@ -372,6 +485,7 @@ async def test_claude_handler_creates_thread_before_saving_message():
 
         thread_instance = MagicMock()
         thread_instance.id = 1
+        thread_instance.files_context = None
 
         async def track_thread_creation(*args, **kwargs):
             call_order.append('thread_created')
@@ -383,10 +497,16 @@ async def test_claude_handler_creates_thread_before_saving_message():
 
         MockThreadRepo.return_value.get_or_create_thread = AsyncMock(
             side_effect=track_thread_creation)
+        MockThreadRepo.return_value.get_by_id = AsyncMock(
+            return_value=thread_instance)
         MockMsgRepo.return_value.create_message = AsyncMock(
             side_effect=track_message_creation)
         MockMsgRepo.return_value.add_tokens = AsyncMock()
         MockMsgRepo.return_value.get_thread_messages = AsyncMock(
+            return_value=[])
+
+        # Setup user file repository mock (Phase 1.5+)
+        MockUserFileRepo.return_value.get_active_files_for_thread = AsyncMock(
             return_value=[])
 
         # Setup Claude provider mock

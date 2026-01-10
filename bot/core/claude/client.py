@@ -193,16 +193,23 @@ class ClaudeProvider(LLMProvider):
             cache_creation = getattr(response.usage,
                                      'cache_creation_input_tokens', 0)
 
-            logger.info("claude.get_message.complete",
-                        model_full_id=request.model,
-                        input_tokens=response.usage.input_tokens,
-                        output_tokens=response.usage.output_tokens,
-                        thinking_tokens=thinking_tokens,
-                        cache_read_tokens=cache_read,
-                        cache_creation_tokens=cache_creation,
-                        stop_reason=response.stop_reason,
-                        content_blocks=len(response.content),
-                        duration_ms=round(duration_ms, 2))
+            # Phase 1.5 Stage 4: Log server-side tool usage (web_search, web_fetch)
+            server_tool_use = getattr(response.usage, 'server_tool_use', None)
+            log_params = {
+                "model_full_id": request.model,
+                "input_tokens": response.usage.input_tokens,
+                "output_tokens": response.usage.output_tokens,
+                "thinking_tokens": thinking_tokens,
+                "cache_read_tokens": cache_read,
+                "cache_creation_tokens": cache_creation,
+                "stop_reason": response.stop_reason,
+                "content_blocks": len(response.content),
+                "duration_ms": round(duration_ms, 2)
+            }
+            if server_tool_use:
+                log_params["server_tool_use"] = server_tool_use
+
+            logger.info("claude.get_message.complete", **log_params)
 
             return response
 
@@ -468,25 +475,38 @@ class ClaudeProvider(LLMProvider):
             cache_hit_rate = (self.last_usage.cache_read_tokens /
                               total_input if total_input > 0 else 0.0)
 
-            logger.info("claude.stream.usage",
-                        input_tokens=self.last_usage.input_tokens,
-                        output_tokens=self.last_usage.output_tokens,
-                        thinking_tokens=self.last_usage.thinking_tokens,
-                        cache_read=self.last_usage.cache_read_tokens,
-                        cache_creation=self.last_usage.cache_creation_tokens,
-                        cache_hit_rate=round(cache_hit_rate * 100, 1))
+            # Phase 1.5 Stage 4: Extract server-side tool usage
+            server_tool_use = getattr(usage, 'server_tool_use', None)
+
+            usage_log_params = {
+                "input_tokens": self.last_usage.input_tokens,
+                "output_tokens": self.last_usage.output_tokens,
+                "thinking_tokens": self.last_usage.thinking_tokens,
+                "cache_read": self.last_usage.cache_read_tokens,
+                "cache_creation": self.last_usage.cache_creation_tokens,
+                "cache_hit_rate": round(cache_hit_rate * 100, 1)
+            }
+            if server_tool_use:
+                usage_log_params["server_tool_use"] = server_tool_use
+
+            logger.info("claude.stream.usage", **usage_log_params)
 
             duration_ms = (time.time() - start_time) * 1000
 
-            logger.info("claude.stream.complete",
-                        model_full_id=request.model,
-                        model_api_id=model_config.model_id,
-                        input_tokens=self.last_usage.input_tokens,
-                        output_tokens=self.last_usage.output_tokens,
-                        total_chunks=total_chunks,
-                        response_length=len(response_text),
-                        duration_ms=round(duration_ms, 2),
-                        stop_reason=final_message.stop_reason)
+            complete_log_params = {
+                "model_full_id": request.model,
+                "model_api_id": model_config.model_id,
+                "input_tokens": self.last_usage.input_tokens,
+                "output_tokens": self.last_usage.output_tokens,
+                "total_chunks": total_chunks,
+                "response_length": len(response_text),
+                "duration_ms": round(duration_ms, 2),
+                "stop_reason": final_message.stop_reason
+            }
+            if server_tool_use:
+                complete_log_params["server_tool_use"] = server_tool_use
+
+            logger.info("claude.stream.complete", **complete_log_params)
 
         except anthropic.RateLimitError as e:
             duration_ms = (time.time() - start_time) * 1000

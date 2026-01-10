@@ -110,7 +110,12 @@ async def test_main_startup_success():
         mock_setup_logging.assert_called_once_with(level="INFO")
         mock_get_db_url.assert_called_once()
         mock_init_db.assert_called_once_with("postgresql://test", echo=False)
-        mock_read_secret.assert_called_once_with("telegram_bot_token")
+
+        # Phase 1.4+: read_secret called twice (bot token + API key)
+        assert mock_read_secret.call_count == 2
+        mock_read_secret.assert_any_call("telegram_bot_token")
+        mock_read_secret.assert_any_call("anthropic_api_key")
+
         mock_create_bot.assert_called_once_with(token="test_bot_token")
         mock_create_dispatcher.assert_called_once()
         mock_dispatcher.start_polling.assert_called_once_with(mock_bot)

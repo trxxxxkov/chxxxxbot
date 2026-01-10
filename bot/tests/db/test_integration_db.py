@@ -63,21 +63,18 @@ async def test_full_message_workflow(test_session):
     assert chat.id == 987654321
     assert chat.type == 'private'
 
-    # Step 3: Create Thread
+    # Step 3: Create Thread (Phase 1.4.2: model_id in User, not Thread)
     thread_repo = ThreadRepository(test_session)
     thread, was_created = await thread_repo.get_or_create_thread(
         chat_id=chat.id,
         user_id=user.id,
         thread_id=None,  # Main chat (not forum topic)
-        model_name='claude-3-5-sonnet-20241022',
-        system_prompt='You are a helpful assistant.',
     )
 
     assert was_created is True
     assert thread.chat_id == chat.id
     assert thread.user_id == user.id
     assert thread.thread_id is None
-    assert thread.model_name == 'claude-3-5-sonnet-20241022'
 
     # Step 4: Create conversation history
     msg_repo = MessageRepository(test_session)
@@ -253,13 +250,12 @@ async def test_full_message_workflow(test_session):
     assert user_count == 2
 
     # Step 10: Test forum thread (separate conversation)
-    # Create forum thread in same chat
+    # Create forum thread in same chat (Phase 1.4.2: model_id in User)
     forum_thread, was_created = await thread_repo.get_or_create_thread(
         chat_id=chat.id,
         user_id=user.id,
         thread_id=12345,  # Forum topic ID
         title='Python Help',
-        model_name='claude-3-5-sonnet-20241022',
     )
 
     assert was_created is True

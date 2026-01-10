@@ -24,6 +24,8 @@ RUN pip install --no-cache-dir \
     anthropic>=0.40.0 \
     openai>=1.0.0 \
     e2b-code-interpreter>=1.0.0 \
+    google-genai>=1.0.0 \
+    pillow>=10.0.0 \
     pytest>=7.4.0 \
     pytest-asyncio>=0.21.0 \
     pytest-cov>=4.1.0 \

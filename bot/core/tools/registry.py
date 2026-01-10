@@ -27,6 +27,8 @@ from core.tools.analyze_pdf import analyze_pdf
 from core.tools.analyze_pdf import ANALYZE_PDF_TOOL
 from core.tools.execute_python import execute_python
 from core.tools.execute_python import EXECUTE_PYTHON_TOOL
+from core.tools.generate_image import generate_image
+from core.tools.generate_image import GENERATE_IMAGE_TOOL
 from core.tools.transcribe_audio import transcribe_audio
 from core.tools.transcribe_audio import TRANSCRIBE_AUDIO_TOOL
 from utils.structured_logging import get_logger
@@ -35,28 +37,31 @@ logger = get_logger(__name__)
 
 # Server-side tools (managed by Anthropic, no executor needed)
 # Phase 1.5 Stage 4
+# NOTE: Server-side tools do NOT accept custom description field.
+# Anthropic provides built-in descriptions for these tools.
+# We rely on GLOBAL_SYSTEM_PROMPT to guide Claude on when to use them.
 WEB_SEARCH_TOOL = {
     "type": "web_search_20250305",
     "name": "web_search"
-    # Server-side tool: Anthropic executes searches automatically
-    # Cost: $0.01 per search (tracked in usage.server_tool_use.web_search_requests)
-    # No max_uses: Claude decides optimal search count
+    # Minimal config: only type and name
+    # Description provided by Anthropic
 }
 
 WEB_FETCH_TOOL = {
     "type": "web_fetch_20250910",
     "name": "web_fetch"
-    # Server-side tool: Anthropic fetches URLs automatically
-    # Cost: FREE (only tokens for fetched content)
-    # Supports web pages and PDFs
+    # Minimal config: only type and name
+    # Description provided by Anthropic
 }
 
 # Tool definitions for Claude API (list of tool schemas)
 # Phase 1.6: Added transcribe_audio for speech-to-text
+# Phase 1.7: Added generate_image for image generation
 TOOL_DEFINITIONS: List[Dict[str, Any]] = [
     ANALYZE_IMAGE_TOOL,
     ANALYZE_PDF_TOOL,
     TRANSCRIBE_AUDIO_TOOL,
+    GENERATE_IMAGE_TOOL,
     WEB_SEARCH_TOOL,
     WEB_FETCH_TOOL,
     EXECUTE_PYTHON_TOOL,
@@ -67,6 +72,7 @@ TOOL_EXECUTORS: Dict[str, Any] = {
     "analyze_image": analyze_image,
     "analyze_pdf": analyze_pdf,
     "transcribe_audio": transcribe_audio,
+    "generate_image": generate_image,
     "execute_python": execute_python,
     # Server-side tools NOT included (managed by Anthropic):
     # "web_search": (server-side)
@@ -83,7 +89,8 @@ async def execute_tool(tool_name: str, tool_input: Dict[str, Any], bot: 'Bot',
 
     Args:
         tool_name: Name of the tool to execute (e.g., "analyze_image",
-            "analyze_pdf", "transcribe_audio", "execute_python").
+            "analyze_pdf", "transcribe_audio", "generate_image",
+            "execute_python").
         tool_input: Tool input parameters as dictionary.
         bot: Telegram Bot instance for downloading user files.
         session: Database session for querying file metadata.
@@ -95,6 +102,8 @@ async def execute_tool(tool_name: str, tool_input: Dict[str, Any], bot: 'Bot',
             "cached_tokens": str}
         For transcribe_audio: {"transcript": str, "language": str,
             "duration": float, "cost_usd": str}
+        For generate_image: {"success": str, "cost_usd": str,
+            "parameters_used": dict, "_file_contents": list}
         For execute_python: {"stdout": str, "stderr": str, "results": str,
             "error": str, "success": str}
 
@@ -128,9 +137,11 @@ async def execute_tool(tool_name: str, tool_input: Dict[str, Any], bot: 'Bot',
 
     try:
         # Execute tool (all tools are async)
-        # execute_python and transcribe_audio require bot and session for
-        # Telegram file downloads
-        if tool_name in ["execute_python", "transcribe_audio"]:
+        # execute_python, transcribe_audio, generate_image require bot
+        # and session for Telegram integration
+        if tool_name in [
+                "execute_python", "transcribe_audio", "generate_image"
+        ]:
             result = await executor(bot=bot, session=session, **tool_input)
         else:
             result = await executor(**tool_input)
