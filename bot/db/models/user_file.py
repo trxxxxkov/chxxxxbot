@@ -160,7 +160,7 @@ class UserFile(Base):
     )
 
     expires_at: Mapped[datetime] = mapped_column(
-        DateTime,
+        DateTime(timezone=True),
         nullable=False,
         doc="Expiration timestamp (uploaded_at + FILES_API_TTL_HOURS)",
     )
