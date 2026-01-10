@@ -35,6 +35,66 @@ def read_secret(secret_name: str) -> str:
     return secret_path.read_text(encoding='utf-8').strip()
 
 
+def load_privileged_users() -> set[int]:
+    """Load privileged user IDs from secrets file (Phase 2.1).
+
+    Reads /run/secrets/privileged_users.txt and parses user IDs.
+    Format: one ID per line, or space/comma separated, or mixed.
+    Lines starting with # are ignored (comments).
+
+    Returns:
+        Set of Telegram user IDs with admin privileges.
+    """
+    logger = get_logger(__name__)
+    privileged_file = Path("/run/secrets/privileged_users.txt")
+
+    if not privileged_file.exists():
+        logger.warning(
+            "privileged_users_file_not_found",
+            path=str(privileged_file),
+            msg="No privileged users configured - admin commands disabled",
+        )
+        return set()
+
+    try:
+        content = privileged_file.read_text(encoding="utf-8").strip()
+
+        # Parse comma/space/newline separated IDs, skip comments
+        import re
+
+        lines = content.split("\n")
+        privileged_ids = set()
+
+        for line in lines:
+            # Strip comments
+            line = line.split("#")[0].strip()
+            if not line:
+                continue
+
+            # Split by comma or space
+            ids_str = re.split(r'[,\s]+', line)
+            for id_str in ids_str:
+                id_str = id_str.strip()
+                if id_str.isdigit():
+                    privileged_ids.add(int(id_str))
+
+        logger.info(
+            "privileged_users_loaded",
+            count=len(privileged_ids),
+            user_ids=sorted(list(privileged_ids)),
+        )
+        return privileged_ids
+
+    except Exception as e:
+        logger.error(
+            "privileged_users_load_error",
+            path=str(privileged_file),
+            error=str(e),
+            exc_info=True,
+        )
+        return set()
+
+
 async def main() -> None:
     """Main bot function.
 
@@ -69,6 +129,15 @@ async def main() -> None:
         # Initialize message queue manager (Phase 1.4.3: message batching)
         init_message_queue_manager()
         logger.info("message_queue_initialized")
+
+        # Load privileged users (Phase 2.1: admin commands)
+        import config as bot_config
+
+        bot_config.PRIVILEGED_USERS = load_privileged_users()
+        logger.info(
+            "privileged_users_configured",
+            count=len(bot_config.PRIVILEGED_USERS),
+        )
 
         # Create bot and dispatcher
         bot = create_bot(token=bot_token)

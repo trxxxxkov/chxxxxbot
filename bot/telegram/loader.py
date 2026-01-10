@@ -9,12 +9,16 @@ from aiogram import Bot
 from aiogram import Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from telegram.handlers import admin  # Phase 2.1: Admin commands
 from telegram.handlers import claude
 from telegram.handlers import files
 from telegram.handlers import media_handlers
 from telegram.handlers import model
+from telegram.handlers import payment  # Phase 2.1: Payment handlers
 from telegram.handlers import personality
 from telegram.handlers import start
+from telegram.middlewares.balance_middleware import \
+    BalanceMiddleware  # Phase 2.1: Balance check
 from telegram.middlewares.database_middleware import DatabaseMiddleware
 from telegram.middlewares.logging_middleware import LoggingMiddleware
 from utils.structured_logging import get_logger
@@ -53,10 +57,17 @@ def create_dispatcher() -> Dispatcher:
     dispatcher.update.middleware(LoggingMiddleware())
     dispatcher.update.middleware(DatabaseMiddleware())
 
+    # Phase 2.1: Balance middleware (checks balance before paid requests)
+    # Must be after DatabaseMiddleware (needs db_session in data)
+    dispatcher.message.middleware(BalanceMiddleware())
+    dispatcher.callback_query.middleware(BalanceMiddleware())
+
     # Register routers (order matters - first match wins)
     dispatcher.include_router(start.router)
     dispatcher.include_router(model.router)
     dispatcher.include_router(personality.router)
+    dispatcher.include_router(payment.router)  # Phase 2.1: Payment commands
+    dispatcher.include_router(admin.router)  # Phase 2.1: Admin commands
     dispatcher.include_router(files.router)  # Phase 1.5: Photo/document uploads
     dispatcher.include_router(
         media_handlers.router)  # Phase 1.6: Voice/audio/video
@@ -64,5 +75,15 @@ def create_dispatcher() -> Dispatcher:
 
     logger.info(
         "dispatcher_created",
-        routers=["start", "model", "personality", "files", "media", "claude"])
+        routers=[
+            "start",
+            "model",
+            "personality",
+            "payment",
+            "admin",
+            "files",
+            "media",
+            "claude",
+        ],
+    )
     return dispatcher

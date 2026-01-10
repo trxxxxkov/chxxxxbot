@@ -5,6 +5,7 @@ Tests helper functions for tool use integration.
 
 from datetime import datetime
 from datetime import timedelta
+from datetime import timezone
 from unittest.mock import AsyncMock
 from unittest.mock import Mock
 
@@ -48,22 +49,22 @@ class TestFormatTimeAgo:
 
     def test_just_now(self):
         """Test 'just now' for recent time."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         assert format_time_ago(now) == "just now"
 
     def test_minutes_ago(self):
         """Test minutes ago."""
-        time_5min_ago = datetime.utcnow() - timedelta(minutes=5)
+        time_5min_ago = datetime.now(timezone.utc) - timedelta(minutes=5)
         assert format_time_ago(time_5min_ago) == "5 min ago"
 
     def test_hours_ago(self):
         """Test hours ago."""
-        time_2hours_ago = datetime.utcnow() - timedelta(hours=2)
+        time_2hours_ago = datetime.now(timezone.utc) - timedelta(hours=2)
         assert format_time_ago(time_2hours_ago) == "2 hours ago"
 
     def test_days_ago(self):
         """Test days ago."""
-        time_3days_ago = datetime.utcnow() - timedelta(days=3)
+        time_3days_ago = datetime.now(timezone.utc) - timedelta(days=3)
         assert format_time_ago(time_3days_ago) == "3 days ago"
 
 
@@ -81,7 +82,7 @@ class TestFormatFilesSection:
         mock_file.filename = "test.jpg"
         mock_file.file_type = FileType.IMAGE
         mock_file.file_size = 1024
-        mock_file.uploaded_at = datetime.utcnow()
+        mock_file.uploaded_at = datetime.now(timezone.utc)
         mock_file.claude_file_id = "file_abc123"
 
         result = format_files_section([mock_file])
@@ -97,14 +98,14 @@ class TestFormatFilesSection:
         mock_file1.filename = "image.jpg"
         mock_file1.file_type = FileType.IMAGE
         mock_file1.file_size = 2048
-        mock_file1.uploaded_at = datetime.utcnow()
+        mock_file1.uploaded_at = datetime.now(timezone.utc)
         mock_file1.claude_file_id = "file_1"
 
         mock_file2 = Mock()
         mock_file2.filename = "doc.pdf"
         mock_file2.file_type = FileType.PDF
         mock_file2.file_size = 5120
-        mock_file2.uploaded_at = datetime.utcnow()
+        mock_file2.uploaded_at = datetime.now(timezone.utc)
         mock_file2.claude_file_id = "file_2"
 
         result = format_files_section([mock_file1, mock_file2])

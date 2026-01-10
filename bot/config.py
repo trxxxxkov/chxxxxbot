@@ -326,16 +326,18 @@ GLOBAL_SYSTEM_PROMPT = (
     "requests, default to providing information and recommendations first.\n"
     "</default_to_action>\n\n"
     "<use_parallel_tool_calls>\n"
-    "When calling multiple tools without dependencies between them, make all independent tool calls "
-    "in parallel. This improves performance by running operations simultaneously rather than waiting "
-    "for each to complete sequentially.\n\n"
+    "When calling multiple tools without dependencies between them, "
+    "make all independent tool calls in parallel. This improves "
+    "performance by running operations simultaneously rather than "
+    "waiting for each to complete sequentially.\n\n"
     "Examples of parallel execution:\n"
     "- Verifying multiple URLs → Call web_fetch for all URLs simultaneously\n"
     "- Analyzing multiple files → Call analyze_pdf/analyze_image in parallel\n"
     "- Reading multiple files → Call all reads at once\n"
     "- Multiple web searches → Run searches concurrently\n\n"
-    "For dependent operations where one tool's output informs another's input, call them sequentially "
-    "and provide concrete values rather than placeholders.\n"
+    "For dependent operations where one tool's output informs "
+    "another's input, call them sequentially and provide concrete "
+    "values rather than placeholders.\n"
     "</use_parallel_tool_calls>\n\n"
     "<reflection_after_tool_use>\n"
     "After receiving tool results, carefully reflect on their quality and determine optimal next "
@@ -391,8 +393,10 @@ GLOBAL_SYSTEM_PROMPT = (
     "- PDF mentions \"eLibrary ID: 1149143\" → Fetch "
     "elibrary.ru/author_profile.asp?id=1149143 to see actual "
     "publications\n"
-    "- Document references \"ORCID: 0000-0003-3304-4934\" → Fetch orcid.org/0000-0003-3304-4934 to verify profile\n"
-    "- Resume lists \"Google Scholar\" → Fetch scholar.google.com profile to check publication count\n"
+    "- Document references \"ORCID: 0000-0003-3304-4934\" → Fetch "
+    "orcid.org/0000-0003-3304-4934 to verify profile\n"
+    "- Resume lists \"Google Scholar\" → Fetch scholar.google.com "
+    "profile to check publication count\n"
     "- User says \"check this article: https://...\" → Use web_fetch to read the full content\n"
     "- PDF contains research citations → Fetch source papers to verify accuracy\n\n"
     "**Research workflow (for verification tasks):**\n"
@@ -417,8 +421,9 @@ GLOBAL_SYSTEM_PROMPT = (
     "- Link verification → `web_fetch` (fetch to verify, rather than guessing)\n"
     "</tool_selection_guidelines>\n\n"
     "# Working with Files\n"
-    "When users upload files (photos, PDFs, audio, video, documents), they appear in 'Available files' "
-    "section with file_id and filename.\n\n"
+    "When users upload files (photos, PDFs, audio, video, "
+    "documents), they appear in 'Available files' section "
+    "with file_id and filename.\n\n"
     "**Processing uploaded files:**\n"
     "- Images → Use `analyze_image` (fastest, direct vision analysis)\n"
     "- PDFs → Use `analyze_pdf` (fastest, direct PDF+vision analysis)\n"
@@ -557,6 +562,64 @@ def list_all_models() -> list[tuple[str, str]]:
              for full_id, model in MODEL_REGISTRY.items()]
     return sorted(items, key=lambda x: x[0])
 
+
+# ============================================================================
+# Payment System Configuration (Phase 2.1)
+# ============================================================================
+
+# Stars to USD conversion rate (market rate, BEFORE commissions)
+STARS_TO_USD_RATE: float = 0.013  # $0.013 per Star (~$13 per 1000 Stars)
+
+# Commission rates for formula: y = x * (1 - k1 - k2 - k3)
+TELEGRAM_WITHDRAWAL_FEE: float = 0.35  # k1: 35% Telegram withdrawal commission
+TELEGRAM_TOPICS_FEE: float = 0.15  # k2: 15% Topics in private chats commission
+DEFAULT_OWNER_MARGIN: float = 0.0  # k3: 0% Default owner margin (configurable)
+
+# Balance settings
+STARTER_BALANCE_USD: float = 0.10  # New users get $0.10 starter balance
+MINIMUM_BALANCE_FOR_REQUEST: float = 0.0  # Allow requests while balance > 0
+
+# Refund settings
+REFUND_PERIOD_DAYS: int = 30  # Maximum days for refund eligibility
+
+# Predefined Stars packages (for /buy command)
+STARS_PACKAGES: list[dict[str, int | str]] = [
+    {
+        "stars": 10,
+        "label": "Micro"
+    },
+    {
+        "stars": 50,
+        "label": "Starter"
+    },
+    {
+        "stars": 100,
+        "label": "Basic"
+    },
+    {
+        "stars": 250,
+        "label": "Standard"
+    },
+    {
+        "stars": 500,
+        "label": "Premium"
+    },
+]
+
+# Custom amount range
+MIN_CUSTOM_STARS: int = 1
+MAX_CUSTOM_STARS: int = 2500
+
+# Payment invoice customization
+PAYMENT_INVOICE_TITLE: str = "Bot Balance Top-up"
+PAYMENT_INVOICE_DESCRIPTION_TEMPLATE: str = (
+    "Add ${usd_amount:.2f} to your bot balance\n"
+    "Pay {stars_amount} Telegram Stars")
+PAYMENT_INVOICE_PHOTO_URL: str = ""  # Optional: URL to payment image
+
+# Privileged users (loaded from secrets at startup)
+PRIVILEGED_USERS: set[int] = set(
+)  # Populated from secrets/privileged_users.txt
 
 # ============================================================================
 # Database Configuration

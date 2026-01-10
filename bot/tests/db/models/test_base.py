@@ -24,7 +24,7 @@ from sqlalchemy.orm import mapped_column
 
 
 # Test model using Base and TimestampMixin
-class TestModel(Base, TimestampMixin):
+class SampleModel(Base, TimestampMixin):
     """Test model for verifying Base and TimestampMixin functionality."""
 
     __tablename__ = 'test_model'
@@ -48,7 +48,7 @@ def test_models_inherit_from_base():
 
     Verifies that Base can be used as parent class for models.
     """
-    assert issubclass(TestModel, Base)
+    assert issubclass(SampleModel, Base)
 
 
 def test_timestamp_mixin_adds_created_at():
@@ -56,10 +56,10 @@ def test_timestamp_mixin_adds_created_at():
 
     Verifies presence and configuration of created_at field.
     """
-    assert hasattr(TestModel, 'created_at')
+    assert hasattr(SampleModel, 'created_at')
 
     # Check column configuration
-    created_at_col = TestModel.__table__.columns['created_at']
+    created_at_col = SampleModel.__table__.columns['created_at']
     assert created_at_col.nullable is False
     assert created_at_col.server_default is not None
 
@@ -69,10 +69,10 @@ def test_timestamp_mixin_adds_updated_at():
 
     Verifies presence and configuration of updated_at field.
     """
-    assert hasattr(TestModel, 'updated_at')
+    assert hasattr(SampleModel, 'updated_at')
 
     # Check column configuration
-    updated_at_col = TestModel.__table__.columns['updated_at']
+    updated_at_col = SampleModel.__table__.columns['updated_at']
     assert updated_at_col.nullable is False
     assert updated_at_col.server_default is not None
 
@@ -82,7 +82,7 @@ def test_created_at_server_default():
 
     Verifies func.now() is used for automatic timestamp on insert.
     """
-    created_at_col = TestModel.__table__.columns['created_at']
+    created_at_col = SampleModel.__table__.columns['created_at']
 
     # Has server_default
     assert created_at_col.server_default is not None
@@ -98,7 +98,7 @@ def test_updated_at_server_default():
 
     Verifies func.now() is used for initial timestamp.
     """
-    updated_at_col = TestModel.__table__.columns['updated_at']
+    updated_at_col = SampleModel.__table__.columns['updated_at']
 
     # Has server_default
     assert updated_at_col.server_default is not None
@@ -113,7 +113,7 @@ def test_updated_at_onupdate():
 
     Verifies func.now() is used to auto-update timestamp on UPDATE.
     """
-    updated_at_col = TestModel.__table__.columns['updated_at']
+    updated_at_col = SampleModel.__table__.columns['updated_at']
 
     # Has onupdate
     assert updated_at_col.onupdate is not None
@@ -128,8 +128,8 @@ def test_timestamps_not_nullable():
 
     Verifies data integrity constraints.
     """
-    created_at_col = TestModel.__table__.columns['created_at']
-    updated_at_col = TestModel.__table__.columns['updated_at']
+    created_at_col = SampleModel.__table__.columns['created_at']
+    updated_at_col = SampleModel.__table__.columns['updated_at']
 
     assert created_at_col.nullable is False
     assert updated_at_col.nullable is False
@@ -140,8 +140,8 @@ def test_timestamps_with_timezone():
 
     Verifies DateTime(timezone=True) configuration.
     """
-    created_at_col = TestModel.__table__.columns['created_at']
-    updated_at_col = TestModel.__table__.columns['updated_at']
+    created_at_col = SampleModel.__table__.columns['created_at']
+    updated_at_col = SampleModel.__table__.columns['updated_at']
 
     # Check type
     assert isinstance(created_at_col.type, DateTime)
@@ -158,7 +158,7 @@ def test_timestamp_mixin_instantiation():
     Verifies models with mixin can be created normally.
     """
     # Should not raise exception
-    instance = TestModel(id=1, name="Test")
+    instance = SampleModel(id=1, name="Test")
 
     assert instance.id == 1
     assert instance.name == "Test"
@@ -170,7 +170,7 @@ def test_timestamp_mixin_with_composite_models():
     Verifies mixin works alongside Base in inheritance chain.
     """
 
-    class AnotherTestModel(Base, TimestampMixin):
+    class AnotherSampleModel(Base, TimestampMixin):
         """Another test model to verify mixin reusability."""
 
         __tablename__ = 'another_test_model'
@@ -178,10 +178,10 @@ def test_timestamp_mixin_with_composite_models():
         id: Mapped[int] = mapped_column(Integer, primary_key=True)
 
     # Both models should have timestamps
-    assert hasattr(TestModel, 'created_at')
-    assert hasattr(TestModel, 'updated_at')
-    assert hasattr(AnotherTestModel, 'created_at')
-    assert hasattr(AnotherTestModel, 'updated_at')
+    assert hasattr(SampleModel, 'created_at')
+    assert hasattr(SampleModel, 'updated_at')
+    assert hasattr(AnotherSampleModel, 'created_at')
+    assert hasattr(AnotherSampleModel, 'updated_at')
 
 
 @pytest.mark.asyncio
@@ -195,7 +195,7 @@ async def test_timestamp_auto_population(test_db_engine):
     """
     # Create table
     async with test_db_engine.begin() as conn:
-        await conn.run_sync(TestModel.__table__.create, checkfirst=True)
+        await conn.run_sync(SampleModel.__table__.create, checkfirst=True)
 
     # Insert record without specifying timestamps
     from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -207,7 +207,7 @@ async def test_timestamp_auto_population(test_db_engine):
 
     async with session_factory() as session:
         async with session.begin():
-            instance = TestModel(id=1, name="Auto Timestamp Test")
+            instance = SampleModel(id=1, name="Auto Timestamp Test")
             session.add(instance)
             await session.flush()
 
@@ -229,7 +229,7 @@ async def test_timestamp_update_on_modification(test_db_engine):
     """
     # Create table
     async with test_db_engine.begin() as conn:
-        await conn.run_sync(TestModel.__table__.create, checkfirst=True)
+        await conn.run_sync(SampleModel.__table__.create, checkfirst=True)
 
     import asyncio
 
@@ -243,7 +243,7 @@ async def test_timestamp_update_on_modification(test_db_engine):
     async with session_factory() as session:
         async with session.begin():
             # Create record
-            instance = TestModel(id=2, name="Original Name")
+            instance = SampleModel(id=2, name="Original Name")
             session.add(instance)
             await session.flush()
 
@@ -259,5 +259,5 @@ async def test_timestamp_update_on_modification(test_db_engine):
             # Note: For SQLite, onupdate may not work as expected in test
             # but the configuration is correct for PostgreSQL
             # We just verify the configuration exists
-            updated_at_col = TestModel.__table__.columns['updated_at']
+            updated_at_col = SampleModel.__table__.columns['updated_at']
             assert updated_at_col.onupdate is not None

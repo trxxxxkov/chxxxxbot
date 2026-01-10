@@ -23,6 +23,7 @@ NO __init__.py - use direct import:
 
 from datetime import datetime
 from datetime import timedelta
+from datetime import timezone
 
 from aiogram import F
 from aiogram import Router
@@ -207,7 +208,8 @@ async def process_file_upload(message: types.Message,
         mime_type=mime_type,
         file_size=file_size or len(file_bytes),
         source=FileSource.USER,
-        expires_at=datetime.utcnow() + timedelta(hours=FILES_API_TTL_HOURS),
+        expires_at=datetime.now(timezone.utc) +
+        timedelta(hours=FILES_API_TTL_HOURS),
         file_metadata=file_metadata,
     )
 
@@ -330,7 +332,8 @@ async def handle_photo(message: types.Message, session: AsyncSession) -> None:
             mime_type="image/jpeg",
             file_size=photo.file_size or len(photo_bytes),
             source=FileSource.USER,
-            expires_at=datetime.utcnow() + timedelta(hours=FILES_API_TTL_HOURS),
+            expires_at=datetime.now(timezone.utc) +
+            timedelta(hours=FILES_API_TTL_HOURS),
             file_metadata={
                 "width": photo.width,
                 "height": photo.height
@@ -499,7 +502,8 @@ async def handle_document(message: types.Message,
             mime_type=document.mime_type or "application/octet-stream",
             file_size=document.file_size or len(doc_bytes),
             source=FileSource.USER,
-            expires_at=datetime.utcnow() + timedelta(hours=FILES_API_TTL_HOURS),
+            expires_at=datetime.now(timezone.utc) +
+            timedelta(hours=FILES_API_TTL_HOURS),
             file_metadata={},
         )
 

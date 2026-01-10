@@ -12,12 +12,15 @@ from datetime import datetime
 from datetime import timezone
 from typing import AsyncGenerator
 
+from db.models.balance_operation import BalanceOperation
 from db.models.base import Base
 from db.models.chat import Chat
 from db.models.message import Message
 from db.models.message import MessageRole
+from db.models.payment import Payment
 from db.models.thread import Thread
 from db.models.user import User
+from db.models.user_file import UserFile
 import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -209,3 +212,156 @@ async def sample_message(
     test_session.add(message)
     await test_session.flush()
     return message
+
+
+"""Pytest fixtures for payment system tests using PostgreSQL.
+
+Phase 2.1: Payment system tests require PostgreSQL enum types.
+These fixtures connect to the real PostgreSQL database from Docker Compose.
+"""
+
+import asyncio
+from typing import AsyncGenerator
+
+from config import get_database_url
+from db.models.base import Base
+import pytest
+import pytest_asyncio
+from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import create_async_engine
+
+
+@pytest_asyncio.fixture
+async def pg_engine():
+    """Create async engine connected to PostgreSQL from Docker Compose.
+
+    This fixture connects to the real PostgreSQL database used by the bot.
+    Migrations must be applied before running tests.
+
+    Yields:
+        AsyncEngine: SQLAlchemy async engine connected to PostgreSQL.
+    """
+    # Get database URL from config (same as production)
+    from config import get_database_url
+    database_url = get_database_url()
+
+    from sqlalchemy.ext.asyncio import create_async_engine
+    engine = create_async_engine(
+        database_url,
+        echo=False,
+        pool_pre_ping=True,
+    )
+
+    yield engine
+
+    # Dispose engine
+    await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def pg_session(pg_engine) -> AsyncGenerator[AsyncSession, None]:
+    """Create async session with automatic rollback for test isolation.
+
+    Each test gets its own transaction that is rolled back after the test,
+    ensuring test isolation without affecting other tests or production data.
+
+    Args:
+        pg_engine: PostgreSQL async engine fixture.
+
+    Yields:
+        AsyncSession: SQLAlchemy async session with rollback on teardown.
+    """
+    # Create session factory
+    session_factory = async_sessionmaker(
+        pg_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+
+    # Connect and start transaction
+    async with pg_engine.connect() as connection:
+        # Begin transaction
+        async with connection.begin() as transaction:
+            # Create session bound to this connection
+            async with session_factory(bind=connection) as session:
+                # Nested transaction for savepoint
+                await session.begin_nested()
+
+                try:
+                    yield session
+                finally:
+                    # Rollback everything
+                    await transaction.rollback()
+
+
+@pytest_asyncio.fixture
+async def pg_sample_user(pg_session: AsyncSession):
+    """Create sample user for payment tests using PostgreSQL.
+
+    Each test gets a unique user ID to avoid conflicts.
+
+    Args:
+        pg_session: PostgreSQL async session fixture.
+
+    Returns:
+        User: Sample user with test data.
+    """
+    from datetime import datetime
+    from datetime import timezone
+    import random
+
+    from db.models.user import User
+
+    # Generate unique user ID for each test (random in range 100000000-999999999)
+    unique_id = random.randint(100000000, 999999999)
+
+    user = User(
+        id=unique_id,
+        first_name='Test',
+        last_name='User',
+        username=f'test_user_{unique_id}',
+        language_code='en',
+        is_premium=False,
+        model_id='claude:sonnet',
+        first_seen_at=datetime.now(timezone.utc),
+        last_seen_at=datetime.now(timezone.utc),
+    )
+    pg_session.add(user)
+    await pg_session.flush()
+    return user
+
+
+@pytest_asyncio.fixture
+async def pg_admin_user(pg_session: AsyncSession):
+    """Create admin user for payment tests using PostgreSQL.
+
+    Args:
+        pg_session: PostgreSQL async session fixture.
+
+    Returns:
+        User: Admin user with test data.
+    """
+    from datetime import datetime
+    from datetime import timezone
+    import random
+
+    from db.models.user import User
+
+    # Generate unique admin ID
+    unique_id = random.randint(900000000, 999999999)
+
+    user = User(
+        id=unique_id,
+        username=f"admin_{unique_id}",
+        first_name="Admin",
+        last_name="User",
+        is_bot=False,
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+        first_seen_at=datetime.now(timezone.utc),
+        last_seen_at=datetime.now(timezone.utc),
+    )
+    pg_session.add(user)
+    await pg_session.flush()
+    return user

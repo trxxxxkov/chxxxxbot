@@ -4,8 +4,8 @@ Tests the fix for: "content cannot be empty if is_error is true"
 Empty error strings should be treated as success, not error.
 """
 
-import pytest
 from core.tools.helpers import format_tool_results
+import pytest
 
 
 class TestFormatToolResultsEmptyError:
@@ -22,8 +22,8 @@ class TestFormatToolResultsEmptyError:
         assert formatted[0]["type"] == "tool_result"
         assert formatted[0]["tool_use_id"] == "tool_123"
         # Empty error should NOT set is_error
-        assert "is_error" not in formatted[0] or formatted[
-            0]["is_error"] is False
+        assert "is_error" not in formatted[0] or formatted[0][
+            "is_error"] is False
         # Content should be JSON serialized result
         assert "stdout" in formatted[0]["content"]
 
@@ -35,8 +35,8 @@ class TestFormatToolResultsEmptyError:
         formatted = format_tool_results(tool_uses, results)
 
         assert len(formatted) == 1
-        assert "is_error" not in formatted[0] or formatted[
-            0]["is_error"] is False
+        assert "is_error" not in formatted[0] or formatted[0][
+            "is_error"] is False
 
     def test_non_empty_error_sets_is_error(self):
         """Non-empty error string should set is_error=true."""

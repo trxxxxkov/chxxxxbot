@@ -18,6 +18,7 @@ from aiogram import types
 
 if TYPE_CHECKING:
     from telegram.media_processor import MediaContent
+
 import config
 from config import CLAUDE_TOKEN_BUFFER_PERCENT
 from config import get_model
@@ -314,6 +315,7 @@ async def _handle_with_tools(request: LLMRequest, first_message: types.Message,
                                 # pylint: disable=import-outside-toplevel
                                 from datetime import datetime
                                 from datetime import timedelta
+                                from datetime import timezone
 
                                 from config import FILES_API_TTL_HOURS
                                 from db.models.user_file import FileSource
@@ -338,7 +340,7 @@ async def _handle_with_tools(request: LLMRequest, first_message: types.Message,
                                     mime_type=mime_type,
                                     file_size=len(file_bytes),
                                     source=FileSource.ASSISTANT,
-                                    expires_at=datetime.utcnow() +
+                                    expires_at=datetime.now(timezone.utc) +
                                     timedelta(hours=FILES_API_TTL_HOURS),
                                     file_metadata={},
                                 )
@@ -882,6 +884,48 @@ async def _process_message_batch(
             )
 
             await session.commit()
+
+            # Phase 2.1: Charge user for API usage
+            try:
+                from bot.db.repositories.balance_operation_repository import \
+                    BalanceOperationRepository
+                from bot.services.balance_service import BalanceService
+
+                balance_op_repo = BalanceOperationRepository(session)
+                balance_service = BalanceService(session, user_repo,
+                                                 balance_op_repo)
+
+                # Charge user for actual cost
+                balance_after = await balance_service.charge_user(
+                    user_id=user.id,
+                    amount=cost_usd,
+                    description=(
+                        f"Claude API call: {usage.input_tokens} input + "
+                        f"{usage.output_tokens} output + "
+                        f"{usage.thinking_tokens} thinking tokens, "
+                        f"model {model_config.display_name}"),
+                    related_message_id=bot_message.message_id,
+                )
+
+                logger.info(
+                    "claude_handler.user_charged",
+                    user_id=user.id,
+                    cost_usd=round(cost_usd, 6),
+                    balance_after=float(balance_after),
+                    thread_id=thread_id,
+                    message_id=bot_message.message_id,
+                )
+
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                logger.error(
+                    "claude_handler.charge_user_error",
+                    user_id=user.id,
+                    cost_usd=round(cost_usd, 6),
+                    error=str(e),
+                    exc_info=True,
+                    msg="CRITICAL: Failed to charge user for API usage!",
+                )
+                # Don't fail the request - user already got response
 
             logger.info("claude_handler.bot_message_saved",
                         thread_id=thread_id,

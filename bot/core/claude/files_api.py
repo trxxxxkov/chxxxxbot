@@ -60,8 +60,9 @@ async def upload_to_files_api(file_bytes: bytes, filename: str,
         client = get_client()
         # FileTypes accepts tuple: (filename, file_content, mime_type)
         # See: https://platform.claude.com/docs/en/build-with-claude/files
-        file_response = client.beta.files.upload(
-            file=(filename, BytesIO(file_bytes), mime_type))
+        file_response = client.beta.files.upload(file=(filename,
+                                                       BytesIO(file_bytes),
+                                                       mime_type))
 
         logger.info("files_api.upload_success",
                     filename=filename,

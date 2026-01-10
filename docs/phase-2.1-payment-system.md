@@ -1,1198 +1,690 @@
-# Claude Integration: Phase 2.1 (Payment System)
+# Phase 2.1: Payment System (Telegram Stars Integration)
 
-User balance tracking with Telegram Stars integration, pre-request cost validation, and admin management tools.
-
-**Status:** 📋 **PLANNED**
-
----
-
-## Table of Contents
-
-- [Overview](#overview)
-- [User Balance System](#user-balance-system)
-- [Cost Calculation](#cost-calculation)
-- [Telegram Stars Integration](#telegram-stars-integration)
-- [Admin Commands](#admin-commands)
-- [Cost Reporting](#cost-reporting)
-- [Implementation Plan](#implementation-plan)
-- [Related Documents](#related-documents)
-
----
+**Status:** Planning (2026-01-10)
 
 ## Overview
 
-Phase 2.1 adds a complete payment system with user balances, cost tracking, and Telegram Stars integration for deposits.
+Implementation of a complete payment system where users pay for bot usage through Telegram Stars. All API costs (LLM models, tools, external APIs) are tracked and charged to user balance.
 
-### Goals
+**Key principles:**
+- Users pay for themselves (starter balance: $0.10)
+- Honest billing: charge exactly what was spent
+- Pre-purchase model: buy balance with Stars, then spend on API calls
+- Soft balance check: allow requests while balance > 0 (can go negative once)
+- Admin tools for privileged users (manual balance adjustment, margin configuration)
+- Full refund support within 30 days
 
-1. **User balance** - Track USD balance per user, block requests if insufficient
-2. **Cost tracking** - Log every API call with accurate cost calculation
-3. **Telegram Stars** - Accept deposits via Telegram's native payment system
-4. **Admin tools** - Privileged commands for balance management
-5. **Cost reporting** - Per-user usage analytics and billing
+## Telegram Stars API Review
 
-### Prerequisites
+### Documentation Sources
+- [Bot Payments for Digital Goods](https://core.telegram.org/bots/payments-stars)
+- [Telegram Bot API - Payments](https://core.telegram.org/bots/api#payments)
+- [All about Telegram Stars](https://durovscode.com/about-telegram-stars)
+- [Terms of Service for Telegram Stars](https://telegram.org/tos/stars)
 
-- ✅ Phase 1.3 complete (Claude integration working)
-- ✅ Token usage tracking in place
-- ✅ Database supports transactions (PostgreSQL ACID)
-- ⏳ Telegram Stars payment system available in bot
+### Key API Methods
 
----
+#### sendInvoice
+Create and send payment invoice to user.
 
-## User Balance System
+**Critical parameters:**
+- `currency`: **"XTR"** (Telegram Stars - mandatory for digital goods)
+- `provider_token`: **""** (empty string for Stars)
+- `title`: Product name (1-32 chars)
+- `description`: Product description (1-255 chars)
+- `payload`: Bot-defined invoice payload (1-128 bytes) - use for order identification
+- `prices`: Array of LabeledPrice objects (price breakdown)
 
-### Database Changes
+**Example:**
+```python
+await bot.send_invoice(
+    chat_id=user_id,
+    title="Balance Top-up",
+    description=f"Add ${usd_amount:.2f} to your bot balance",
+    payload=f"topup_{user_id}_{timestamp}",
+    provider_token="",  # Empty for Stars
+    currency="XTR",  # Telegram Stars currency code
+    prices=[{"label": "Balance", "amount": stars_amount}],
+    photo_url="https://example.com/stars.png",  # Optional
+)
+```
 
-#### User Model Updates
+#### PreCheckoutQuery Handler
+Telegram sends this before processing payment. Bot MUST answer to proceed.
 
-Add balance field to existing User model.
+**Flow:**
+1. Receive `PreCheckoutQuery` update
+2. Validate `invoice_payload` and `total_amount`
+3. Check user eligibility (not banned, etc.)
+4. Answer with `answerPreCheckoutQuery(ok=True)` to approve
+5. Or `answerPreCheckoutQuery(ok=False, error_message="...")` to reject
 
-**File:** `bot/db/models/user.py`
+**IMPORTANT:** Answering pre-checkout query does NOT mean payment is completed!
+
+#### SuccessfulPayment Handler
+Telegram sends this AFTER payment is completed. Only now deliver goods.
+
+**Critical fields:**
+- `telegram_payment_charge_id`: **MUST SAVE** for refunds
+- `total_amount`: Total paid in smallest currency units (Stars)
+- `invoice_payload`: Your bot-defined payload from sendInvoice
+
+**Flow:**
+1. Receive `Message` update with `successful_payment` field
+2. Extract `telegram_payment_charge_id` - save to database
+3. Calculate USD amount using conversion formula
+4. Add balance to user account
+5. Create payment record in database
+6. Send confirmation with transaction_id for future refunds
+
+#### refundStarPayment
+Issue a refund for a Telegram Stars payment.
+
+**Parameters:**
+- `user_id`: User who made the payment
+- `telegram_payment_charge_id`: Transaction ID from SuccessfulPayment
+
+**Returns:** True on success
+
+**Refund policy (per requirements):**
+- Maximum 30 days since payment
+- User must have balance >= refund amount
+- After refund: deduct amount from user balance, return Stars
+
+### Commission Structure
+
+Based on official documentation and requirements:
+
+| Commission | Symbol | Rate | Description |
+|------------|--------|------|-------------|
+| Telegram withdrawal fee | k1 | 0.35 (35%) | When bot owner withdraws Stars to USD |
+| Topics in private chats | k2 | 0.15 (15%) | Bot API 9.3 feature commission |
+| Owner margin | k3 | 0.0 - dynamic | Configurable by privileged users |
+
+**Constraint:** k1 + k2 + k3 ≤ 1.0
+
+**Current market rate:** $0.013 per Star (~$13 per 1000 Stars)
+
+## Conversion Formula
+
+### Step 1: Calculate nominal USD value
+```
+x = stars_amount * STARS_TO_USD_RATE
+```
+Where:
+- `stars_amount`: Stars paid by user
+- `STARS_TO_USD_RATE`: Market rate ($0.013)
+- `x`: Nominal USD value WITHOUT commissions
+
+### Step 2: Apply commission formula
+```
+y = x * (1 - k1 - k2 - k3)
+```
+Where:
+- `y`: Final USD balance credited to user
+- `k1`: 0.35 (Telegram withdrawal commission)
+- `k2`: 0.15 (Topics in private chats commission)
+- `k3`: Owner margin (default 0.0, configurable by privileged users)
+
+### Example Calculation
+
+User buys 100 Stars with k3 = 0.0:
+
+```
+x = 100 * 0.013 = $1.30
+y = 1.30 * (1 - 0.35 - 0.15 - 0.0)
+y = 1.30 * 0.50 = $0.65
+```
+
+User receives $0.65 balance for 100 Stars.
+
+With k3 = 0.10 (10% margin):
+```
+y = 1.30 * (1 - 0.35 - 0.15 - 0.10)
+y = 1.30 * 0.40 = $0.52
+```
+
+User receives $0.52 balance for 100 Stars.
+
+## Database Schema
+
+### 1. Extend User Model
+
+Add balance tracking to existing `users` table:
 
 ```python
-from decimal import Decimal
-from sqlalchemy import Numeric
+# bot/db/models/user.py
 
 class User(Base, TimestampMixin):
     # ... existing fields ...
 
     balance: Mapped[Decimal] = mapped_column(
-        Numeric(10, 2),  # 10 digits total, 2 after decimal (e.g., 9999999.99)
+        Numeric(precision=10, scale=4),
         nullable=False,
-        default=Decimal("0.00"),
-        doc="User balance in USD"
+        default=0.1000,  # $0.10 starter balance
+        comment="User balance in USD"
     )
+
+# Migration: ALTER TABLE users ADD COLUMN balance NUMERIC(10, 4) NOT NULL DEFAULT 0.1000;
+# Migration: CREATE INDEX idx_users_balance ON users(balance);  -- For queries "WHERE balance > 0"
 ```
 
-**Migration:**
-```bash
-# Generate migration
-docker compose exec bot sh -c "cd /postgres && alembic revision --autogenerate -m 'Add user balance'"
+**Rationale:**
+- `Numeric(10, 4)`: Up to $999,999.9999 with 4 decimal precision
+- Default `0.1000`: $0.10 starter balance for new users
+- Index on balance: Fast filtering for blocked users
 
-# Apply migration
-docker compose exec bot sh -c "cd /postgres && alembic upgrade head"
-```
+### 2. New Table: payments
 
----
-
-#### New Model: Transaction
-
-Track all balance changes with full audit trail.
-
-**File:** `bot/db/models/transaction.py` (new)
+Track all payment transactions (top-ups via Stars).
 
 ```python
+# bot/db/models/payment.py
+
+from enum import Enum
 from decimal import Decimal
-from sqlalchemy import BigInteger, ForeignKey, Integer, Numeric, String, Text
-from sqlalchemy.orm import Mapped, mapped_column
-from db.models.base import Base, TimestampMixin
+from datetime import datetime
+from sqlalchemy import String, Numeric, ForeignKey, CheckConstraint, Index
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from bot.db.models.base import Base, TimestampMixin
 
-class Transaction(Base, TimestampMixin):
-    """Balance transaction record.
 
-    Tracks all balance changes (deposits, charges, refunds, admin adjustments).
-    Immutable once created - never update, only create new transactions.
+class PaymentStatus(str, Enum):
+    """Payment transaction status."""
+    COMPLETED = "completed"   # Payment successful, balance credited
+    REFUNDED = "refunded"     # Payment refunded, balance deducted
+
+
+class Payment(Base, TimestampMixin):
+    """Payment transaction record (Telegram Stars top-up).
+
+    Stores all information needed for:
+    - Balance tracking
+    - Refund processing
+    - Payment history
+    - Financial reporting
     """
+    __tablename__ = "payments"
 
-    __tablename__ = "transactions"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
 
-    id: Mapped[int] = mapped_column(
-        Integer().with_variant(BigInteger, "postgresql"),
-        primary_key=True,
-        autoincrement=True
-    )
-
+    # User who made the payment
     user_id: Mapped[int] = mapped_column(
-        BigInteger,
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
-        doc="User who owns this transaction"
+        comment="User who made the payment"
     )
 
-    type: Mapped[str] = mapped_column(
-        String(20),
+    # Telegram payment identifier (for refunds)
+    telegram_payment_charge_id: Mapped[str] = mapped_column(
+        String(255),
+        unique=True,
         nullable=False,
         index=True,
-        doc="Transaction type: deposit, charge, refund, admin_adjustment"
+        comment="Telegram payment charge ID from SuccessfulPayment"
+    )
+
+    # Payment amounts
+    stars_amount: Mapped[int] = mapped_column(
+        nullable=False,
+        comment="Amount paid in Telegram Stars"
+    )
+
+    nominal_usd_amount: Mapped[Decimal] = mapped_column(
+        Numeric(precision=10, scale=4),
+        nullable=False,
+        comment="Nominal USD value (stars * rate) without commissions"
+    )
+
+    credited_usd_amount: Mapped[Decimal] = mapped_column(
+        Numeric(precision=10, scale=4),
+        nullable=False,
+        comment="USD amount credited to user balance (after commissions)"
+    )
+
+    # Commission breakdown
+    commission_k1: Mapped[Decimal] = mapped_column(
+        Numeric(precision=5, scale=4),
+        nullable=False,
+        comment="Telegram withdrawal fee (k1)"
+    )
+
+    commission_k2: Mapped[Decimal] = mapped_column(
+        Numeric(precision=5, scale=4),
+        nullable=False,
+        comment="Topics in private chats fee (k2)"
+    )
+
+    commission_k3: Mapped[Decimal] = mapped_column(
+        Numeric(precision=5, scale=4),
+        nullable=False,
+        comment="Owner margin (k3)"
+    )
+
+    # Status and refund tracking
+    status: Mapped[PaymentStatus] = mapped_column(
+        default=PaymentStatus.COMPLETED,
+        nullable=False,
+        index=True,
+        comment="Payment status"
+    )
+
+    refunded_at: Mapped[datetime | None] = mapped_column(
+        nullable=True,
+        comment="When payment was refunded (if applicable)"
+    )
+
+    # Invoice metadata
+    invoice_payload: Mapped[str] = mapped_column(
+        String(128),
+        nullable=False,
+        comment="Invoice payload from sendInvoice"
+    )
+
+    # Relationships
+    user: Mapped["User"] = relationship("User", back_populates="payments")
+    balance_operations: Mapped[list["BalanceOperation"]] = relationship(
+        "BalanceOperation",
+        back_populates="related_payment",
+        cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        CheckConstraint("stars_amount > 0", name="check_stars_positive"),
+        CheckConstraint("nominal_usd_amount > 0", name="check_nominal_positive"),
+        CheckConstraint("credited_usd_amount > 0", name="check_credited_positive"),
+        CheckConstraint("commission_k1 >= 0 AND commission_k1 <= 1", name="check_k1_range"),
+        CheckConstraint("commission_k2 >= 0 AND commission_k2 <= 1", name="check_k2_range"),
+        CheckConstraint("commission_k3 >= 0 AND commission_k3 <= 1", name="check_k3_range"),
+        CheckConstraint(
+            "commission_k1 + commission_k2 + commission_k3 <= 1.0001",  # Float precision tolerance
+            name="check_total_commission"
+        ),
+        Index("idx_payments_user_created", "user_id", "created_at"),  # For user payment history
+        Index("idx_payments_status_refunded", "status", "refunded_at"),  # For refund queries
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<Payment(id={self.id}, user_id={self.user_id}, "
+            f"stars={self.stars_amount}, usd=${self.credited_usd_amount}, "
+            f"status={self.status.value})>"
+        )
+
+    def can_refund(self, refund_period_days: int = 30) -> bool:
+        """Check if this payment can be refunded.
+
+        Args:
+            refund_period_days: Maximum days since payment for refund eligibility.
+
+        Returns:
+            True if payment is eligible for refund.
+        """
+        if self.status != PaymentStatus.COMPLETED:
+            return False
+
+        from datetime import datetime, timezone, timedelta
+        now = datetime.now(timezone.utc)
+        max_refund_date = self.created_at + timedelta(days=refund_period_days)
+
+        return now <= max_refund_date
+```
+
+### 3. New Table: balance_operations
+
+Complete audit log of all balance changes.
+
+```python
+# bot/db/models/balance_operation.py
+
+from enum import Enum
+from decimal import Decimal
+from sqlalchemy import String, Numeric, ForeignKey, Text, Index
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from bot.db.models.base import Base, TimestampMixin
+
+
+class OperationType(str, Enum):
+    """Type of balance operation."""
+    PAYMENT = "payment"           # Balance added via Stars payment
+    USAGE = "usage"               # Balance spent on API calls
+    REFUND = "refund"             # Balance deducted due to payment refund
+    ADMIN_TOPUP = "admin_topup"   # Balance adjusted by privileged user
+
+
+class BalanceOperation(Base, TimestampMixin):
+    """Audit log for all user balance changes.
+
+    Every balance modification MUST create a record here for:
+    - Transparency (users can see where money went)
+    - Debugging (trace balance issues)
+    - Financial reporting (total revenue, usage patterns)
+    """
+    __tablename__ = "balance_operations"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+
+    # User whose balance changed
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="User whose balance was modified"
+    )
+
+    # Operation type and amount
+    operation_type: Mapped[OperationType] = mapped_column(
+        nullable=False,
+        index=True,
+        comment="Type of operation"
     )
 
     amount: Mapped[Decimal] = mapped_column(
-        Numeric(10, 6),  # High precision for small API costs
+        Numeric(precision=10, scale=4),
         nullable=False,
-        doc="Amount in USD (positive for deposits, negative for charges)"
+        comment="Amount added (positive) or deducted (negative)"
     )
 
+    # Balance snapshot (for auditing)
     balance_before: Mapped[Decimal] = mapped_column(
-        Numeric(10, 2),
+        Numeric(precision=10, scale=4),
         nullable=False,
-        doc="User balance before transaction"
+        comment="User balance before operation"
     )
 
     balance_after: Mapped[Decimal] = mapped_column(
-        Numeric(10, 2),
+        Numeric(precision=10, scale=4),
         nullable=False,
-        doc="User balance after transaction"
+        comment="User balance after operation"
     )
 
+    # Related entities (optional foreign keys)
+    related_payment_id: Mapped[int | None] = mapped_column(
+        ForeignKey("payments.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        comment="Related payment (for PAYMENT/REFUND operations)"
+    )
+
+    related_message_id: Mapped[int | None] = mapped_column(
+        ForeignKey("messages.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        comment="Related message (for USAGE operations)"
+    )
+
+    # Admin topup tracking
+    admin_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="Admin who performed the topup (for ADMIN_TOPUP)"
+    )
+
+    # Human-readable description
     description: Mapped[str] = mapped_column(
         Text,
         nullable=False,
-        doc="Human-readable description"
+        comment="Human-readable operation description"
     )
 
-    # Telegram Stars deposit metadata
-    telegram_payment_charge_id: Mapped[Optional[str]] = mapped_column(
-        String(255),
-        nullable=True,
-        index=True,
-        doc="Telegram payment charge ID (for refunds)"
+    # Relationships
+    user: Mapped["User"] = relationship(
+        "User",
+        foreign_keys=[user_id],
+        back_populates="balance_operations"
+    )
+    related_payment: Mapped["Payment"] = relationship(
+        "Payment",
+        back_populates="balance_operations"
+    )
+    related_message: Mapped["Message"] = relationship("Message")
+    admin_user: Mapped["User"] = relationship(
+        "User",
+        foreign_keys=[admin_user_id]
     )
 
-    telegram_stars_amount: Mapped[Optional[int]] = mapped_column(
-        Integer,
-        nullable=True,
-        doc="Original amount in Telegram Stars"
+    __table_args__ = (
+        Index("idx_operations_user_created", "user_id", "created_at"),  # User history
+        Index("idx_operations_type_created", "operation_type", "created_at"),  # Analytics
     )
 
-    # LLM API charge metadata
-    message_chat_id: Mapped[Optional[int]] = mapped_column(
-        BigInteger,
-        nullable=True,
-        doc="Message chat_id that caused this charge"
-    )
-
-    message_id: Mapped[Optional[int]] = mapped_column(
-        Integer,
-        nullable=True,
-        doc="Message ID that caused this charge"
-    )
-
-    input_tokens: Mapped[Optional[int]] = mapped_column(
-        Integer,
-        nullable=True,
-        doc="LLM input tokens for this charge"
-    )
-
-    output_tokens: Mapped[Optional[int]] = mapped_column(
-        Integer,
-        nullable=True,
-        doc="LLM output tokens for this charge"
-    )
-
-    model_name: Mapped[Optional[str]] = mapped_column(
-        String(100),
-        nullable=True,
-        doc="LLM model used"
-    )
-
-    # Admin adjustment metadata
-    admin_user_id: Mapped[Optional[int]] = mapped_column(
-        BigInteger,
-        nullable=True,
-        doc="Admin who made adjustment"
-    )
-
-    admin_reason: Mapped[Optional[str]] = mapped_column(
-        Text,
-        nullable=True,
-        doc="Reason for admin adjustment"
-    )
-
-
-# Indexes
-from sqlalchemy import Index
-
-Index('idx_transactions_user_created', Transaction.user_id, Transaction.created_at)
-Index('idx_transactions_type_created', Transaction.type, Transaction.created_at)
+    def __repr__(self) -> str:
+        return (
+            f"<BalanceOperation(id={self.id}, user_id={self.user_id}, "
+            f"type={self.operation_type.value}, amount=${self.amount}, "
+            f"balance={self.balance_before} -> {self.balance_after})>"
+        )
 ```
 
-**Design decisions:**
-- **Immutable records** - Never update, only create new transactions
-- **Balance snapshots** - Store balance before/after for audit trail
-- **Type-specific metadata** - Different fields for deposits, charges, refunds
-- **High precision** - Numeric(10, 6) for small API costs (e.g., $0.000123)
-
----
-
-#### Repository: TransactionRepository
-
-**File:** `bot/db/repositories/transaction_repository.py` (new)
+### 4. Update Relationship in User Model
 
 ```python
-from decimal import Decimal
-from datetime import datetime, timedelta
-from sqlalchemy import select, func
-from sqlalchemy.ext.asyncio import AsyncSession
-from db.models.transaction import Transaction
-from db.repositories.base import BaseRepository
+# bot/db/models/user.py
 
-class TransactionRepository(BaseRepository[Transaction]):
-    """Repository for transaction operations."""
+class User(Base, TimestampMixin):
+    # ... existing fields ...
 
-    def __init__(self, session: AsyncSession):
-        super().__init__(session, Transaction)
-
-    async def create_transaction(
-        self,
-        user_id: int,
-        type: str,
-        amount: Decimal,
-        balance_before: Decimal,
-        balance_after: Decimal,
-        description: str,
-        **kwargs
-    ) -> Transaction:
-        """Create transaction record.
-
-        Args:
-            user_id: User ID.
-            type: Transaction type (deposit, charge, refund, admin_adjustment).
-            amount: Amount in USD.
-            balance_before: Balance before transaction.
-            balance_after: Balance after transaction.
-            description: Human-readable description.
-            **kwargs: Type-specific metadata.
-
-        Returns:
-            Created transaction.
-        """
-        transaction = Transaction(
-            user_id=user_id,
-            type=type,
-            amount=amount,
-            balance_before=balance_before,
-            balance_after=balance_after,
-            description=description,
-            **kwargs
-        )
-
-        self.session.add(transaction)
-        await self.session.flush()
-
-        logger.info("transaction.created",
-                    transaction_id=transaction.id,
-                    user_id=user_id,
-                    type=type,
-                    amount=float(amount))
-
-        return transaction
-
-    async def get_user_transactions(
-        self,
-        user_id: int,
-        limit: int = 100,
-        offset: int = 0
-    ) -> List[Transaction]:
-        """Get user's transaction history (newest first)."""
-        stmt = (
-            select(Transaction)
-            .where(Transaction.user_id == user_id)
-            .order_by(Transaction.created_at.desc())
-            .limit(limit)
-            .offset(offset)
-        )
-        result = await self.session.execute(stmt)
-        return list(result.scalars().all())
-
-    async def get_user_charges(
-        self,
-        user_id: int,
-        period: str = "all"  # "today", "week", "month", "all"
-    ) -> List[Transaction]:
-        """Get user's API charges for period."""
-        stmt = select(Transaction).where(
-            Transaction.user_id == user_id,
-            Transaction.type == "charge"
-        )
-
-        # Add time filter
-        if period != "all":
-            now = datetime.now()
-            if period == "today":
-                start_time = now.replace(hour=0, minute=0, second=0, microsecond=0)
-            elif period == "week":
-                start_time = now - timedelta(days=7)
-            elif period == "month":
-                start_time = now - timedelta(days=30)
-            else:
-                start_time = datetime.min
-
-            stmt = stmt.where(Transaction.created_at >= start_time)
-
-        stmt = stmt.order_by(Transaction.created_at.desc())
-        result = await self.session.execute(stmt)
-        return list(result.scalars().all())
-
-    async def get_total_charged(self, user_id: int, period: str = "all") -> Decimal:
-        """Get total amount charged for period."""
-        charges = await self.get_user_charges(user_id, period)
-        return sum((abs(tx.amount) for tx in charges), Decimal("0.00"))
-```
-
----
-
-## Cost Calculation
-
-### Pre-Request Validation
-
-Before sending request to Claude, estimate cost and validate balance.
-
-**File:** `bot/core/billing/cost_estimator.py` (new)
-
-```python
-from decimal import Decimal
-from core.models import TokenUsage
-import config
-
-class CostEstimator:
-    """Estimate and calculate LLM API costs."""
-
-    @staticmethod
-    def estimate_cost(
-        input_tokens: int,
-        max_output_tokens: int,
-        model: str
-    ) -> Decimal:
-        """Estimate MAXIMUM cost for request.
-
-        Uses known input tokens + assumes max output tokens (worst case).
-
-        Args:
-            input_tokens: Known input tokens (context + system prompt).
-            max_output_tokens: Maximum output tokens to request.
-            model: Model name (e.g., "claude-sonnet-4.5").
-
-        Returns:
-            Estimated maximum cost in USD.
-        """
-        model_config = config.CLAUDE_MODELS[model]
-
-        input_cost = (input_tokens / 1_000_000) * model_config.input_price_per_mtok
-        output_cost = (max_output_tokens / 1_000_000) * model_config.output_price_per_mtok
-
-        total = Decimal(str(input_cost + output_cost))
-
-        logger.debug("cost.estimated",
-                     input_tokens=input_tokens,
-                     max_output_tokens=max_output_tokens,
-                     model=model,
-                     estimated_cost=float(total))
-
-        return total
-
-    @staticmethod
-    def calculate_actual_cost(
-        usage: TokenUsage,
-        model: str
-    ) -> Decimal:
-        """Calculate ACTUAL cost from token usage.
-
-        Args:
-            usage: Token usage from API response.
-            model: Model name.
-
-        Returns:
-            Actual cost in USD.
-        """
-        model_config = config.CLAUDE_MODELS[model]
-
-        input_cost = (usage.input_tokens / 1_000_000) * model_config.input_price_per_mtok
-        output_cost = (usage.output_tokens / 1_000_000) * model_config.output_price_per_mtok
-
-        # Cache tokens (Phase 1.4)
-        cache_read_cost = 0
-        cache_creation_cost = 0
-        if usage.cache_read_tokens > 0:
-            # Cache reads are ~90% cheaper (check API docs for exact pricing)
-            cache_read_price = model_config.input_price_per_mtok * 0.1
-            cache_read_cost = (usage.cache_read_tokens / 1_000_000) * cache_read_price
-
-        if usage.cache_creation_tokens > 0:
-            # Cache creation same as input (or check API docs)
-            cache_creation_cost = (usage.cache_creation_tokens / 1_000_000) * model_config.input_price_per_mtok
-
-        total = Decimal(str(
-            input_cost + output_cost + cache_read_cost + cache_creation_cost
-        ))
-
-        logger.info("cost.calculated",
-                    input_tokens=usage.input_tokens,
-                    output_tokens=usage.output_tokens,
-                    cache_read_tokens=usage.cache_read_tokens,
-                    cache_creation_tokens=usage.cache_creation_tokens,
-                    model=model,
-                    actual_cost=float(total))
-
-        return total
-
-
-async def validate_user_balance(
-    user_id: int,
-    estimated_cost: Decimal,
-    session: AsyncSession
-) -> bool:
-    """Check if user has sufficient balance.
-
-    Args:
-        user_id: User ID.
-        estimated_cost: Estimated maximum cost.
-        session: Database session.
-
-    Returns:
-        True if user has sufficient balance.
-
-    Raises:
-        InsufficientBalanceError: If balance is insufficient.
-    """
-    user_repo = UserRepository(session)
-    user = await user_repo.get_by_id(user_id)
-
-    if user.balance < estimated_cost:
-        logger.warning("balance.insufficient",
-                       user_id=user_id,
-                       balance=float(user.balance),
-                       required=float(estimated_cost))
-
-        raise InsufficientBalanceError(
-            f"Insufficient balance: ${user.balance:.2f} available, "
-            f"${estimated_cost:.4f} required",
-            balance=float(user.balance),
-            estimated_cost=float(estimated_cost)
-        )
-
-    logger.debug("balance.validated",
-                 user_id=user_id,
-                 balance=float(user.balance),
-                 estimated_cost=float(estimated_cost))
-
-    return True
-```
-
----
-
-### Charge User After Request
-
-After Claude API call completes, charge user for actual usage.
-
-**File:** `bot/core/billing/charge_user.py` (new)
-
-```python
-from decimal import Decimal
-from sqlalchemy.ext.asyncio import AsyncSession
-from db.repositories.user_repository import UserRepository
-from db.repositories.transaction_repository import TransactionRepository
-from core.billing.cost_estimator import CostEstimator
-from core.models import TokenUsage
-
-async def charge_user_for_request(
-    user_id: int,
-    usage: TokenUsage,
-    model: str,
-    chat_id: int,
-    message_id: int,
-    session: AsyncSession
-) -> Decimal:
-    """Charge user for LLM API usage.
-
-    Args:
-        user_id: User ID.
-        usage: Token usage from API.
-        model: Model name.
-        chat_id: Message chat_id.
-        message_id: Message ID.
-        session: Database session.
-
-    Returns:
-        Amount charged.
-    """
-    # Calculate actual cost
-    cost = CostEstimator.calculate_actual_cost(usage, model)
-
-    # Get user
-    user_repo = UserRepository(session)
-    user = await user_repo.get_by_id(user_id)
-
-    balance_before = user.balance
-
-    # Deduct from balance
-    user.balance -= cost
-
-    # Create transaction record
-    tx_repo = TransactionRepository(session)
-    await tx_repo.create_transaction(
-        user_id=user_id,
-        type="charge",
-        amount=-cost,  # Negative for charges
-        balance_before=balance_before,
-        balance_after=user.balance,
-        description=f"Claude API call: {usage.input_tokens} in + {usage.output_tokens} out tokens",
-        message_chat_id=chat_id,
-        message_id=message_id,
-        input_tokens=usage.input_tokens,
-        output_tokens=usage.output_tokens,
-        model_name=model
+    # New relationships
+    payments: Mapped[list["Payment"]] = relationship(
+        "Payment",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        order_by="desc(Payment.created_at)"
     )
 
-    logger.info("user.charged",
-                user_id=user_id,
-                amount=float(cost),
-                balance_after=float(user.balance),
-                input_tokens=usage.input_tokens,
-                output_tokens=usage.output_tokens)
-
-    return cost
+    balance_operations: Mapped[list["BalanceOperation"]] = relationship(
+        "BalanceOperation",
+        foreign_keys="BalanceOperation.user_id",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        order_by="desc(BalanceOperation.created_at)"
+    )
 ```
 
----
+## Configuration
 
-### Updated Handler Flow
+### Bot Settings (config.py)
 
-**File:** `bot/telegram/handlers/claude.py` (update)
-
-```python
-@router.message(F.text)
-async def handle_claude_message(message: types.Message, session: AsyncSession):
-    """Handle text message with balance validation."""
-
-    # ... existing code: get user, chat, thread, save message ...
-
-    # NEW: Count tokens for context
-    context_tokens = sum(
-        await claude_provider.get_token_count(msg.content)
-        for msg in context
-    )
-
-    # NEW: Estimate cost
-    estimated_cost = CostEstimator.estimate_cost(
-        input_tokens=context_tokens,
-        max_output_tokens=config.CLAUDE_MAX_TOKENS,
-        model="claude-sonnet-4.5"
-    )
-
-    # NEW: Validate balance
-    try:
-        await validate_user_balance(user.id, estimated_cost, session)
-    except InsufficientBalanceError as e:
-        await message.answer(
-            f"❌ Insufficient balance\n\n"
-            f"Your balance: ${e.balance:.2f}\n"
-            f"Required: ${e.estimated_cost:.4f}\n\n"
-            f"Use /deposit to add funds."
-        )
-        return
-
-    # ... existing code: stream from Claude ...
-
-    # NEW: Charge user for actual usage
-    usage = await claude_provider.get_usage()
-    cost = await charge_user_for_request(
-        user_id=user.id,
-        usage=usage,
-        model=model_config.name,
-        chat_id=message.chat.id,
-        message_id=bot_message.message_id,
-        session=session
-    )
-
-    logger.info("claude_handler.complete",
-                user_id=user.id,
-                cost=float(cost),
-                balance_after=float(user.balance))
-```
-
----
-
-## Telegram Stars Integration
-
-### Payment Flow
-
-1. User sends `/deposit <amount_stars>` command
-2. Bot generates invoice link
-3. User pays via Telegram
-4. Bot receives `pre_checkout_query` → validates
-5. Bot receives `successful_payment` → credits balance
-6. Transaction logged with `telegram_payment_charge_id`
-
-### Configuration
-
-**Stars to USD conversion rate:**
 ```python
 # bot/config.py
-TELEGRAM_STARS_TO_USD = Decimal("0.01")  # 1 Star = $0.01 USD
-MINIMUM_DEPOSIT_STARS = 100  # Minimum deposit: 100 Stars ($1.00)
+
+# ============================================================================
+# PAYMENT SYSTEM CONFIGURATION
+# ============================================================================
+
+# Stars to USD conversion rate (market rate, before commissions)
+STARS_TO_USD_RATE: float = 0.013  # $0.013 per Star (~$13 per 1000 Stars)
+
+# Commission rates
+TELEGRAM_WITHDRAWAL_FEE: float = 0.35  # k1: 35% - Telegram withdrawal commission
+TELEGRAM_TOPICS_FEE: float = 0.15      # k2: 15% - Topics in private chats commission
+DEFAULT_OWNER_MARGIN: float = 0.0      # k3: 0% - Default owner margin (configurable)
+
+# Balance settings
+STARTER_BALANCE_USD: float = 0.10  # New users get $0.10 starter balance
+MINIMUM_BALANCE_FOR_REQUEST: float = 0.0  # Allow requests while balance > 0
+
+# Refund settings
+REFUND_PERIOD_DAYS: int = 30  # Maximum days for refund eligibility
+
+# Predefined Stars packages (for /buy command)
+STARS_PACKAGES: list[dict[str, int | str]] = [
+    {"stars": 10, "label": "Micro"},
+    {"stars": 50, "label": "Starter"},
+    {"stars": 100, "label": "Basic"},
+    {"stars": 250, "label": "Standard"},
+    {"stars": 500, "label": "Premium"},
+]
+
+# Custom amount range
+MIN_CUSTOM_STARS: int = 1
+MAX_CUSTOM_STARS: int = 2500
+
+# Payment invoice customization
+PAYMENT_INVOICE_TITLE: str = "Bot Balance Top-up"
+PAYMENT_INVOICE_DESCRIPTION_TEMPLATE: str = (
+    "Add ${usd_amount:.2f} to your bot balance\n"
+    "Pay {stars_amount} Telegram Stars"
+)
+PAYMENT_INVOICE_PHOTO_URL: str = ""  # Optional: URL to payment image
+
+# Privileged users (loaded from secrets)
+PRIVILEGED_USERS: set[int] = set()  # Populated from secrets/privileged_users.txt
 ```
 
----
+### Secrets Management
 
-### Deposit Handler
+Add new secret file for privileged users:
 
-**File:** `bot/telegram/handlers/payment.py` (new)
+```bash
+# secrets/privileged_users.txt
+# List of Telegram user IDs with admin privileges (one per line or space/comma separated)
+# These users can:
+# - Use /topup command to adjust any user's balance
+# - Use /set_margin command to configure owner margin (k3)
 
-```python
-from aiogram import Router, F
-from aiogram.filters import Command
-from aiogram.types import Message, PreCheckoutQuery, LabeledPrice
-from sqlalchemy.ext.asyncio import AsyncSession
-from decimal import Decimal
-
-from db.repositories.user_repository import UserRepository
-from db.repositories.transaction_repository import TransactionRepository
-import config
-
-router = Router(name="payment_handler")
-
-
-@router.message(Command("deposit"))
-async def handle_deposit_command(message: Message):
-    """Handle /deposit command.
-
-    Usage: /deposit <amount_in_stars>
-    Example: /deposit 500  (deposits 500 Stars = $5.00)
-    """
-    try:
-        # Parse amount
-        parts = message.text.split()
-        if len(parts) != 2:
-            await message.answer(
-                "Usage: /deposit <amount>\n"
-                f"Example: /deposit 500 (deposits 500 Stars = ${500 * config.TELEGRAM_STARS_TO_USD})"
-            )
-            return
-
-        amount_stars = int(parts[1])
-
-        # Validate minimum
-        if amount_stars < config.MINIMUM_DEPOSIT_STARS:
-            await message.answer(
-                f"❌ Minimum deposit: {config.MINIMUM_DEPOSIT_STARS} Stars "
-                f"(${config.MINIMUM_DEPOSIT_STARS * config.TELEGRAM_STARS_TO_USD})"
-            )
-            return
-
-        # Calculate USD equivalent
-        amount_usd = amount_stars * config.TELEGRAM_STARS_TO_USD
-
-        # Create invoice link
-        invoice_link = await message.bot.create_invoice_link(
-            title="Balance Deposit",
-            description=f"Deposit {amount_stars} Stars (${amount_usd})",
-            payload=f"deposit:{message.from_user.id}:{amount_stars}",
-            provider_token="",  # Empty for Telegram Stars
-            currency="XTR",  # Telegram Stars currency code
-            prices=[LabeledPrice(label="Deposit", amount=amount_stars)]
-        )
-
-        await message.answer(
-            f"💳 Deposit {amount_stars} Stars (${amount_usd})\n\n"
-            f"Click to pay: {invoice_link}\n\n"
-            f"After payment, your balance will be increased by ${amount_usd}."
-        )
-
-        logger.info("deposit.invoice_created",
-                    user_id=message.from_user.id,
-                    amount_stars=amount_stars,
-                    amount_usd=float(amount_usd))
-
-    except ValueError:
-        await message.answer("❌ Invalid amount. Please enter a number.")
-    except Exception as e:
-        logger.error("deposit.failed", error=str(e))
-        await message.answer("❌ Failed to create invoice. Please try again.")
-
-
-@router.pre_checkout_query()
-async def handle_pre_checkout(query: PreCheckoutQuery):
-    """Handle pre-checkout validation."""
-    # Parse payload
-    parts = query.invoice_payload.split(":")
-    if len(parts) != 3 or parts[0] != "deposit":
-        await query.answer(ok=False, error_message="Invalid payment")
-        return
-
-    user_id = int(parts[1])
-    amount_stars = int(parts[2])
-
-    # Validate user
-    if user_id != query.from_user.id:
-        await query.answer(ok=False, error_message="User mismatch")
-        return
-
-    # Validate amount
-    if amount_stars != query.total_amount:
-        await query.answer(ok=False, error_message="Amount mismatch")
-        return
-
-    # Approve payment
-    await query.answer(ok=True)
-
-    logger.info("payment.pre_checkout_approved",
-                user_id=user_id,
-                amount_stars=amount_stars)
-
-
-@router.message(F.successful_payment)
-async def handle_successful_payment(message: Message, session: AsyncSession):
-    """Handle successful payment and credit balance."""
-    payment = message.successful_payment
-
-    # Parse payload
-    parts = payment.invoice_payload.split(":")
-    user_id = int(parts[1])
-    amount_stars = int(parts[2])
-
-    # Calculate USD amount
-    amount_usd = Decimal(amount_stars) * config.TELEGRAM_STARS_TO_USD
-
-    # Get user
-    user_repo = UserRepository(session)
-    user = await user_repo.get_by_id(user_id)
-
-    balance_before = user.balance
-
-    # Credit balance
-    user.balance += amount_usd
-
-    # Create transaction record
-    tx_repo = TransactionRepository(session)
-    await tx_repo.create_transaction(
-        user_id=user_id,
-        type="deposit",
-        amount=amount_usd,
-        balance_before=balance_before,
-        balance_after=user.balance,
-        description=f"Telegram Stars deposit: {amount_stars} Stars",
-        telegram_payment_charge_id=payment.telegram_payment_charge_id,
-        telegram_stars_amount=amount_stars
-    )
-
-    await message.answer(
-        f"✅ Payment successful!\n\n"
-        f"Deposited: {amount_stars} Stars (${amount_usd})\n"
-        f"New balance: ${user.balance:.2f}"
-    )
-
-    logger.info("payment.successful",
-                user_id=user_id,
-                amount_stars=amount_stars,
-                amount_usd=float(amount_usd),
-                balance_after=float(user.balance))
+123456789
+987654321
+555666777
 ```
 
----
-
-### Refund Handler
-
-**File:** `bot/telegram/handlers/admin.py` (new)
-
-```python
-from aiogram import Router
-from aiogram.filters import Command
-from aiogram.types import Message
-from sqlalchemy.ext.asyncio import AsyncSession
-from db.repositories.user_repository import UserRepository
-from db.repositories.transaction_repository import TransactionRepository
-import config
-
-router = Router(name="admin_handler")
-
-# Load admin IDs from secret
-ADMIN_IDS = set(int(x) for x in read_secret("admin_user_ids").split(","))
-
-
-@router.message(Command("refund"))
-async def handle_refund(message: Message, session: AsyncSession):
-    """Refund a Telegram Stars payment.
-
-    Usage: /refund <transaction_id>
-    Admin only.
-    """
-    # Check admin
-    if message.from_user.id not in ADMIN_IDS:
-        await message.answer("❌ Unauthorized")
-        return
-
-    try:
-        # Parse transaction ID
-        parts = message.text.split()
-        if len(parts) != 2:
-            await message.answer("Usage: /refund <transaction_id>")
-            return
-
-        transaction_id = int(parts[1])
-
-        # Get transaction
-        tx_repo = TransactionRepository(session)
-        transaction = await tx_repo.get_by_id(transaction_id)
-
-        if not transaction:
-            await message.answer("❌ Transaction not found")
-            return
-
-        if transaction.type != "deposit":
-            await message.answer("❌ Only deposits can be refunded")
-            return
-
-        if not transaction.telegram_payment_charge_id:
-            await message.answer("❌ Not a Telegram Stars payment")
-            return
-
-        # Refund via Telegram
-        success = await message.bot.refund_star_payment(
-            user_id=transaction.user_id,
-            telegram_payment_charge_id=transaction.telegram_payment_charge_id
-        )
-
-        if not success:
-            await message.answer("❌ Refund failed")
-            return
-
-        # Deduct from user balance
-        user_repo = UserRepository(session)
-        user = await user_repo.get_by_id(transaction.user_id)
-
-        balance_before = user.balance
-        user.balance -= transaction.amount
-
-        # Log refund transaction
-        await tx_repo.create_transaction(
-            user_id=transaction.user_id,
-            type="refund",
-            amount=-transaction.amount,  # Negative (removing money)
-            balance_before=balance_before,
-            balance_after=user.balance,
-            description=f"Refund of transaction #{transaction_id}",
-            admin_user_id=message.from_user.id,
-            admin_reason="Manual refund by admin"
-        )
-
-        await message.answer(
-            f"✅ Refund successful\n\n"
-            f"Transaction: #{transaction_id}\n"
-            f"Amount: ${transaction.amount}\n"
-            f"User balance: ${user.balance:.2f}"
-        )
-
-        logger.info("refund.successful",
-                    transaction_id=transaction_id,
-                    user_id=transaction.user_id,
-                    amount=float(transaction.amount),
-                    admin_id=message.from_user.id)
-
-    except ValueError:
-        await message.answer("❌ Invalid transaction ID")
-    except Exception as e:
-        logger.error("refund.failed", error=str(e))
-        await message.answer("❌ Refund failed. See logs.")
-```
-
----
-
-## Admin Commands
-
-### Balance Check
-
-**Command:** `/balance [username|user_id]`
-
-- Regular users: check own balance
-- Admins: check any user's balance
-
-```python
-@router.message(Command("balance"))
-async def handle_balance(message: Message, session: AsyncSession):
-    """Check balance."""
-    user_repo = UserRepository(session)
-
-    if message.from_user.id in ADMIN_IDS and len(message.text.split()) > 1:
-        # Admin checking other user
-        target = message.text.split()[1]
-        user = await user_repo.get_by_username_or_id(target)
-
-        if not user:
-            await message.answer(f"❌ User not found: {target}")
-            return
-
-        await message.answer(
-            f"💰 Balance for {user.username or user.first_name}\n\n"
-            f"User ID: {user.id}\n"
-            f"Balance: ${user.balance:.2f}"
-        )
-    else:
-        # User checking own balance
-        user = await user_repo.get_by_id(message.from_user.id)
-        await message.answer(f"💰 Your balance: ${user.balance:.2f}")
-```
-
----
-
-### Add Balance
-
-**Command:** `/addbalance <username|user_id> <amount>`
-
-Admin only. Adds to user's balance.
-
-```python
-@router.message(Command("addbalance"))
-async def handle_add_balance(message: Message, session: AsyncSession):
-    """Add balance to user (admin only)."""
-    if message.from_user.id not in ADMIN_IDS:
-        await message.answer("❌ Unauthorized")
-        return
-
-    try:
-        parts = message.text.split()
-        if len(parts) != 3:
-            await message.answer("Usage: /addbalance <username|user_id> <amount>")
-            return
-
-        target = parts[1]
-        amount = Decimal(parts[2])
-
-        user_repo = UserRepository(session)
-        user = await user_repo.get_by_username_or_id(target)
-
-        if not user:
-            await message.answer(f"❌ User not found: {target}")
-            return
-
-        balance_before = user.balance
-        user.balance += amount
-
-        tx_repo = TransactionRepository(session)
-        await tx_repo.create_transaction(
-            user_id=user.id,
-            type="admin_adjustment",
-            amount=amount,
-            balance_before=balance_before,
-            balance_after=user.balance,
-            description=f"Balance adjustment by admin {message.from_user.username}",
-            admin_user_id=message.from_user.id,
-            admin_reason="Manual balance addition"
-        )
-
-        await message.answer(
-            f"✅ Balance updated\n\n"
-            f"User: {user.username or user.first_name}\n"
-            f"Added: ${amount}\n"
-            f"New balance: ${user.balance:.2f}"
-        )
-
-        logger.info("admin.balance_added",
-                    admin_id=message.from_user.id,
-                    user_id=user.id,
-                    amount=float(amount))
-
-    except ValueError:
-        await message.answer("❌ Invalid amount")
-    except Exception as e:
-        logger.error("admin.add_balance_failed", error=str(e))
-        await message.answer("❌ Failed to update balance")
-```
-
----
-
-### Set Balance
-
-**Command:** `/setbalance <username|user_id> <amount>`
-
-Admin only. Sets user's balance to specific amount.
-
-```python
-@router.message(Command("setbalance"))
-async def handle_set_balance(message: Message, session: AsyncSession):
-    """Set user balance to specific amount (admin only)."""
-    if message.from_user.id not in ADMIN_IDS:
-        await message.answer("❌ Unauthorized")
-        return
-
-    try:
-        parts = message.text.split()
-        if len(parts) != 3:
-            await message.answer("Usage: /setbalance <username|user_id> <amount>")
-            return
-
-        target = parts[1]
-        new_balance = Decimal(parts[2])
-
-        user_repo = UserRepository(session)
-        user = await user_repo.get_by_username_or_id(target)
-
-        if not user:
-            await message.answer(f"❌ User not found: {target}")
-            return
-
-        balance_before = user.balance
-        adjustment = new_balance - balance_before
-        user.balance = new_balance
-
-        tx_repo = TransactionRepository(session)
-        await tx_repo.create_transaction(
-            user_id=user.id,
-            type="admin_adjustment",
-            amount=adjustment,
-            balance_before=balance_before,
-            balance_after=user.balance,
-            description=f"Balance set by admin {message.from_user.username}",
-            admin_user_id=message.from_user.id,
-            admin_reason="Manual balance setting"
-        )
-
-        await message.answer(
-            f"✅ Balance set\n\n"
-            f"User: {user.username or user.first_name}\n"
-            f"Old balance: ${balance_before:.2f}\n"
-            f"New balance: ${new_balance:.2f}\n"
-            f"Adjustment: ${adjustment:+.2f}"
-        )
-
-        logger.info("admin.balance_set",
-                    admin_id=message.from_user.id,
-                    user_id=user.id,
-                    new_balance=float(new_balance))
-
-    except ValueError:
-        await message.answer("❌ Invalid amount")
-    except Exception as e:
-        logger.error("admin.set_balance_failed", error=str(e))
-        await message.answer("❌ Failed to set balance")
-```
-
----
-
-## Cost Reporting
-
-### Usage Command
-
-**Command:** `/usage [period]`
-
-Show user's API usage and costs for time period.
-
-Periods: `today`, `week`, `month`, `all`
-
-```python
-@router.message(Command("usage"))
-async def handle_usage(message: Message, session: AsyncSession):
-    """Show usage statistics."""
-    parts = message.text.split()
-    period = parts[1] if len(parts) > 1 else "today"
-
-    if period not in ("today", "week", "month", "all"):
-        await message.answer("Usage: /usage [today|week|month|all]")
-        return
-
-    user_repo = UserRepository(session)
-    user = await user_repo.get_by_id(message.from_user.id)
-
-    tx_repo = TransactionRepository(session)
-    charges = await tx_repo.get_user_charges(user.id, period)
-
-    if not charges:
-        await message.answer(f"No usage for period: {period}")
-        return
-
-    total_cost = sum(abs(tx.amount) for tx in charges)
-    total_input_tokens = sum(tx.input_tokens or 0 for tx in charges)
-    total_output_tokens = sum(tx.output_tokens or 0 for tx in charges)
-
-    await message.answer(
-        f"📊 Usage Report ({period})\n\n"
-        f"Requests: {len(charges)}\n"
-        f"Total cost: ${total_cost:.4f}\n"
-        f"Input tokens: {total_input_tokens:,}\n"
-        f"Output tokens: {total_output_tokens:,}\n\n"
-        f"Current balance: ${user.balance:.2f}"
-    )
-```
-
----
-
-## Implementation Plan
-
-### Phase 2.1 Checklist
-
-#### 1. Database Changes
-- [ ] Add `balance` field to User model
-- [ ] Create Transaction model
-- [ ] Create TransactionRepository
-- [ ] Generate and apply migration
-- [ ] Test migration on clean database
-
-#### 2. Cost Calculation
-- [ ] Create CostEstimator class
-- [ ] Implement pre-request estimation
-- [ ] Implement post-request calculation
-- [ ] Add balance validation function
-- [ ] Tests for cost calculations
-
-#### 3. Charge System
-- [ ] Create charge_user_for_request function
-- [ ] Update Claude handler with balance checks
-- [ ] Add InsufficientBalanceError handling
-- [ ] Log all charges
-- [ ] Tests for charging flow
-
-#### 4. Telegram Stars
-- [ ] Create payment handlers (deposit, pre_checkout, successful_payment)
-- [ ] Configure Stars to USD conversion rate
-- [ ] Test payment flow in Telegram
-- [ ] Implement refund handler
-- [ ] Tests for payment flow
-
-#### 5. Admin Tools
-- [ ] Create admin_user_ids secret
-- [ ] Implement /balance command
-- [ ] Implement /addbalance command
-- [ ] Implement /setbalance command
-- [ ] Implement /refund command
-- [ ] Tests for admin commands
-
-#### 6. Cost Reporting
-- [ ] Implement /usage command
-- [ ] Add period filtering (today, week, month, all)
-- [ ] Create usage statistics queries
-- [ ] Tests for reporting
-
-#### 7. Configuration
-- [ ] Add Stars to USD conversion rate to config
-- [ ] Add minimum deposit amount to config
-- [ ] Create admin_user_ids secret file
-- [ ] Update compose.yaml with new secrets
-
-#### 8. Testing
-- [ ] Unit tests for all billing functions
-- [ ] Integration tests with database
-- [ ] Manual testing with real Telegram Stars (test environment)
-- [ ] Load testing for concurrent charges
-- [ ] Test edge cases (negative balance, concurrent requests)
-
-#### 9. Documentation
-- [ ] Update CLAUDE.md with Phase 2.1 status
-- [ ] Document payment flow for users
-- [ ] Document admin commands
-- [ ] Update bot-structure.md with new files
-
----
-
-## Related Documents
-
-- **[phase-1.3-claude-core.md](phase-1.3-claude-core.md)** - Phase 1.3: Core Claude integration
-- **[phase-1.4-claude-advanced-api.md](phase-1.4-claude-advanced-api.md)** - Phase 1.4: Best practices
-- **[phase-1.5-multimodal-tools.md](phase-1.5-multimodal-tools.md)** - Phase 1.5: Multimodal + Tools
-- **[phase-1.2-database.md](phase-1.2-database.md)** - Database architecture
-- **[phase-1.1-bot-structure.md](phase-1.1-bot-structure.md)** - File structure
-- **[CLAUDE.md](../CLAUDE.md)** - Project overview
-
----
+## Implementation Stages
+
+### Stage 1: Database Schema (1-2 hours)
+1. Create Payment model (`bot/db/models/payment.py`)
+2. Create BalanceOperation model (`bot/db/models/balance_operation.py`)
+3. Update User model (add balance field, relationships)
+4. Create Alembic migration
+5. Apply migration
+6. Write unit tests for models
+
+### Stage 2: Repositories (1 hour)
+1. Create PaymentRepository (`bot/db/repositories/payment_repository.py`)
+2. Create BalanceOperationRepository (`bot/db/repositories/balance_operation_repository.py`)
+3. Write unit tests for repositories
+
+### Stage 3: Services (2-3 hours)
+1. Create PaymentService (`bot/services/payment_service.py`)
+2. Create BalanceService (`bot/services/balance_service.py`)
+3. Write unit tests for services
+4. Test commission calculation edge cases
+
+### Stage 4: Configuration (30 min)
+1. Add payment settings to `bot/config.py`
+2. Create `secrets/privileged_users.txt`
+3. Load privileged users in `bot/main.py`
+
+### Stage 5: Payment Handlers (2-3 hours)
+1. Create `bot/telegram/handlers/payment.py`
+2. Implement /buy command with packages
+3. Implement custom Stars amount flow (FSM)
+4. Implement pre-checkout query handler
+5. Implement successful payment handler
+6. Implement /refund command
+7. Implement /balance command
+8. Implement /paysupport command (required by Telegram)
+9. Register handlers in loader
+
+### Stage 6: Admin Commands (1 hour)
+1. Implement /topup command (privileged users only)
+2. Implement /set_margin command (privileged users only)
+3. Test privilege checking
+
+### Stage 7: Balance Middleware (1 hour)
+1. Create BalanceMiddleware (`bot/telegram/middlewares/balance_middleware.py`)
+2. Register middleware in loader
+3. Test blocking logic
+
+### Stage 8: Cost Tracking Integration (1-2 hours)
+1. Update Claude handler to charge user after response
+2. Update tool handlers to charge user after execution
+3. Test cost calculation and charging
+4. Verify balance deduction
+
+### Stage 9: Integration Testing (2-3 hours)
+1. Test full payment flow end-to-end
+2. Test refund flow
+3. Test balance middleware blocking
+4. Test admin commands
+5. Test edge cases (duplicate payments, expired refunds, etc.)
+
+### Stage 10: Documentation & Production (1 hour)
+1. Update README.md with payment system commands
+2. Update CLAUDE.md (mark Phase 2.1 as complete)
+3. Create production secrets (privileged_users.txt)
+4. Deploy to production
+5. Monitor logs for payment events
+
+**Total estimated time:** 12-18 hours
+
+## Files to Create/Modify
+
+### New Files (17 files)
+
+**Models:**
+- `bot/db/models/payment.py`
+- `bot/db/models/balance_operation.py`
+
+**Repositories:**
+- `bot/db/repositories/payment_repository.py`
+- `bot/db/repositories/balance_operation_repository.py`
+
+**Services:**
+- `bot/services/payment_service.py`
+- `bot/services/balance_service.py`
+
+**Handlers:**
+- `bot/telegram/handlers/payment.py`
+
+**Middlewares:**
+- `bot/telegram/middlewares/balance_middleware.py`
+
+**Tests:**
+- `tests/db/models/test_payment.py`
+- `tests/db/models/test_balance_operation.py`
+- `tests/db/repositories/test_payment_repository.py`
+- `tests/db/repositories/test_balance_operation_repository.py`
+- `tests/services/test_payment_service.py`
+- `tests/services/test_balance_service.py`
+- `tests/integration/test_payment_flow.py`
+- `tests/middlewares/test_balance_middleware.py`
+
+**Migration:**
+- `postgres/alembic/versions/007_add_payment_system_tables.py`
+
+**Secrets:**
+- `secrets/privileged_users.txt`
+
+### Modified Files (5 files)
+
+- `bot/db/models/user.py` - Add balance field and relationships
+- `bot/config.py` - Add payment settings
+- `bot/main.py` - Load privileged users
+- `bot/telegram/handlers/claude.py` - Add cost charging
+- `bot/telegram/loader.py` - Register payment handlers and middleware
 
 ## Summary
 
 Phase 2.1 implements a complete payment system with:
 
-- **User balance** - USD balance per user with full audit trail
-- **Cost validation** - Pre-request checks prevent overspending
-- **Telegram Stars** - Native payment integration with deposits and refunds
-- **Admin tools** - Balance management and payment administration
-- **Cost reporting** - Per-user usage analytics
+- **User balance** - USD balance per user with $0.10 starter
+- **Telegram Stars integration** - Native payment with proper commission handling
+- **Commission formula** - y = x * (1 - k1 - k2 - k3) where x = stars * rate
+- **Soft balance check** - Allow requests while balance > 0 (can go negative once)
+- **Refund support** - Within 30 days if sufficient balance
+- **Admin tools** - /topup and /set_margin for privileged users
+- **Full audit trail** - All balance changes logged in balance_operations table
 
-The system ensures accurate billing, prevents abuse, and provides full transparency through transaction logs.
+**Key features:**
+- Predefined Stars packages (10, 50, 100, 250, 500) + custom amount (1-2500)
+- Transaction ID returned for refunds
+- Balance history with /balance command
+- Privileged users list in secrets
+- Payment support via /paysupport command (Telegram requirement)
+
+**Commission structure (configurable):**
+- k1 = 0.35 (Telegram withdrawal)
+- k2 = 0.15 (Topics in private chats)
+- k3 = 0.0+ (Owner margin, configurable)
+- Constraint: k1 + k2 + k3 ≤ 1.0

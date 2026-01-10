@@ -7,6 +7,7 @@ NO __init__.py - use direct import:
 """
 
 from datetime import datetime
+from datetime import timezone
 from typing import Optional
 
 from db.models.user_file import FileSource
@@ -197,7 +198,7 @@ class UserFileRepository(BaseRepository[UserFile]):
             >>> print(f"Found {len(expired)} expired files")
         """
         stmt = select(UserFile).where(
-            UserFile.expires_at < datetime.utcnow()).order_by(
+            UserFile.expires_at < datetime.now(timezone.utc)).order_by(
                 UserFile.expires_at.asc())
 
         result = await self.session.execute(stmt)

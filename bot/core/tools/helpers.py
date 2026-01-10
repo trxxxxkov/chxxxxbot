@@ -11,6 +11,7 @@ NO __init__.py - use direct import:
 """
 
 from datetime import datetime
+from datetime import timezone
 import json
 from typing import Any, Dict, List
 
@@ -84,10 +85,10 @@ def format_time_ago(dt: datetime) -> str:
         Human-readable time ago string.
 
     Examples:
-        >>> format_time_ago(datetime.utcnow() - timedelta(minutes=5))
+        >>> format_time_ago(datetime.now(timezone.utc) - timedelta(minutes=5))
         '5 min ago'
     """
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     delta = now - dt
 
     if delta.days > 0:
