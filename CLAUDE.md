@@ -661,31 +661,48 @@ This script:
 - **Documentation**: docs/phase-1.5-multimodal-tools.md
 
 **Phase 1.6 (Multimodal - All File Types):** ✅ Complete (2026-01-10)
-- **Universal Media Architecture**:
+- **Universal Media Architecture** (Stage 2-4):
   - MediaType enum (VOICE, AUDIO, VIDEO, VIDEO_NOTE, IMAGE, DOCUMENT)
   - MediaContent dataclass (universal container)
   - MediaProcessor class (single interface for all processing)
   - Unified flow: Download → Process → Queue → Claude handler
-- **Whisper Integration**:
+  - Transcript prefix: [VOICE MESSAGE - 12s]: transcript...
+- **Whisper Integration** (Stage 2):
   - OpenAI Whisper API for speech-to-text ($0.006/minute)
   - Automatic language detection
   - Supported formats: OGG, MP3, M4A, WAV, FLAC, MP4, MOV, AVI
-- **Implemented Handlers**:
+- **Implemented Handlers** (Stage 2-4):
   - handle_voice() - voice messages (OGG/OPUS)
   - handle_audio() - audio files (MP3, FLAC, WAV)
   - handle_video() - video files (audio track extraction)
   - handle_video_note() - round video messages
+- **transcribe_audio Tool** (Stage 1):
+  - Claude can transcribe any audio/video file on demand
+  - Tool definition with detailed description
+  - Registered in TOOL_DEFINITIONS
+  - Download from Telegram storage
+- **Database Schema** (Stage 5):
+  - FileType enum extended: AUDIO, VOICE, VIDEO
+  - Migration 006 applied
+  - All 7 enum values in PostgreSQL
+- **System Prompt** (Stage 6):
+  - Added "Available Tools" section
+  - Tool descriptions for all 6 tools
+  - Tool Selection Guidelines
+  - Updated "Working with Files" section
 - **Integration**:
   - Message Queue supports optional MediaContent parameter
-  - Claude handler extracts text_content or file_id
+  - Claude handler extracts text_content or file_id with prefix
   - Full backward compatibility with text-only messages
   - Immediate processing for media (no delay)
-- **Testing**: Voice transcription verified ($0.0014 for 14s message)
+- **Testing**: Voice transcription verified ($0.0012 for 12s message)
 - **Files**:
+  - core/tools/transcribe_audio.py - Tool implementation
   - telegram/media_processor.py - Core architecture
   - telegram/handlers/media_handlers.py - Media handlers
-  - telegram/loader.py - Router registration
-  - core/message_queue.py - MediaContent support
+  - db/models/user_file.py - Extended FileType enum
+  - postgres/alembic/versions/006_*.py - Migration
+  - config.py - Updated GLOBAL_SYSTEM_PROMPT
 - **Documentation**: docs/phase-1.6-multimodal-support.md
 
 **Next:** Phase 2.1 (Payment System)
