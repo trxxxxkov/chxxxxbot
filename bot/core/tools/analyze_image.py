@@ -127,25 +127,52 @@ ANALYZE_IMAGE_TOOL = {
         """Analyze an image using Claude's vision capabilities.
 
 Use this tool for photos, screenshots, diagrams, charts when you need
-visual understanding. The tool uses Claude's vision API to analyze the
-image and answer questions about its content. It can identify objects,
-read text (OCR), describe scenes, analyze visual data, understand charts
-and diagrams, and extract information from screenshots.
+visual understanding. The tool uses Claude Sonnet 4.5's vision API to analyze
+images and answer questions about content. It can identify objects, read text (OCR),
+describe scenes, analyze visual data, understand charts and diagrams, and extract
+information from screenshots.
 
-When to use: User asks about image content, wants to extract text from
-images, needs description of visual elements, wants to analyze charts/diagrams,
-or asks questions about photos they uploaded.
+<verification_use_case>
+CRITICAL: This tool is essential for verifying image outputs from execute_python.
+When you generate images (charts, diagrams, processed photos), you MUST use this
+tool to verify the output is correct before considering the task complete. This
+catches issues like wrong colors, missing elements, incorrect text rendering,
+or visual artifacts that code-level checks cannot detect.
 
-When NOT to use: For text-only questions, when image is not relevant to
-the query, or when file is a PDF (use analyze_pdf instead).
+Example: After generating chart.png, call analyze_image to verify axes labels,
+data points, legend, and overall visual quality match expectations.
+</verification_use_case>
 
-Limitations: Cannot identify people by name (AUP violation), limited
-spatial reasoning (analog clocks, chess positions), approximate counting
-only (not precise for many small objects), cannot detect AI-generated images,
-no healthcare diagnostics (CTs, MRIs, X-rays).
+<when_to_use>
+Use when:
+- User asks about image content or visual elements
+- Extracting text from images (OCR)
+- Analyzing charts, diagrams, or data visualizations
+- Verifying generated images from execute_python (quality check)
+- Understanding file content before processing (e.g., analyzing PPTX screenshot)
+- Answering questions about uploaded photos
 
-Token cost: Approximately 1600 tokens per 1092x1092px image. Larger images
-consume proportionally more tokens.""",
+Note: You can call this tool in PARALLEL with execute_python when analyzing
+input files before processing them (e.g., understand image content while
+preparing processing code).
+</when_to_use>
+
+<when_not_to_use>
+Do NOT use for:
+- Text-only questions where image is not relevant
+- PDF files (use analyze_pdf instead for better text extraction)
+- When user explicitly asks not to analyze images
+</when_not_to_use>
+
+<limitations>
+- Cannot identify people by name (AUP violation)
+- Limited spatial reasoning (analog clocks, chess positions)
+- Approximate counting only (not precise for many small objects)
+- Cannot detect AI-generated images
+- No healthcare diagnostics (CTs, MRIs, X-rays)
+</limitations>
+
+Token cost: ~1600 tokens per 1092x1092px image. Larger images consume proportionally more.""",
     "input_schema": {
         "type": "object",
         "properties": {

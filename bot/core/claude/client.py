@@ -188,11 +188,18 @@ class ClaudeProvider(LLMProvider):
 
             duration_ms = (time.time() - start_time) * 1000
 
+            # Phase 1.5 Stage 6: Log cache metrics for monitoring
+            cache_read = getattr(response.usage, 'cache_read_input_tokens', 0)
+            cache_creation = getattr(response.usage,
+                                     'cache_creation_input_tokens', 0)
+
             logger.info("claude.get_message.complete",
                         model_full_id=request.model,
                         input_tokens=response.usage.input_tokens,
                         output_tokens=response.usage.output_tokens,
                         thinking_tokens=thinking_tokens,
+                        cache_read_tokens=cache_read,
+                        cache_creation_tokens=cache_creation,
                         stop_reason=response.stop_reason,
                         content_blocks=len(response.content),
                         duration_ms=round(duration_ms, 2))
@@ -370,16 +377,20 @@ class ClaudeProvider(LLMProvider):
             use_caching = estimated_tokens >= 1024
 
             if use_caching:
-                # Use cache_control for 5-minute TTL (10x cost reduction on reads)
+                # Phase 1.5 Stage 6: Use 1-hour cache TTL for better cost efficiency
+                # 1-hour cache is 2x more expensive to write but lasts 12x longer
+                # For shared bot cache (all users), this saves ~41% vs 5-minute TTL
                 api_params["system"] = [{
                     "type": "text",
                     "text": request.system_prompt,
                     "cache_control": {
-                        "type": "ephemeral"
+                        "type": "ephemeral",
+                        "ttl": "1h"  # 1-hour cache instead of default 5 minutes
                     }
                 }]
                 logger.info("claude.prompt_caching.enabled",
-                            estimated_tokens=estimated_tokens)
+                            estimated_tokens=estimated_tokens,
+                            ttl="1h")
             else:
                 # Plain string format (no caching for small prompts)
                 api_params["system"] = request.system_prompt

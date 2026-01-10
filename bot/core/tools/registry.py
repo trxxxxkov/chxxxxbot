@@ -1,4 +1,4 @@
-"""Tool registry and execution dispatcher (Phase 1.5).
+"""Tool registry and execution dispatcher (Phase 1.6).
 
 This module provides centralized tool definitions and execution dispatcher
 for Claude's tool use feature.
@@ -6,6 +6,7 @@ for Claude's tool use feature.
 Currently implements:
 - analyze_image: Analyze images using Claude Vision API
 - analyze_pdf: Analyze PDF documents using Claude PDF API
+- transcribe_audio: Transcribe audio/video using OpenAI Whisper API
 - execute_python: Execute Python code via E2B sandbox
 - web_search: Search the web (server-side, managed by Anthropic)
 - web_fetch: Fetch web pages (server-side, managed by Anthropic)
@@ -14,7 +15,11 @@ NO __init__.py - use direct import:
     from core.tools.registry import TOOL_DEFINITIONS, execute_tool
 """
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from aiogram import Bot
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.tools.analyze_image import analyze_image
 from core.tools.analyze_image import ANALYZE_IMAGE_TOOL
@@ -22,6 +27,8 @@ from core.tools.analyze_pdf import analyze_pdf
 from core.tools.analyze_pdf import ANALYZE_PDF_TOOL
 from core.tools.execute_python import execute_python
 from core.tools.execute_python import EXECUTE_PYTHON_TOOL
+from core.tools.transcribe_audio import transcribe_audio
+from core.tools.transcribe_audio import TRANSCRIBE_AUDIO_TOOL
 from utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
@@ -45,9 +52,11 @@ WEB_FETCH_TOOL = {
 }
 
 # Tool definitions for Claude API (list of tool schemas)
+# Phase 1.6: Added transcribe_audio for speech-to-text
 TOOL_DEFINITIONS: List[Dict[str, Any]] = [
     ANALYZE_IMAGE_TOOL,
     ANALYZE_PDF_TOOL,
+    TRANSCRIBE_AUDIO_TOOL,
     WEB_SEARCH_TOOL,
     WEB_FETCH_TOOL,
     EXECUTE_PYTHON_TOOL,
@@ -57,6 +66,7 @@ TOOL_DEFINITIONS: List[Dict[str, Any]] = [
 TOOL_EXECUTORS: Dict[str, Any] = {
     "analyze_image": analyze_image,
     "analyze_pdf": analyze_pdf,
+    "transcribe_audio": transcribe_audio,
     "execute_python": execute_python,
     # Server-side tools NOT included (managed by Anthropic):
     # "web_search": (server-side)
@@ -64,8 +74,8 @@ TOOL_EXECUTORS: Dict[str, Any] = {
 }
 
 
-async def execute_tool(tool_name: str, tool_input: Dict[str,
-                                                        Any]) -> Dict[str, str]:
+async def execute_tool(tool_name: str, tool_input: Dict[str, Any], bot: 'Bot',
+                       session: 'AsyncSession') -> Dict[str, str]:
     """Execute a tool by name with given input.
 
     Dispatcher function that routes tool calls to appropriate executor.
@@ -73,14 +83,18 @@ async def execute_tool(tool_name: str, tool_input: Dict[str,
 
     Args:
         tool_name: Name of the tool to execute (e.g., "analyze_image",
-            "analyze_pdf").
+            "analyze_pdf", "transcribe_audio", "execute_python").
         tool_input: Tool input parameters as dictionary.
+        bot: Telegram Bot instance for downloading user files.
+        session: Database session for querying file metadata.
 
     Returns:
         Tool execution result as dictionary.
         For analyze_image: {"analysis": str, "tokens_used": str}
         For analyze_pdf: {"analysis": str, "tokens_used": str,
             "cached_tokens": str}
+        For transcribe_audio: {"transcript": str, "language": str,
+            "duration": float, "cost_usd": str}
         For execute_python: {"stdout": str, "stderr": str, "results": str,
             "error": str, "success": str}
 
@@ -114,7 +128,12 @@ async def execute_tool(tool_name: str, tool_input: Dict[str,
 
     try:
         # Execute tool (all tools are async)
-        result = await executor(**tool_input)
+        # execute_python and transcribe_audio require bot and session for
+        # Telegram file downloads
+        if tool_name in ["execute_python", "transcribe_audio"]:
+            result = await executor(bot=bot, session=session, **tool_input)
+        else:
+            result = await executor(**tool_input)
 
         logger.info("tools.execute_tool.success",
                     tool_name=tool_name,

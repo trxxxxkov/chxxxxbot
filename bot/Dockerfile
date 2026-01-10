@@ -22,6 +22,7 @@ RUN pip install --no-cache-dir \
     asyncpg>=0.29.0 \
     alembic>=1.13.0 \
     anthropic>=0.40.0 \
+    openai>=1.0.0 \
     e2b-code-interpreter>=1.0.0 \
     pytest>=7.4.0 \
     pytest-asyncio>=0.21.0 \

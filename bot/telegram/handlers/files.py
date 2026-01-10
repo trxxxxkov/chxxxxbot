@@ -1,14 +1,21 @@
-"""Handlers for file uploads (Phase 1.5: Files API integration).
+"""Handlers for file uploads (Phase 1.6: All file types support).
 
-This module handles user file uploads (photos, documents) and
-uploads them to Claude Files API for multimodal processing.
+This module handles user file uploads (photos, documents, voice, audio, video)
+and uploads them to Claude Files API for multimodal processing.
 
-Flow:
+Flow for photos/documents:
 1. User uploads file → Telegram
 2. Bot downloads file from Telegram
 3. Bot uploads to Files API → claude_file_id
 4. Bot saves to user_files table
 5. Bot creates message mention for context
+
+Flow for voice messages (Phase 1.6):
+1. User sends voice → Telegram
+2. Bot downloads OGG file
+3. Bot transcribes with OpenAI Whisper
+4. Bot saves as TEXT message (not file!)
+5. Claude handler processes as regular text
 
 NO __init__.py - use direct import:
     from telegram.handlers.files import router
@@ -54,6 +61,38 @@ def format_size(size_bytes: int) -> str:
             return f"{size:.1f} {unit}"
         size /= 1024
     return f"{size:.1f} TB"
+
+
+def get_file_size_limit(user: types.User) -> int:
+    """Get file size limit based on Telegram Premium status.
+
+    Phase 1.6: Telegram imposes different file size limits for free
+    and Premium users. This function returns the appropriate limit.
+
+    Telegram limits:
+    - Free users: 20 MB per file
+    - Premium users: 2 GB per file
+
+    Args:
+        user: Telegram user object with is_premium attribute.
+
+    Returns:
+        Maximum file size in bytes.
+
+    Examples:
+        >>> user = types.User(id=123, is_bot=False, first_name="John",
+        ...                   is_premium=False)
+        >>> get_file_size_limit(user)
+        20971520  # 20 MB
+
+        >>> premium_user = types.User(id=456, is_bot=False, first_name="Jane",
+        ...                          is_premium=True)
+        >>> get_file_size_limit(premium_user)
+        2147483648  # 2 GB
+    """
+    if user.is_premium:
+        return 2 * 1024 * 1024 * 1024  # 2 GB
+    return 20 * 1024 * 1024  # 20 MB
 
 
 async def process_file_upload(message: types.Message,
@@ -108,9 +147,12 @@ async def process_file_upload(message: types.Message,
     else:
         raise ValueError("Message has no photo or document")
 
-    # Check file size
-    if file_size and file_size > 500 * 1024 * 1024:
-        raise ValueError("File too large (max 500MB)")
+    # Check file size (Telegram limits: 20MB free, 2GB Premium)
+    if message.from_user:
+        file_size_limit = get_file_size_limit(message.from_user)
+        if file_size and file_size > file_size_limit:
+            limit_str = "2 GB" if message.from_user.is_premium else "20 MB"
+            raise ValueError(f"File too large (max {limit_str})")
 
     # Download from Telegram
     file_info = await message.bot.get_file(file_id)
@@ -207,14 +249,19 @@ async def handle_photo(message: types.Message, session: AsyncSession) -> None:
                 chat_id=chat_id,
                 message_id=message.message_id,
                 file_id=photo.file_id,
-                file_size=photo.file_size)
+                file_size=photo.file_size,
+                is_premium=message.from_user.is_premium)
 
-    # Check file size (Files API limit: 500MB)
-    if photo.file_size and photo.file_size > 500 * 1024 * 1024:
-        await message.answer("⚠️ File too large (max 500MB)")
+    # Check file size (Telegram limits: 20MB free, 2GB Premium)
+    file_size_limit = get_file_size_limit(message.from_user)
+    if photo.file_size and photo.file_size > file_size_limit:
+        limit_str = "2 GB" if message.from_user.is_premium else "20 MB"
+        await message.answer(f"⚠️ File too large (max {limit_str})")
         logger.warning("photo_handler.file_too_large",
                        user_id=user_id,
-                       file_size=photo.file_size)
+                       file_size=photo.file_size,
+                       limit=file_size_limit,
+                       is_premium=message.from_user.is_premium)
         return
 
     try:
@@ -362,14 +409,19 @@ async def handle_document(message: types.Message,
                 message_id=message.message_id,
                 filename=document.file_name,
                 mime_type=document.mime_type,
-                file_size=document.file_size)
+                file_size=document.file_size,
+                is_premium=message.from_user.is_premium)
 
-    # Check file size (Files API limit: 500MB)
-    if document.file_size and document.file_size > 500 * 1024 * 1024:
-        await message.answer("⚠️ File too large (max 500MB)")
+    # Check file size (Telegram limits: 20MB free, 2GB Premium)
+    file_size_limit = get_file_size_limit(message.from_user)
+    if document.file_size and document.file_size > file_size_limit:
+        limit_str = "2 GB" if message.from_user.is_premium else "20 MB"
+        await message.answer(f"⚠️ File too large (max {limit_str})")
         logger.warning("document_handler.file_too_large",
                        user_id=user_id,
-                       file_size=document.file_size)
+                       file_size=document.file_size,
+                       limit=file_size_limit,
+                       is_premium=message.from_user.is_premium)
         return
 
     # Determine file type
@@ -494,3 +546,7 @@ async def handle_document(message: types.Message,
                      exc_info=True)
         await message.answer(
             "❌ Failed to upload document. Please try again later.")
+
+
+# Voice/Audio/Video handlers moved to media_handlers.py (Phase 1.6)
+# Universal media architecture with MediaProcessor

@@ -10,10 +10,14 @@ NO __init__.py - use direct import: from telegram.handlers.claude import router
 
 import html as html_lib
 import time
+from typing import Optional, TYPE_CHECKING
 
 from aiogram import F
 from aiogram import Router
 from aiogram import types
+
+if TYPE_CHECKING:
+    from telegram.media_processor import MediaContent
 import config
 from config import CLAUDE_TOKEN_BUFFER_PERCENT
 from config import get_model
@@ -270,7 +274,8 @@ async def _handle_with_tools(request: LLMRequest, first_message: types.Message,
 
                 # Execute tool
                 try:
-                    result = await execute_tool(tool_name, tool_input)
+                    result = await execute_tool(tool_name, tool_input,
+                                                first_message.bot, session)
 
                     # Phase 1.5 Stage 6: Process generated files (if any)
                     if "_file_contents" in result:
@@ -435,8 +440,9 @@ async def _handle_with_tools(request: LLMRequest, first_message: types.Message,
 
 
 # pylint: disable=too-many-locals,too-many-branches,too-many-statements
-async def _process_message_batch(thread_id: int,
-                                 messages: list[types.Message]) -> None:
+async def _process_message_batch(
+        thread_id: int,
+        messages: list[tuple[types.Message, Optional['MediaContent']]]) -> None:
     """Process batch of messages for a thread.
 
     This function is called by MessageQueueManager when it's time to process
@@ -444,10 +450,11 @@ async def _process_message_batch(thread_id: int,
     complete flow from saving messages to streaming Claude response.
 
     Phase 1.4.3: Batch processing with smart accumulation.
+    Phase 1.6: Universal media architecture with MediaContent.
 
     Args:
         thread_id: Database thread ID.
-        messages: List of Telegram messages to process as one batch.
+        messages: List of (Message, Optional[MediaContent]) tuples.
     """
     if not messages:
         logger.warning("claude_handler.empty_batch", thread_id=thread_id)
@@ -456,17 +463,28 @@ async def _process_message_batch(thread_id: int,
     if claude_provider is None:
         logger.error("claude_handler.provider_not_initialized")
         # Send error to first message
-        await messages[0].answer(
+        await messages[0][0].answer(
             "Bot is not properly configured. Please contact administrator.")
         return
 
     # Use first message for bot/chat context
-    first_message = messages[0]
+    first_message = messages[0][0]
+
+    # Calculate content lengths for logging
+    content_lengths = []
+    for msg, media in messages:
+        if media and media.text_content:
+            content_lengths.append(len(media.text_content))
+        elif msg.text:
+            content_lengths.append(len(msg.text))
+        else:
+            content_lengths.append(0)
 
     logger.info("claude_handler.batch_received",
                 thread_id=thread_id,
                 batch_size=len(messages),
-                message_lengths=[len(msg.text or "") for msg in messages],
+                content_lengths=content_lengths,
+                has_media=[m is not None for _, m in messages],
                 telegram_thread_id=first_message.message_thread_id)
 
     try:
@@ -485,9 +503,34 @@ async def _process_message_batch(thread_id: int,
 
             # 2. Save all messages to database
             msg_repo = MessageRepository(session)
-            for message in messages:
-                # Phase 1.5: For photos/documents with caption, use caption as text
-                text_content = message.text or message.caption
+            for message, media_content in messages:
+                # Phase 1.6: Universal media architecture
+                # Determine text_content based on media type
+                if media_content and media_content.text_content:
+                    # Voice/Audio/Video: use transcript with prefix
+                    media_type = media_content.type.value
+                    duration = media_content.metadata.get("duration", 0)
+                    text_content = (
+                        f"[{media_type.upper()} MESSAGE - {duration}s]: "
+                        f"{media_content.text_content}")
+                elif media_content and media_content.file_id:
+                    # Image/PDF/Document: use caption or file mention
+                    if message.caption:
+                        text_content = message.caption
+                    else:
+                        # Generate file mention
+                        media_type = media_content.type.value
+                        filename = media_content.metadata.get(
+                            "filename", "file")
+                        size = media_content.metadata.get("size_bytes", 0)
+                        text_content = (
+                            f"📎 User uploaded {media_type}: {filename} "
+                            f"({size} bytes) [file_id: {media_content.file_id}]"
+                        )
+                else:
+                    # Regular text message or captioned media
+                    text_content = message.text or message.caption
+
                 await msg_repo.create_message(
                     chat_id=thread.chat_id,
                     message_id=message.message_id,

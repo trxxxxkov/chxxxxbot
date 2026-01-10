@@ -29,6 +29,7 @@ services:
       - postgres_password
       - anthropic_api_key
       - e2b_api_key
+      - openai_api_key
     volumes:
       - ./bot:/app
       - ./postgres:/postgres
@@ -57,3 +58,5 @@ secrets:
     file: ./secrets/anthropic_api_key.txt
   e2b_api_key:
     file: ./secrets/e2b_api_key.txt
+  openai_api_key:
+    file: ./secrets/openai_api_key.txt

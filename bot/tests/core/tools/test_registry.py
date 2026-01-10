@@ -18,6 +18,18 @@ from core.tools.registry import WEB_SEARCH_TOOL
 import pytest
 
 
+@pytest.fixture
+def mock_bot():
+    """Mock Telegram Bot for tests."""
+    return Mock()
+
+
+@pytest.fixture
+def mock_session():
+    """Mock database session for tests."""
+    return Mock()
+
+
 class TestToolDefinitions:
     """Tests for TOOL_DEFINITIONS list."""
 
@@ -113,7 +125,8 @@ class TestExecuteTool:
 
     @pytest.mark.asyncio
     @patch('core.tools.analyze_image.get_client')
-    async def test_execute_client_tool_success(self, mock_get_client):
+    async def test_execute_client_tool_success(self, mock_get_client, mock_bot,
+                                               mock_session):
         """Test executing client-side tool successfully."""
         # Setup mock client
         mock_client = Mock()
@@ -128,30 +141,40 @@ class TestExecuteTool:
                                     tool_input={
                                         "claude_file_id": "file_123",
                                         "question": "Test?"
-                                    })
+                                    },
+                                    bot=mock_bot,
+                                    session=mock_session)
 
         # Verify
         assert result["analysis"] == "Test result"
         assert result["tokens_used"] == "150"
 
     @pytest.mark.asyncio
-    async def test_execute_unknown_tool_raises_error(self):
+    async def test_execute_unknown_tool_raises_error(self, mock_bot,
+                                                     mock_session):
         """Test that unknown tool raises ValueError."""
         with pytest.raises(ValueError, match="Tool 'unknown_tool' not found"):
-            await execute_tool(tool_name="unknown_tool", tool_input={})
+            await execute_tool(tool_name="unknown_tool",
+                               tool_input={},
+                               bot=mock_bot,
+                               session=mock_session)
 
     @pytest.mark.asyncio
-    async def test_execute_server_tool_raises_error(self):
+    async def test_execute_server_tool_raises_error(self, mock_bot,
+                                                    mock_session):
         """Test that server-side tool raises error (should not be called)."""
         # Server-side tools should never reach execute_tool
         # (they're executed by Anthropic automatically)
         with pytest.raises(ValueError, match="not found"):
             await execute_tool(tool_name="web_search",
-                               tool_input={"query": "test"})
+                               tool_input={"query": "test"},
+                               bot=mock_bot,
+                               session=mock_session)
 
     @pytest.mark.asyncio
     @patch('core.tools.analyze_pdf.get_client')
-    async def test_execute_tool_with_error(self, mock_get_client):
+    async def test_execute_tool_with_error(self, mock_get_client, mock_bot,
+                                           mock_session):
         """Test that tool execution errors are propagated."""
         # Setup mock to raise error
         mock_client = Mock()
@@ -164,11 +187,14 @@ class TestExecuteTool:
                                tool_input={
                                    "claude_file_id": "file_123",
                                    "question": "Test?"
-                               })
+                               },
+                               bot=mock_bot,
+                               session=mock_session)
 
     @pytest.mark.asyncio
     @patch('core.tools.analyze_image.get_client')
-    async def test_execute_tool_passes_all_parameters(self, mock_get_client):
+    async def test_execute_tool_passes_all_parameters(self, mock_get_client,
+                                                      mock_bot, mock_session):
         """Test that all input parameters are passed to tool."""
         # Setup mock
         mock_client = Mock()
@@ -183,7 +209,9 @@ class TestExecuteTool:
                                     tool_input={
                                         "claude_file_id": "file_abc",
                                         "question": "What is this?"
-                                    })
+                                    },
+                                    bot=mock_bot,
+                                    session=mock_session)
 
         # Verify result returned correctly
         assert result["analysis"] == "OK"
@@ -193,21 +221,33 @@ class TestExecuteTool:
     @patch('core.tools.execute_python.Sandbox')
     @patch('core.tools.execute_python.get_e2b_api_key')
     async def test_execute_python_tool_via_dispatcher(self, mock_get_api_key,
-                                                      mock_sandbox_class):
+                                                      mock_sandbox_class,
+                                                      mock_bot, mock_session):
         """Test executing execute_python tool via dispatcher."""
         # Setup mocks
         mock_get_api_key.return_value = "test_api_key"
 
+        # E2B v1.0+ API: context manager and logs
         mock_sandbox = Mock()
+        mock_logs = Mock()
+        mock_logs.stdout = ["Hello\n"]
+        mock_logs.stderr = []
+
         mock_execution = Mock()
         mock_execution.error = None
         mock_execution.results = []
+        mock_execution.logs = mock_logs
+
         mock_sandbox.run_code.return_value = mock_execution
-        mock_sandbox_class.return_value = mock_sandbox
+        mock_sandbox.__enter__ = Mock(return_value=mock_sandbox)
+        mock_sandbox.__exit__ = Mock(return_value=None)
+        mock_sandbox_class.create.return_value = mock_sandbox
 
         # Execute via dispatcher
         result = await execute_tool(tool_name="execute_python",
-                                    tool_input={"code": "print('Hello')"})
+                                    tool_input={"code": "print('Hello')"},
+                                    bot=mock_bot,
+                                    session=mock_session)
 
         # Verify
         assert result["success"] == "true"

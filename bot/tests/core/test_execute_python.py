@@ -28,6 +28,18 @@ def reset_api_key():
     core.tools.execute_python._e2b_api_key = None
 
 
+@pytest.fixture
+def mock_bot():
+    """Mock Telegram Bot for tests."""
+    return Mock()
+
+
+@pytest.fixture
+def mock_session():
+    """Mock database session for tests."""
+    return Mock()
+
+
 class TestExecutePython:
     """Tests for execute_python() function."""
 
@@ -35,7 +47,8 @@ class TestExecutePython:
     @patch('core.tools.execute_python.Sandbox')
     @patch('core.tools.execute_python.get_e2b_api_key')
     async def test_execute_python_success(self, mock_get_api_key,
-                                          mock_sandbox_class):
+                                          mock_sandbox_class, mock_bot,
+                                          mock_session):
         """Test successful code execution."""
         # Setup mock API key
         mock_get_api_key.return_value = "test_api_key"
@@ -59,7 +72,9 @@ class TestExecutePython:
         mock_sandbox_class.create.return_value = mock_sandbox
 
         # Test
-        result = await execute_python(code="print('Hello, world!')")
+        result = await execute_python(code="print('Hello, world!')",
+                                      bot=mock_bot,
+                                      session=mock_session)
 
         # Verify
         assert result["success"] == "true"
@@ -83,7 +98,8 @@ class TestExecutePython:
     @patch('core.tools.execute_python.Sandbox')
     @patch('core.tools.execute_python.get_e2b_api_key')
     async def test_execute_python_with_requirements(self, mock_get_api_key,
-                                                    mock_sandbox_class):
+                                                    mock_sandbox_class,
+                                                    mock_bot, mock_session):
         """Test code execution with pip package installation."""
         # Setup mock API key
         mock_get_api_key.return_value = "test_api_key"
@@ -112,7 +128,10 @@ class TestExecutePython:
 
         # Test
         result = await execute_python(
-            code="import numpy; print(numpy.__version__)", requirements="numpy")
+            code="import numpy; print(numpy.__version__)",
+            bot=mock_bot,
+            session=mock_session,
+            requirements="numpy")
 
         # Verify
         assert result["success"] == "true"
@@ -128,7 +147,8 @@ class TestExecutePython:
     @patch('core.tools.execute_python.Sandbox')
     @patch('core.tools.execute_python.get_e2b_api_key')
     async def test_execute_python_with_error(self, mock_get_api_key,
-                                             mock_sandbox_class):
+                                             mock_sandbox_class, mock_bot,
+                                             mock_session):
         """Test code execution with Python error."""
         # Setup mock API key
         mock_get_api_key.return_value = "test_api_key"
@@ -153,7 +173,9 @@ class TestExecutePython:
         mock_sandbox_class.create.return_value = mock_sandbox
 
         # Test
-        result = await execute_python(code="print(undefined_var)")
+        result = await execute_python(code="print(undefined_var)",
+                                      bot=mock_bot,
+                                      session=mock_session)
 
         # Verify
         assert result["success"] == "false"
@@ -167,7 +189,8 @@ class TestExecutePython:
     @patch('core.tools.execute_python.Sandbox')
     @patch('core.tools.execute_python.get_e2b_api_key')
     async def test_execute_python_with_stdout_stderr(self, mock_get_api_key,
-                                                     mock_sandbox_class):
+                                                     mock_sandbox_class,
+                                                     mock_bot, mock_session):
         """Test capturing stdout and stderr."""
         # Setup mock API key
         mock_get_api_key.return_value = "test_api_key"
@@ -191,7 +214,9 @@ class TestExecutePython:
         mock_sandbox_class.create.return_value = mock_sandbox
 
         # Test
-        result = await execute_python(code="print('test')")
+        result = await execute_python(code="print('test')",
+                                      bot=mock_bot,
+                                      session=mock_session)
 
         # Verify
         assert "Hello from stdout" in result["stdout"]
@@ -202,7 +227,8 @@ class TestExecutePython:
     @patch('core.tools.execute_python.Sandbox')
     @patch('core.tools.execute_python.get_e2b_api_key')
     async def test_execute_python_with_custom_timeout(self, mock_get_api_key,
-                                                      mock_sandbox_class):
+                                                      mock_sandbox_class,
+                                                      mock_bot, mock_session):
         """Test code execution with custom timeout."""
         # Setup mock API key
         mock_get_api_key.return_value = "test_api_key"
@@ -227,6 +253,8 @@ class TestExecutePython:
 
         # Test
         result = await execute_python(code="import time; time.sleep(1)",
+                                      bot=mock_bot,
+                                      session=mock_session,
                                       timeout=60.0)
 
         # Verify
@@ -240,7 +268,8 @@ class TestExecutePython:
     @patch('core.tools.execute_python.Sandbox')
     @patch('core.tools.execute_python.get_e2b_api_key')
     async def test_execute_python_sandbox_exception(self, mock_get_api_key,
-                                                    mock_sandbox_class):
+                                                    mock_sandbox_class,
+                                                    mock_bot, mock_session):
         """Test handling of sandbox creation failure."""
         # Setup mock API key
         mock_get_api_key.return_value = "test_api_key"
@@ -251,13 +280,16 @@ class TestExecutePython:
 
         # Test
         with pytest.raises(Exception, match="Sandbox creation failed"):
-            await execute_python(code="print('test')")
+            await execute_python(code="print('test')",
+                                 bot=mock_bot,
+                                 session=mock_session)
 
     @pytest.mark.asyncio
     @patch('core.tools.execute_python.Sandbox')
     @patch('core.tools.execute_python.get_e2b_api_key')
     async def test_execute_python_with_results(self, mock_get_api_key,
-                                               mock_sandbox_class):
+                                               mock_sandbox_class, mock_bot,
+                                               mock_session):
         """Test code execution with matplotlib-like results."""
         # Setup mock API key
         mock_get_api_key.return_value = "test_api_key"
@@ -285,7 +317,9 @@ class TestExecutePython:
 
         # Test
         result = await execute_python(
-            code="import matplotlib.pyplot as plt; plt.plot([1,2,3])")
+            code="import matplotlib.pyplot as plt; plt.plot([1,2,3])",
+            bot=mock_bot,
+            session=mock_session)
 
         # Verify
         assert result["success"] == "true"

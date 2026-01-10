@@ -1,14 +1,17 @@
 """Per-thread message queue manager for batch processing.
 
+Phase 1.6: Universal media architecture with MediaContent.
+
 This module manages message queues per thread to handle:
 1. Split messages (>4096 chars automatically split by Telegram)
 2. Parallel messages sent while processing
 3. Per-thread independent processing
+4. Media messages with pre-processed content (transcripts/file_ids)
 
 Architecture:
 - Each thread has its own queue (thread_id → queue state)
-- Long messages (>4000 chars) trigger 300ms accumulation window
-- Short messages are processed immediately
+- Text messages: 200ms batching window (for split detection)
+- Media messages: immediate processing (no batching delay)
 - During processing, new messages accumulate and process after completion
 
 NO __init__.py - use direct import: from core.message_queue import MessageQueueManager
@@ -17,10 +20,13 @@ NO __init__.py - use direct import: from core.message_queue import MessageQueueM
 import asyncio
 from dataclasses import dataclass
 from dataclasses import field
-from typing import Callable, Dict, Optional
+from typing import Callable, Dict, List, Optional, Tuple, TYPE_CHECKING
 
 from aiogram import types
 from utils.structured_logging import get_logger
+
+if TYPE_CHECKING:
+    from telegram.media_processor import MediaContent
 
 logger = get_logger(__name__)
 
@@ -29,13 +35,17 @@ logger = get_logger(__name__)
 class MessageBatch:
     """Batch of messages for a thread.
 
+    Phase 1.6: Universal media architecture.
+
     Attributes:
-        messages: List of accumulated Telegram messages.
+        messages: List of (Message, Optional[MediaContent]) tuples.
+                  MediaContent is provided for media messages (voice/photo/etc).
         processing: Whether this thread is currently processing.
-        timer_task: Asyncio task for 300ms delay timer (or None).
+        timer_task: Asyncio task for 200ms delay timer (or None).
     """
 
-    messages: list[types.Message] = field(default_factory=list)
+    messages: List[Tuple[types.Message, Optional['MediaContent']]] = field(
+        default_factory=list)
     processing: bool = False
     timer_task: Optional[asyncio.Task] = None
 
@@ -58,8 +68,10 @@ class MessageQueueManager:
 
         Args:
             process_callback: Async function to process batch.
-                              Signature: async def(thread_id: int,
-                                                    messages: list[types.Message])
+                              Signature: async def(
+                                  thread_id: int,
+                                  messages: List[Tuple[types.Message,
+                                                       Optional[MediaContent]]])
         """
         self.queues: Dict[int, MessageBatch] = {}
         self.process_callback = process_callback
@@ -81,44 +93,79 @@ class MessageQueueManager:
 
         return self.queues[thread_id]
 
-    async def add_message(self, thread_id: int, message: types.Message) -> None:
+    async def add_message(self,
+                          thread_id: int,
+                          message: types.Message,
+                          media_content: Optional['MediaContent'] = None,
+                          immediate: bool = False) -> None:
         """Add message to thread queue and handle processing.
 
         Phase 1.4.3: Time-based split detection (not length-based).
         Telegram splits long messages into parts that arrive < 200ms apart.
 
+        Phase 1.6: Universal media architecture with MediaContent.
+        All media types pass pre-processed content (transcripts/file_ids).
+
         Logic:
         1. If thread is processing → accumulate for next batch
-        2. Always accumulate + schedule 200ms timer
-        3. If timer already exists → cancel + reschedule (more messages coming)
-        4. When timer expires → process accumulated batch
+        2. If immediate=True (media) → process without batching delay
+        3. If immediate=False (text) → accumulate + 200ms timer for splits
+        4. If timer already exists → cancel + reschedule (more messages coming)
+        5. When timer expires → process accumulated batch
 
         Args:
             thread_id: Database thread ID.
             message: Telegram message to add.
+            media_content: Optional pre-processed media (transcript/file_id).
+            immediate: Process immediately without batching delay (for media).
         """
         queue = self._get_or_create_queue(thread_id)
-        message_length = len(message.text or "")
+
+        # Determine content length for logging
+        content_length = 0
+        if media_content and media_content.text_content:
+            content_length = len(media_content.text_content)
+        elif message.text:
+            content_length = len(message.text)
 
         logger.debug("message_queue.add_message",
                      thread_id=thread_id,
-                     message_length=message_length,
+                     content_length=content_length,
+                     has_media=media_content is not None,
+                     immediate=immediate,
                      processing=queue.processing,
                      batch_size=len(queue.messages),
                      has_timer=queue.timer_task is not None)
 
         # If currently processing → accumulate for next batch
         if queue.processing:
-            queue.messages.append(message)
+            queue.messages.append((message, media_content))
             logger.info("message_queue.accumulated_during_processing",
                         thread_id=thread_id,
-                        batch_size=len(queue.messages))
+                        batch_size=len(queue.messages),
+                        has_media=media_content is not None)
             return
 
-        # Always accumulate and wait for potential split parts
-        # Telegram split messages arrive < 200ms apart
-        queue.messages.append(message)
+        # Accumulate message
+        queue.messages.append((message, media_content))
 
+        # Media messages: process immediately (no batching delay)
+        if immediate:
+            # Cancel any existing timer
+            if queue.timer_task and not queue.timer_task.done():
+                queue.timer_task.cancel()
+
+            logger.info(
+                "message_queue.immediate_processing",
+                thread_id=thread_id,
+                content_length=content_length,
+                media_type=media_content.type.value if media_content else None)
+
+            # Process immediately
+            await self._wait_and_process(thread_id)
+            return
+
+        # Text messages: batching with 200ms delay for split detection
         # Cancel existing timer if any (more messages coming)
         if queue.timer_task and not queue.timer_task.done():
             queue.timer_task.cancel()
@@ -132,7 +179,7 @@ class MessageQueueManager:
 
         logger.info("message_queue.message_scheduled",
                     thread_id=thread_id,
-                    message_length=message_length,
+                    content_length=content_length,
                     batch_size=len(queue.messages))
 
     async def _wait_and_process(self, thread_id: int) -> None:
@@ -164,13 +211,17 @@ class MessageQueueManager:
                          thread_id=thread_id)
             # Timer was cancelled, new timer scheduled
 
-    async def _process_batch(self, thread_id: int,
-                             messages: list[types.Message]) -> None:
+    async def _process_batch(
+            self, thread_id: int,
+            messages: List[Tuple[types.Message,
+                                 Optional['MediaContent']]]) -> None:
         """Process batch of messages.
+
+        Phase 1.6: Universal media architecture.
 
         Args:
             thread_id: Database thread ID.
-            messages: List of Telegram messages to process as one batch.
+            messages: List of (Message, Optional[MediaContent]) tuples.
         """
         if not messages:
             logger.warning("message_queue.empty_batch", thread_id=thread_id)
@@ -179,10 +230,21 @@ class MessageQueueManager:
         queue = self.queues[thread_id]
         queue.processing = True
 
+        # Calculate content lengths for logging
+        content_lengths = []
+        for msg, media in messages:
+            if media and media.text_content:
+                content_lengths.append(len(media.text_content))
+            elif msg.text:
+                content_lengths.append(len(msg.text))
+            else:
+                content_lengths.append(0)
+
         logger.info("message_queue.processing_started",
                     thread_id=thread_id,
                     batch_size=len(messages),
-                    message_lengths=[len(msg.text or "") for msg in messages])
+                    content_lengths=content_lengths,
+                    has_media=[m is not None for _, m in messages])
 
         try:
             # Call external processing callback with thread_id

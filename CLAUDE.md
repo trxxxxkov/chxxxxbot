@@ -143,29 +143,77 @@ chxxxxbot/
 - ✅ Best practices adopted (explicit instructions, thinking vocabulary)
 - ✅ See [docs/phase-1.4-claude-advanced-api.md](docs/phase-1.4-claude-advanced-api.md)
 
-#### 1.5 Multimodal + Tools 📋 Planned
-**Multimodal support:**
-- Images (vision via Files API)
-- Voice messages (transcription + processing)
-- PDF documents (text + visual analysis)
-- Arbitrary files (via tools)
+#### 1.5 Multimodal + Tools ✅ Complete (Partial)
+**Status:** Core tools complete (2026-01-10)
+
+**Multimodal support (Stage 1-5):**
+- ✅ Images (vision via Files API - analyze_image)
+- ✅ PDF documents (text + visual via Files API - analyze_pdf)
+- ⏸️ Voice messages (Phase 1.6)
+- ⏸️ Audio/video files (Phase 1.6)
 
 **Tools framework:**
-- Tool Runner (SDK beta) for all custom tools
-- analyze_image, analyze_pdf (Claude Vision/PDF API)
-- web_search, web_fetch (server-side tools)
-- Code execution (external service: E2B/Modal/self-hosted)
-- Modular tool architecture (easy to add new tools)
+- ✅ Tool Runner (SDK beta) for all custom tools
+- ✅ analyze_image (Claude Vision API with Files API)
+- ✅ analyze_pdf (Claude PDF API with Files API)
+- ✅ web_search, web_fetch (server-side tools)
+- ✅ execute_python (E2B Code Interpreter with file I/O)
+- ✅ Modular tool architecture
 
 **Database schema:**
-- user_files table (telegram_file_id, claude_file_id, metadata)
-- thinking_blocks column in messages (for Extended Thinking)
-- Files API lifecycle management (24h TTL)
+- ✅ user_files table (telegram_file_id, claude_file_id, metadata)
+- ✅ thinking_blocks column in messages
+- ✅ Files API lifecycle management (24h TTL)
+- ✅ FileSource enum (USER/ASSISTANT)
+- ✅ FileType enum (IMAGE/PDF/DOCUMENT/GENERATED)
 
-**Out of scope:**
-- Claude's code execution tool (no internet access)
-- Citations feature (not critical for Phase 1.5)
-- RAG with vector DB (Phase 1.6)
+**Stage 6 Complete:**
+- ✅ File I/O for execute_python (upload inputs, download outputs)
+- ✅ Hybrid storage (Files API for analyze_*, Telegram for execute_python)
+- ✅ User files download from Telegram (Files API limitation workaround)
+- ✅ Assistant files download from Files API
+
+**See:** [docs/phase-1.5-multimodal-tools.md](docs/phase-1.5-multimodal-tools.md)
+
+#### 1.6 Multimodal Support (All File Types) ✅ Complete
+**Status:** Complete (2026-01-10)
+
+**Universal Media Architecture:**
+- ✅ `MediaType` enum: VOICE, AUDIO, VIDEO, VIDEO_NOTE, IMAGE, DOCUMENT
+- ✅ `MediaContent` dataclass: universal container for all media types
+- ✅ `MediaProcessor` class: single interface for all processing
+- ✅ Unified flow: Download → Process → Queue → Claude handler
+
+**Whisper Integration:**
+- ✅ OpenAI Whisper API for speech-to-text transcription
+- ✅ Automatic language detection
+- ✅ Cost tracking (~$0.006 per minute)
+- ✅ Supported formats: OGG, MP3, M4A, WAV, FLAC, MP4, MOV, AVI
+
+**Implemented Handlers:**
+- ✅ `handle_voice()` - voice messages (OGG/OPUS)
+- ✅ `handle_audio()` - audio files (MP3, FLAC, WAV, etc)
+- ✅ `handle_video()` - video files (audio track extraction)
+- ✅ `handle_video_note()` - round video messages
+
+**Integration:**
+- ✅ Message Queue supports optional `MediaContent` parameter
+- ✅ Claude handler extracts `text_content` (transcripts) or `file_id` (vision)
+- ✅ Full backward compatibility with text-only messages
+- ✅ Immediate processing for media (no 200ms delay)
+
+**Files:**
+- telegram/media_processor.py - MediaProcessor, MediaType, MediaContent
+- telegram/handlers/media_handlers.py - Voice/Audio/Video handlers
+- telegram/loader.py - Router registration
+- core/message_queue.py - MediaContent support
+
+**Testing:**
+- ✅ Voice message download and transcription verified
+- ✅ MediaContent queue integration working
+- ✅ Cost tracking confirmed ($0.0014 for 14-second voice message)
+
+**See:** [docs/phase-1.6-multimodal-support.md](docs/phase-1.6-multimodal-support.md)
 
 ### Phase 2 — Telegram Features Expansion
 
@@ -587,4 +635,57 @@ This script:
   - bot/core/base.py - get_stop_reason() method
 - **Documentation**: docs/phase-1.4-claude-advanced-api.md (comprehensive guide)
 
-**Next:** Phase 1.5 (Multimodal + Tools)
+**Phase 1.5 (Multimodal + Tools):** ✅ Complete (Partial)
+- **Status**: Core tools and vision complete (2026-01-10)
+- **Multimodal support (Stage 1-5)**:
+  - Images (vision via Files API - analyze_image)
+  - PDF documents (text + visual via Files API - analyze_pdf)
+  - Voice/audio/video deferred to Phase 1.6
+- **Tools framework**:
+  - Tool Runner (SDK beta) for all custom tools
+  - analyze_image, analyze_pdf (Claude Vision + Files API)
+  - web_search, web_fetch (server-side tools)
+  - execute_python (E2B Code Interpreter with file I/O)
+  - Modular tool architecture
+- **Database schema**:
+  - user_files table (telegram_file_id, claude_file_id, metadata)
+  - thinking_blocks column in messages
+  - Files API lifecycle management (24h TTL)
+  - FileSource enum (USER/ASSISTANT)
+  - FileType enum (IMAGE/PDF/DOCUMENT/GENERATED)
+- **Stage 6 Complete**:
+  - File I/O for execute_python (upload inputs, download outputs)
+  - Hybrid storage (Files API for analyze_*, Telegram for execute_python)
+  - User files download from Telegram (Files API limitation workaround)
+  - Assistant files download from Files API
+- **Documentation**: docs/phase-1.5-multimodal-tools.md
+
+**Phase 1.6 (Multimodal - All File Types):** ✅ Complete (2026-01-10)
+- **Universal Media Architecture**:
+  - MediaType enum (VOICE, AUDIO, VIDEO, VIDEO_NOTE, IMAGE, DOCUMENT)
+  - MediaContent dataclass (universal container)
+  - MediaProcessor class (single interface for all processing)
+  - Unified flow: Download → Process → Queue → Claude handler
+- **Whisper Integration**:
+  - OpenAI Whisper API for speech-to-text ($0.006/minute)
+  - Automatic language detection
+  - Supported formats: OGG, MP3, M4A, WAV, FLAC, MP4, MOV, AVI
+- **Implemented Handlers**:
+  - handle_voice() - voice messages (OGG/OPUS)
+  - handle_audio() - audio files (MP3, FLAC, WAV)
+  - handle_video() - video files (audio track extraction)
+  - handle_video_note() - round video messages
+- **Integration**:
+  - Message Queue supports optional MediaContent parameter
+  - Claude handler extracts text_content or file_id
+  - Full backward compatibility with text-only messages
+  - Immediate processing for media (no delay)
+- **Testing**: Voice transcription verified ($0.0014 for 14s message)
+- **Files**:
+  - telegram/media_processor.py - Core architecture
+  - telegram/handlers/media_handlers.py - Media handlers
+  - telegram/loader.py - Router registration
+  - core/message_queue.py - MediaContent support
+- **Documentation**: docs/phase-1.6-multimodal-support.md
+
+**Next:** Phase 2.1 (Payment System)

@@ -1,4 +1,4 @@
-# Phase 1.5: Multimodal + Tools
+# Phase 1.5: LLM Agent Tools
 
 **Status:** 📋 **PLANNED**
 
