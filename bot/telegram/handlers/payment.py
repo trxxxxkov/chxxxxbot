@@ -30,6 +30,7 @@ from db.repositories.payment_repository import PaymentRepository
 from db.repositories.user_repository import UserRepository
 from services.balance_service import BalanceService
 from services.payment_service import PaymentService
+from sqlalchemy.ext.asyncio import AsyncSession
 import structlog
 
 logger = structlog.get_logger(__name__)
@@ -44,11 +45,16 @@ class BuyStarsStates(StatesGroup):
 
 
 @router.message(Command("buy"))
-async def cmd_buy(message: Message, state: FSMContext):
+async def cmd_buy(message: Message, state: FSMContext, session: AsyncSession):
     """Handler for /buy command - show Stars packages.
 
     Displays predefined packages + custom amount option.
     Each package shows: Label, Stars amount, and resulting USD balance.
+
+    Args:
+        message: Telegram message with /buy command.
+        state: FSM context for custom amount flow.
+        session: Database session from middleware.
     """
     user_id = message.from_user.id
 
@@ -57,17 +63,6 @@ async def cmd_buy(message: Message, state: FSMContext):
         user_id=user_id,
         username=message.from_user.username,
     )
-
-    # Get database session from middleware
-    session = message.bot.get("db_session")
-    if not session:
-        logger.error(
-            "payment.no_session",
-            user_id=user_id,
-            msg="Database session not available",
-        )
-        await message.answer("❌ Internal error. Please try again later.")
-        return
 
     # Calculate USD for each package (for display)
     payment_service = PaymentService(
@@ -125,6 +120,7 @@ async def cmd_buy(message: Message, state: FSMContext):
 async def callback_buy_stars(
     callback: CallbackQuery,
     state: FSMContext,
+    session: AsyncSession,
 ):
     """Handle Stars package selection from inline keyboard."""
     user_id = callback.from_user.id
@@ -159,12 +155,14 @@ async def callback_buy_stars(
         return
 
     # Send invoice
-    await _send_invoice_to_user(callback.message, user_id, stars_amount)
+    await _send_invoice_to_user(callback.message, user_id, stars_amount,
+                                session)
     await callback.answer()
 
 
 @router.message(BuyStarsStates.waiting_for_custom_amount)
-async def process_custom_amount(message: Message, state: FSMContext):
+async def process_custom_amount(message: Message, state: FSMContext,
+                                session: AsyncSession):
     """Process custom Stars amount input from user."""
     user_id = message.from_user.id
 
@@ -193,13 +191,14 @@ async def process_custom_amount(message: Message, state: FSMContext):
     await state.clear()
 
     # Send invoice
-    await _send_invoice_to_user(message, user_id, stars_amount)
+    await _send_invoice_to_user(message, user_id, stars_amount, session)
 
 
 async def _send_invoice_to_user(
     message: Message,
     user_id: int,
     stars_amount: int,
+    session: AsyncSession,
 ):
     """Helper to send payment invoice to user.
 
@@ -207,23 +206,13 @@ async def _send_invoice_to_user(
         message: Message to reply to.
         user_id: Telegram user ID.
         stars_amount: Amount of Stars for payment.
+        session: Database session from middleware.
     """
     logger.info(
         "payment.sending_invoice",
         user_id=user_id,
         stars_amount=stars_amount,
     )
-
-    # Get database session from middleware
-    session = message.bot.get("db_session")
-    if not session:
-        logger.error(
-            "payment.no_session",
-            user_id=user_id,
-            msg="Database session not available",
-        )
-        await message.answer("❌ Internal error. Please try again later.")
-        return
 
     # Create services
     user_repo = UserRepository(session)
@@ -264,7 +253,8 @@ async def _send_invoice_to_user(
 
 
 @router.pre_checkout_query()
-async def process_pre_checkout_query(pre_checkout_query: PreCheckoutQuery):
+async def process_pre_checkout_query(pre_checkout_query: PreCheckoutQuery,
+                                     session: AsyncSession):
     """Handle pre-checkout query (approve/reject payment).
 
     This is called by Telegram BEFORE processing payment.
@@ -321,7 +311,7 @@ async def process_pre_checkout_query(pre_checkout_query: PreCheckoutQuery):
 
 
 @router.message(F.successful_payment)
-async def process_successful_payment(message: Message):
+async def process_successful_payment(message: Message, session: AsyncSession):
     """Handle successful payment (credit user balance).
 
     This is called by Telegram AFTER payment is completed.
@@ -343,19 +333,6 @@ async def process_successful_payment(message: Message):
         invoice_payload=payment.invoice_payload,
         msg="Successful payment received from Telegram",
     )
-
-    # Get database session from middleware
-    session = message.bot.get("db_session")
-    if not session:
-        logger.error(
-            "payment.no_session",
-            user_id=user_id,
-            msg=
-            "CRITICAL: Database session not available for successful payment!",
-        )
-        await message.answer(
-            "❌ Payment processing error. Contact support: /paysupport")
-        return
 
     # Create services
     user_repo = UserRepository(session)
@@ -416,7 +393,7 @@ async def process_successful_payment(message: Message):
 
 
 @router.message(Command("refund"))
-async def cmd_refund(message: Message):
+async def cmd_refund(message: Message, session: AsyncSession):
     """Handler for /refund command - refund a payment.
 
     Usage: /refund <transaction_id>
@@ -449,17 +426,6 @@ async def cmd_refund(message: Message):
         user_id=user_id,
         transaction_id=transaction_id,
     )
-
-    # Get database session from middleware
-    session = message.bot.get("db_session")
-    if not session:
-        logger.error(
-            "payment.no_session",
-            user_id=user_id,
-            msg="Database session not available",
-        )
-        await message.answer("❌ Internal error. Please try again later.")
-        return
 
     # Create services
     user_repo = UserRepository(session)
@@ -538,7 +504,7 @@ async def cmd_refund(message: Message):
 
 
 @router.message(Command("balance"))
-async def cmd_balance(message: Message):
+async def cmd_balance(message: Message, session: AsyncSession):
     """Handler for /balance command - show current balance and history.
 
     Displays:
@@ -551,17 +517,6 @@ async def cmd_balance(message: Message):
         "payment.balance_command",
         user_id=user_id,
     )
-
-    # Get database session from middleware
-    session = message.bot.get("db_session")
-    if not session:
-        logger.error(
-            "payment.no_session",
-            user_id=user_id,
-            msg="Database session not available",
-        )
-        await message.answer("❌ Internal error. Please try again later.")
-        return
 
     # Create services
     user_repo = UserRepository(session)
@@ -620,7 +575,7 @@ async def cmd_balance(message: Message):
 
 
 @router.message(Command("paysupport"))
-async def cmd_paysupport(message: Message):
+async def cmd_paysupport(message: Message, session: AsyncSession):
     """Handler for /paysupport command - payment support contact.
 
     Required by Telegram for bots accepting payments.
