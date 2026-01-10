@@ -394,11 +394,11 @@ async def _handle_with_tools(request: LLMRequest, first_message: types.Message,
                             from decimal import \
                                 Decimal  # pylint: disable=import-outside-toplevel
 
-                            from bot.db.repositories.balance_operation_repository import \
+                            from db.repositories.balance_operation_repository import \
                                 BalanceOperationRepository  # pylint: disable=import-outside-toplevel
-                            from bot.db.repositories.user_repository import \
+                            from db.repositories.user_repository import \
                                 UserRepository  # pylint: disable=import-outside-toplevel
-                            from bot.services.balance_service import \
+                            from services.balance_service import \
                                 BalanceService  # pylint: disable=import-outside-toplevel
 
                             tool_cost_usd = Decimal(result["cost_usd"])
@@ -936,9 +936,9 @@ async def _process_message_batch(
 
             # Phase 2.1: Charge user for API usage
             try:
-                from bot.db.repositories.balance_operation_repository import \
+                from db.repositories.balance_operation_repository import \
                     BalanceOperationRepository
-                from bot.services.balance_service import BalanceService
+                from services.balance_service import BalanceService
 
                 balance_op_repo = BalanceOperationRepository(session)
                 balance_service = BalanceService(session, user_repo,
