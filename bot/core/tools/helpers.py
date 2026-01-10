@@ -223,8 +223,9 @@ def format_tool_results(tool_uses: List[Dict[str, Any]],
     formatted = []
 
     for tool_use, result in zip(tool_uses, results):
-        # Check if result is an error
-        is_error = result.get("error") is not None
+        # Check if result is an error (not None and not empty string)
+        error_msg = result.get("error")
+        is_error = error_msg is not None and error_msg != ""
 
         if is_error:
             # Error result
@@ -232,12 +233,12 @@ def format_tool_results(tool_uses: List[Dict[str, Any]],
                 "type": "tool_result",
                 "tool_use_id": tool_use["id"],
                 "is_error": True,
-                "content": result["error"]
+                "content": error_msg
             })
             logger.warning("tools.helpers.format_tool_results.error",
                            tool_use_id=tool_use["id"],
                            tool_name=tool_use["name"],
-                           error=result["error"])
+                           error=error_msg)
         else:
             # Success result - serialize to JSON
             formatted.append({

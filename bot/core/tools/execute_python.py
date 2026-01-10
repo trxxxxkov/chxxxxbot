@@ -214,8 +214,8 @@ async def execute_python(code: str,
                 all_files = sandbox.files.list("/tmp")
 
                 for entry in all_files:
-                    # Skip directories and input files
-                    if not entry.name or entry.name == "inputs":
+                    # Skip empty names
+                    if not entry.name:
                         continue
 
                     file_path = entry.path
@@ -224,12 +224,25 @@ async def execute_python(code: str,
                     if file_path.startswith("/tmp/inputs/"):
                         continue
 
-                    # Download file content
+                    # Skip system directories and known non-file entries
+                    if entry.name in ("inputs", ".ICE-unix", ".X11-unix"):
+                        continue
+
+                    # Download file content (skip directories)
                     logger.info("tools.execute_python.downloading_output_file",
                                 path=file_path,
                                 name=entry.name)
 
-                    file_bytes = sandbox.files.read(file_path, format="bytes")
+                    try:
+                        file_bytes = sandbox.files.read(file_path,
+                                                        format="bytes")
+                    except Exception as read_error:  # pylint: disable=broad-exception-caught
+                        # Skip if it's a directory or inaccessible
+                        logger.debug(
+                            "tools.execute_python.skip_file",
+                            path=file_path,
+                            error=str(read_error))
+                        continue
 
                     # Determine mime type from extension
                     mime_type, _ = mimetypes.guess_type(entry.name)

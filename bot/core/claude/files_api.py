@@ -96,7 +96,22 @@ async def download_from_files_api(claude_file_id: str) -> bytes:
         logger.info("files_api.download_start", claude_file_id=claude_file_id)
 
         client = get_client()
-        content = client.beta.files.retrieve_content(file_id=claude_file_id)
+
+        # Files API method: content() instead of retrieve_content()
+        try:
+            content = client.beta.files.content(file_id=claude_file_id)
+        except AttributeError:
+            # Fallback: try retrieve() then access .content
+            logger.debug("files_api.trying_retrieve_fallback",
+                        claude_file_id=claude_file_id)
+            file_obj = client.beta.files.retrieve(file_id=claude_file_id)
+            content = file_obj.content
+
+        # Content might be Response object, get bytes
+        if hasattr(content, 'read'):
+            content = content.read()
+        elif hasattr(content, 'content'):
+            content = content.content
 
         logger.info("files_api.download_success",
                     claude_file_id=claude_file_id,
