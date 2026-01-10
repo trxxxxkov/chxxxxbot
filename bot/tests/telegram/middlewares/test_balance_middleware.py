@@ -67,7 +67,7 @@ class TestBalanceMiddlewareFreeCommands:
         mock_message.answer = AsyncMock()
 
         # Call middleware
-        data = {"db_session": test_session}
+        data = {"session": test_session}
         result = await middleware(mock_handler, mock_message, data)
 
         # Verify handler was called (command not blocked)
@@ -102,7 +102,7 @@ class TestBalanceMiddlewareFreeCommands:
         mock_message.caption = None
         mock_message.answer = AsyncMock()
 
-        data = {"db_session": test_session}
+        data = {"session": test_session}
         result = await middleware(mock_handler, mock_message, data)
 
         # Should be allowed (free command)
@@ -139,7 +139,7 @@ class TestBalanceMiddlewarePaidRequests:
         mock_message.caption = None
         mock_message.answer = AsyncMock()
 
-        data = {"db_session": test_session}
+        data = {"session": test_session}
         result = await middleware(mock_handler, mock_message, data)
 
         # Should be blocked
@@ -177,7 +177,7 @@ class TestBalanceMiddlewarePaidRequests:
         mock_message.caption = None
         mock_message.answer = AsyncMock()
 
-        data = {"db_session": test_session}
+        data = {"session": test_session}
         result = await middleware(mock_handler, mock_message, data)
 
         # Should be allowed
@@ -213,7 +213,7 @@ class TestBalanceMiddlewarePaidRequests:
         mock_callback.message.caption = None
         mock_callback.message.answer = AsyncMock()
 
-        data = {"db_session": test_session}
+        data = {"session": test_session}
         result = await middleware(mock_handler, mock_callback, data)
 
         # Should be blocked
@@ -246,7 +246,7 @@ class TestBalanceMiddlewarePaidRequests:
         mock_message.caption = None
         mock_message.answer = AsyncMock()
 
-        data = {"db_session": test_session}
+        data = {"session": test_session}
         result = await middleware(mock_handler, mock_message, data)
 
         # Should be blocked (balance <= 0)
@@ -305,7 +305,7 @@ class TestBalanceMiddlewareEdgeCases:
         mock_message.caption = None
         mock_message.answer = AsyncMock()
 
-        data = {"db_session": test_session}
+        data = {"session": test_session}
 
         # Patch logger.error to avoid rich rendering Mock objects
         with patch('telegram.middlewares.balance_middleware.logger.error'):
@@ -332,7 +332,7 @@ class TestBalanceMiddlewareEdgeCases:
         mock_message.caption = None
         mock_message.answer = AsyncMock()
 
-        data = {"db_session": test_session}
+        data = {"session": test_session}
         result = await middleware(mock_handler, mock_message, data)
 
         # Empty message treated as paid request - check balance
@@ -366,7 +366,7 @@ class TestBalanceMiddlewareEdgeCases:
         mock_message.caption = None
         mock_message.answer = AsyncMock()
 
-        data = {"db_session": test_session}
+        data = {"session": test_session}
         result = await middleware(mock_handler, mock_message, data)
 
         # Should be allowed (unknown commands pass through)
@@ -414,7 +414,7 @@ class TestBalanceMiddlewareIntegration:
         mock_message.caption = None
         mock_message.answer = AsyncMock()
 
-        data = {"db_session": test_session}
+        data = {"session": test_session}
         result = await middleware(mock_handler, mock_message, data)
 
         # Should be blocked
@@ -446,7 +446,7 @@ class TestBalanceMiddlewareIntegration:
         mock_message.caption = None
         mock_message.answer = AsyncMock()
 
-        data = {"db_session": test_session}
+        data = {"session": test_session}
         result = await middleware(mock_handler, mock_message, data)
 
         # Should be allowed (balance > 0, soft check)

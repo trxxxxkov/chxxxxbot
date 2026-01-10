@@ -50,7 +50,7 @@ class TestTopupCommand:
             balance_before = user.balance
 
             # Call handler
-            await admin.cmd_topup(mock_message)
+            await admin.cmd_topup(mock_message, test_session)
 
             # Verify balance increased
             user = await user_repo.get_by_id(sample_user.id)
@@ -87,7 +87,7 @@ class TestTopupCommand:
             balance_before = user.balance
 
             # Call handler
-            await admin.cmd_topup(mock_message)
+            await admin.cmd_topup(mock_message, test_session)
 
             # Verify balance decreased
             user = await user_repo.get_by_id(sample_user.id)
@@ -124,7 +124,7 @@ class TestTopupCommand:
             balance_before = user.balance
 
             # Call handler
-            await admin.cmd_topup(mock_message)
+            await admin.cmd_topup(mock_message, test_session)
 
             # Verify balance increased
             user = await user_repo.get_by_id(sample_user.id)
@@ -155,7 +155,7 @@ class TestTopupCommand:
             balance_before = user.balance
 
             # Call handler
-            await admin.cmd_topup(mock_message)
+            await admin.cmd_topup(mock_message, test_session)
 
             # Verify balance unchanged
             user = await user_repo.get_by_id(sample_user.id)
@@ -184,7 +184,7 @@ class TestTopupCommand:
             mock_message.bot.get = Mock(return_value=test_session)
 
             # Call handler
-            await admin.cmd_topup(mock_message)
+            await admin.cmd_topup(mock_message, test_session)
 
             # Verify error message
             mock_message.answer.assert_called_once()
@@ -208,7 +208,7 @@ class TestTopupCommand:
             mock_message.answer = AsyncMock()
 
             # Call handler
-            await admin.cmd_topup(mock_message)
+            await admin.cmd_topup(mock_message, test_session)
 
             # Verify error message
             mock_message.answer.assert_called_once()
@@ -230,7 +230,7 @@ class TestTopupCommand:
             mock_message.answer = AsyncMock()
 
             # Call handler
-            await admin.cmd_topup(mock_message)
+            await admin.cmd_topup(mock_message, test_session)
 
             # Verify usage message
             mock_message.answer.assert_called_once()
