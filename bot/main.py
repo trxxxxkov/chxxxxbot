@@ -38,7 +38,7 @@ def read_secret(secret_name: str) -> str:
 def load_privileged_users() -> set[int]:
     """Load privileged user IDs from secrets file (Phase 2.1).
 
-    Reads /run/secrets/privileged_users.txt and parses user IDs.
+    Reads /run/secrets/privileged_users and parses user IDs.
     Format: one ID per line, or space/comma separated, or mixed.
     Lines starting with # are ignored (comments).
 
@@ -46,7 +46,7 @@ def load_privileged_users() -> set[int]:
         Set of Telegram user IDs with admin privileges.
     """
     logger = get_logger(__name__)
-    privileged_file = Path("/run/secrets/privileged_users.txt")
+    privileged_file = Path("/run/secrets/privileged_users")
 
     if not privileged_file.exists():
         logger.warning(
