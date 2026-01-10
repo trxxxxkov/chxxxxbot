@@ -58,9 +58,10 @@ async def upload_to_files_api(file_bytes: bytes, filename: str,
                     size_bytes=len(file_bytes))
 
         client = get_client()
-        # FileTypes accepts tuple: (filename, file_content)
-        file_response = client.beta.files.upload(file=(filename,
-                                                       BytesIO(file_bytes)))
+        # FileTypes accepts tuple: (filename, file_content, mime_type)
+        # See: https://platform.claude.com/docs/en/build-with-claude/files
+        file_response = client.beta.files.upload(
+            file=(filename, BytesIO(file_bytes), mime_type))
 
         logger.info("files_api.upload_success",
                     filename=filename,
@@ -97,22 +98,11 @@ async def download_from_files_api(claude_file_id: str) -> bytes:
 
         client = get_client()
 
-        # Files API method: content() instead of retrieve_content()
-        try:
-            content = client.beta.files.content(file_id=claude_file_id)
-        except AttributeError:
-            # Fallback: try retrieve() then access .content
-            logger.debug("files_api.trying_retrieve_fallback",
-                        claude_file_id=claude_file_id)
-            file_obj = client.beta.files.retrieve(file_id=claude_file_id)
-            content = file_obj.content
+        # Files API method: download() (official SDK method)
+        # See: https://platform.claude.com/docs/en/build-with-claude/files
+        content = client.beta.files.download(file_id=claude_file_id)
 
-        # Content might be Response object, get bytes
-        if hasattr(content, 'read'):
-            content = content.read()
-        elif hasattr(content, 'content'):
-            content = content.content
-
+        # Content is returned as bytes, ready to use
         logger.info("files_api.download_success",
                     claude_file_id=claude_file_id,
                     size_bytes=len(content))
