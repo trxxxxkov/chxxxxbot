@@ -243,7 +243,13 @@ chxxxxbot/
 - pyproject.toml, Dockerfile - Dependencies (google-genai, pillow)
 - compose.yaml - Google API key secret
 
-**Testing:** Manual testing ready (send prompt to bot)
+**Testing:**
+- ✅ Comprehensive test suite: 15 tests (all passing)
+- ✅ Success scenarios (default and custom parameters)
+- ✅ Error handling (empty prompt, no image, content policy, API errors)
+- ✅ Cost calculation verification (1K, 2K, 4K)
+- ✅ Client singleton pattern validation
+- ✅ Production testing verified ($0.134 for 2K images)
 
 **See:** [docs/phase-1.7-image-generation.md](docs/phase-1.7-image-generation.md)
 
@@ -565,7 +571,7 @@ docker compose exec bot pytest -s
 - Middlewares: 90%+
 - Overall project: 80%+
 
-**Current Test Coverage:** 201 tests across all components ✅
+**Current Test Coverage:** 361 tests across all components ✅
 
 **Manual Testing:**
 
@@ -739,11 +745,11 @@ This script:
 
 **Phase 1.7 (Image Generation - Nano Banana Pro):** ✅ Complete (2026-01-10)
 - Google Nano Banana Pro integration (gemini-3-pro-image-preview)
-- generate_image tool with flexible parameters (aspect ratio, resolution, content policy)
+- generate_image tool with flexible parameters (aspect ratio, resolution)
 - Automatic delivery via _file_contents pattern
 - Cost tracking ($0.134 for 1K/2K, $0.240 for 4K)
 - Documentation: docs/phase-1.7-image-generation.md
-- **Testing**: Ready for manual testing (send image generation prompts to bot)
-- **Files**: core/tools/generate_image.py, updated registry, system prompt, dependencies
+- **Testing**: 15 comprehensive tests (all passing), production verified
+- **Files**: core/tools/generate_image.py, tests/core/tools/test_generate_image.py, updated registry, system prompt, dependencies
 
-**Next:** Manual testing of Phase 1.7, then Phase 2.1 (Payment System)
+**Next:** Phase 2.1 (Payment System)

@@ -12,6 +12,7 @@ NO __init__.py - use direct import:
 """
 
 from datetime import datetime
+from datetime import UTC
 from pathlib import Path
 from typing import Any, Dict, TYPE_CHECKING
 
@@ -198,7 +199,7 @@ async def generate_image(  # pylint: disable=unused-argument,too-many-locals
             }
 
         # Step 3: Prepare file for delivery
-        filename = f"generated_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.png"
+        filename = f"generated_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}.png"
         mime_type = "image/png"
 
         # Step 4: Calculate cost

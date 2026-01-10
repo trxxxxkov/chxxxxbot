@@ -1,0 +1,384 @@
+"""Tests for generate_image tool (Phase 1.7).
+
+Tests Google Gemini 3 Pro Image API integration:
+- Success flow (image generation)
+- Parameter handling (aspect_ratio, image_size)
+- Error handling (API errors, content policy violations)
+- Cost calculation
+- Client singleton pattern
+- Tool definition schema
+"""
+
+from pathlib import Path
+from unittest.mock import AsyncMock
+from unittest.mock import MagicMock
+from unittest.mock import Mock
+from unittest.mock import patch
+
+from core.tools.generate_image import generate_image
+from core.tools.generate_image import GENERATE_IMAGE_TOOL
+from core.tools.generate_image import get_client
+from core.tools.generate_image import read_secret
+import pytest
+
+# ============================================================================
+# read_secret() Tests
+# ============================================================================
+
+
+def test_read_secret_success():
+    """Test reading secret from Docker secrets."""
+    with patch('pathlib.Path.read_text',
+               return_value='test_google_key\n') as mock_read:
+        result = read_secret('test_secret')
+
+        assert result == 'test_google_key'
+        mock_read.assert_called_once_with(encoding='utf-8')
+
+
+def test_read_secret_path():
+    """Test that read_secret constructs correct path."""
+    with patch.object(Path, 'read_text', return_value='value') as mock_read:
+        read_secret('google_api_key')
+
+        # Verify path construction
+        assert mock_read.called
+
+
+# ============================================================================
+# get_client() Tests
+# ============================================================================
+
+
+def test_get_client_singleton():
+    """Test that get_client returns same instance (singleton pattern)."""
+    # Reset global
+    import core.tools.generate_image as gi
+    gi._client = None
+
+    with patch('core.tools.generate_image.read_secret',
+               return_value='test_key'), \
+         patch('core.tools.generate_image.genai.Client') as MockClient:
+        # Get client twice
+        client1 = get_client()
+        client2 = get_client()
+
+        # Should be same instance
+        assert client1 is client2
+
+
+def test_get_client_initializes_once():
+    """Test that Google GenAI client is initialized only once."""
+    import core.tools.generate_image as gi
+    gi._client = None
+
+    with patch('core.tools.generate_image.read_secret',
+               return_value='test_key') as mock_read_secret, \
+         patch('core.tools.generate_image.genai.Client') as MockClient:
+
+        # Get client twice
+        get_client()
+        get_client()
+
+        # read_secret should be called only once
+        mock_read_secret.assert_called_once_with('google_api_key')
+
+        # Client should be instantiated only once
+        MockClient.assert_called_once()
+
+
+# ============================================================================
+# GENERATE_IMAGE_TOOL Schema Tests
+# ============================================================================
+
+
+def test_tool_definition_structure():
+    """Test GENERATE_IMAGE_TOOL has correct structure."""
+    assert "name" in GENERATE_IMAGE_TOOL
+    assert "description" in GENERATE_IMAGE_TOOL
+    assert "input_schema" in GENERATE_IMAGE_TOOL
+
+    # Check tool name
+    assert GENERATE_IMAGE_TOOL["name"] == "generate_image"
+
+    # Check input schema
+    schema = GENERATE_IMAGE_TOOL["input_schema"]
+    assert schema["type"] == "object"
+    assert "properties" in schema
+    assert "required" in schema
+
+    # Check required parameters
+    assert set(schema["required"]) == {"prompt"}
+
+    # Check properties
+    properties = schema["properties"]
+    assert "prompt" in properties
+    assert "aspect_ratio" in properties
+    assert "image_size" in properties
+
+    # Check aspect_ratio enum
+    assert "enum" in properties["aspect_ratio"]
+    assert set(properties["aspect_ratio"]["enum"]) == {
+        "1:1", "3:4", "4:3", "9:16", "16:9"
+    }
+
+    # Check image_size enum
+    assert "enum" in properties["image_size"]
+    assert set(properties["image_size"]["enum"]) == {"1K", "2K", "4K"}
+
+
+# ============================================================================
+# generate_image() Tests
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_generate_image_success():
+    """Test successful image generation with default parameters."""
+    # Mock response from Google API
+    mock_response = MagicMock()
+    mock_response.parts = [
+        MagicMock(text=None,
+                  inline_data=MagicMock(data=b"fake_image_bytes_here"))
+    ]
+
+    # Mock client
+    mock_client = MagicMock()
+    mock_client.models.generate_content = MagicMock(return_value=mock_response)
+
+    with patch('core.tools.generate_image.get_client',
+               return_value=mock_client):
+
+        result = await generate_image(
+            prompt="A robot with a skateboard",
+            bot=MagicMock(),
+            session=MagicMock(),
+        )
+
+        # Verify result structure
+        assert result["success"] == "true"
+        assert "cost_usd" in result
+        assert result["cost_usd"] == "0.134"  # Default 2K cost
+        assert "parameters_used" in result
+        assert result["parameters_used"]["aspect_ratio"] == "1:1"
+        assert result["parameters_used"]["image_size"] == "2K"
+        assert result["parameters_used"][
+            "model"] == "gemini-3-pro-image-preview"
+
+        # Check _file_contents
+        assert "_file_contents" in result
+        assert len(result["_file_contents"]) == 1
+        file_content = result["_file_contents"][0]
+        assert "filename" in file_content
+        assert file_content["content"] == b"fake_image_bytes_here"
+        assert file_content["mime_type"] == "image/png"
+
+
+@pytest.mark.asyncio
+async def test_generate_image_custom_parameters():
+    """Test image generation with custom aspect ratio and size."""
+    mock_response = MagicMock()
+    mock_response.parts = [
+        MagicMock(text=None, inline_data=MagicMock(data=b"fake_4k_image"))
+    ]
+
+    mock_client = MagicMock()
+    mock_client.models.generate_content = MagicMock(return_value=mock_response)
+
+    with patch('core.tools.generate_image.get_client',
+               return_value=mock_client):
+
+        result = await generate_image(
+            prompt="A landscape",
+            bot=MagicMock(),
+            session=MagicMock(),
+            aspect_ratio="16:9",
+            image_size="4K",
+        )
+
+        # Verify custom parameters
+        assert result["success"] == "true"
+        assert result["cost_usd"] == "0.240"  # 4K cost
+        assert result["parameters_used"]["aspect_ratio"] == "16:9"
+        assert result["parameters_used"]["image_size"] == "4K"
+
+
+@pytest.mark.asyncio
+async def test_generate_image_with_generated_text():
+    """Test image generation when model also returns text."""
+    mock_response = MagicMock()
+    mock_response.parts = [
+        MagicMock(text="Here's your generated image!", inline_data=None),
+        MagicMock(text=None, inline_data=MagicMock(data=b"image_bytes"))
+    ]
+
+    mock_client = MagicMock()
+    mock_client.models.generate_content = MagicMock(return_value=mock_response)
+
+    with patch('core.tools.generate_image.get_client',
+               return_value=mock_client):
+
+        result = await generate_image(
+            prompt="Test",
+            bot=MagicMock(),
+            session=MagicMock(),
+        )
+
+        # Check that generated_text is included
+        assert "generated_text" in result
+        assert result["generated_text"] == "Here's your generated image!"
+
+
+@pytest.mark.asyncio
+async def test_generate_image_empty_prompt():
+    """Test that empty prompt raises ValueError."""
+    with pytest.raises(ValueError, match="Prompt cannot be empty"):
+        await generate_image(
+            prompt="",
+            bot=MagicMock(),
+            session=MagicMock(),
+        )
+
+
+@pytest.mark.asyncio
+async def test_generate_image_no_image_in_response():
+    """Test handling when API doesn't return image."""
+    mock_response = MagicMock()
+    mock_response.parts = [
+        MagicMock(text="Sorry, couldn't generate image", inline_data=None)
+    ]
+
+    mock_client = MagicMock()
+    mock_client.models.generate_content = MagicMock(return_value=mock_response)
+
+    with patch('core.tools.generate_image.get_client',
+               return_value=mock_client):
+
+        result = await generate_image(
+            prompt="Test",
+            bot=MagicMock(),
+            session=MagicMock(),
+        )
+
+        # Should return error
+        assert result["success"] == "false"
+        assert "error" in result
+        assert "No image generated" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_generate_image_content_policy_violation():
+    """Test handling of content policy violations."""
+    mock_client = MagicMock()
+    mock_client.models.generate_content = MagicMock(
+        side_effect=Exception("Content policy violation detected"))
+
+    with patch('core.tools.generate_image.get_client',
+               return_value=mock_client):
+
+        result = await generate_image(
+            prompt="Inappropriate content",
+            bot=MagicMock(),
+            session=MagicMock(),
+        )
+
+        # Should return content policy error
+        assert result["success"] == "false"
+        assert "error" in result
+        assert "Content policy violation" in result["error"]
+        assert "safety filters" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_generate_image_api_error():
+    """Test handling of general API errors."""
+    mock_client = MagicMock()
+    mock_client.models.generate_content = MagicMock(
+        side_effect=Exception("API connection timeout"))
+
+    with patch('core.tools.generate_image.get_client',
+               return_value=mock_client):
+
+        with pytest.raises(Exception, match="API connection timeout"):
+            await generate_image(
+                prompt="Test",
+                bot=MagicMock(),
+                session=MagicMock(),
+            )
+
+
+# ============================================================================
+# Cost Calculation Tests
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_cost_calculation_1k():
+    """Test cost calculation for 1K images."""
+    mock_response = MagicMock()
+    mock_response.parts = [
+        MagicMock(text=None, inline_data=MagicMock(data=b"image"))
+    ]
+
+    mock_client = MagicMock()
+    mock_client.models.generate_content = MagicMock(return_value=mock_response)
+
+    with patch('core.tools.generate_image.get_client',
+               return_value=mock_client):
+
+        result = await generate_image(
+            prompt="Test",
+            bot=MagicMock(),
+            session=MagicMock(),
+            image_size="1K",
+        )
+
+        assert result["cost_usd"] == "0.134"
+
+
+@pytest.mark.asyncio
+async def test_cost_calculation_2k():
+    """Test cost calculation for 2K images."""
+    mock_response = MagicMock()
+    mock_response.parts = [
+        MagicMock(text=None, inline_data=MagicMock(data=b"image"))
+    ]
+
+    mock_client = MagicMock()
+    mock_client.models.generate_content = MagicMock(return_value=mock_response)
+
+    with patch('core.tools.generate_image.get_client',
+               return_value=mock_client):
+
+        result = await generate_image(
+            prompt="Test",
+            bot=MagicMock(),
+            session=MagicMock(),
+            image_size="2K",
+        )
+
+        assert result["cost_usd"] == "0.134"
+
+
+@pytest.mark.asyncio
+async def test_cost_calculation_4k():
+    """Test cost calculation for 4K images."""
+    mock_response = MagicMock()
+    mock_response.parts = [
+        MagicMock(text=None, inline_data=MagicMock(data=b"image"))
+    ]
+
+    mock_client = MagicMock()
+    mock_client.models.generate_content = MagicMock(return_value=mock_response)
+
+    with patch('core.tools.generate_image.get_client',
+               return_value=mock_client):
+
+        result = await generate_image(
+            prompt="Test",
+            bot=MagicMock(),
+            session=MagicMock(),
+            image_size="4K",
+        )
+
+        assert result["cost_usd"] == "0.240"

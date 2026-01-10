@@ -140,7 +140,8 @@ def init_message_queue_manager() -> None:
 async def _handle_with_tools(request: LLMRequest, first_message: types.Message,
                              thread_id: int, session: AsyncSession,
                              user_file_repo: UserFileRepository, chat_id: int,
-                             user_id: int) -> str:
+                             user_id: int,
+                             telegram_thread_id: int | None) -> str:
     """Handle request with tool use loop.
 
     Implements tool use pattern:
@@ -160,6 +161,7 @@ async def _handle_with_tools(request: LLMRequest, first_message: types.Message,
         user_file_repo: UserFileRepository (for saving file metadata).
         chat_id: Telegram chat ID (for sending files).
         user_id: User ID (for file ownership).
+        telegram_thread_id: Telegram thread/topic ID (None for main chat).
 
     Returns:
         Final text response from Claude (ready for streaming).
@@ -343,6 +345,7 @@ async def _handle_with_tools(request: LLMRequest, first_message: types.Message,
 
                                 # 3. Send to Telegram user
                                 # Send as photo if image, otherwise as document
+                                # IMPORTANT: Include message_thread_id for forum topics
                                 if file_type == FileType.IMAGE and mime_type in [
                                         "image/jpeg", "image/png", "image/gif",
                                         "image/webp"
@@ -350,12 +353,14 @@ async def _handle_with_tools(request: LLMRequest, first_message: types.Message,
                                     await first_message.bot.send_photo(
                                         chat_id=chat_id,
                                         photo=types.BufferedInputFile(
-                                            file_bytes, filename=filename))
+                                            file_bytes, filename=filename),
+                                        message_thread_id=telegram_thread_id)
                                 else:
                                     await first_message.bot.send_document(
                                         chat_id=chat_id,
                                         document=types.BufferedInputFile(
-                                            file_bytes, filename=filename))
+                                            file_bytes, filename=filename),
+                                        message_thread_id=telegram_thread_id)
 
                                 delivered_files.append(filename)
 
@@ -657,7 +662,8 @@ async def _process_message_batch(
                 try:
                     response_text = await _handle_with_tools(
                         request, first_message, thread_id, session,
-                        user_file_repo, thread.chat_id, thread.user_id)
+                        user_file_repo, thread.chat_id, thread.user_id,
+                        thread.thread_id)
 
                     # Send final response (no streaming, already processed)
                     # Escape HTML to prevent Telegram parse errors with <, >, & symbols
