@@ -90,6 +90,49 @@ async def handle_voice(message: types.Message, session: AsyncSession) -> None:
                     transcript_length=len(media_content.text_content or ""),
                     cost_usd=media_content.metadata.get("cost_usd"))
 
+        # Phase 2.1: Charge user for Whisper API transcription
+        if "cost_usd" in media_content.metadata:
+            try:
+                from decimal import \
+                    Decimal  # pylint: disable=import-outside-toplevel
+
+                from bot.db.repositories.balance_operation_repository import \
+                    BalanceOperationRepository  # pylint: disable=import-outside-toplevel
+                from bot.db.repositories.user_repository import \
+                    UserRepository  # pylint: disable=import-outside-toplevel
+                from bot.services.balance_service import \
+                    BalanceService  # pylint: disable=import-outside-toplevel
+
+                whisper_cost = Decimal(str(media_content.metadata["cost_usd"]))
+
+                user_repo = UserRepository(session)
+                balance_op_repo = BalanceOperationRepository(session)
+                balance_service = BalanceService(session, user_repo,
+                                                 balance_op_repo)
+
+                await balance_service.charge_user(
+                    user_id=user_id,
+                    amount=whisper_cost,
+                    description=
+                    f"Whisper API: voice transcription, {voice.duration}s",
+                    related_message_id=message.message_id,
+                )
+
+                await session.commit()
+
+                logger.info("voice_handler.user_charged",
+                            user_id=user_id,
+                            cost_usd=float(whisper_cost))
+
+            except Exception as charge_error:  # pylint: disable=broad-exception-caught
+                logger.error("voice_handler.charge_user_error",
+                             user_id=user_id,
+                             cost_usd=media_content.metadata.get("cost_usd"),
+                             error=str(charge_error),
+                             exc_info=True,
+                             msg="CRITICAL: Failed to charge user for Whisper!")
+                # Don't fail - user already got transcription
+
         # 3. Get thread_id
         thread = await get_or_create_thread(message, session)
         await session.commit()
@@ -184,6 +227,49 @@ async def handle_audio(message: types.Message, session: AsyncSession) -> None:
                     transcript_length=len(media_content.text_content or ""),
                     cost_usd=media_content.metadata.get("cost_usd"))
 
+        # Phase 2.1: Charge user for Whisper API transcription
+        if "cost_usd" in media_content.metadata:
+            try:
+                from decimal import \
+                    Decimal  # pylint: disable=import-outside-toplevel
+
+                from bot.db.repositories.balance_operation_repository import \
+                    BalanceOperationRepository  # pylint: disable=import-outside-toplevel
+                from bot.db.repositories.user_repository import \
+                    UserRepository  # pylint: disable=import-outside-toplevel
+                from bot.services.balance_service import \
+                    BalanceService  # pylint: disable=import-outside-toplevel
+
+                whisper_cost = Decimal(str(media_content.metadata["cost_usd"]))
+
+                user_repo = UserRepository(session)
+                balance_op_repo = BalanceOperationRepository(session)
+                balance_service = BalanceService(session, user_repo,
+                                                 balance_op_repo)
+
+                await balance_service.charge_user(
+                    user_id=user_id,
+                    amount=whisper_cost,
+                    description=
+                    f"Whisper API: audio transcription, {audio.duration}s",
+                    related_message_id=message.message_id,
+                )
+
+                await session.commit()
+
+                logger.info("audio_handler.user_charged",
+                            user_id=user_id,
+                            cost_usd=float(whisper_cost))
+
+            except Exception as charge_error:  # pylint: disable=broad-exception-caught
+                logger.error("audio_handler.charge_user_error",
+                             user_id=user_id,
+                             cost_usd=media_content.metadata.get("cost_usd"),
+                             error=str(charge_error),
+                             exc_info=True,
+                             msg="CRITICAL: Failed to charge user for Whisper!")
+                # Don't fail - user already got transcription
+
         # 3. Get thread
         thread = await get_or_create_thread(message, session)
         await session.commit()
@@ -270,6 +356,49 @@ async def handle_video(message: types.Message, session: AsyncSession) -> None:
                     user_id=user_id,
                     transcript_length=len(media_content.text_content or ""),
                     cost_usd=media_content.metadata.get("cost_usd"))
+
+        # Phase 2.1: Charge user for Whisper API transcription
+        if "cost_usd" in media_content.metadata:
+            try:
+                from decimal import \
+                    Decimal  # pylint: disable=import-outside-toplevel
+
+                from bot.db.repositories.balance_operation_repository import \
+                    BalanceOperationRepository  # pylint: disable=import-outside-toplevel
+                from bot.db.repositories.user_repository import \
+                    UserRepository  # pylint: disable=import-outside-toplevel
+                from bot.services.balance_service import \
+                    BalanceService  # pylint: disable=import-outside-toplevel
+
+                whisper_cost = Decimal(str(media_content.metadata["cost_usd"]))
+
+                user_repo = UserRepository(session)
+                balance_op_repo = BalanceOperationRepository(session)
+                balance_service = BalanceService(session, user_repo,
+                                                 balance_op_repo)
+
+                await balance_service.charge_user(
+                    user_id=user_id,
+                    amount=whisper_cost,
+                    description=
+                    f"Whisper API: video transcription, {video.duration}s",
+                    related_message_id=message.message_id,
+                )
+
+                await session.commit()
+
+                logger.info("video_handler.user_charged",
+                            user_id=user_id,
+                            cost_usd=float(whisper_cost))
+
+            except Exception as charge_error:  # pylint: disable=broad-exception-caught
+                logger.error("video_handler.charge_user_error",
+                             user_id=user_id,
+                             cost_usd=media_content.metadata.get("cost_usd"),
+                             error=str(charge_error),
+                             exc_info=True,
+                             msg="CRITICAL: Failed to charge user for Whisper!")
+                # Don't fail - user already got transcription
 
         # 3. Get thread
         thread = await get_or_create_thread(message, session)
@@ -358,6 +487,49 @@ async def handle_video_note(message: types.Message,
                     user_id=user_id,
                     transcript_length=len(media_content.text_content or ""),
                     cost_usd=media_content.metadata.get("cost_usd"))
+
+        # Phase 2.1: Charge user for Whisper API transcription
+        if "cost_usd" in media_content.metadata:
+            try:
+                from decimal import \
+                    Decimal  # pylint: disable=import-outside-toplevel
+
+                from bot.db.repositories.balance_operation_repository import \
+                    BalanceOperationRepository  # pylint: disable=import-outside-toplevel
+                from bot.db.repositories.user_repository import \
+                    UserRepository  # pylint: disable=import-outside-toplevel
+                from bot.services.balance_service import \
+                    BalanceService  # pylint: disable=import-outside-toplevel
+
+                whisper_cost = Decimal(str(media_content.metadata["cost_usd"]))
+
+                user_repo = UserRepository(session)
+                balance_op_repo = BalanceOperationRepository(session)
+                balance_service = BalanceService(session, user_repo,
+                                                 balance_op_repo)
+
+                await balance_service.charge_user(
+                    user_id=user_id,
+                    amount=whisper_cost,
+                    description=
+                    f"Whisper API: video note transcription, {video_note.duration}s",
+                    related_message_id=message.message_id,
+                )
+
+                await session.commit()
+
+                logger.info("video_note_handler.user_charged",
+                            user_id=user_id,
+                            cost_usd=float(whisper_cost))
+
+            except Exception as charge_error:  # pylint: disable=broad-exception-caught
+                logger.error("video_note_handler.charge_user_error",
+                             user_id=user_id,
+                             cost_usd=media_content.metadata.get("cost_usd"),
+                             error=str(charge_error),
+                             exc_info=True,
+                             msg="CRITICAL: Failed to charge user for Whisper!")
+                # Don't fail - user already got transcription
 
         # 3. Get thread
         thread = await get_or_create_thread(message, session)

@@ -157,8 +157,69 @@ Files in `secrets/` (empty templates in repo, fill with your values):
 - `openai_api_key.txt` — OpenAI API key
 - `google_api_key.txt` — Google API key
 - `postgres_password.txt` — PostgreSQL password
+- `privileged_users.txt` — Admin user IDs (one per line)
 
 After filling in secrets, run to prevent accidental commits:
 ```bash
 git update-index --skip-worktree secrets/*
 ```
+
+## Bot Commands
+
+### User Commands
+
+| Command | Description |
+|---------|-------------|
+| `/start` | Start the bot and get welcome message |
+| `/help` | Show help information |
+| `/model` | Select Claude model (Haiku, Sonnet, Opus) |
+| `/balance` | View current balance and transaction history |
+| `/buy` | Purchase balance with Telegram Stars |
+| `/refund <transaction_id>` | Request refund (within 30 days) |
+| `/paysupport` | Payment support information |
+
+### Admin Commands (Privileged Users Only)
+
+| Command | Description |
+|---------|-------------|
+| `/topup <user_id\|@username> <amount>` | Manually add balance to user account |
+| `/set_margin <margin>` | Set owner margin (k3) for commission calculation |
+
+**Privileged users** are configured in `secrets/privileged_users.txt` (one Telegram user ID per line).
+
+### Payment System
+
+**Balance System:**
+- All users start with $0.10 balance
+- Balance is used to pay for API calls (Claude, tools, external APIs)
+- Soft balance check: requests allowed while balance > 0 (can go negative once)
+- After balance ≤ 0, further requests are blocked until top-up
+
+**Buying Balance:**
+- Use `/buy` command to purchase Stars packages
+- Available packages: 10, 50, 100, 250, 500 Stars
+- Or enter custom amount (1-2500 Stars)
+- Instant balance crediting after successful payment
+
+**Commission Formula:**
+```
+y = x × (1 - k1 - k2 - k3)
+
+where:
+  x = stars_amount × $0.013 (nominal USD value)
+  y = credited balance (after commissions)
+  k1 = 0.35 (Telegram withdrawal fee)
+  k2 = 0.15 (Topics in private chats fee)
+  k3 = 0.0+ (Owner margin, configurable)
+```
+
+**Refunds:**
+- Available within 30 days of payment
+- User must have sufficient balance (≥ refund amount)
+- Use transaction ID from payment confirmation
+- Stars returned to user's Telegram account
+
+**Cost Tracking:**
+- Claude API: Input/output tokens, cache reads, thinking tokens
+- Tools: Whisper transcription, E2B code execution, image generation
+- All costs logged in balance_operations table

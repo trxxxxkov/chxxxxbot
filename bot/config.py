@@ -570,6 +570,27 @@ def list_all_models() -> list[tuple[str, str]]:
 # Stars to USD conversion rate (market rate, BEFORE commissions)
 STARS_TO_USD_RATE: float = 0.013  # $0.013 per Star (~$13 per 1000 Stars)
 
+# ============================================================================
+# External API Pricing (Phase 2.1: Cost Tracking)
+# ============================================================================
+
+# E2B Code Interpreter pricing
+# Based on E2B pricing: https://e2b.dev/pricing
+# Standard tier: $0.00005 per second (~$0.18 per hour) of sandbox runtime
+E2B_COST_PER_SECOND: float = 0.00005  # $0.00005 per second
+
+# OpenAI Whisper API pricing
+# Already tracked in transcribe_audio tool: $0.006 per minute
+# Reference: https://openai.com/api/pricing/
+WHISPER_COST_PER_MINUTE: float = 0.006  # $0.006 per minute
+
+# Google Gemini Image Generation pricing
+# Already tracked in generate_image tool
+# 1K/2K: $0.134 per image, 4K: $0.240 per image
+# Reference: https://ai.google.dev/pricing
+GEMINI_IMAGE_COST_1K: float = 0.134  # $0.134 per 1K/2K image
+GEMINI_IMAGE_COST_4K: float = 0.240  # $0.240 per 4K image
+
 # Commission rates for formula: y = x * (1 - k1 - k2 - k3)
 TELEGRAM_WITHDRAWAL_FEE: float = 0.35  # k1: 35% Telegram withdrawal commission
 TELEGRAM_TOPICS_FEE: float = 0.15  # k2: 15% Topics in private chats commission

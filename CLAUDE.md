@@ -255,26 +255,75 @@ chxxxxbot/
 
 ### Phase 2 — Telegram Features Expansion
 
-#### 2.1 Payment System 📋 Planned
-**User balance:**
-- USD balance in database (User model)
-- Pre-request validation (block if insufficient funds)
-- Real-time cost calculation
+#### 2.1 Payment System ✅ Complete
+**Status:** Complete (2026-01-10)
+
+**User balance system:**
+- ✅ USD balance per user (starter balance: $0.10)
+- ✅ Soft balance check (allow requests while balance > 0, can go negative once)
+- ✅ Balance operations tracking (PAYMENT, USAGE, REFUND, ADMIN_TOPUP)
+- ✅ Full audit trail in balance_operations table
 
 **Telegram Stars integration:**
-- Payment flow (deposit via Stars)
-- Refund mechanism (by transaction_id)
-- Invoice generation
+- ✅ Native payment flow via sendInvoice
+- ✅ Pre-checkout query validation
+- ✅ Successful payment handler with balance crediting
+- ✅ Predefined packages (10/50/100/250/500 Stars) + custom amount (1-2500)
+- ✅ Commission formula: y = x * (1 - k1 - k2 - k3)
+  - k1 = 0.35 (Telegram withdrawal fee)
+  - k2 = 0.15 (Topics in private chats fee)
+  - k3 = 0.0+ (Owner margin, configurable)
+- ✅ Refund support within 30 days (refundStarPayment)
+- ✅ Transaction ID tracking for refunds
+- ✅ Duplicate payment protection
+
+**User commands:**
+- ✅ `/buy` - Purchase balance with Stars (packages or custom)
+- ✅ `/balance` - View current balance and transaction history
+- ✅ `/refund <transaction_id>` - Request refund (30-day window)
+- ✅ `/paysupport` - Payment support information (Telegram requirement)
 
 **Admin features:**
-- Privileged users list (in secrets)
-- Manual balance adjustment commands
-- Balance management by username/user_id
+- ✅ Privileged users list in secrets/privileged_users.txt
+- ✅ `/topup <user_id|@username> <amount>` - Manual balance adjustment
+- ✅ `/set_margin <margin>` - Configure owner margin (k3)
+- ✅ Privilege verification for all admin commands
 
-**Cost tracking:**
-- All API calls tracked (LLM, tools, external APIs)
-- Cost attribution per user
-- Cost reporting and analytics
+**Cost tracking integration:**
+- ✅ Claude API costs tracked (input/output/cache tokens, thinking tokens)
+- ✅ Tool execution costs tracked (Whisper, E2B, Google Gemini)
+- ✅ Automatic charging after each API call
+- ✅ Cost attribution per user
+- ✅ Balance operations logged for every charge
+
+**Balance middleware:**
+- ✅ Pre-request balance check (blocks if balance ≤ 0)
+- ✅ Free commands bypass (start, help, buy, balance, refund, paysupport, model, etc.)
+- ✅ Fail-open on errors (allows request if balance check fails)
+
+**Database schema:**
+- ✅ payments table (Stars transactions, commission breakdown, refund tracking)
+- ✅ balance_operations table (audit trail for all balance changes)
+- ✅ User.balance field with relationships
+- ✅ Alembic migration (007) applied
+
+**Testing:**
+- ✅ 46 integration tests (payment flow, refunds, middleware, admin commands)
+- ✅ Unit tests for all models, repositories, services
+- ✅ 484 total tests passing (100% pass rate)
+- ✅ Edge case coverage (duplicates, expiry, insufficient balance, soft check)
+
+**Files created:**
+- Models: payment.py, balance_operation.py
+- Repositories: payment_repository.py, balance_operation_repository.py
+- Services: payment_service.py, balance_service.py
+- Handlers: payment.py, admin.py
+- Middleware: balance_middleware.py
+- Tests: 8 test files (models, repos, services, integration, middleware)
+- Migration: 007_add_payment_system_tables.py
+- Secrets: privileged_users.txt
+
+**See:** [docs/phase-2.1-payment-system.md](docs/phase-2.1-payment-system.md)
 
 #### 2.2 DevOps Agent 📋 Planned
 
@@ -752,4 +801,19 @@ This script:
 - **Testing**: 15 comprehensive tests (all passing), production verified
 - **Files**: core/tools/generate_image.py, tests/core/tools/test_generate_image.py, updated registry, system prompt, dependencies
 
-**Next:** Phase 2.1 (Payment System)
+**Phase 2.1 (Payment System):** ✅ Complete (2026-01-10)
+- Telegram Stars payment integration with commission handling
+- User balance system ($0.10 starter, soft balance check)
+- Payment handlers (/buy with packages, /refund, /balance, /paysupport)
+- Admin commands (/topup, /set_margin for privileged users)
+- Balance middleware (blocks requests when balance ≤ 0)
+- Cost tracking integration (Claude API, tools, external APIs)
+- Full audit trail (payments, balance_operations tables)
+- Refund support (30-day window with validation)
+- Commission formula: y = x * (1 - 0.35 - 0.15 - k3)
+- **Database**: 2 new models (Payment, BalanceOperation), migration 007
+- **Testing**: 46 integration tests, 484 total tests passing (100% pass rate)
+- **Files**: 17 new files (models, repos, services, handlers, middleware, tests)
+- Documentation: docs/phase-2.1-payment-system.md
+
+**Next:** Phase 2.2 (DevOps Agent)

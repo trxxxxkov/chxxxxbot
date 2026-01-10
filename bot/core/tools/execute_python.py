@@ -226,7 +226,11 @@ async def execute_python(code: str,
 
         # Set E2B_API_KEY environment variable for Sandbox.create()
         import os  # pylint: disable=import-outside-toplevel
+        import time  # pylint: disable=import-outside-toplevel
         os.environ["E2B_API_KEY"] = api_key
+
+        # Phase 2.1: Track sandbox execution time for cost calculation
+        sandbox_start_time = time.time()
 
         # Create sandbox (new API in v1.0+ with context manager)
         with Sandbox.create() as sandbox:
@@ -382,13 +386,25 @@ async def execute_python(code: str,
                 "mime_type": f["mime_type"]
             } for f in generated_files]
 
+            # Phase 2.1: Calculate E2B cost based on sandbox runtime
+            sandbox_end_time = time.time()
+            sandbox_duration_seconds = sandbox_end_time - sandbox_start_time
+
+            # Import pricing constant
+            from config import \
+                E2B_COST_PER_SECOND  # pylint: disable=import-outside-toplevel
+            cost_usd = sandbox_duration_seconds * E2B_COST_PER_SECOND
+
             logger.info("tools.execute_python.success",
                         success=success,
                         stdout_length=len(stdout_str),
                         stderr_length=len(stderr_str),
                         results_count=len(execution.results or []),
                         generated_files_count=len(generated_files),
-                        has_error=bool(error_str))
+                        has_error=bool(error_str),
+                        sandbox_duration_seconds=round(sandbox_duration_seconds,
+                                                       2),
+                        cost_usd=round(cost_usd, 6))
 
             return {
                 "stdout":
@@ -404,7 +420,9 @@ async def execute_python(code: str,
                 "generated_files":
                     json.dumps(generated_files_meta, ensure_ascii=False),
                 "_file_contents":
-                    generated_files  # Internal: raw bytes
+                    generated_files,  # Internal: raw bytes
+                "cost_usd":
+                    f"{cost_usd:.6f}"  # Phase 2.1: E2B sandbox cost
             }
 
         # Context manager automatically closes sandbox

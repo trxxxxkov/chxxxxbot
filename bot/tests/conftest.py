@@ -100,6 +100,33 @@ async def test_session(test_db_engine,) -> AsyncGenerator[AsyncSession, None]:
 
 
 @pytest_asyncio.fixture
+async def integration_session(
+    test_db_engine,) -> AsyncGenerator[AsyncSession, None]:
+    """Create async session for integration tests that need to commit.
+
+    Unlike test_session, this fixture allows commits within tests.
+    Used for integration tests that call service methods with commits.
+
+    Args:
+        test_db_engine: Async engine fixture.
+
+    Yields:
+        AsyncSession: SQLAlchemy async session.
+    """
+    # Create session factory
+    session_factory = async_sessionmaker(
+        test_db_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+
+    async with session_factory() as session:
+        yield session
+        # Rollback any uncommitted changes
+        await session.rollback()
+
+
+@pytest_asyncio.fixture
 async def sample_user(test_session: AsyncSession) -> User:
     """Create sample user for testing.
 
@@ -122,6 +149,32 @@ async def sample_user(test_session: AsyncSession) -> User:
     )
     test_session.add(user)
     await test_session.flush()
+    return user
+
+
+@pytest_asyncio.fixture
+async def integration_sample_user(integration_session: AsyncSession) -> User:
+    """Create sample user for integration tests.
+
+    Args:
+        integration_session: Integration session fixture.
+
+    Returns:
+        User: Sample user with test data.
+    """
+    user = User(
+        id=123456789,
+        first_name='Test',
+        last_name='User',
+        username='test_user',
+        language_code='en',
+        is_premium=False,
+        model_id='claude:sonnet',
+        first_seen_at=datetime.now(timezone.utc),
+        last_seen_at=datetime.now(timezone.utc),
+    )
+    integration_session.add(user)
+    await integration_session.commit()
     return user
 
 

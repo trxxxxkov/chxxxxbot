@@ -101,14 +101,33 @@ async def analyze_image(claude_file_id: str, question: str) -> Dict[str, str]:
                                           }])
 
         analysis = response.content[0].text
-        tokens_used = response.usage.input_tokens + response.usage.output_tokens
+        input_tokens = response.usage.input_tokens
+        output_tokens = response.usage.output_tokens
+        tokens_used = input_tokens + output_tokens
+
+        # Phase 2.1: Calculate cost using Sonnet 4.5 pricing
+        from config import \
+            MODEL_REGISTRY  # pylint: disable=import-outside-toplevel
+        model_config = MODEL_REGISTRY["claude:sonnet"]
+
+        # Calculate cost: (tokens / 1M) * price_per_million
+        cost_input = (input_tokens / 1_000_000) * model_config.pricing_input
+        cost_output = (output_tokens / 1_000_000) * model_config.pricing_output
+        cost_usd = cost_input + cost_output
 
         logger.info("tools.analyze_image.success",
                     claude_file_id=claude_file_id,
                     tokens_used=tokens_used,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    cost_usd=round(cost_usd, 6),
                     analysis_length=len(analysis))
 
-        return {"analysis": analysis, "tokens_used": str(tokens_used)}
+        return {
+            "analysis": analysis,
+            "tokens_used": str(tokens_used),
+            "cost_usd": f"{cost_usd:.6f}"  # Phase 2.1: Claude Vision API cost
+        }
 
     except Exception as e:
         logger.error("tools.analyze_image.failed",

@@ -194,6 +194,13 @@ class Payment(Base, TimestampMixin):
             return False
 
         now = datetime.now(timezone.utc)
-        max_refund_date = self.created_at + timedelta(days=refund_period_days)
+
+        # Handle both timezone-aware and naive datetimes (for SQLite compatibility)
+        created_at = self.created_at
+        if created_at.tzinfo is None:
+            # Assume UTC if no timezone info (SQLite)
+            created_at = created_at.replace(tzinfo=timezone.utc)
+
+        max_refund_date = created_at + timedelta(days=refund_period_days)
 
         return now <= max_refund_date

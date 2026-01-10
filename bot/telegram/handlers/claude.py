@@ -388,6 +388,55 @@ async def _handle_with_tools(request: LLMRequest, first_message: types.Message,
 
                     results.append(result)
 
+                    # Phase 2.1: Charge user for tool execution cost
+                    if "cost_usd" in result:
+                        try:
+                            from decimal import \
+                                Decimal  # pylint: disable=import-outside-toplevel
+
+                            from bot.db.repositories.balance_operation_repository import \
+                                BalanceOperationRepository  # pylint: disable=import-outside-toplevel
+                            from bot.db.repositories.user_repository import \
+                                UserRepository  # pylint: disable=import-outside-toplevel
+                            from bot.services.balance_service import \
+                                BalanceService  # pylint: disable=import-outside-toplevel
+
+                            tool_cost_usd = Decimal(result["cost_usd"])
+
+                            user_repo = UserRepository(session)
+                            balance_op_repo = BalanceOperationRepository(
+                                session)
+                            balance_service = BalanceService(
+                                session, user_repo, balance_op_repo)
+
+                            await balance_service.charge_user(
+                                user_id=user_id,
+                                amount=tool_cost_usd,
+                                description=(f"Tool execution: {tool_name}, "
+                                             f"cost ${result['cost_usd']}"),
+                                related_message_id=first_message.message_id,
+                            )
+
+                            await session.commit()
+
+                            logger.info("tools.loop.user_charged_for_tool",
+                                        user_id=user_id,
+                                        tool_name=tool_name,
+                                        cost_usd=float(tool_cost_usd))
+
+                        except Exception as charge_error:  # pylint: disable=broad-exception-caught
+                            logger.error(
+                                "tools.loop.charge_user_for_tool_error",
+                                user_id=user_id,
+                                tool_name=tool_name,
+                                cost_usd=result.get("cost_usd"),
+                                error=str(charge_error),
+                                exc_info=True,
+                                msg=
+                                "CRITICAL: Failed to charge user for tool usage!"
+                            )
+                            # Don't fail the request - user already got result
+
                     logger.info("tools.loop.tool_success",
                                 thread_id=thread_id,
                                 tool_name=tool_name,

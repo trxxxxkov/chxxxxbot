@@ -48,6 +48,7 @@ class TestAnalyzePdf:
         mock_response.content = [Mock(text="This is a test document.")]
         mock_response.usage = Mock(input_tokens=1000,
                                    output_tokens=50,
+                                   cache_creation_input_tokens=0,
                                    cache_read_input_tokens=0)
         mock_client.messages.create.return_value = mock_response
         mock_get_client.return_value = mock_client
@@ -60,6 +61,8 @@ class TestAnalyzePdf:
         assert result["analysis"] == "This is a test document."
         assert result["tokens_used"] == "1050"
         assert result["cached_tokens"] == "0"
+        assert "cost_usd" in result  # Phase 2.1: Cost tracking
+        assert float(result["cost_usd"]) > 0
 
         # Verify API call
         mock_client.messages.create.assert_called_once()
@@ -95,6 +98,7 @@ class TestAnalyzePdf:
         mock_response.content = [Mock(text="Page 1-3 content")]
         mock_response.usage = Mock(input_tokens=500,
                                    output_tokens=30,
+                                   cache_creation_input_tokens=0,
                                    cache_read_input_tokens=0)
         mock_client.messages.create.return_value = mock_response
         mock_get_client.return_value = mock_client
@@ -107,6 +111,7 @@ class TestAnalyzePdf:
         # Verify
         assert result["analysis"] == "Page 1-3 content"
         assert result["tokens_used"] == "530"
+        assert "cost_usd" in result  # Phase 2.1: Cost tracking
 
         # Verify question includes page range
         call_args = mock_client.messages.create.call_args[1]
@@ -125,6 +130,7 @@ class TestAnalyzePdf:
         mock_response.usage = Mock(
             input_tokens=100,  # Few new tokens
             output_tokens=50,
+            cache_creation_input_tokens=0,
             cache_read_input_tokens=5000  # Many cached tokens
         )
         mock_client.messages.create.return_value = mock_response
@@ -137,6 +143,7 @@ class TestAnalyzePdf:
         # Verify cache hit
         assert result["cached_tokens"] == "5000"
         assert result["tokens_used"] == "150"
+        assert "cost_usd" in result  # Phase 2.1: Cost tracking
 
     @pytest.mark.asyncio
     @patch('core.tools.analyze_pdf.get_client')

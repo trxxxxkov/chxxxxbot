@@ -121,20 +121,48 @@ async def analyze_pdf(claude_file_id: str,
             }])
 
         analysis = response.content[0].text
-        tokens_used = response.usage.input_tokens + response.usage.output_tokens
-        cached_tokens = response.usage.cache_read_input_tokens
+        input_tokens = response.usage.input_tokens
+        output_tokens = response.usage.output_tokens
+        cache_creation_tokens = response.usage.cache_creation_input_tokens
+        cache_read_tokens = response.usage.cache_read_input_tokens
+        tokens_used = input_tokens + output_tokens
+
+        # Phase 2.1: Calculate cost using Sonnet 4.5 pricing with cache
+        from config import \
+            MODEL_REGISTRY  # pylint: disable=import-outside-toplevel
+        model_config = MODEL_REGISTRY["claude:sonnet"]
+
+        # Calculate cost components
+        # Regular input tokens (not cached)
+        cost_input = (input_tokens / 1_000_000) * model_config.pricing_input
+        # Output tokens
+        cost_output = (output_tokens / 1_000_000) * model_config.pricing_output
+        # Cache creation (5-minute ephemeral)
+        cost_cache_write = (cache_creation_tokens /
+                            1_000_000) * model_config.pricing_cache_write_5m
+        # Cache read (0.1x)
+        cost_cache_read = (cache_read_tokens /
+                           1_000_000) * model_config.pricing_cache_read
+
+        cost_usd = cost_input + cost_output + cost_cache_write + cost_cache_read
 
         logger.info("tools.analyze_pdf.success",
                     claude_file_id=claude_file_id,
                     tokens_used=tokens_used,
-                    cached_tokens=cached_tokens,
-                    cache_hit=cached_tokens > 0,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    cache_creation_tokens=cache_creation_tokens,
+                    cache_read_tokens=cache_read_tokens,
+                    cache_hit=cache_read_tokens > 0,
+                    cost_usd=round(cost_usd, 6),
                     analysis_length=len(analysis))
 
         return {
             "analysis": analysis,
             "tokens_used": str(tokens_used),
-            "cached_tokens": str(cached_tokens)
+            "cached_tokens": str(cache_read_tokens),
+            "cost_usd":
+                f"{cost_usd:.6f}"  # Phase 2.1: Claude PDF API cost with cache
         }
 
     except Exception as e:

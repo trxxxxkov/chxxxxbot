@@ -57,6 +57,26 @@ class UserRepository(BaseRepository[User]):
                      found=user is not None)
         return user
 
+    async def get_by_username(self, username: str) -> Optional[User]:
+        """Get user by username.
+
+        Args:
+            username: Telegram username (without @).
+
+        Returns:
+            User instance or None if not found.
+        """
+        from sqlalchemy import select
+
+        logger.debug("user_repository.get_by_username", username=username)
+        stmt = select(User).where(User.username == username)
+        result = await self.session.execute(stmt)
+        user = result.scalar_one_or_none()
+        logger.debug("user_repository.get_by_username.result",
+                     username=username,
+                     found=user is not None)
+        return user
+
     async def get_or_create(
         self,
         telegram_id: int,

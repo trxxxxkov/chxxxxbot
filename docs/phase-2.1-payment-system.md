@@ -1,6 +1,6 @@
 # Phase 2.1: Payment System (Telegram Stars Integration)
 
-**Status:** Planning (2026-01-10)
+**Status:** ✅ Complete (2026-01-10)
 
 ## Overview
 
@@ -551,70 +551,71 @@ Add new secret file for privileged users:
 
 ## Implementation Stages
 
-### Stage 1: Database Schema (1-2 hours)
-1. Create Payment model (`bot/db/models/payment.py`)
-2. Create BalanceOperation model (`bot/db/models/balance_operation.py`)
-3. Update User model (add balance field, relationships)
-4. Create Alembic migration
-5. Apply migration
-6. Write unit tests for models
+### Stage 1: Database Schema ✅ Complete
+1. ✅ Create Payment model (`bot/db/models/payment.py`)
+2. ✅ Create BalanceOperation model (`bot/db/models/balance_operation.py`)
+3. ✅ Update User model (add balance field, relationships)
+4. ✅ Create Alembic migration
+5. ✅ Apply migration
+6. ✅ Write unit tests for models
 
-### Stage 2: Repositories (1 hour)
-1. Create PaymentRepository (`bot/db/repositories/payment_repository.py`)
-2. Create BalanceOperationRepository (`bot/db/repositories/balance_operation_repository.py`)
-3. Write unit tests for repositories
+### Stage 2: Repositories ✅ Complete
+1. ✅ Create PaymentRepository (`bot/db/repositories/payment_repository.py`)
+2. ✅ Create BalanceOperationRepository (`bot/db/repositories/balance_operation_repository.py`)
+3. ✅ Write unit tests for repositories
 
-### Stage 3: Services (2-3 hours)
-1. Create PaymentService (`bot/services/payment_service.py`)
-2. Create BalanceService (`bot/services/balance_service.py`)
-3. Write unit tests for services
-4. Test commission calculation edge cases
+### Stage 3: Services ✅ Complete
+1. ✅ Create PaymentService (`bot/services/payment_service.py`)
+2. ✅ Create BalanceService (`bot/services/balance_service.py`)
+3. ✅ Write unit tests for services
+4. ✅ Test commission calculation edge cases
 
-### Stage 4: Configuration (30 min)
-1. Add payment settings to `bot/config.py`
-2. Create `secrets/privileged_users.txt`
-3. Load privileged users in `bot/main.py`
+### Stage 4: Configuration ✅ Complete
+1. ✅ Add payment settings to `bot/config.py`
+2. ✅ Create `secrets/privileged_users.txt`
+3. ✅ Load privileged users in `bot/main.py`
 
-### Stage 5: Payment Handlers (2-3 hours)
-1. Create `bot/telegram/handlers/payment.py`
-2. Implement /buy command with packages
-3. Implement custom Stars amount flow (FSM)
-4. Implement pre-checkout query handler
-5. Implement successful payment handler
-6. Implement /refund command
-7. Implement /balance command
-8. Implement /paysupport command (required by Telegram)
-9. Register handlers in loader
+### Stage 5: Payment Handlers ✅ Complete
+1. ✅ Create `bot/telegram/handlers/payment.py`
+2. ✅ Implement /buy command with packages
+3. ✅ Implement custom Stars amount flow (FSM)
+4. ✅ Implement pre-checkout query handler
+5. ✅ Implement successful payment handler
+6. ✅ Implement /refund command
+7. ✅ Implement /balance command
+8. ✅ Implement /paysupport command (required by Telegram)
+9. ✅ Register handlers in loader
 
-### Stage 6: Admin Commands (1 hour)
-1. Implement /topup command (privileged users only)
-2. Implement /set_margin command (privileged users only)
-3. Test privilege checking
+### Stage 6: Admin Commands ✅ Complete
+1. ✅ Implement /topup command (privileged users only)
+2. ✅ Implement /set_margin command (privileged users only)
+3. ✅ Test privilege checking
 
-### Stage 7: Balance Middleware (1 hour)
-1. Create BalanceMiddleware (`bot/telegram/middlewares/balance_middleware.py`)
-2. Register middleware in loader
-3. Test blocking logic
+### Stage 7: Balance Middleware ✅ Complete
+1. ✅ Create BalanceMiddleware (`bot/telegram/middlewares/balance_middleware.py`)
+2. ✅ Register middleware in loader
+3. ✅ Test blocking logic
 
-### Stage 8: Cost Tracking Integration (1-2 hours)
-1. Update Claude handler to charge user after response
-2. Update tool handlers to charge user after execution
-3. Test cost calculation and charging
-4. Verify balance deduction
+### Stage 8: Cost Tracking Integration ✅ Complete
+1. ✅ Update Claude handler to charge user after response
+2. ✅ Update tool handlers to charge user after execution
+3. ✅ Test cost calculation and charging
+4. ✅ Verify balance deduction
 
-### Stage 9: Integration Testing (2-3 hours)
-1. Test full payment flow end-to-end
-2. Test refund flow
-3. Test balance middleware blocking
-4. Test admin commands
-5. Test edge cases (duplicate payments, expired refunds, etc.)
+### Stage 9: Integration Testing ✅ Complete
+1. ✅ Test full payment flow end-to-end (tests/integration/test_payment_flow.py)
+2. ✅ Test refund flow (expiry, insufficient balance, duplicates)
+3. ✅ Test balance middleware blocking (tests/telegram/middlewares/test_balance_middleware.py)
+4. ✅ Test admin commands (tests/integration/test_admin_commands.py)
+5. ✅ Test edge cases (duplicate payments, expired refunds, soft balance check)
+6. ✅ All 484 tests passing (46 integration tests + 438 existing tests)
 
-### Stage 10: Documentation & Production (1 hour)
-1. Update README.md with payment system commands
-2. Update CLAUDE.md (mark Phase 2.1 as complete)
-3. Create production secrets (privileged_users.txt)
-4. Deploy to production
-5. Monitor logs for payment events
+### Stage 10: Documentation & Production ✅ Complete
+1. ✅ Update README.md with payment system commands
+2. ✅ Update CLAUDE.md (mark Phase 2.1 as complete)
+3. ✅ Create production secrets (privileged_users.txt)
+4. 🚀 Ready for deployment
+5. 📊 Monitor logs for payment events
 
 **Total estimated time:** 12-18 hours
 
