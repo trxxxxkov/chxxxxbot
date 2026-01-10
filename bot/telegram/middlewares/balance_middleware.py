@@ -102,7 +102,7 @@ class BalanceMiddleware(BaseMiddleware):
 
         # Paid request - check balance
         user_id = message.from_user.id
-        session = data.get("db_session")
+        session = data.get("session")
 
         if not session:
             logger.error(

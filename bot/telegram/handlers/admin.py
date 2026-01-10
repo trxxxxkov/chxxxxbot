@@ -17,6 +17,7 @@ from db.repositories.balance_operation_repository import \
     BalanceOperationRepository
 from db.repositories.user_repository import UserRepository
 from services.balance_service import BalanceService
+from sqlalchemy.ext.asyncio import AsyncSession
 import structlog
 
 logger = structlog.get_logger(__name__)
@@ -36,11 +37,15 @@ def is_privileged(user_id: int) -> bool:
 
 
 @router.message(Command("topup"))
-async def cmd_topup(message: Message):
+async def cmd_topup(message: Message, session: AsyncSession):
     """Handler for /topup command - admin balance adjustment.
 
     Privileged users only.
     Usage: /topup <user_id or @username> <amount>
+
+    Args:
+        message: Telegram message with /topup command.
+        session: Database session from middleware.
 
     Examples:
         /topup 123456789 10.50     (add $10.50)
@@ -104,17 +109,6 @@ async def cmd_topup(message: Message):
         target_username=target_username,
         amount=float(amount),
     )
-
-    # Get database session from middleware
-    session = message.bot.get("db_session")
-    if not session:
-        logger.error(
-            "admin.no_session",
-            admin_user_id=user_id,
-            msg="Database session not available",
-        )
-        await message.answer("❌ Internal error. Please try again later.")
-        return
 
     # Create services
     user_repo = UserRepository(session)
