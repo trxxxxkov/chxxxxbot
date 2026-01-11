@@ -21,9 +21,31 @@ from pathlib import Path
 from typing import Optional
 
 import anthropic
+from utils.metrics import record_file_upload
 from utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
+
+
+def _get_file_type_from_mime(mime_type: str) -> str:
+    """Infer file type from MIME type for metrics.
+
+    Args:
+        mime_type: MIME type (e.g., 'image/jpeg', 'application/pdf').
+
+    Returns:
+        File type category: 'image', 'pdf', 'audio', 'video', or 'document'.
+    """
+    if mime_type.startswith('image/'):
+        return 'image'
+    elif mime_type == 'application/pdf':
+        return 'pdf'
+    elif mime_type.startswith('audio/'):
+        return 'audio'
+    elif mime_type.startswith('video/'):
+        return 'video'
+    else:
+        return 'document'
 
 
 def read_secret(secret_name: str) -> str:
@@ -68,6 +90,10 @@ async def upload_to_files_api(file_bytes: bytes, filename: str,
                     filename=filename,
                     claude_file_id=file_response.id,
                     size_bytes=len(file_bytes))
+
+        # Record metric
+        file_type = _get_file_type_from_mime(mime_type)
+        record_file_upload(file_type=file_type)
 
         return file_response.id
 

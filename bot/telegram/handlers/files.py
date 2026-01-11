@@ -37,6 +37,7 @@ from db.repositories.message_repository import MessageRepository
 from db.repositories.thread_repository import ThreadRepository
 from db.repositories.user_file_repository import UserFileRepository
 from sqlalchemy.ext.asyncio import AsyncSession
+from utils.metrics import record_file_upload, record_message_received
 from utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
@@ -254,6 +255,9 @@ async def handle_photo(message: types.Message, session: AsyncSession) -> None:
                 file_size=photo.file_size,
                 is_premium=message.from_user.is_premium)
 
+    # Record metrics
+    record_message_received(chat_type=message.chat.type, content_type="photo")
+
     # Check file size (Telegram limits: 20MB free, 2GB Premium)
     file_size_limit = get_file_size_limit(message.from_user)
     if photo.file_size and photo.file_size > file_size_limit:
@@ -414,6 +418,9 @@ async def handle_document(message: types.Message,
                 mime_type=document.mime_type,
                 file_size=document.file_size,
                 is_premium=message.from_user.is_premium)
+
+    # Record metrics
+    record_message_received(chat_type=message.chat.type, content_type="document")
 
     # Check file size (Telegram limits: 20MB free, 2GB Premium)
     file_size_limit = get_file_size_limit(message.from_user)

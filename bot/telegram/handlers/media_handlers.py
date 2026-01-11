@@ -24,6 +24,7 @@ from telegram.media_processor import get_or_create_thread
 from telegram.media_processor import MediaContent
 from telegram.media_processor import MediaProcessor
 from telegram.media_processor import MediaType
+from utils.metrics import record_message_received
 from utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
@@ -72,6 +73,9 @@ async def handle_voice(message: types.Message, session: AsyncSession) -> None:
                 message_id=message.message_id,
                 duration=voice.duration,
                 file_size=voice.file_size)
+
+    # Record metrics
+    record_message_received(chat_type=message.chat.type, content_type="voice")
 
     try:
         # 1. Download voice from Telegram
@@ -226,6 +230,9 @@ async def handle_audio(message: types.Message, session: AsyncSession) -> None:
                 file_size=audio.file_size,
                 mime_type=mime_type)
 
+    # Record metrics
+    record_message_received(chat_type=message.chat.type, content_type="audio")
+
     try:
         # 1. Download audio from Telegram
         audio_bytes = await download_media(message, MediaType.AUDIO)
@@ -359,6 +366,9 @@ async def handle_video(message: types.Message, session: AsyncSession) -> None:
                 file_size=video.file_size,
                 mime_type=mime_type)
 
+    # Record metrics
+    record_message_received(chat_type=message.chat.type, content_type="video")
+
     try:
         # 1. Download video from Telegram
         video_bytes = await download_media(message, MediaType.VIDEO)
@@ -474,6 +484,9 @@ async def handle_video_note(message: types.Message,
                 message_id=message.message_id,
                 duration=video_note.duration,
                 file_size=video_note.file_size)
+
+    # Record metrics
+    record_message_received(chat_type=message.chat.type, content_type="video_note")
 
     try:
         # 1. Download video note

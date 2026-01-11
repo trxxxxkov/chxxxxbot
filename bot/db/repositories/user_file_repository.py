@@ -269,6 +269,26 @@ class UserFileRepository(BaseRepository[UserFile]):
         """
         return await self.count()
 
+    async def get_active_files_count(self) -> int:
+        """Count files that haven't expired (expires_at > now).
+
+        Used for metrics tracking (bot_files_api_active gauge).
+
+        Returns:
+            Count of active (non-expired) files.
+
+        Examples:
+            >>> active = await user_file_repo.get_active_files_count()
+            >>> print(f"Active files: {active}")
+        """
+        from sqlalchemy import func  # pylint: disable=import-outside-toplevel
+
+        stmt = select(func.count()).select_from(UserFile).where(
+            UserFile.expires_at > datetime.now(timezone.utc))
+        result = await self.session.execute(stmt)
+
+        return result.scalar_one() or 0
+
     async def get_total_size(self) -> int:
         """Calculate total size of all files in bytes.
 

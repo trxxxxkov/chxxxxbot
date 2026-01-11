@@ -24,6 +24,7 @@ from utils.metrics import start_metrics_server
 from utils.metrics import set_db_pool_stats
 from utils.metrics import set_queue_stats
 from utils.metrics import set_active_users
+from utils.metrics import set_active_files
 from utils.metrics import set_total_balance
 from utils.metrics import set_total_users
 from utils.metrics import set_top_users
@@ -185,10 +186,18 @@ async def collect_metrics_task(logger) -> None:
                         ]
                         set_top_users(users_data, metric_type="tokens")
 
+                        # Active files in Files API
+                        from db.repositories.user_file_repository import \
+                            UserFileRepository  # pylint: disable=import-outside-toplevel
+                        user_file_repo = UserFileRepository(session)
+                        active_files = await user_file_repo.get_active_files_count()
+                        set_active_files(active_files)
+
                         logger.debug("metrics.user_stats_collected",
                                      active_users=active_count,
                                      total_users=total_users,
-                                     total_balance=float(total_balance))
+                                     total_balance=float(total_balance),
+                                     active_files=active_files)
 
                 except Exception as user_err:  # pylint: disable=broad-exception-caught
                     logger.error("metrics.user_stats_error",
