@@ -636,7 +636,8 @@ PAYMENT_INVOICE_TITLE: str = "Bot Balance Top-up"
 PAYMENT_INVOICE_DESCRIPTION_TEMPLATE: str = (
     "Add ${usd_amount:.2f} to your bot balance\n"
     "Pay {stars_amount} Telegram Stars")
-PAYMENT_INVOICE_PHOTO_URL: str = ""  # Optional: URL to payment image
+PAYMENT_INVOICE_PHOTO_URL: str = (
+    "https://raw.githubusercontent.com/trxxxxkov/chxxxxbot/main/botpic.jpg")
 
 # Privileged users (loaded from secrets at startup)
 PRIVILEGED_USERS: set[int] = set(

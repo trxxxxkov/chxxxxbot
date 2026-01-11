@@ -194,17 +194,22 @@ class PaymentService:
         )
 
         # Send invoice to user
-        await bot.send_invoice(
-            chat_id=user_id,
-            title=PAYMENT_INVOICE_TITLE,
-            description=description,
-            payload=invoice_payload,
-            provider_token="",  # Empty for Telegram Stars
-            currency="XTR",  # Telegram Stars currency code
-            prices=[LabeledPrice(label="Balance", amount=stars_amount)],
-            photo_url=PAYMENT_INVOICE_PHOTO_URL
-            if PAYMENT_INVOICE_PHOTO_URL else None,
-        )
+        # Prepare photo_url: only include if it's a valid non-empty URL
+        invoice_kwargs = {
+            "chat_id": user_id,
+            "title": PAYMENT_INVOICE_TITLE,
+            "description": description,
+            "payload": invoice_payload,
+            "provider_token": "",  # Empty for Telegram Stars
+            "currency": "XTR",  # Telegram Stars currency code
+            "prices": [LabeledPrice(label="Balance", amount=stars_amount)],
+        }
+
+        # Only add photo_url if it's a valid non-empty string
+        if PAYMENT_INVOICE_PHOTO_URL and PAYMENT_INVOICE_PHOTO_URL.strip():
+            invoice_kwargs["photo_url"] = PAYMENT_INVOICE_PHOTO_URL.strip()
+
+        await bot.send_invoice(**invoice_kwargs)
 
         logger.info(
             "payment.invoice_sent",

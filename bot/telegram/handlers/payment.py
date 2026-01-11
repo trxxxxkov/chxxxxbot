@@ -56,12 +56,30 @@ async def cmd_buy(message: Message, state: FSMContext, session: AsyncSession):
         state: FSM context for custom amount flow.
         session: Database session from middleware.
     """
-    user_id = message.from_user.id
+    if not message.from_user:
+        await message.answer("⚠️ Unable to identify user.")
+        return
+
+    user = message.from_user
+    user_id = user.id
+
+    # Ensure user exists in database (auto-create if first interaction)
+    user_repo = UserRepository(session)
+    await user_repo.get_or_create(
+        telegram_id=user.id,
+        is_bot=user.is_bot,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        username=user.username,
+        language_code=user.language_code,
+        is_premium=user.is_premium or False,
+        added_to_attachment_menu=user.added_to_attachment_menu or False,
+    )
 
     logger.info(
         "payment.buy_command",
         user_id=user_id,
-        username=message.from_user.username,
+        username=user.username,
     )
 
     # Calculate USD for each package (for display)
@@ -404,7 +422,25 @@ async def cmd_refund(message: Message, session: AsyncSession):
     - Within refund period (30 days)
     - User has sufficient balance
     """
-    user_id = message.from_user.id
+    if not message.from_user:
+        await message.answer("⚠️ Unable to identify user.")
+        return
+
+    user = message.from_user
+    user_id = user.id
+
+    # Ensure user exists in database (should exist if they made a payment, but be safe)
+    user_repo_temp = UserRepository(session)
+    await user_repo_temp.get_or_create(
+        telegram_id=user.id,
+        is_bot=user.is_bot,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        username=user.username,
+        language_code=user.language_code,
+        is_premium=user.is_premium or False,
+        added_to_attachment_menu=user.added_to_attachment_menu or False,
+    )
 
     # Parse transaction ID from command
     args = message.text.split(maxsplit=1)
@@ -511,15 +547,32 @@ async def cmd_balance(message: Message, session: AsyncSession):
     - Current balance
     - Recent 5 balance operations with type and amount
     """
-    user_id = message.from_user.id
+    if not message.from_user:
+        await message.answer("⚠️ Unable to identify user.")
+        return
+
+    user = message.from_user
+    user_id = user.id
+
+    # Ensure user exists in database (auto-create if first interaction)
+    user_repo = UserRepository(session)
+    await user_repo.get_or_create(
+        telegram_id=user.id,
+        is_bot=user.is_bot,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        username=user.username,
+        language_code=user.language_code,
+        is_premium=user.is_premium or False,
+        added_to_attachment_menu=user.added_to_attachment_menu or False,
+    )
 
     logger.info(
         "payment.balance_command",
         user_id=user_id,
     )
 
-    # Create services
-    user_repo = UserRepository(session)
+    # Create services (user_repo already created above)
     balance_op_repo = BalanceOperationRepository(session)
     balance_service = BalanceService(session, user_repo, balance_op_repo)
 

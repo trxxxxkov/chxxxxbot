@@ -45,7 +45,7 @@ class BalanceMiddleware(BaseMiddleware):
         "/model",
     }
 
-    async def __call__(
+    async def __call__(  # pylint: disable=too-many-return-statements
         self,
         handler: Callable[[Update, dict[str, Any]], Awaitable[Any]],
         event: Update,
@@ -65,11 +65,28 @@ class BalanceMiddleware(BaseMiddleware):
         message = None
         if isinstance(event, Message):
             message = event
+            # Skip payment-related messages (they are part of balance top-up flow)
+            if message.successful_payment:
+                logger.debug(
+                    "balance_middleware.payment_message_skip",
+                    user_id=message.from_user.id if message.from_user else None,
+                    msg="Skipping balance check for successful_payment message",
+                )
+                return await handler(event, data)
         elif isinstance(event, CallbackQuery):
             message = event.message
 
         if not message:
-            # Not a message or callback - allow
+            # Not a message or callback - allow (e.g., PreCheckoutQuery)
+            return await handler(event, data)
+
+        # Skip if no user or user is a bot (system messages, bot messages)
+        if not message.from_user or message.from_user.is_bot:
+            logger.debug(
+                "balance_middleware.system_message",
+                user_id=message.from_user.id if message.from_user else None,
+                msg="Skipping balance check for system/bot message",
+            )
             return await handler(event, data)
 
         # Extract message text/caption
@@ -86,19 +103,12 @@ class BalanceMiddleware(BaseMiddleware):
             )
             return await handler(event, data)
 
-        # Check if this is a paid request (any non-command message or callback)
-        is_paid_request = ((isinstance(event, Message) and
-                            not text.startswith("/")) or
-                           isinstance(event, CallbackQuery))
-
-        if not is_paid_request:
-            # Not a paid request (e.g., unknown command) - allow
-            logger.debug(
-                "balance_middleware.not_paid_request",
-                user_id=message.from_user.id,
-                text=text[:50],
-            )
-            return await handler(event, data)
+        # All other messages and callbacks require balance check (paid requests)
+        # This includes:
+        # - Regular messages without "/" prefix
+        # - Messages starting with "/" but NOT in FREE_COMMANDS
+        #   (user may write "/привет расскажи" as a message)
+        # - Callback queries
 
         # Paid request - check balance
         user_id = message.from_user.id
