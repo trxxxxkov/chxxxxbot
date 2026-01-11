@@ -1222,9 +1222,12 @@ async def handle_claude_message(message: types.Message,
 
         user, was_created = await user_repo.get_or_create(
             telegram_id=message.from_user.id,
+            is_bot=message.from_user.is_bot,
             username=message.from_user.username,
             first_name=message.from_user.first_name,
             last_name=message.from_user.last_name,
+            language_code=message.from_user.language_code,
+            is_premium=message.from_user.is_premium or False,
         )
 
         if was_created:

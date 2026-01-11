@@ -60,9 +60,12 @@ async def personality_command(message: types.Message,
         # Create user if doesn't exist
         db_user, _ = await user_repo.get_or_create(
             telegram_id=user_id,
+            is_bot=message.from_user.is_bot,
             first_name=message.from_user.first_name,
             last_name=message.from_user.last_name,
             username=message.from_user.username,
+            language_code=message.from_user.language_code,
+            is_premium=message.from_user.is_premium or False,
         )
         await session.commit()
 

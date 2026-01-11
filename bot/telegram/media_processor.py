@@ -483,9 +483,12 @@ async def get_or_create_thread(message: types.Message,
     user_repo = UserRepository(session)
     user, _ = await user_repo.get_or_create(
         telegram_id=user_id,
+        is_bot=message.from_user.is_bot,
         username=message.from_user.username,
         first_name=message.from_user.first_name,
         last_name=message.from_user.last_name,
+        language_code=message.from_user.language_code,
+        is_premium=message.from_user.is_premium or False,
     )
 
     # Get or create chat
