@@ -502,10 +502,19 @@ async def get_or_create_thread(message: types.Message,
 
     # Get or create thread
     thread_repo = ThreadRepository(session)
+
+    # Generate thread title from chat/user info
+    thread_title = (
+        message.chat.title  # Groups/supergroups
+        or message.chat.first_name  # Private chats
+        or message.from_user.first_name if message.from_user else None
+    )
+
     thread, _ = await thread_repo.get_or_create_thread(
         chat_id=chat_id,
         user_id=user_id,
         thread_id=message.message_thread_id,
+        title=thread_title,
     )
 
     logger.debug("media_processor.thread_resolved",

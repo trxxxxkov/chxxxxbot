@@ -196,8 +196,16 @@ async def process_file_upload(message: types.Message,
 
     telegram_thread_id = message.message_thread_id
 
+    # Generate thread title from chat/user info
+    thread_title = (
+        message.chat.title  # Groups/supergroups
+        or message.chat.first_name  # Private chats
+        or message.from_user.first_name if message.from_user else None
+    )
+
     thread, _ = await thread_repo.get_or_create_thread(
-        chat_id=chat_id, user_id=user_id, thread_id=telegram_thread_id)
+        chat_id=chat_id, user_id=user_id, thread_id=telegram_thread_id,
+        title=thread_title)
 
     logger.info("file_upload.thread_resolved",
                 thread_id=thread.id,
@@ -328,9 +336,17 @@ async def handle_photo(message: types.Message, session: AsyncSession) -> None:
         # Get Telegram thread_id (for topics/forums)
         telegram_thread_id = message.message_thread_id
 
+        # Generate thread title from chat/user info
+        thread_title = (
+            message.chat.title  # Groups/supergroups
+            or message.chat.first_name  # Private chats
+            or message.from_user.first_name if message.from_user else None
+        )
+
         # Get or create thread
         thread, _ = await thread_repo.get_or_create_thread(
-            chat_id=chat_id, user_id=user_id, thread_id=telegram_thread_id)
+            chat_id=chat_id, user_id=user_id, thread_id=telegram_thread_id,
+            title=thread_title)
 
         logger.info("photo_handler.thread_resolved",
                     thread_id=thread.id,
@@ -508,9 +524,17 @@ async def handle_document(message: types.Message,
         # Get Telegram thread_id (for topics/forums)
         telegram_thread_id = message.message_thread_id
 
+        # Generate thread title from chat/user info
+        thread_title = (
+            message.chat.title  # Groups/supergroups
+            or message.chat.first_name  # Private chats
+            or message.from_user.first_name if message.from_user else None
+        )
+
         # Get or create thread
         thread, _ = await thread_repo.get_or_create_thread(
-            chat_id=chat_id, user_id=user_id, thread_id=telegram_thread_id)
+            chat_id=chat_id, user_id=user_id, thread_id=telegram_thread_id,
+            title=thread_title)
 
         logger.info("document_handler.thread_resolved",
                     thread_id=thread.id,

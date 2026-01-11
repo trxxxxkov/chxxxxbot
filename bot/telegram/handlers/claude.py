@@ -1254,10 +1254,19 @@ async def handle_claude_message(message: types.Message,
         # - None for regular chats (one thread per chat)
         # - Integer for forum topics (separate context per topic)
         thread_repo = ThreadRepository(session)
+
+        # Generate thread title from chat/user info
+        thread_title = (
+            message.chat.title  # Groups/supergroups
+            or message.chat.first_name  # Private chats
+            or message.from_user.first_name if message.from_user else None
+        )
+
         thread, was_created = await thread_repo.get_or_create_thread(
             chat_id=chat.id,
             user_id=user.id,
             thread_id=message.message_thread_id,  # Telegram forum thread ID
+            title=thread_title,
         )
 
         if was_created:

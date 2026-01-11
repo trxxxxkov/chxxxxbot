@@ -74,11 +74,19 @@ async def model_command(  # pylint: disable=too-many-locals
     # For private chats, always use thread_id=None (single conversation per user)
     # For forum chats, use message.message_thread_id (forum topic ID)
     thread_id = None if chat.type == "private" else message.message_thread_id
+
+    # Generate thread title from chat/user info
+    thread_title = (
+        chat.title  # Groups/supergroups
+        or chat.first_name  # Private chats
+        or message.from_user.first_name if message.from_user else None
+    )
+
     db_thread, was_created = await thread_repo.get_or_create_thread(
         chat_id=db_chat.id,
         user_id=db_user.id,
         thread_id=thread_id,
-        title=None,  # Will be set later if needed
+        title=thread_title,
     )
 
     if was_created:
