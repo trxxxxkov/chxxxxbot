@@ -67,6 +67,21 @@ class TestFormatTimeAgo:
         time_3days_ago = datetime.now(timezone.utc) - timedelta(days=3)
         assert format_time_ago(time_3days_ago) == "3 days ago"
 
+    def test_timezone_naive_datetime(self):
+        """Test that timezone-naive datetimes are handled correctly.
+
+        Regression test: Database datetimes may be timezone-naive while
+        datetime.now(timezone.utc) is timezone-aware. This caused:
+        TypeError: can't subtract offset-naive and offset-aware datetimes
+        """
+        # Create timezone-naive datetime (like from SQLAlchemy DateTime)
+        naive_time = datetime.now() - timedelta(hours=1)
+        assert naive_time.tzinfo is None
+
+        # Should not raise an error
+        result = format_time_ago(naive_time)
+        assert result == "1 hour ago"
+
 
 class TestFormatFilesSection:
     """Tests for format_files_section() function."""

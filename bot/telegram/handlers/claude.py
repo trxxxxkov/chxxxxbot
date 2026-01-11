@@ -740,6 +740,9 @@ async def _process_message_batch(
             await first_message.bot.send_chat_action(first_message.chat.id,
                                                      "typing")
 
+            # Start timing for response metrics
+            request_start_time = time.perf_counter()
+
             # 8. Handle request (Phase 1.5: always with tools)
             # Tools are always passed for:
             # - Prompt caching stability (tools = part of cached prompt)
@@ -914,6 +917,11 @@ async def _process_message_batch(
             record_cost(service="claude", amount_usd=cost_usd)
             record_message_sent(chat_type=first_message.chat.type)
 
+            # Record response time
+            response_duration = time.perf_counter() - request_start_time
+            record_claude_response_time(model=user.model_id,
+                                        seconds=response_duration)
+
             # Record cache metrics (Phase 3.1: Prometheus)
             if usage.cache_read_tokens and usage.cache_read_tokens > 0:
                 record_cache_hit(tokens_saved=usage.cache_read_tokens)
@@ -989,6 +997,16 @@ async def _process_message_batch(
                 cache_creation_tokens=usage.cache_creation_tokens,
                 cache_read_tokens=usage.cache_read_tokens,
                 thinking_tokens=usage.thinking_tokens,
+            )
+
+            # 12. Update user statistics (Phase 3: metrics)
+            total_tokens = usage.input_tokens + usage.output_tokens
+            if usage.thinking_tokens:
+                total_tokens += usage.thinking_tokens
+            await user_repo.increment_stats(
+                telegram_id=user.id,
+                messages=len(messages),
+                tokens=total_tokens,
             )
 
             await session.commit()

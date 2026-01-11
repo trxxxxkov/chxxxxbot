@@ -79,7 +79,7 @@ def format_time_ago(dt: datetime) -> str:
     """Format datetime as 'X ago' string.
 
     Args:
-        dt: Datetime to format.
+        dt: Datetime to format (timezone-aware or naive, naive treated as UTC).
 
     Returns:
         Human-readable time ago string.
@@ -89,6 +89,11 @@ def format_time_ago(dt: datetime) -> str:
         '5 min ago'
     """
     now = datetime.now(timezone.utc)
+
+    # Handle timezone-naive datetimes (treat as UTC)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+
     delta = now - dt
 
     if delta.days > 0:

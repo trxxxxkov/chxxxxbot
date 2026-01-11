@@ -87,6 +87,23 @@ TOTAL_BALANCE_USD = Gauge(
     'Sum of all user balances in USD'
 )
 
+TOTAL_USERS = Gauge(
+    'bot_total_users',
+    'Total number of registered users'
+)
+
+TOP_USER_MESSAGES = Gauge(
+    'bot_top_user_messages',
+    'Message count for top users',
+    ['user_id', 'username', 'rank']
+)
+
+TOP_USER_TOKENS = Gauge(
+    'bot_top_user_tokens',
+    'Token usage for top users',
+    ['user_id', 'username', 'rank']
+)
+
 # === Error Metrics ===
 
 ERRORS = Counter(
@@ -247,6 +264,33 @@ def set_total_balance(amount_usd: float) -> None:
     TOTAL_BALANCE_USD.set(amount_usd)
 
 
+def set_total_users(count: int) -> None:
+    """Set the total number of users."""
+    TOTAL_USERS.set(count)
+
+
+def set_top_users(
+    users: list[tuple[str, str, int, int]],
+    metric_type: str = "messages"
+) -> None:
+    """Set top users metrics.
+
+    Args:
+        users: List of (user_id, username, messages, tokens) tuples.
+        metric_type: "messages" or "tokens".
+    """
+    gauge = TOP_USER_MESSAGES if metric_type == "messages" else TOP_USER_TOKENS
+    value_idx = 2 if metric_type == "messages" else 3
+
+    for rank, (user_id, username, messages, tokens) in enumerate(users, 1):
+        value = messages if metric_type == "messages" else tokens
+        gauge.labels(
+            user_id=str(user_id),
+            username=username or "unknown",
+            rank=str(rank)
+        ).set(value)
+
+
 def set_db_pool_stats(active: int, idle: int, overflow: int) -> None:
     """Set database connection pool statistics."""
     DB_CONNECTIONS_ACTIVE.set(active)
@@ -306,8 +350,55 @@ async def metrics_handler(request: web.Request) -> web.Response:
 
 
 async def health_handler(request: web.Request) -> web.Response:
-    """Handle /health endpoint."""
+    """Handle /health endpoint (alias for /health/live)."""
     return web.Response(text='ok')
+
+
+async def health_live_handler(request: web.Request) -> web.Response:
+    """Handle /health/live endpoint (liveness probe).
+
+    Simple check that the process is alive.
+    Used by container orchestrators for liveness probes.
+    """
+    return web.Response(text='ok')
+
+
+async def health_ready_handler(request: web.Request) -> web.Response:
+    """Handle /health/ready endpoint (readiness probe).
+
+    Checks that the service is ready to accept traffic:
+    - Database connection is working
+
+    Returns 200 if ready, 503 if not.
+    """
+    import json
+    checks = {"database": "unknown"}
+
+    try:
+        # Check database connection
+        from db.engine import \
+            get_session  # pylint: disable=import-outside-toplevel
+        from sqlalchemy import text  # pylint: disable=import-outside-toplevel
+
+        async with get_session() as session:
+            result = await session.execute(text("SELECT 1"))
+            if result.scalar() == 1:
+                checks["database"] = "ok"
+            else:
+                checks["database"] = "error"
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        checks["database"] = f"error: {str(e)}"
+
+    # Determine overall status
+    all_ok = all(v == "ok" for v in checks.values())
+    status_code = 200 if all_ok else 503
+
+    return web.Response(
+        text=json.dumps({"status": "ready" if all_ok else "not_ready",
+                        "checks": checks}),
+        status=status_code,
+        content_type="application/json"
+    )
 
 
 async def start_metrics_server(host: str = '0.0.0.0', port: int = 8080) -> None:
@@ -320,8 +411,12 @@ async def start_metrics_server(host: str = '0.0.0.0', port: int = 8080) -> None:
     app = web.Application()
     app.router.add_get('/metrics', metrics_handler)
     app.router.add_get('/health', health_handler)
+    app.router.add_get('/health/live', health_live_handler)
+    app.router.add_get('/health/ready', health_ready_handler)
 
-    runner = web.AppRunner(app)
+    # Disable access logging to prevent non-JSON logs polluting Loki
+    # (Prometheus scrapes /metrics every 15s, these logs are noise)
+    runner = web.AppRunner(app, access_log=None)
     await runner.setup()
 
     site = web.TCPSite(runner, host, port)

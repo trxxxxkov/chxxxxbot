@@ -18,24 +18,24 @@ def setup_logging(level: str = "INFO") -> None:
     for structured logging output in JSON format. Includes context
     variables, timestamps, and exception information.
 
+    This configuration ensures ALL logs (including third-party libraries
+    like aiogram, aiohttp) are formatted as JSON for Loki compatibility.
+
     Args:
         level: Log level (DEBUG, INFO, WARNING, ERROR). Defaults to INFO.
     """
-    # Configure standard library logging
-    logging.basicConfig(
-        format="%(message)s",
-        stream=sys.stdout,
-        level=getattr(logging, level.upper()),
-    )
+    # Shared processors for both structlog and stdlib logging
+    shared_processors = [
+        structlog.contextvars.merge_contextvars,
+        structlog.processors.add_log_level,
+        structlog.processors.StackInfoRenderer(),
+        structlog.dev.set_exc_info,
+        structlog.processors.TimeStamper(fmt="iso"),
+    ]
 
     # Configure structlog
     structlog.configure(
-        processors=[
-            structlog.contextvars.merge_contextvars,
-            structlog.processors.add_log_level,
-            structlog.processors.StackInfoRenderer(),
-            structlog.dev.set_exc_info,
-            structlog.processors.TimeStamper(fmt="iso"),
+        processors=shared_processors + [
             structlog.processors.JSONRenderer()
         ],
         wrapper_class=structlog.make_filtering_bound_logger(
@@ -44,6 +44,27 @@ def setup_logging(level: str = "INFO") -> None:
         logger_factory=structlog.PrintLoggerFactory(),
         cache_logger_on_first_use=True,
     )
+
+    # Configure standard library logging to output JSON
+    # This catches all third-party library logs (aiogram, aiohttp, etc.)
+    formatter = structlog.stdlib.ProcessorFormatter(
+        # These processors run on ALL log entries (stdlib + structlog)
+        foreign_pre_chain=shared_processors,
+        # Final processor for stdlib logs
+        processors=[
+            structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+            structlog.processors.JSONRenderer(),
+        ],
+    )
+
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(formatter)
+
+    # Configure root logger
+    root_logger = logging.getLogger()
+    root_logger.handlers.clear()
+    root_logger.addHandler(handler)
+    root_logger.setLevel(getattr(logging, level.upper()))
 
 
 def get_logger(name: str) -> structlog.BoundLogger:

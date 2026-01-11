@@ -8,11 +8,14 @@ NO __init__.py - use direct import:
 """
 
 from datetime import datetime
+from datetime import timedelta
 from datetime import timezone
+from decimal import Decimal
 from typing import Optional
 
 from db.models.user import User
 from db.repositories.base import BaseRepository
+from sqlalchemy import desc
 from sqlalchemy import func
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -199,3 +202,94 @@ class UserRepository(BaseRepository[User]):
         logger.info("user_repository.get_users_count.complete",
                     total_users=count)
         return count
+
+    async def increment_stats(
+        self,
+        telegram_id: int,
+        messages: int = 0,
+        tokens: int = 0,
+    ) -> None:
+        """Increment user statistics counters.
+
+        Args:
+            telegram_id: Telegram user ID.
+            messages: Number of messages to add.
+            tokens: Number of tokens to add.
+        """
+        user = await self.get_by_telegram_id(telegram_id)
+        if not user:
+            logger.warning("user_repository.increment_stats.user_not_found",
+                           telegram_id=telegram_id)
+            return
+
+        if messages:
+            user.message_count += messages
+        if tokens:
+            user.total_tokens_used += tokens
+
+        await self.session.flush()
+        logger.debug("user_repository.increment_stats",
+                     telegram_id=telegram_id,
+                     messages_added=messages,
+                     tokens_added=tokens)
+
+    async def get_active_users_count(self, hours: int = 1) -> int:
+        """Get count of users active in the last N hours.
+
+        Args:
+            hours: Number of hours to look back. Defaults to 1.
+
+        Returns:
+            Number of active users.
+        """
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+        stmt = select(func.count()).select_from(User).where(
+            User.last_seen_at >= cutoff
+        )
+        result = await self.session.execute(stmt)
+        count = result.scalar_one()
+
+        logger.debug("user_repository.get_active_users_count",
+                     hours=hours, count=count)
+        return count
+
+    async def get_total_balance(self) -> Decimal:
+        """Get sum of all user balances.
+
+        Returns:
+            Total balance in USD.
+        """
+        stmt = select(func.sum(User.balance)).select_from(User)
+        result = await self.session.execute(stmt)
+        total = result.scalar_one() or Decimal("0")
+
+        logger.debug("user_repository.get_total_balance", total=float(total))
+        return total
+
+    async def get_top_users(
+        self,
+        limit: int = 10,
+        by: str = "messages",
+    ) -> list[User]:
+        """Get top users by activity metric.
+
+        Args:
+            limit: Number of users to return. Defaults to 10.
+            by: Metric to sort by ("messages", "tokens", "balance").
+
+        Returns:
+            List of top users.
+        """
+        order_column = {
+            "messages": User.message_count,
+            "tokens": User.total_tokens_used,
+            "balance": User.balance,
+        }.get(by, User.message_count)
+
+        stmt = select(User).order_by(desc(order_column)).limit(limit)
+        result = await self.session.execute(stmt)
+        users = list(result.scalars().all())
+
+        logger.debug("user_repository.get_top_users",
+                     by=by, limit=limit, returned=len(users))
+        return users

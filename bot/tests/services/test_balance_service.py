@@ -52,9 +52,11 @@ class TestBalanceService:
         pg_sample_user.balance = Decimal("0.1000")
         await pg_session.flush()
 
-        can_request = await balance_service.can_make_request(pg_sample_user.id)
+        can_request, user_exists = await balance_service.can_make_request(
+            pg_sample_user.id)
 
         assert can_request is True
+        assert user_exists is True
 
     @pytest.mark.asyncio
     async def test_can_make_request_zero_balance(self, balance_service,
@@ -63,9 +65,11 @@ class TestBalanceService:
         pg_sample_user.balance = Decimal("0.0000")
         await pg_session.flush()
 
-        can_request = await balance_service.can_make_request(pg_sample_user.id)
+        can_request, user_exists = await balance_service.can_make_request(
+            pg_sample_user.id)
 
         assert can_request is False
+        assert user_exists is True
 
     @pytest.mark.asyncio
     async def test_can_make_request_negative_balance(self, balance_service,
@@ -75,9 +79,20 @@ class TestBalanceService:
         pg_sample_user.balance = Decimal("-0.0001")
         await pg_session.flush()
 
-        can_request = await balance_service.can_make_request(pg_sample_user.id)
+        can_request, user_exists = await balance_service.can_make_request(
+            pg_sample_user.id)
 
         assert can_request is False
+        assert user_exists is True
+
+    @pytest.mark.asyncio
+    async def test_can_make_request_user_not_found(self, balance_service):
+        """Test can_make_request returns False when user doesn't exist."""
+        can_request, user_exists = await balance_service.can_make_request(
+            999999999)
+
+        assert can_request is False
+        assert user_exists is False
 
     @pytest.mark.asyncio
     async def test_charge_user(self, balance_service, pg_session,
@@ -384,8 +399,10 @@ class TestBalanceService:
         assert balance == Decimal("2.6000")  # 5.1 - 2.5
 
         # 3. Check can still make requests
-        can_request = await balance_service.can_make_request(pg_sample_user.id)
+        can_request, user_exists = await balance_service.can_make_request(
+            pg_sample_user.id)
         assert can_request is True
+        assert user_exists is True
 
         # 4. Drain balance
         await balance_service.charge_user(
@@ -398,8 +415,10 @@ class TestBalanceService:
         assert balance == Decimal("0.0000")
 
         # 5. Cannot make more requests
-        can_request = await balance_service.can_make_request(pg_sample_user.id)
+        can_request, user_exists = await balance_service.can_make_request(
+            pg_sample_user.id)
         assert can_request is False
+        assert user_exists is True
 
         # 6. Verify complete audit trail
         history = await balance_service.get_balance_history(pg_sample_user.id,

@@ -96,11 +96,11 @@ async def handle_voice(message: types.Message, session: AsyncSession) -> None:
                 from decimal import \
                     Decimal  # pylint: disable=import-outside-toplevel
 
-                from bot.db.repositories.balance_operation_repository import \
+                from db.repositories.balance_operation_repository import \
                     BalanceOperationRepository  # pylint: disable=import-outside-toplevel
-                from bot.db.repositories.user_repository import \
+                from db.repositories.user_repository import \
                     UserRepository  # pylint: disable=import-outside-toplevel
-                from bot.services.balance_service import \
+                from services.balance_service import \
                     BalanceService  # pylint: disable=import-outside-toplevel
 
                 whisper_cost = Decimal(str(media_content.metadata["cost_usd"]))
@@ -233,11 +233,11 @@ async def handle_audio(message: types.Message, session: AsyncSession) -> None:
                 from decimal import \
                     Decimal  # pylint: disable=import-outside-toplevel
 
-                from bot.db.repositories.balance_operation_repository import \
+                from db.repositories.balance_operation_repository import \
                     BalanceOperationRepository  # pylint: disable=import-outside-toplevel
-                from bot.db.repositories.user_repository import \
+                from db.repositories.user_repository import \
                     UserRepository  # pylint: disable=import-outside-toplevel
-                from bot.services.balance_service import \
+                from services.balance_service import \
                     BalanceService  # pylint: disable=import-outside-toplevel
 
                 whisper_cost = Decimal(str(media_content.metadata["cost_usd"]))
@@ -363,11 +363,11 @@ async def handle_video(message: types.Message, session: AsyncSession) -> None:
                 from decimal import \
                     Decimal  # pylint: disable=import-outside-toplevel
 
-                from bot.db.repositories.balance_operation_repository import \
+                from db.repositories.balance_operation_repository import \
                     BalanceOperationRepository  # pylint: disable=import-outside-toplevel
-                from bot.db.repositories.user_repository import \
+                from db.repositories.user_repository import \
                     UserRepository  # pylint: disable=import-outside-toplevel
-                from bot.services.balance_service import \
+                from services.balance_service import \
                     BalanceService  # pylint: disable=import-outside-toplevel
 
                 whisper_cost = Decimal(str(media_content.metadata["cost_usd"]))
@@ -494,11 +494,11 @@ async def handle_video_note(message: types.Message,
                 from decimal import \
                     Decimal  # pylint: disable=import-outside-toplevel
 
-                from bot.db.repositories.balance_operation_repository import \
+                from db.repositories.balance_operation_repository import \
                     BalanceOperationRepository  # pylint: disable=import-outside-toplevel
-                from bot.db.repositories.user_repository import \
+                from db.repositories.user_repository import \
                     UserRepository  # pylint: disable=import-outside-toplevel
-                from bot.services.balance_service import \
+                from services.balance_service import \
                     BalanceService  # pylint: disable=import-outside-toplevel
 
                 whisper_cost = Decimal(str(media_content.metadata["cost_usd"]))

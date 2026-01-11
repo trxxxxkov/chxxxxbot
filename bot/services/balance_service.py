@@ -75,7 +75,7 @@ class BalanceService:
                      balance=float(user.balance))
         return user.balance
 
-    async def can_make_request(self, user_id: int) -> bool:
+    async def can_make_request(self, user_id: int) -> tuple[bool, bool]:
         """Check if user can make a paid request.
 
         Rule: Allow requests while balance > MINIMUM_BALANCE_FOR_REQUEST (0.0).
@@ -85,38 +85,42 @@ class BalanceService:
             user_id: Telegram user ID.
 
         Returns:
-            True if user can make a request, False otherwise.
+            Tuple of (can_request, user_exists):
+            - can_request: True if user can make a request, False otherwise.
+            - user_exists: True if user exists in database, False otherwise.
         """
-        try:
-            balance = await self.get_balance(user_id)
-            can_request = balance > Decimal(str(MINIMUM_BALANCE_FOR_REQUEST))
+        user = await self.user_repo.get_by_id(user_id)
 
-            logger.debug(
-                "balance.can_make_request_checked",
+        if not user:
+            # User doesn't exist - this is expected for new users
+            # They need to /start first
+            logger.info(
+                "balance.user_not_registered",
+                user_id=user_id,
+                msg="User not registered, needs to /start first",
+            )
+            return False, False
+
+        balance = user.balance
+        can_request = balance > Decimal(str(MINIMUM_BALANCE_FOR_REQUEST))
+
+        logger.debug(
+            "balance.can_make_request_checked",
+            user_id=user_id,
+            balance=float(balance),
+            minimum_required=MINIMUM_BALANCE_FOR_REQUEST,
+            can_request=can_request,
+        )
+
+        if not can_request:
+            logger.warning(
+                "balance.insufficient_for_request",
                 user_id=user_id,
                 balance=float(balance),
-                minimum_required=MINIMUM_BALANCE_FOR_REQUEST,
-                can_request=can_request,
+                msg="User blocked: insufficient balance",
             )
 
-            if not can_request:
-                logger.warning(
-                    "balance.insufficient_for_request",
-                    user_id=user_id,
-                    balance=float(balance),
-                    msg="User blocked: insufficient balance",
-                )
-
-            return can_request
-
-        except ValueError as e:
-            logger.error(
-                "balance.can_make_request_error",
-                user_id=user_id,
-                error=str(e),
-                msg="Error checking balance eligibility",
-            )
-            return False
+        return can_request, True
 
     async def charge_user(
         self,

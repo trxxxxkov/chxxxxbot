@@ -46,6 +46,8 @@ class User(Base, TimestampMixin):
         model_id: Selected LLM model (e.g., "claude:sonnet", "openai:gpt4").
         custom_prompt: Personal instructions (personality, tone, style).
         balance: User balance in USD (default $0.10 starter balance).
+        message_count: Total messages sent by user.
+        total_tokens_used: Total tokens consumed (input + output).
         first_seen_at: When user first interacted with bot.
         last_seen_at: Last activity timestamp.
         created_at: Record creation timestamp (from TimestampMixin).
@@ -138,7 +140,23 @@ class User(Base, TimestampMixin):
         "Allows requests while balance > 0 (can go negative after one request).",
     )
 
-    # Activity tracking
+    # Activity tracking & statistics
+    message_count: Mapped[int] = mapped_column(
+        BigInteger,
+        nullable=False,
+        default=0,
+        server_default="0",
+        doc="Total messages sent by user (for activity tracking)",
+    )
+
+    total_tokens_used: Mapped[int] = mapped_column(
+        BigInteger,
+        nullable=False,
+        default=0,
+        server_default="0",
+        doc="Total tokens consumed (input + output) for cost analysis",
+    )
+
     first_seen_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

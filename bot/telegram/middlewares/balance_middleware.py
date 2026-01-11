@@ -130,7 +130,34 @@ class BalanceMiddleware(BaseMiddleware):
 
         # Check balance
         try:
-            can_request = await balance_service.can_make_request(user_id)
+            can_request, user_exists = await balance_service.can_make_request(
+                user_id)
+
+            if not user_exists:
+                # Auto-register user (like /start does)
+                from_user = message.from_user
+                _, was_created = await user_repo.get_or_create(
+                    telegram_id=from_user.id,
+                    is_bot=from_user.is_bot,
+                    first_name=from_user.first_name,
+                    last_name=from_user.last_name,
+                    username=from_user.username,
+                    language_code=from_user.language_code,
+                    is_premium=from_user.is_premium or False,
+                    added_to_attachment_menu=from_user.added_to_attachment_menu
+                    or False,
+                )
+
+                logger.info(
+                    "balance_middleware.auto_registered",
+                    user_id=user_id,
+                    username=from_user.username,
+                    msg="User auto-registered on first message",
+                )
+
+                # Re-check balance after registration
+                can_request, user_exists = \
+                    await balance_service.can_make_request(user_id)
 
             if not can_request:
                 # Block request - insufficient balance

@@ -12,6 +12,7 @@ from config import get_database_url
 from db.engine import dispose_db
 from db.engine import init_db
 from db.engine import get_pool_stats
+from db.engine import get_session
 from telegram.handlers.claude import init_claude_provider
 from telegram.handlers.claude import init_message_queue_manager
 from telegram.handlers.claude import get_queue_manager
@@ -22,6 +23,10 @@ from utils.structured_logging import setup_logging
 from utils.metrics import start_metrics_server
 from utils.metrics import set_db_pool_stats
 from utils.metrics import set_queue_stats
+from utils.metrics import set_active_users
+from utils.metrics import set_total_balance
+from utils.metrics import set_total_users
+from utils.metrics import set_top_users
 
 
 def read_secret(secret_name: str) -> str:
@@ -101,17 +106,26 @@ def load_privileged_users() -> set[int]:
 
 
 async def collect_metrics_task(logger) -> None:
-    """Background task to collect metrics every 10 seconds.
+    """Background task to collect metrics periodically.
 
-    Collects:
+    Collects every 10 seconds:
         - Database connection pool statistics
         - Message queue statistics
+
+    Collects every 60 seconds:
+        - Active users count
+        - Total balance
+        - Total users
+        - Top users by messages/tokens
     """
+    iteration = 0
+
     while True:
         try:
             await asyncio.sleep(10)
+            iteration += 1
 
-            # Collect database pool stats
+            # Collect database pool stats (every 10s)
             pool_stats = get_pool_stats()
             if pool_stats:
                 set_db_pool_stats(
@@ -120,7 +134,7 @@ async def collect_metrics_task(logger) -> None:
                     overflow=pool_stats.get("overflow", 0),
                 )
 
-            # Collect queue stats
+            # Collect queue stats (every 10s)
             queue_manager = get_queue_manager()
             if queue_manager:
                 queue_stats = queue_manager.get_stats()
@@ -129,6 +143,57 @@ async def collect_metrics_task(logger) -> None:
                     processing=queue_stats.get("processing_threads", 0),
                     waiting=queue_stats.get("waiting_threads", 0),
                 )
+
+            # Collect user metrics (every 60s = 6 iterations)
+            if iteration % 6 == 0:
+                try:
+                    # Import here to avoid circular imports
+                    from db.repositories.user_repository import \
+                        UserRepository  # pylint: disable=import-outside-toplevel
+
+                    async with get_session() as session:
+                        user_repo = UserRepository(session)
+
+                        # Active users (last hour)
+                        active_count = await user_repo.get_active_users_count(
+                            hours=1)
+                        set_active_users(active_count)
+
+                        # Total balance
+                        total_balance = await user_repo.get_total_balance()
+                        set_total_balance(float(total_balance))
+
+                        # Total users
+                        total_users = await user_repo.get_users_count()
+                        set_total_users(total_users)
+
+                        # Top users by messages
+                        top_by_messages = await user_repo.get_top_users(
+                            limit=10, by="messages")
+                        users_data = [
+                            (str(u.id), u.username, u.message_count,
+                             u.total_tokens_used) for u in top_by_messages
+                        ]
+                        set_top_users(users_data, metric_type="messages")
+
+                        # Top users by tokens
+                        top_by_tokens = await user_repo.get_top_users(
+                            limit=10, by="tokens")
+                        users_data = [
+                            (str(u.id), u.username, u.message_count,
+                             u.total_tokens_used) for u in top_by_tokens
+                        ]
+                        set_top_users(users_data, metric_type="tokens")
+
+                        logger.debug("metrics.user_stats_collected",
+                                     active_users=active_count,
+                                     total_users=total_users,
+                                     total_balance=float(total_balance))
+
+                except Exception as user_err:  # pylint: disable=broad-exception-caught
+                    logger.error("metrics.user_stats_error",
+                                 error=str(user_err),
+                                 exc_info=True)
 
         except asyncio.CancelledError:
             logger.info("metrics_collection_task_cancelled")

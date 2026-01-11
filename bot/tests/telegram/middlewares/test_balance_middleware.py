@@ -298,6 +298,51 @@ class TestBalanceMiddlewareEdgeCases:
         mock_handler.assert_called_once()
         assert result == "allowed"
 
+    async def test_unregistered_user_auto_registered(self, test_session,
+                                                      sample_user):
+        """Test that unregistered users are auto-registered.
+
+        Args:
+            test_session: Async session fixture.
+            sample_user: Sample user fixture.
+        """
+        import random
+        new_user_id = random.randint(100000000, 999999998)
+
+        middleware = BalanceMiddleware()
+        mock_handler = AsyncMock(return_value="allowed")
+
+        mock_message = Mock(spec=Message)
+        mock_message.from_user = Mock(spec=User)
+        mock_message.from_user.id = new_user_id  # Non-existent user
+        mock_message.from_user.is_bot = False
+        mock_message.from_user.first_name = "Test"
+        mock_message.from_user.last_name = "User"
+        mock_message.from_user.username = f"test_user_{new_user_id}"
+        mock_message.from_user.language_code = "en"
+        mock_message.from_user.is_premium = False
+        mock_message.from_user.added_to_attachment_menu = False
+        mock_message.text = "Hello"
+        mock_message.caption = None
+        mock_message.answer = AsyncMock()
+        mock_message.successful_payment = None
+
+        data = {"session": test_session}
+
+        result = await middleware(mock_handler, mock_message, data)
+
+        # User should be auto-registered and request allowed
+        # (new users get starter balance $0.10)
+        mock_handler.assert_called_once()
+        assert result == "allowed"
+
+        # Verify user was created in database
+        from db.repositories.user_repository import UserRepository
+        user_repo = UserRepository(test_session)
+        user = await user_repo.get_by_id(new_user_id)
+        assert user is not None
+        assert user.username == f"test_user_{new_user_id}"
+
     async def test_balance_check_error_fails_open(self, test_session,
                                                   sample_user):
         """Test that balance check errors don't block requests.
@@ -306,7 +351,6 @@ class TestBalanceMiddlewareEdgeCases:
             test_session: Async session fixture.
             sample_user: Sample user fixture.
         """
-        # Patch logger.error to avoid Mock iteration issues with rich
         from unittest.mock import patch
 
         middleware = BalanceMiddleware()
@@ -314,7 +358,7 @@ class TestBalanceMiddlewareEdgeCases:
 
         mock_message = Mock(spec=Message)
         mock_message.from_user = Mock(spec=User)
-        mock_message.from_user.id = 999999999  # Non-existent user
+        mock_message.from_user.id = sample_user.id
         mock_message.from_user.is_bot = False
         mock_message.text = "Hello"
         mock_message.caption = None
@@ -323,9 +367,18 @@ class TestBalanceMiddlewareEdgeCases:
 
         data = {"session": test_session}
 
-        # Patch logger.error to avoid rich rendering Mock objects
-        with patch('telegram.middlewares.balance_middleware.logger.error'):
-            result = await middleware(mock_handler, mock_message, data)
+        # Mock can_make_request to raise an exception (database error)
+        with patch(
+                'telegram.middlewares.balance_middleware.BalanceService'
+        ) as mock_service_class:
+            mock_service = mock_service_class.return_value
+            mock_service.can_make_request = AsyncMock(
+                side_effect=Exception("Database error"))
+
+            # Patch logger.error to avoid rich rendering Mock objects
+            with patch(
+                    'telegram.middlewares.balance_middleware.logger.error'):
+                result = await middleware(mock_handler, mock_message, data)
 
         # Should allow (fail-open on error)
         mock_handler.assert_called_once()

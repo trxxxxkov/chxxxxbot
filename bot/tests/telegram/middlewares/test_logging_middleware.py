@@ -8,6 +8,7 @@ NO __init__.py - use direct import:
     pytest tests/telegram/middlewares/test_logging_middleware.py
 """
 
+from unittest.mock import ANY
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import patch
@@ -37,6 +38,8 @@ def mock_update():
     update.update_id = 123456
     update.message = MagicMock()
     update.message.message_id = 789
+    update.message.chat = MagicMock()
+    update.message.chat.id = 555555
     update.message.from_user = MagicMock()
     update.message.from_user.id = 987654321
     update.event_type = "message"
@@ -67,7 +70,8 @@ async def test_logging_middleware_message_update(middleware, mock_update,
         mock_update: Mock Update object.
         mock_handler: Mock handler function.
     """
-    with patch('telegram.middlewares.logging_middleware.logger') as mock_logger:
+    with patch('telegram.middlewares.logging_middleware.logger') as mock_logger, \
+         patch('telegram.middlewares.logging_middleware.structlog') as mock_structlog:
         mock_bound_logger = MagicMock()
         mock_logger.bind.return_value = mock_bound_logger
         mock_bound_logger.info = MagicMock()
@@ -75,11 +79,13 @@ async def test_logging_middleware_message_update(middleware, mock_update,
         data = {}
         result = await middleware(mock_handler, mock_update, data)
 
-        # Verify context binding
+        # Verify context binding (includes request_id and chat_id now)
         mock_logger.bind.assert_called_once_with(
+            request_id=ANY,  # UUID, can't predict
             update_id=123456,
             user_id=987654321,
             message_id=789,
+            chat_id=555555,
         )
 
         # Verify incoming_update logged
@@ -114,7 +120,8 @@ async def test_logging_middleware_callback_update(middleware, mock_handler):
     update.callback_query.from_user.id = 222
     update.event_type = "callback_query"
 
-    with patch('telegram.middlewares.logging_middleware.logger') as mock_logger:
+    with patch('telegram.middlewares.logging_middleware.logger') as mock_logger, \
+         patch('telegram.middlewares.logging_middleware.structlog') as mock_structlog:
         mock_bound_logger = MagicMock()
         mock_logger.bind.return_value = mock_bound_logger
         mock_bound_logger.info = MagicMock()
@@ -122,11 +129,13 @@ async def test_logging_middleware_callback_update(middleware, mock_handler):
         data = {}
         await middleware(mock_handler, update, data)
 
-        # Verify context includes callback user_id
+        # Verify context includes callback user_id (and request_id, chat_id)
         mock_logger.bind.assert_called_once_with(
+            request_id=ANY,
             update_id=111,
             user_id=222,
             message_id=None,
+            chat_id=None,
         )
 
 
@@ -144,10 +153,13 @@ async def test_logging_middleware_no_user(middleware, mock_handler):
     update.update_id = 333
     update.message = MagicMock()
     update.message.message_id = 444
+    update.message.chat = MagicMock()
+    update.message.chat.id = 666
     update.message.from_user = None
     update.event_type = "message"
 
-    with patch('telegram.middlewares.logging_middleware.logger') as mock_logger:
+    with patch('telegram.middlewares.logging_middleware.logger') as mock_logger, \
+         patch('telegram.middlewares.logging_middleware.structlog') as mock_structlog:
         mock_bound_logger = MagicMock()
         mock_logger.bind.return_value = mock_bound_logger
         mock_bound_logger.info = MagicMock()
@@ -155,11 +167,13 @@ async def test_logging_middleware_no_user(middleware, mock_handler):
         data = {}
         await middleware(mock_handler, update, data)
 
-        # Verify user_id is None
+        # Verify user_id is None (but chat_id and request_id present)
         mock_logger.bind.assert_called_once_with(
+            request_id=ANY,
             update_id=333,
             user_id=None,
             message_id=444,
+            chat_id=666,
         )
 
 
@@ -175,7 +189,8 @@ async def test_logging_middleware_execution_time(middleware, mock_update,
         mock_update: Mock Update object.
         mock_handler: Mock handler function.
     """
-    with patch('telegram.middlewares.logging_middleware.logger') as mock_logger:
+    with patch('telegram.middlewares.logging_middleware.logger') as mock_logger, \
+         patch('telegram.middlewares.logging_middleware.structlog') as mock_structlog:
         mock_bound_logger = MagicMock()
         mock_logger.bind.return_value = mock_bound_logger
         mock_bound_logger.info = MagicMock()
@@ -205,7 +220,8 @@ async def test_logging_middleware_exception_logging(middleware, mock_update):
     """
     handler = AsyncMock(side_effect=ValueError("Test error"))
 
-    with patch('telegram.middlewares.logging_middleware.logger') as mock_logger:
+    with patch('telegram.middlewares.logging_middleware.logger') as mock_logger, \
+         patch('telegram.middlewares.logging_middleware.structlog') as mock_structlog:
         mock_bound_logger = MagicMock()
         mock_logger.bind.return_value = mock_bound_logger
         mock_bound_logger.error = MagicMock()
@@ -240,7 +256,8 @@ async def test_logging_middleware_context_binding(middleware, mock_update,
         mock_update: Mock Update object.
         mock_handler: Mock handler function.
     """
-    with patch('telegram.middlewares.logging_middleware.logger') as mock_logger:
+    with patch('telegram.middlewares.logging_middleware.logger') as mock_logger, \
+         patch('telegram.middlewares.logging_middleware.structlog') as mock_structlog:
         mock_bound_logger = MagicMock()
         mock_logger.bind.return_value = mock_bound_logger
         mock_bound_logger.info = MagicMock()
@@ -253,6 +270,8 @@ async def test_logging_middleware_context_binding(middleware, mock_update,
         assert bind_call[1]['update_id'] == 123456
         assert bind_call[1]['user_id'] == 987654321
         assert bind_call[1]['message_id'] == 789
+        assert bind_call[1]['chat_id'] == 555555
+        assert 'request_id' in bind_call[1]
 
         # Verify bound logger used for logging
         assert mock_bound_logger.info.call_count == 2
@@ -273,7 +292,8 @@ async def test_logging_middleware_event_type(middleware, mock_handler):
     update.message = None
     update.event_type = "edited_message"
 
-    with patch('telegram.middlewares.logging_middleware.logger') as mock_logger:
+    with patch('telegram.middlewares.logging_middleware.logger') as mock_logger, \
+         patch('telegram.middlewares.logging_middleware.structlog') as mock_structlog:
         mock_bound_logger = MagicMock()
         mock_logger.bind.return_value = mock_bound_logger
         mock_bound_logger.info = MagicMock()
@@ -301,7 +321,8 @@ async def test_logging_middleware_handler_chain(middleware, mock_update):
     """
     handler = AsyncMock(return_value="chain_result")
 
-    with patch('telegram.middlewares.logging_middleware.logger') as mock_logger:
+    with patch('telegram.middlewares.logging_middleware.logger') as mock_logger, \
+         patch('telegram.middlewares.logging_middleware.structlog') as mock_structlog:
         mock_bound_logger = MagicMock()
         mock_logger.bind.return_value = mock_bound_logger
         mock_bound_logger.info = MagicMock()
@@ -334,7 +355,8 @@ async def test_logging_middleware_unknown_event(middleware, mock_handler):
     update.message = None
     update.callback_query = None
 
-    with patch('telegram.middlewares.logging_middleware.logger') as mock_logger:
+    with patch('telegram.middlewares.logging_middleware.logger') as mock_logger, \
+         patch('telegram.middlewares.logging_middleware.structlog') as mock_structlog:
         mock_bound_logger = MagicMock()
         mock_logger.bind.return_value = mock_bound_logger
         mock_bound_logger.info = MagicMock()
