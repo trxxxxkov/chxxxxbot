@@ -186,3 +186,13 @@ class ThreadRepository(BaseRepository[Thread]):
 
         await self.session.delete(thread)
         await self.session.flush()
+
+    async def get_threads_count(self) -> int:
+        """Get total number of threads.
+
+        Returns:
+            Total count of all threads in database.
+        """
+        stmt = select(func.count()).select_from(Thread)
+        result = await self.session.execute(stmt)
+        return result.scalar() or 0

@@ -35,6 +35,11 @@ services:
     volumes:
       - ./bot:/app
       - ./postgres:/postgres
+      # Read-only mounts for disk usage metrics
+      - postgres_data:/mnt/volumes/postgres:ro
+      - loki_data:/mnt/volumes/loki:ro
+      - prometheus_data:/mnt/volumes/prometheus:ro
+      - grafana_data:/mnt/volumes/grafana:ro
     environment:
       - PYTHONUNBUFFERED=1
       - DATABASE_HOST=postgres

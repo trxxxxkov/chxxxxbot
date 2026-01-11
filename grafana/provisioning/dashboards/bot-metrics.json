@@ -34,7 +34,7 @@
       },
       "gridPos": {"h": 4, "w": 3, "x": 3, "y": 1},
       "id": 2,
-      "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["sum"]}},
+      "options": {"colorMode": "value", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
       "targets": [{"expr": "sum(count_over_time({service=\"bot\"} | json | level=\"error\" [$__range]))", "refId": "A"}],
       "title": "Errors",
       "type": "stat"
@@ -45,7 +45,7 @@
       "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "#3B82F6", "value": null}]}, "unit": "short"}},
       "gridPos": {"h": 4, "w": 3, "x": 6, "y": 1},
       "id": 3,
-      "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["sum"]}},
+      "options": {"colorMode": "value", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
       "targets": [{"expr": "count(sum by (user_id) (count_over_time({service=\"bot\"} | json | user_id!=\"\" [$__range])))", "refId": "A"}],
       "title": "Active Users",
       "type": "stat"
@@ -55,7 +55,7 @@
       "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "#22C55E", "value": null}, {"color": "#EAB308", "value": 500000000}, {"color": "#EF4444", "value": 1000000000}]}, "unit": "decbytes"}},
       "gridPos": {"h": 4, "w": 3, "x": 9, "y": 1},
       "id": 4,
-      "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"]}},
+      "options": {"colorMode": "value", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
       "targets": [{"expr": "process_resident_memory_bytes{job=\"bot\"}", "refId": "A"}],
       "title": "Memory",
       "type": "stat"
@@ -66,7 +66,7 @@
       "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "#3B82F6", "value": null}]}, "unit": "short"}},
       "gridPos": {"h": 4, "w": 3, "x": 12, "y": 1},
       "id": 5,
-      "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["sum"]}},
+      "options": {"colorMode": "value", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
       "targets": [{"expr": "sum(sum_over_time({service=\"bot\"} | json | event=\"claude.get_message.complete\" | unwrap input_tokens [$__range]))", "refId": "A"}],
       "title": "Input Tokens",
       "type": "stat"
@@ -77,7 +77,7 @@
       "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "#6366F1", "value": null}]}, "unit": "short"}},
       "gridPos": {"h": 4, "w": 3, "x": 15, "y": 1},
       "id": 6,
-      "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["sum"]}},
+      "options": {"colorMode": "value", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
       "targets": [{"expr": "sum(sum_over_time({service=\"bot\"} | json | event=\"claude.get_message.complete\" | unwrap output_tokens [$__range]))", "refId": "A"}],
       "title": "Output Tokens",
       "type": "stat"
@@ -88,7 +88,7 @@
       "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "#8B5CF6", "value": null}]}, "unit": "short"}},
       "gridPos": {"h": 4, "w": 3, "x": 18, "y": 1},
       "id": 7,
-      "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["sum"]}},
+      "options": {"colorMode": "value", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
       "targets": [{"expr": "sum(count_over_time({service=\"bot\"} | json | event=\"claude.get_message.complete\" [$__range]))", "refId": "A"}],
       "title": "API Calls",
       "type": "stat"
@@ -99,7 +99,7 @@
       "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "#06B6D4", "value": null}]}, "unit": "short"}},
       "gridPos": {"h": 4, "w": 3, "x": 21, "y": 1},
       "id": 8,
-      "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["sum"]}},
+      "options": {"colorMode": "value", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
       "targets": [{"expr": "sum(count_over_time({service=\"bot\"} | json | event=\"files_api.upload_success\" [$__range]))", "refId": "A"}],
       "title": "Files",
       "type": "stat"
@@ -231,6 +231,44 @@
             {"expr": "process_virtual_memory_bytes{job=\"bot\"}", "legendFormat": "Virtual", "refId": "B"}
           ],
           "title": "Memory Usage",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {"color": {"mode": "palette-classic"}, "custom": {"axisCenteredZero": false, "axisPlacement": "auto", "drawStyle": "line", "fillOpacity": 20, "lineInterpolation": "smooth", "lineWidth": 2, "showPoints": "never", "stacking": {"mode": "normal"}}, "unit": "decbytes"},
+            "overrides": [
+              {"matcher": {"id": "byName", "options": "PostgreSQL"}, "properties": [{"id": "color", "value": {"fixedColor": "#3B82F6", "mode": "fixed"}}]},
+              {"matcher": {"id": "byName", "options": "Loki"}, "properties": [{"id": "color", "value": {"fixedColor": "#22C55E", "mode": "fixed"}}]},
+              {"matcher": {"id": "byName", "options": "Prometheus"}, "properties": [{"id": "color", "value": {"fixedColor": "#EAB308", "mode": "fixed"}}]},
+              {"matcher": {"id": "byName", "options": "Grafana"}, "properties": [{"id": "color", "value": {"fixedColor": "#EF4444", "mode": "fixed"}}]}
+            ]
+          },
+          "gridPos": {"h": 6, "w": 12, "x": 0, "y": 29},
+          "id": 22,
+          "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
+          "targets": [
+            {"expr": "bot_disk_usage_bytes{volume=\"postgres\"}", "legendFormat": "PostgreSQL", "refId": "A"},
+            {"expr": "bot_disk_usage_bytes{volume=\"loki\"}", "legendFormat": "Loki", "refId": "B"},
+            {"expr": "bot_disk_usage_bytes{volume=\"prometheus\"}", "legendFormat": "Prometheus", "refId": "C"},
+            {"expr": "bot_disk_usage_bytes{volume=\"grafana\"}", "legendFormat": "Grafana", "refId": "D"}
+          ],
+          "title": "Disk Usage by Service",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {"color": {"mode": "palette-classic"}, "custom": {"axisCenteredZero": false, "axisPlacement": "auto", "drawStyle": "line", "fillOpacity": 20, "lineInterpolation": "smooth", "lineWidth": 2, "showPoints": "never", "stacking": {"mode": "none"}}, "unit": "short"}
+          },
+          "gridPos": {"h": 6, "w": 12, "x": 12, "y": 29},
+          "id": 23,
+          "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
+          "targets": [
+            {"expr": "bot_total_threads", "legendFormat": "Total Threads", "refId": "A"},
+            {"expr": "bot_total_users", "legendFormat": "Total Users", "refId": "B"}
+          ],
+          "title": "Threads & Users",
           "type": "timeseries"
         }
       ],

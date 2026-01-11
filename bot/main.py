@@ -27,6 +27,8 @@ from utils.metrics import set_active_users
 from utils.metrics import set_active_files
 from utils.metrics import set_total_balance
 from utils.metrics import set_total_users
+from utils.metrics import set_total_threads
+from utils.metrics import set_disk_usage
 from utils.metrics import set_top_users
 
 
@@ -104,6 +106,30 @@ def load_privileged_users() -> set[int]:
             exc_info=True,
         )
         return set()
+
+
+def get_directory_size(path: str) -> int:
+    """Get total size of directory in bytes.
+
+    Args:
+        path: Directory path to measure.
+
+    Returns:
+        Total size in bytes, or 0 if path doesn't exist.
+    """
+    import os
+    total = 0
+    try:
+        for dirpath, _, filenames in os.walk(path):
+            for filename in filenames:
+                filepath = os.path.join(dirpath, filename)
+                try:
+                    total += os.path.getsize(filepath)
+                except (OSError, IOError):
+                    pass
+    except (OSError, IOError):
+        pass
+    return total
 
 
 async def collect_metrics_task(logger) -> None:
@@ -193,11 +219,34 @@ async def collect_metrics_task(logger) -> None:
                         active_files = await user_file_repo.get_active_files_count()
                         set_active_files(active_files)
 
+                        # Total threads
+                        from db.repositories.thread_repository import \
+                            ThreadRepository  # pylint: disable=import-outside-toplevel
+                        thread_repo = ThreadRepository(session)
+                        total_threads = await thread_repo.get_threads_count()
+                        set_total_threads(total_threads)
+
+                        # Disk usage by volume
+                        volumes = {
+                            'postgres': '/mnt/volumes/postgres',
+                            'loki': '/mnt/volumes/loki',
+                            'prometheus': '/mnt/volumes/prometheus',
+                            'grafana': '/mnt/volumes/grafana',
+                        }
+                        total_disk = 0
+                        for vol_name, vol_path in volumes.items():
+                            vol_size = get_directory_size(vol_path)
+                            set_disk_usage(vol_name, vol_size)
+                            total_disk += vol_size
+                        set_disk_usage('total', total_disk)
+
                         logger.debug("metrics.user_stats_collected",
                                      active_users=active_count,
                                      total_users=total_users,
                                      total_balance=float(total_balance),
-                                     active_files=active_files)
+                                     active_files=active_files,
+                                     total_threads=total_threads,
+                                     total_disk_bytes=total_disk)
 
                 except Exception as user_err:  # pylint: disable=broad-exception-caught
                     logger.error("metrics.user_stats_error",

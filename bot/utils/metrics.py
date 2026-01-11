@@ -92,6 +92,19 @@ TOTAL_USERS = Gauge(
     'Total number of registered users'
 )
 
+TOTAL_THREADS = Gauge(
+    'bot_total_threads',
+    'Total number of conversation threads'
+)
+
+# === Disk Usage Metrics ===
+
+DISK_USAGE_BYTES = Gauge(
+    'bot_disk_usage_bytes',
+    'Disk usage in bytes',
+    ['volume']  # postgres/loki/prometheus/grafana/total
+)
+
 TOP_USER_MESSAGES = Gauge(
     'bot_top_user_messages',
     'Message count for top users',
@@ -267,6 +280,16 @@ def set_total_balance(amount_usd: float) -> None:
 def set_total_users(count: int) -> None:
     """Set the total number of users."""
     TOTAL_USERS.set(count)
+
+
+def set_total_threads(count: int) -> None:
+    """Set the total number of threads."""
+    TOTAL_THREADS.set(count)
+
+
+def set_disk_usage(volume: str, bytes_used: int) -> None:
+    """Set disk usage for a volume."""
+    DISK_USAGE_BYTES.labels(volume=volume).set(bytes_used)
 
 
 def set_top_users(
