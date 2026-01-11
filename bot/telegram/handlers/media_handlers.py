@@ -1,14 +1,17 @@
-"""Universal media handlers for all Telegram media types.
+"""Media handlers for all Telegram media types.
 
-Phase 1.6: Unified architecture using MediaProcessor.
+Two handling strategies based on media type:
 
-All media handlers follow the same pattern:
-1. Download media from Telegram
-2. Process with MediaProcessor (transcribe/upload)
-3. Get thread_id
-4. Pass MediaContent via queue → Claude handler
+1. Voice messages & video notes (user "speech"):
+   - Auto-transcribe with Whisper
+   - Pass transcript via queue to Claude
+   - User pays for transcription
 
-NO ad-hoc solutions, NO direct DB saves before queue.
+2. Audio files (MP3, FLAC) & video files (MP4, MOV):
+   - Upload to Claude Files API
+   - Save to user_files table
+   - NO auto-transcription (Claude uses transcribe_audio tool if needed)
+   - Enables file processing (convert, analyze, etc.)
 """
 
 from aiogram import F
@@ -18,6 +21,7 @@ import openai
 from sqlalchemy.ext.asyncio import AsyncSession
 from telegram.media_processor import download_media
 from telegram.media_processor import get_or_create_thread
+from telegram.media_processor import MediaContent
 from telegram.media_processor import MediaProcessor
 from telegram.media_processor import MediaType
 from utils.structured_logging import get_logger
@@ -181,15 +185,29 @@ async def handle_voice(message: types.Message, session: AsyncSession) -> None:
 
 @router.message(F.audio)
 async def handle_audio(message: types.Message, session: AsyncSession) -> None:
-    """Handle audio files with automatic transcription.
+    """Handle audio files by uploading to Files API.
 
-    Phase 1.6: MP3, M4A, WAV, FLAC, OGG files.
-    Transcribed with Whisper, passed via queue.
+    Audio files (MP3, FLAC, WAV, etc.) are uploaded and saved for later use.
+    Claude can transcribe them using transcribe_audio tool if needed.
+
+    Unlike voice messages which are auto-transcribed (spoken input from user),
+    audio files are treated as files to be processed on demand.
 
     Args:
         message: Telegram message with audio file.
         session: Database session (injected by DatabaseMiddleware).
     """
+    # pylint: disable=import-outside-toplevel
+    from datetime import datetime
+    from datetime import timedelta
+    from datetime import timezone
+
+    from config import FILES_API_TTL_HOURS
+    from core.claude.files_api import upload_to_files_api
+    from db.models.user_file import FileSource
+    from db.models.user_file import FileType
+    from db.repositories.user_file_repository import UserFileRepository
+
     if not message.from_user or not message.audio:
         logger.warning("audio_handler.invalid_message",
                        message_id=message.message_id)
@@ -197,86 +215,81 @@ async def handle_audio(message: types.Message, session: AsyncSession) -> None:
 
     user_id = message.from_user.id
     audio = message.audio
+    filename = audio.file_name or f"audio_{audio.file_id[:8]}.mp3"
+    mime_type = audio.mime_type or "audio/mpeg"
 
     logger.info("audio_handler.received",
                 user_id=user_id,
                 message_id=message.message_id,
-                filename=audio.file_name,
+                filename=filename,
                 duration=audio.duration,
                 file_size=audio.file_size,
-                mime_type=audio.mime_type)
+                mime_type=mime_type)
 
     try:
-        # 1. Download audio
+        # 1. Download audio from Telegram
         audio_bytes = await download_media(message, MediaType.AUDIO)
 
         logger.info("audio_handler.download_complete",
                     user_id=user_id,
                     size_bytes=len(audio_bytes))
 
-        # 2. Process (transcribe)
-        processor = get_media_processor()
-        filename = audio.file_name or f"audio_{audio.file_id[:8]}.mp3"
+        # 2. Upload to Files API (so Claude can process it)
+        claude_file_id = await upload_to_files_api(file_bytes=audio_bytes,
+                                                   filename=filename,
+                                                   mime_type=mime_type)
 
-        media_content = await processor.process_audio(audio_bytes=audio_bytes,
-                                                      filename=filename,
-                                                      duration=audio.duration)
-
-        logger.info("audio_handler.transcribed",
+        logger.info("audio_handler.files_api_complete",
                     user_id=user_id,
-                    transcript_length=len(media_content.text_content or ""),
-                    cost_usd=media_content.metadata.get("cost_usd"))
+                    filename=filename,
+                    claude_file_id=claude_file_id)
 
-        # Phase 2.1: Charge user for Whisper API transcription
-        if "cost_usd" in media_content.metadata:
-            try:
-                from decimal import \
-                    Decimal  # pylint: disable=import-outside-toplevel
-
-                from db.repositories.balance_operation_repository import \
-                    BalanceOperationRepository  # pylint: disable=import-outside-toplevel
-                from db.repositories.user_repository import \
-                    UserRepository  # pylint: disable=import-outside-toplevel
-                from services.balance_service import \
-                    BalanceService  # pylint: disable=import-outside-toplevel
-
-                whisper_cost = Decimal(str(media_content.metadata["cost_usd"]))
-
-                user_repo = UserRepository(session)
-                balance_op_repo = BalanceOperationRepository(session)
-                balance_service = BalanceService(session, user_repo,
-                                                 balance_op_repo)
-
-                await balance_service.charge_user(
-                    user_id=user_id,
-                    amount=whisper_cost,
-                    description=
-                    f"Whisper API: audio transcription, {audio.duration}s",
-                    related_message_id=message.message_id,
-                )
-
-                await session.commit()
-
-                logger.info("audio_handler.user_charged",
-                            user_id=user_id,
-                            cost_usd=float(whisper_cost))
-
-            except Exception as charge_error:  # pylint: disable=broad-exception-caught
-                logger.error("audio_handler.charge_user_error",
-                             user_id=user_id,
-                             cost_usd=media_content.metadata.get("cost_usd"),
-                             error=str(charge_error),
-                             exc_info=True,
-                             msg="CRITICAL: Failed to charge user for Whisper!")
-                # Don't fail - user already got transcription
-
-        # 3. Get thread
+        # 3. Get or create thread
         thread = await get_or_create_thread(message, session)
+
+        # 4. Save to database
+        user_file_repo = UserFileRepository(session)
+        await user_file_repo.create(
+            message_id=message.message_id,
+            telegram_file_id=audio.file_id,
+            telegram_file_unique_id=audio.file_unique_id,
+            claude_file_id=claude_file_id,
+            filename=filename,
+            file_type=FileType.AUDIO,
+            mime_type=mime_type,
+            file_size=audio.file_size or len(audio_bytes),
+            source=FileSource.USER,
+            expires_at=datetime.now(timezone.utc) +
+            timedelta(hours=FILES_API_TTL_HOURS),
+            file_metadata={
+                "duration": audio.duration,
+                "performer": audio.performer,
+                "title": audio.title,
+            },
+        )
+
         await session.commit()
 
-        # 4. Queue
-        from telegram.handlers.claude import \
-            message_queue_manager  # pylint: disable=import-outside-toplevel
+        logger.info("audio_handler.saved",
+                    user_id=user_id,
+                    filename=filename,
+                    claude_file_id=claude_file_id,
+                    thread_id=thread.id)
+
+        # 5. Create MediaContent for queue (no transcript, just file reference)
+        media_content = MediaContent(
+            type=MediaType.AUDIO,
+            file_id=claude_file_id,
+            text_content=None,  # No auto-transcription
+            metadata={
+                "filename": filename,
+                "duration": audio.duration,
+                "size_bytes": audio.file_size or len(audio_bytes),
+                "mime_type": mime_type,
+            })
+
+        # 6. Queue for Claude handler
+        from telegram.handlers.claude import message_queue_manager
 
         if message_queue_manager is None:
             logger.error("audio_handler.queue_not_initialized")
@@ -291,15 +304,8 @@ async def handle_audio(message: types.Message, session: AsyncSession) -> None:
 
         logger.info("audio_handler.complete",
                     user_id=user_id,
-                    thread_id=thread.id)
-
-    except openai.APIError as e:
-        logger.error("audio_handler.whisper_api_failed",
-                     user_id=user_id,
-                     error=str(e),
-                     exc_info=True)
-        await message.answer(
-            "❌ Failed to transcribe audio file. Please try again.")
+                    thread_id=thread.id,
+                    claude_file_id=claude_file_id)
 
     except Exception as e:  # pylint: disable=broad-exception-caught
         logger.error("audio_handler.failed",
@@ -307,20 +313,34 @@ async def handle_audio(message: types.Message, session: AsyncSession) -> None:
                      error=str(e),
                      exc_info=True)
         await message.answer(
-            "❌ Failed to process audio file. Please try again later.")
+            "Failed to process audio file. Please try again later.")
 
 
 @router.message(F.video)
 async def handle_video(message: types.Message, session: AsyncSession) -> None:
-    """Handle video files by transcribing audio track.
+    """Handle video files by uploading to Files API.
 
-    Phase 1.6: MP4, MOV, AVI files.
-    Audio track extracted and transcribed with Whisper.
+    Video files (MP4, MOV, AVI, etc.) are uploaded and saved for later use.
+    Claude can transcribe them using transcribe_audio tool if needed.
+
+    Unlike video_notes (round videos) which are auto-transcribed (spoken input),
+    video files are treated as files to be processed on demand.
 
     Args:
         message: Telegram message with video file.
         session: Database session (injected by DatabaseMiddleware).
     """
+    # pylint: disable=import-outside-toplevel
+    from datetime import datetime
+    from datetime import timedelta
+    from datetime import timezone
+
+    from config import FILES_API_TTL_HOURS
+    from core.claude.files_api import upload_to_files_api
+    from db.models.user_file import FileSource
+    from db.models.user_file import FileType
+    from db.repositories.user_file_repository import UserFileRepository
+
     if not message.from_user or not message.video:
         logger.warning("video_handler.invalid_message",
                        message_id=message.message_id)
@@ -328,85 +348,81 @@ async def handle_video(message: types.Message, session: AsyncSession) -> None:
 
     user_id = message.from_user.id
     video = message.video
+    filename = video.file_name or f"video_{video.file_id[:8]}.mp4"
+    mime_type = video.mime_type or "video/mp4"
 
     logger.info("video_handler.received",
                 user_id=user_id,
                 message_id=message.message_id,
+                filename=filename,
                 duration=video.duration,
                 file_size=video.file_size,
-                mime_type=video.mime_type)
+                mime_type=mime_type)
 
     try:
-        # 1. Download video
+        # 1. Download video from Telegram
         video_bytes = await download_media(message, MediaType.VIDEO)
 
         logger.info("video_handler.download_complete",
                     user_id=user_id,
                     size_bytes=len(video_bytes))
 
-        # 2. Process (transcribe audio track)
-        processor = get_media_processor()
-        filename = video.file_name or f"video_{video.file_id[:8]}.mp4"
+        # 2. Upload to Files API (so Claude can process it)
+        claude_file_id = await upload_to_files_api(file_bytes=video_bytes,
+                                                   filename=filename,
+                                                   mime_type=mime_type)
 
-        media_content = await processor.process_video(video_bytes=video_bytes,
-                                                      filename=filename,
-                                                      duration=video.duration)
-
-        logger.info("video_handler.transcribed",
+        logger.info("video_handler.files_api_complete",
                     user_id=user_id,
-                    transcript_length=len(media_content.text_content or ""),
-                    cost_usd=media_content.metadata.get("cost_usd"))
+                    filename=filename,
+                    claude_file_id=claude_file_id)
 
-        # Phase 2.1: Charge user for Whisper API transcription
-        if "cost_usd" in media_content.metadata:
-            try:
-                from decimal import \
-                    Decimal  # pylint: disable=import-outside-toplevel
-
-                from db.repositories.balance_operation_repository import \
-                    BalanceOperationRepository  # pylint: disable=import-outside-toplevel
-                from db.repositories.user_repository import \
-                    UserRepository  # pylint: disable=import-outside-toplevel
-                from services.balance_service import \
-                    BalanceService  # pylint: disable=import-outside-toplevel
-
-                whisper_cost = Decimal(str(media_content.metadata["cost_usd"]))
-
-                user_repo = UserRepository(session)
-                balance_op_repo = BalanceOperationRepository(session)
-                balance_service = BalanceService(session, user_repo,
-                                                 balance_op_repo)
-
-                await balance_service.charge_user(
-                    user_id=user_id,
-                    amount=whisper_cost,
-                    description=
-                    f"Whisper API: video transcription, {video.duration}s",
-                    related_message_id=message.message_id,
-                )
-
-                await session.commit()
-
-                logger.info("video_handler.user_charged",
-                            user_id=user_id,
-                            cost_usd=float(whisper_cost))
-
-            except Exception as charge_error:  # pylint: disable=broad-exception-caught
-                logger.error("video_handler.charge_user_error",
-                             user_id=user_id,
-                             cost_usd=media_content.metadata.get("cost_usd"),
-                             error=str(charge_error),
-                             exc_info=True,
-                             msg="CRITICAL: Failed to charge user for Whisper!")
-                # Don't fail - user already got transcription
-
-        # 3. Get thread
+        # 3. Get or create thread
         thread = await get_or_create_thread(message, session)
+
+        # 4. Save to database
+        user_file_repo = UserFileRepository(session)
+        await user_file_repo.create(
+            message_id=message.message_id,
+            telegram_file_id=video.file_id,
+            telegram_file_unique_id=video.file_unique_id,
+            claude_file_id=claude_file_id,
+            filename=filename,
+            file_type=FileType.VIDEO,
+            mime_type=mime_type,
+            file_size=video.file_size or len(video_bytes),
+            source=FileSource.USER,
+            expires_at=datetime.now(timezone.utc) +
+            timedelta(hours=FILES_API_TTL_HOURS),
+            file_metadata={
+                "duration": video.duration,
+                "width": video.width,
+                "height": video.height,
+            },
+        )
+
         await session.commit()
 
-        # 4. Queue
-        from telegram.handlers.claude import \
-            message_queue_manager  # pylint: disable=import-outside-toplevel
+        logger.info("video_handler.saved",
+                    user_id=user_id,
+                    filename=filename,
+                    claude_file_id=claude_file_id,
+                    thread_id=thread.id)
+
+        # 5. Create MediaContent for queue (no transcript, just file reference)
+        media_content = MediaContent(
+            type=MediaType.VIDEO,
+            file_id=claude_file_id,
+            text_content=None,  # No auto-transcription
+            metadata={
+                "filename": filename,
+                "duration": video.duration,
+                "size_bytes": video.file_size or len(video_bytes),
+                "mime_type": mime_type,
+            })
+
+        # 6. Queue for Claude handler
+        from telegram.handlers.claude import message_queue_manager
 
         if message_queue_manager is None:
             logger.error("video_handler.queue_not_initialized")
@@ -421,15 +437,8 @@ async def handle_video(message: types.Message, session: AsyncSession) -> None:
 
         logger.info("video_handler.complete",
                     user_id=user_id,
-                    thread_id=thread.id)
-
-    except openai.APIError as e:
-        logger.error("video_handler.whisper_api_failed",
-                     user_id=user_id,
-                     error=str(e),
-                     exc_info=True)
-        await message.answer(
-            "❌ Failed to transcribe video audio. Please try again.")
+                    thread_id=thread.id,
+                    claude_file_id=claude_file_id)
 
     except Exception as e:  # pylint: disable=broad-exception-caught
         logger.error("video_handler.failed",
@@ -437,7 +446,7 @@ async def handle_video(message: types.Message, session: AsyncSession) -> None:
                      error=str(e),
                      exc_info=True)
         await message.answer(
-            "❌ Failed to process video file. Please try again later.")
+            "Failed to process video file. Please try again later.")
 
 
 @router.message(F.video_note)

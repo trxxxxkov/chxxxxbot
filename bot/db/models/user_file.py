@@ -153,10 +153,10 @@ class UserFile(Base):
 
     # Lifecycle
     uploaded_at: Mapped[datetime] = mapped_column(
-        DateTime,
+        DateTime(timezone=True),
         server_default=func.now(),
         nullable=False,
-        doc="Upload timestamp",
+        doc="Upload timestamp (timezone-aware)",
     )
 
     expires_at: Mapped[datetime] = mapped_column(

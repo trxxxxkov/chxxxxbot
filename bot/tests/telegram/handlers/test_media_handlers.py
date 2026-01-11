@@ -169,53 +169,61 @@ async def test_handle_voice_whisper_api_error():
 
 @pytest.mark.asyncio
 async def test_handle_audio_success():
-    """Test successful audio file handling."""
+    """Test successful audio file handling.
+
+    Audio files are uploaded to Files API (not auto-transcribed).
+    Claude can use transcribe_audio tool if needed.
+    """
     message = MagicMock()
     message.from_user = MagicMock()
     message.from_user.id = 456
     message.audio = MagicMock()
     message.audio.file_id = "audio_id_789"
+    message.audio.file_unique_id = "audio_unique_789"
     message.audio.file_name = "song.mp3"
     message.audio.duration = 180
     message.audio.file_size = 5000000
     message.audio.mime_type = "audio/mpeg"
+    message.audio.performer = "Artist"
+    message.audio.title = "Song Title"
     message.message_id = 2001
 
     session = AsyncMock()
-
-    mock_processor = AsyncMock()
-    mock_media_content = MediaContent(type=MediaType.AUDIO,
-                                      text_content="Song lyrics",
-                                      metadata={
-                                          "duration": 180,
-                                          "language": "en"
-                                      })
-    mock_processor.process_audio.return_value = mock_media_content
 
     mock_audio_bytes = b"audio_file_data"
     mock_thread = Mock()
     mock_thread.id = 99
     mock_queue_manager = AsyncMock()
+    mock_file_repo = AsyncMock()
 
     with patch('telegram.handlers.media_handlers.download_media',
                return_value=mock_audio_bytes), \
          patch('telegram.handlers.media_handlers.get_or_create_thread',
                return_value=mock_thread), \
-         patch('telegram.handlers.media_handlers.get_media_processor',
-               return_value=mock_processor), \
+         patch('core.claude.files_api.upload_to_files_api',
+               return_value="file_claude_123") as mock_upload, \
+         patch('db.repositories.user_file_repository.UserFileRepository.create',
+               new_callable=AsyncMock) as mock_create, \
          patch('telegram.handlers.claude.message_queue_manager',
                mock_queue_manager):
 
         await handle_audio(message, session)
 
-        # Verify processing
-        mock_processor.process_audio.assert_called_once()
-        assert mock_processor.process_audio.call_args[1][
-            "filename"] == "song.mp3"
+        # Verify upload to Files API (no transcription)
+        mock_upload.assert_called_once_with(
+            file_bytes=mock_audio_bytes,
+            filename="song.mp3",
+            mime_type="audio/mpeg")
+
+        # Verify saved to database
+        mock_create.assert_called_once()
 
         # Verify immediate queue processing
         mock_queue_manager.add_message.assert_called_once()
-        assert mock_queue_manager.add_message.call_args[1]["immediate"] is True
+        call_kwargs = mock_queue_manager.add_message.call_args[1]
+        assert call_kwargs["immediate"] is True
+        # MediaContent should have no text_content (not transcribed)
+        assert call_kwargs["media_content"].text_content is None
 
 
 # ============================================================================
@@ -225,46 +233,61 @@ async def test_handle_audio_success():
 
 @pytest.mark.asyncio
 async def test_handle_video_success():
-    """Test successful video file handling."""
+    """Test successful video file handling.
+
+    Video files are uploaded to Files API (not auto-transcribed).
+    Claude can use transcribe_audio tool if needed.
+    """
     message = MagicMock()
     message.from_user = MagicMock()
     message.from_user.id = 789
     message.video = MagicMock()
     message.video.file_id = "video_id_456"
+    message.video.file_unique_id = "video_unique_456"
     message.video.file_name = "clip.mp4"
     message.video.duration = 60
     message.video.file_size = 10000000
     message.video.mime_type = "video/mp4"
+    message.video.width = 1920
+    message.video.height = 1080
+    message.message_id = 3001
 
     session = AsyncMock()
-
-    mock_processor = AsyncMock()
-    mock_media_content = MediaContent(type=MediaType.VIDEO,
-                                      text_content="Video dialogue",
-                                      metadata={"duration": 60})
-    mock_processor.process_video.return_value = mock_media_content
 
     mock_video_bytes = b"video_data"
     mock_thread = Mock()
     mock_thread.id = 77
     mock_queue_manager = AsyncMock()
+    mock_file_repo = AsyncMock()
 
     with patch('telegram.handlers.media_handlers.download_media',
                return_value=mock_video_bytes), \
          patch('telegram.handlers.media_handlers.get_or_create_thread',
                return_value=mock_thread), \
-         patch('telegram.handlers.media_handlers.get_media_processor',
-               return_value=mock_processor), \
+         patch('core.claude.files_api.upload_to_files_api',
+               return_value="file_claude_video_123") as mock_upload, \
+         patch('db.repositories.user_file_repository.UserFileRepository.create',
+               new_callable=AsyncMock) as mock_create, \
          patch('telegram.handlers.claude.message_queue_manager',
                mock_queue_manager):
 
         await handle_video(message, session)
 
-        # Verify download with correct type
-        # (download_media is patched, can't check args easily)
+        # Verify upload to Files API (no transcription)
+        mock_upload.assert_called_once_with(
+            file_bytes=mock_video_bytes,
+            filename="clip.mp4",
+            mime_type="video/mp4")
 
-        # Verify processing
-        mock_processor.process_video.assert_called_once()
+        # Verify saved to database
+        mock_create.assert_called_once()
+
+        # Verify immediate queue processing
+        mock_queue_manager.add_message.assert_called_once()
+        call_kwargs = mock_queue_manager.add_message.call_args[1]
+        assert call_kwargs["immediate"] is True
+        # MediaContent should have no text_content (not transcribed)
+        assert call_kwargs["media_content"].text_content is None
 
 
 # ============================================================================
