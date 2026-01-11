@@ -13,6 +13,7 @@ from db.models.thread import Thread
 from db.repositories.base import BaseRepository
 from sqlalchemy import func
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -76,16 +77,28 @@ class ThreadRepository(BaseRepository[Thread]):
             await self.session.flush()
             return thread, False
 
-        # Create new thread
+        # Create new thread with race condition handling using savepoint
         thread = Thread(
             chat_id=chat_id,
             user_id=user_id,
             thread_id=thread_id,
             title=title,
         )
-        self.session.add(thread)
-        await self.session.flush()
-        return thread, True
+        try:
+            # Use savepoint (nested transaction) so IntegrityError
+            # doesn't invalidate the entire transaction
+            async with self.session.begin_nested():
+                self.session.add(thread)
+                await self.session.flush()
+            return thread, True
+        except IntegrityError:
+            # Race condition: another request created the thread
+            # Savepoint was rolled back, main transaction still active
+            thread = await self.get_active_thread(chat_id, user_id, thread_id)
+            if thread:
+                return thread, False
+            # Should not happen, but re-raise if thread still not found
+            raise
 
     async def get_active_thread(
         self,

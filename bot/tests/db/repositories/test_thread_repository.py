@@ -7,8 +7,13 @@ NO __init__.py - use direct import:
     pytest tests/test_thread_repository.py
 """
 
+import asyncio
+from unittest.mock import AsyncMock
+from unittest.mock import patch
+
 from db.repositories.thread_repository import ThreadRepository
 import pytest
+from sqlalchemy.exc import IntegrityError
 
 
 @pytest.mark.asyncio
@@ -297,3 +302,135 @@ async def test_thread_coalesce_logic(
 
     assert found_main.id == main_thread.id
     assert found_topic.id == topic_thread.id
+
+
+@pytest.mark.asyncio
+async def test_get_or_create_thread_handles_race_condition(
+    test_session,
+    sample_user,
+    sample_chat,
+):
+    """Test that concurrent thread creation handles IntegrityError gracefully.
+
+    Regression test for bug: when multiple photos are sent simultaneously,
+    parallel handlers all try to create the same thread. The first one
+    succeeds, but the others hit UniqueViolationError.
+
+    The fix: use savepoint (begin_nested) so IntegrityError doesn't
+    invalidate the entire transaction, then fetch the existing thread.
+
+    Bug scenario:
+    1. User sends 5 photos at once
+    2. 5 handlers run in parallel
+    3. All see thread doesn't exist
+    4. All try to INSERT
+    5. First succeeds, 4 fail with UniqueViolationError
+    6. Error shown to user: "failed to upload photo"
+
+    Args:
+        test_session: Async session fixture.
+        sample_user: Sample user fixture.
+        sample_chat: Sample chat fixture.
+    """
+    from db.models.thread import Thread
+
+    repo = ThreadRepository(test_session)
+
+    # First, create the thread directly in DB (simulating another handler)
+    existing_thread = Thread(
+        chat_id=sample_chat.id,
+        user_id=sample_user.id,
+        thread_id=88888,
+    )
+    test_session.add(existing_thread)
+    await test_session.flush()
+    existing_thread_id = existing_thread.id
+
+    # Now simulate race condition: get_active_thread returns None (cache miss)
+    # but INSERT fails because thread already exists
+    original_get_active_thread = repo.get_active_thread
+    first_call = True
+
+    async def mock_get_active_thread_first_miss(chat_id, user_id, thread_id):
+        nonlocal first_call
+        if first_call and thread_id == 88888:
+            first_call = False
+            return None  # Simulate cache miss / race condition
+        return await original_get_active_thread(chat_id, user_id, thread_id)
+
+    with patch.object(
+        repo, 'get_active_thread', side_effect=mock_get_active_thread_first_miss
+    ):
+        # This should:
+        # 1. Call get_active_thread -> returns None (mocked)
+        # 2. Try to INSERT -> IntegrityError (thread exists)
+        # 3. Catch error, call get_active_thread again -> returns thread
+        # 4. Return existing thread with was_created=False
+        thread, was_created = await repo.get_or_create_thread(
+            chat_id=sample_chat.id,
+            user_id=sample_user.id,
+            thread_id=88888,
+        )
+
+    # Should return existing thread, not create new one
+    assert was_created is False
+    assert thread.id == existing_thread_id
+
+
+@pytest.mark.asyncio
+async def test_get_or_create_thread_uses_savepoint(
+    test_session,
+    sample_user,
+    sample_chat,
+):
+    """Test that IntegrityError handling uses savepoint correctly.
+
+    Verifies that after handling IntegrityError, the session is still
+    usable for other operations (transaction not invalidated).
+
+    Args:
+        test_session: Async session fixture.
+        sample_user: Sample user fixture.
+        sample_chat: Sample chat fixture.
+    """
+    from db.models.thread import Thread
+
+    repo = ThreadRepository(test_session)
+
+    # Create thread directly
+    existing_thread = Thread(
+        chat_id=sample_chat.id,
+        user_id=sample_user.id,
+        thread_id=77777,
+    )
+    test_session.add(existing_thread)
+    await test_session.flush()
+
+    # Mock to force IntegrityError path
+    original_get_active_thread = repo.get_active_thread
+    first_call = True
+
+    async def mock_first_miss(chat_id, user_id, thread_id):
+        nonlocal first_call
+        if first_call and thread_id == 77777:
+            first_call = False
+            return None
+        return await original_get_active_thread(chat_id, user_id, thread_id)
+
+    with patch.object(repo, 'get_active_thread', side_effect=mock_first_miss):
+        thread, _ = await repo.get_or_create_thread(
+            chat_id=sample_chat.id,
+            user_id=sample_user.id,
+            thread_id=77777,
+        )
+
+    # After IntegrityError handling, session should still work
+    # Try creating a different thread to verify transaction is valid
+    new_thread, was_created = await repo.get_or_create_thread(
+        chat_id=sample_chat.id,
+        user_id=sample_user.id,
+        thread_id=66666,  # Different thread_id
+    )
+
+    assert was_created is True
+    assert new_thread.thread_id == 66666

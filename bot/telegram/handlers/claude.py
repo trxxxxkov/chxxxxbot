@@ -495,9 +495,19 @@ async def _handle_with_tools(request: LLMRequest, first_message: types.Message,
 
             # Add assistant response + tool results to conversation
             # CRITICAL: Include ALL content blocks (thinking + tool_use)
+            # Convert ContentBlock objects to dicts for API serialization
+            serialized_content = []
+            for block in response.content:
+                if hasattr(block, 'model_dump'):
+                    serialized_content.append(block.model_dump())
+                elif hasattr(block, 'dict'):
+                    serialized_content.append(block.dict())
+                else:
+                    serialized_content.append(block)
+
             conversation.append({
                 "role": "assistant",
-                "content": response.content
+                "content": serialized_content
             })
             conversation.append({"role": "user", "content": tool_results})
 
