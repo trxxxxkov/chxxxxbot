@@ -247,6 +247,8 @@ async def _send_invoice_to_user(
             user_id,
             stars_amount,
             owner_margin=DEFAULT_OWNER_MARGIN,
+            chat_id=message.chat.id,
+            message_thread_id=message.message_thread_id,
         )
 
         # Calculate expected USD for confirmation

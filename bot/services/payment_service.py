@@ -159,6 +159,8 @@ class PaymentService:
         user_id: int,
         stars_amount: int,
         owner_margin: float = DEFAULT_OWNER_MARGIN,
+        chat_id: int | None = None,
+        message_thread_id: int | None = None,
     ) -> None:
         """Send payment invoice to user.
 
@@ -167,6 +169,8 @@ class PaymentService:
             user_id: Telegram user ID.
             stars_amount: Amount of Stars for payment.
             owner_margin: Owner margin (k3) for this invoice.
+            chat_id: Chat ID where to send invoice (defaults to user_id).
+            message_thread_id: Thread ID for topic chats (optional).
 
         Raises:
             ValueError: If stars_amount is invalid or user not found.
@@ -194,9 +198,12 @@ class PaymentService:
         )
 
         # Send invoice to user
-        # Prepare photo_url: only include if it's a valid non-empty URL
+        # Use provided chat_id or default to user_id (private chat)
+        target_chat_id = chat_id if chat_id is not None else user_id
+
+        # Prepare invoice kwargs
         invoice_kwargs = {
-            "chat_id": user_id,
+            "chat_id": target_chat_id,
             "title": PAYMENT_INVOICE_TITLE,
             "description": description,
             "payload": invoice_payload,
@@ -204,6 +211,10 @@ class PaymentService:
             "currency": "XTR",  # Telegram Stars currency code
             "prices": [LabeledPrice(label="Balance", amount=stars_amount)],
         }
+
+        # Add message_thread_id if specified (for topic chats)
+        if message_thread_id is not None:
+            invoice_kwargs["message_thread_id"] = message_thread_id
 
         # Only add photo_url if it's a valid non-empty string
         if PAYMENT_INVOICE_PHOTO_URL and PAYMENT_INVOICE_PHOTO_URL.strip():
@@ -214,6 +225,8 @@ class PaymentService:
         logger.info(
             "payment.invoice_sent",
             user_id=user_id,
+            chat_id=target_chat_id,
+            message_thread_id=message_thread_id,
             stars_amount=stars_amount,
             nominal_usd=float(nominal_usd),
             credited_usd=float(credited_usd),
