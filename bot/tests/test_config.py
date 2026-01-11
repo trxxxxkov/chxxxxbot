@@ -131,8 +131,16 @@ def test_get_database_url_empty_password():
 
     Verifies that empty password (after stripping) is used as-is.
     """
-    with patch('config.Path') as mock_path:
+    with patch('config.Path') as mock_path, \
+         patch('config.os.getenv') as mock_getenv:
         mock_path.return_value.read_text.return_value = "   \n  "
+        # Mock os.getenv to return default values
+        mock_getenv.side_effect = lambda key, default="": {
+            "DATABASE_HOST": "postgres",
+            "DATABASE_PORT": "5432",
+            "DATABASE_USER": "postgres",
+            "DATABASE_NAME": "postgres",
+        }.get(key, default)
 
         url = get_database_url()
 

@@ -17,10 +17,10 @@ from sqlalchemy import select
 class TestPaymentModel:
     """Test Payment model structure and constraints."""
 
-    async def test_payment_creation(self, pg_session):
+    async def test_payment_creation(self, pg_session, pg_sample_user):
         """Test creating a payment with all required fields."""
         payment = Payment(
-            user_id=123456789,
+            user_id=pg_sample_user.id,
             telegram_payment_charge_id="tg_charge_12345",
             stars_amount=100,
             nominal_usd_amount=Decimal("1.3000"),
@@ -37,7 +37,7 @@ class TestPaymentModel:
         await pg_session.refresh(payment)
 
         assert payment.id is not None
-        assert payment.user_id == 123456789
+        assert payment.user_id == pg_sample_user.id
         assert payment.stars_amount == 100
         assert payment.status == PaymentStatus.COMPLETED
         assert payment.created_at is not None
@@ -48,11 +48,11 @@ class TestPaymentModel:
         assert PaymentStatus.COMPLETED.value == "completed"
         assert PaymentStatus.REFUNDED.value == "refunded"
 
-    async def test_payment_commission_constraints(self, pg_session):
+    async def test_payment_commission_constraints(self, pg_session, pg_sample_user):
         """Test commission constraints (k1, k2, k3 range 0-1)."""
         # Valid commissions
         payment = Payment(
-            user_id=123456789,
+            user_id=pg_sample_user.id,
             telegram_payment_charge_id="tg_charge_valid",
             stars_amount=50,
             nominal_usd_amount=Decimal("0.6500"),
@@ -69,10 +69,10 @@ class TestPaymentModel:
 
         assert payment.id is not None
 
-    async def test_payment_positive_amounts_constraint(self, pg_session):
+    async def test_payment_positive_amounts_constraint(self, pg_session, pg_sample_user):
         """Test that stars_amount must be positive."""
         payment = Payment(
-            user_id=123456789,
+            user_id=pg_sample_user.id,
             telegram_payment_charge_id="tg_charge_zero",
             stars_amount=0,  # Invalid: must be > 0
             nominal_usd_amount=Decimal("0.0000"),
@@ -91,10 +91,10 @@ class TestPaymentModel:
 
         await pg_session.rollback()
 
-    async def test_payment_unique_charge_id(self, pg_session):
+    async def test_payment_unique_charge_id(self, pg_session, pg_sample_user):
         """Test telegram_payment_charge_id uniqueness constraint."""
         payment1 = Payment(
-            user_id=123456789,
+            user_id=pg_sample_user.id,
             telegram_payment_charge_id="tg_charge_unique",
             stars_amount=100,
             nominal_usd_amount=Decimal("1.3000"),
@@ -111,7 +111,7 @@ class TestPaymentModel:
 
         # Try to create duplicate
         payment2 = Payment(
-            user_id=987654321,
+            user_id=pg_sample_user.id,
             telegram_payment_charge_id="tg_charge_unique",  # Duplicate!
             stars_amount=50,
             nominal_usd_amount=Decimal("0.6500"),
@@ -130,10 +130,10 @@ class TestPaymentModel:
 
         await pg_session.rollback()
 
-    async def test_payment_can_refund_within_period(self, pg_session):
+    async def test_payment_can_refund_within_period(self, pg_session, pg_sample_user):
         """Test can_refund() returns True within refund period."""
         payment = Payment(
-            user_id=123456789,
+            user_id=pg_sample_user.id,
             telegram_payment_charge_id="tg_charge_recent",
             stars_amount=100,
             nominal_usd_amount=Decimal("1.3000"),
@@ -152,10 +152,10 @@ class TestPaymentModel:
         # Just created - should be refundable
         assert payment.can_refund(refund_period_days=30) is True
 
-    async def test_payment_can_refund_outside_period(self, pg_session):
+    async def test_payment_can_refund_outside_period(self, pg_session, pg_sample_user):
         """Test can_refund() returns False outside refund period."""
         payment = Payment(
-            user_id=123456789,
+            user_id=pg_sample_user.id,
             telegram_payment_charge_id="tg_charge_old",
             stars_amount=100,
             nominal_usd_amount=Decimal("1.3000"),
@@ -179,10 +179,10 @@ class TestPaymentModel:
         # Should not be refundable (> 30 days)
         assert payment.can_refund(refund_period_days=30) is False
 
-    async def test_payment_already_refunded(self, pg_session):
+    async def test_payment_already_refunded(self, pg_session, pg_sample_user):
         """Test can_refund() returns False for already refunded payments."""
         payment = Payment(
-            user_id=123456789,
+            user_id=pg_sample_user.id,
             telegram_payment_charge_id="tg_charge_refunded",
             stars_amount=100,
             nominal_usd_amount=Decimal("1.3000"),
@@ -202,11 +202,11 @@ class TestPaymentModel:
         # Already refunded - should not be refundable
         assert payment.can_refund(refund_period_days=30) is False
 
-    async def test_payment_total_commission_constraint(self, pg_session):
+    async def test_payment_total_commission_constraint(self, pg_session, pg_sample_user):
         """Test that k1 + k2 + k3 <= 1.0001."""
         # Valid: total = 0.9999 (very high but still leaves small amount)
         payment = Payment(
-            user_id=123456789,
+            user_id=pg_sample_user.id,
             telegram_payment_charge_id="tg_charge_max_commission",
             stars_amount=100,
             nominal_usd_amount=Decimal("1.3000"),

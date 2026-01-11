@@ -28,3 +28,4 @@ htmlcov/
 # Temp files
 *.tmp
 *.log
+*.egg-info/

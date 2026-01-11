@@ -72,7 +72,7 @@ class BalanceOperation(Base, TimestampMixin):
              "refund",
              "admin_topup",
              name="operationtype",
-             create_type=False),
+             create_type=True),
         nullable=False,
         index=True,
         comment="Type of balance operation",

@@ -116,7 +116,7 @@ class Payment(Base, TimestampMixin):
 
     # Status and refund tracking
     status: Mapped[PaymentStatus] = mapped_column(
-        ENUM("completed", "refunded", name="paymentstatus", create_type=False),
+        ENUM("completed", "refunded", name="paymentstatus", create_type=True),
         default=PaymentStatus.COMPLETED,
         nullable=False,
         index=True,

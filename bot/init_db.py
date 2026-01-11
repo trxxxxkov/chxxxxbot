@@ -14,6 +14,9 @@ from db.models.chat import Chat  # noqa: F401
 from db.models.message import Message  # noqa: F401
 from db.models.thread import Thread  # noqa: F401
 from db.models.user import User  # noqa: F401
+from db.models.payment import Payment  # noqa: F401
+from db.models.balance_operation import BalanceOperation  # noqa: F401
+from db.models.user_file import UserFile  # noqa: F401
 # pylint: enable=unused-import
 from sqlalchemy.ext.asyncio import create_async_engine
 

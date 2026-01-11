@@ -62,9 +62,11 @@ class TestBalanceMiddlewareFreeCommands:
         mock_message = Mock(spec=Message)
         mock_message.from_user = Mock(spec=User)
         mock_message.from_user.id = sample_user.id
+        mock_message.from_user.is_bot = False
         mock_message.text = command
         mock_message.caption = None
         mock_message.answer = AsyncMock()
+        mock_message.successful_payment = None
 
         # Call middleware
         data = {"session": test_session}
@@ -98,9 +100,11 @@ class TestBalanceMiddlewareFreeCommands:
         mock_message = Mock(spec=Message)
         mock_message.from_user = Mock(spec=User)
         mock_message.from_user.id = sample_user.id
+        mock_message.from_user.is_bot = False
         mock_message.text = "/buy 100"  # Command with argument
         mock_message.caption = None
         mock_message.answer = AsyncMock()
+        mock_message.successful_payment = None
 
         data = {"session": test_session}
         result = await middleware(mock_handler, mock_message, data)
@@ -135,9 +139,11 @@ class TestBalanceMiddlewarePaidRequests:
         mock_message = Mock(spec=Message)
         mock_message.from_user = Mock(spec=User)
         mock_message.from_user.id = sample_user.id
+        mock_message.from_user.is_bot = False
         mock_message.text = "Hello Claude!"  # Regular message
         mock_message.caption = None
         mock_message.answer = AsyncMock()
+        mock_message.successful_payment = None
 
         data = {"session": test_session}
         result = await middleware(mock_handler, mock_message, data)
@@ -173,9 +179,11 @@ class TestBalanceMiddlewarePaidRequests:
         mock_message = Mock(spec=Message)
         mock_message.from_user = Mock(spec=User)
         mock_message.from_user.id = sample_user.id
+        mock_message.from_user.is_bot = False
         mock_message.text = "Hello Claude!"
         mock_message.caption = None
         mock_message.answer = AsyncMock()
+        mock_message.successful_payment = None
 
         data = {"session": test_session}
         result = await middleware(mock_handler, mock_message, data)
@@ -209,9 +217,11 @@ class TestBalanceMiddlewarePaidRequests:
         mock_callback.message = Mock(spec=Message)
         mock_callback.message.from_user = Mock(spec=User)
         mock_callback.message.from_user.id = sample_user.id
+        mock_callback.message.from_user.is_bot = False
         mock_callback.message.text = ""
         mock_callback.message.caption = None
         mock_callback.message.answer = AsyncMock()
+        mock_callback.message.successful_payment = None
 
         data = {"session": test_session}
         result = await middleware(mock_handler, mock_callback, data)
@@ -242,9 +252,11 @@ class TestBalanceMiddlewarePaidRequests:
         mock_message = Mock(spec=Message)
         mock_message.from_user = Mock(spec=User)
         mock_message.from_user.id = sample_user.id
+        mock_message.from_user.is_bot = False
         mock_message.text = "Another request"
         mock_message.caption = None
         mock_message.answer = AsyncMock()
+        mock_message.successful_payment = None
 
         data = {"session": test_session}
         result = await middleware(mock_handler, mock_message, data)
@@ -272,9 +284,11 @@ class TestBalanceMiddlewareEdgeCases:
         mock_message = Mock(spec=Message)
         mock_message.from_user = Mock(spec=User)
         mock_message.from_user.id = sample_user.id
+        mock_message.from_user.is_bot = False
         mock_message.text = "Hello"
         mock_message.caption = None
         mock_message.answer = AsyncMock()
+        mock_message.successful_payment = None
 
         # No session in data (fail-open)
         data = {}
@@ -301,9 +315,11 @@ class TestBalanceMiddlewareEdgeCases:
         mock_message = Mock(spec=Message)
         mock_message.from_user = Mock(spec=User)
         mock_message.from_user.id = 999999999  # Non-existent user
+        mock_message.from_user.is_bot = False
         mock_message.text = "Hello"
         mock_message.caption = None
         mock_message.answer = AsyncMock()
+        mock_message.successful_payment = None
 
         data = {"session": test_session}
 
@@ -328,9 +344,11 @@ class TestBalanceMiddlewareEdgeCases:
         mock_message = Mock(spec=Message)
         mock_message.from_user = Mock(spec=User)
         mock_message.from_user.id = sample_user.id
+        mock_message.from_user.is_bot = False
         mock_message.text = None
         mock_message.caption = None
         mock_message.answer = AsyncMock()
+        mock_message.successful_payment = None
 
         data = {"session": test_session}
         result = await middleware(mock_handler, mock_message, data)
@@ -340,11 +358,11 @@ class TestBalanceMiddlewareEdgeCases:
         mock_handler.assert_called_once()
         assert result == "ok"
 
-    async def test_unknown_command_allowed(self, test_session, sample_user):
-        """Test that unknown commands are not blocked.
+    async def test_unknown_command_blocked_zero_balance(self, test_session, sample_user):
+        """Test that unknown commands are blocked with zero balance.
 
-        Unknown commands (not in FREE_COMMANDS) should pass through
-        (not treated as paid requests).
+        Unknown commands (not in FREE_COMMANDS) are treated as paid requests
+        and should be blocked when balance is insufficient.
 
         Args:
             test_session: Async session fixture.
@@ -362,16 +380,19 @@ class TestBalanceMiddlewareEdgeCases:
         mock_message = Mock(spec=Message)
         mock_message.from_user = Mock(spec=User)
         mock_message.from_user.id = sample_user.id
+        mock_message.from_user.is_bot = False
         mock_message.text = "/unknown_command"  # Not in FREE_COMMANDS
         mock_message.caption = None
         mock_message.answer = AsyncMock()
+        mock_message.successful_payment = None
 
         data = {"session": test_session}
         result = await middleware(mock_handler, mock_message, data)
 
-        # Should be allowed (unknown commands pass through)
-        mock_handler.assert_called_once()
-        assert result == "ok"
+        # Should be blocked (unknown commands are paid requests)
+        mock_handler.assert_not_called()
+        assert result is None
+        mock_message.answer.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -410,9 +431,11 @@ class TestBalanceMiddlewareIntegration:
         mock_message = Mock(spec=Message)
         mock_message.from_user = Mock(spec=User)
         mock_message.from_user.id = sample_user.id
+        mock_message.from_user.is_bot = False
         mock_message.text = "Paid request"
         mock_message.caption = None
         mock_message.answer = AsyncMock()
+        mock_message.successful_payment = None
 
         data = {"session": test_session}
         result = await middleware(mock_handler, mock_message, data)
@@ -442,9 +465,11 @@ class TestBalanceMiddlewareIntegration:
         mock_message = Mock(spec=Message)
         mock_message.from_user = Mock(spec=User)
         mock_message.from_user.id = sample_user.id
+        mock_message.from_user.is_bot = False
         mock_message.text = "Expensive request"
         mock_message.caption = None
         mock_message.answer = AsyncMock()
+        mock_message.successful_payment = None
 
         data = {"session": test_session}
         result = await middleware(mock_handler, mock_message, data)
