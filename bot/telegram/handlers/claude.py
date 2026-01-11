@@ -1238,6 +1238,10 @@ async def handle_claude_message(message: types.Message,
             telegram_id=message.chat.id,
             chat_type=message.chat.type,
             title=message.chat.title,
+            username=message.chat.username,
+            first_name=message.chat.first_name,
+            last_name=message.chat.last_name,
+            is_forum=message.chat.is_forum or False,
         )
 
         if was_created:

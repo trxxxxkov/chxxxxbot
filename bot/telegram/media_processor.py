@@ -490,9 +490,15 @@ async def get_or_create_thread(message: types.Message,
 
     # Get or create chat
     chat_repo = ChatRepository(session)
-    chat, _ = await chat_repo.get_or_create(telegram_id=chat_id,
-                                            chat_type=message.chat.type,
-                                            title=message.chat.title)
+    chat, _ = await chat_repo.get_or_create(
+        telegram_id=chat_id,
+        chat_type=message.chat.type,
+        title=message.chat.title,
+        username=message.chat.username,
+        first_name=message.chat.first_name,
+        last_name=message.chat.last_name,
+        is_forum=message.chat.is_forum or False,
+    )
 
     # Get or create thread
     thread_repo = ThreadRepository(session)

@@ -184,8 +184,15 @@ async def process_file_upload(message: types.Message,
     chat_repo = ChatRepository(session)
     thread_repo = ThreadRepository(session)
 
-    chat, _ = await chat_repo.get_or_create(telegram_id=chat_id,
-                                            chat_type="private")
+    chat, _ = await chat_repo.get_or_create(
+        telegram_id=chat_id,
+        chat_type=message.chat.type,
+        title=message.chat.title,
+        username=message.chat.username,
+        first_name=message.chat.first_name,
+        last_name=message.chat.last_name,
+        is_forum=message.chat.is_forum or False,
+    )
 
     telegram_thread_id = message.message_thread_id
 
@@ -308,8 +315,15 @@ async def handle_photo(message: types.Message, session: AsyncSession) -> None:
         thread_repo = ThreadRepository(session)
 
         # Get or create chat
-        chat, _ = await chat_repo.get_or_create(telegram_id=chat_id,
-                                                chat_type="private")
+        chat, _ = await chat_repo.get_or_create(
+            telegram_id=chat_id,
+            chat_type=message.chat.type,
+            title=message.chat.title,
+            username=message.chat.username,
+            first_name=message.chat.first_name,
+            last_name=message.chat.last_name,
+            is_forum=message.chat.is_forum or False,
+        )
 
         # Get Telegram thread_id (for topics/forums)
         telegram_thread_id = message.message_thread_id
@@ -481,8 +495,15 @@ async def handle_document(message: types.Message,
         thread_repo = ThreadRepository(session)
 
         # Get or create chat
-        chat, _ = await chat_repo.get_or_create(telegram_id=chat_id,
-                                                chat_type="private")
+        chat, _ = await chat_repo.get_or_create(
+            telegram_id=chat_id,
+            chat_type=message.chat.type,
+            title=message.chat.title,
+            username=message.chat.username,
+            first_name=message.chat.first_name,
+            last_name=message.chat.last_name,
+            is_forum=message.chat.is_forum or False,
+        )
 
         # Get Telegram thread_id (for topics/forums)
         telegram_thread_id = message.message_thread_id
