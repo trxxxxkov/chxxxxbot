@@ -17,7 +17,6 @@ from aiogram import Bot
 from aiogram.types import LabeledPrice
 from config import DEFAULT_OWNER_MARGIN
 from config import PAYMENT_INVOICE_DESCRIPTION_TEMPLATE
-from config import PAYMENT_INVOICE_PHOTO_URL
 from config import PAYMENT_INVOICE_TITLE
 from config import REFUND_PERIOD_DAYS
 from config import STARS_TO_USD_RATE
@@ -215,10 +214,6 @@ class PaymentService:
         # Add message_thread_id if specified (for topic chats)
         if message_thread_id is not None:
             invoice_kwargs["message_thread_id"] = message_thread_id
-
-        # Only add photo_url if it's a valid non-empty string
-        if PAYMENT_INVOICE_PHOTO_URL and PAYMENT_INVOICE_PHOTO_URL.strip():
-            invoice_kwargs["photo_url"] = PAYMENT_INVOICE_PHOTO_URL.strip()
 
         await bot.send_invoice(**invoice_kwargs)
 
