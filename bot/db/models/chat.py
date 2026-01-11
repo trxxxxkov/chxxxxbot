@@ -92,13 +92,6 @@ class Chat(Base, TimestampMixin):
         doc="Supergroup has topics/forums enabled",
     )
 
-    # Relationships
-    # threads: Mapped[list["Thread"]] = relationship(
-    #     "Thread",
-    #     back_populates="chat",
-    #     cascade="all, delete-orphan",
-    # )
-
     def __repr__(self) -> str:
         """String representation for debugging.
 

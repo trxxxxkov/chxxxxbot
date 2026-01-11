@@ -9,6 +9,7 @@ NO __init__.py - use direct import:
 
 from typing import Any, Generic, Optional, TypeVar
 
+from config import MAX_QUERY_LIMIT
 from db.models.base import Base
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -61,11 +62,14 @@ class BaseRepository(Generic[ModelType]):
 
         Args:
             limit: Max number of entities to return. Defaults to 100.
+                   Capped at MAX_QUERY_LIMIT to prevent memory issues.
             offset: Number of entities to skip. Defaults to 0.
 
         Returns:
             List of entity instances.
         """
+        # Cap limit to prevent memory issues from unbounded queries
+        limit = min(limit, MAX_QUERY_LIMIT)
         stmt = select(self.model).limit(limit).offset(offset)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())

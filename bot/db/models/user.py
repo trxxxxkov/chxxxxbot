@@ -154,14 +154,7 @@ class User(Base, TimestampMixin):
         doc="Last activity timestamp",
     )
 
-    # Relationships
-    # threads: Mapped[list["Thread"]] = relationship(
-    #     "Thread",
-    #     back_populates="user",
-    #     cascade="all, delete-orphan",
-    # )
-
-    # Phase 2.1: Payment system relationships
+    # Relationships (Phase 2.1: Payment system)
     payments: Mapped[list["Payment"]] = relationship(
         "Payment",
         back_populates="user",

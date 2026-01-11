@@ -17,9 +17,9 @@ from db.repositories.balance_operation_repository import \
     BalanceOperationRepository
 from db.repositories.user_repository import UserRepository
 from sqlalchemy.ext.asyncio import AsyncSession
-import structlog
+from utils.structured_logging import get_logger
 
-logger = structlog.get_logger(__name__)
+logger = get_logger(__name__)
 
 
 class BalanceService:

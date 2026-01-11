@@ -243,12 +243,6 @@ class Message(Base):
         doc="Record creation timestamp (Unix)",
     )
 
-    # Relationships
-    # chat: Mapped["Chat"] = relationship("Chat")
-    # thread: Mapped[Optional["Thread"]] = relationship("Thread",
-    #                                                   back_populates="messages")
-    # from_user: Mapped[Optional["User"]] = relationship("User")
-
     # Indexes and constraints
     __table_args__ = (
         # Index for finding messages by thread

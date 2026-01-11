@@ -23,6 +23,7 @@ from dataclasses import field
 from typing import Callable, Dict, List, Optional, Tuple, TYPE_CHECKING
 
 from aiogram import types
+from config import MESSAGE_BATCH_DELAY_MS
 from utils.structured_logging import get_logger
 
 if TYPE_CHECKING:
@@ -183,17 +184,17 @@ class MessageQueueManager:
                     batch_size=len(queue.messages))
 
     async def _wait_and_process(self, thread_id: int) -> None:
-        """Wait 200ms and process accumulated messages.
+        """Wait and process accumulated messages.
 
         Phase 1.4.3: Time-based split detection.
-        Telegram split messages arrive < 200ms apart, so we wait 200ms
-        to accumulate all parts before processing.
+        Telegram split messages arrive within MESSAGE_BATCH_DELAY_MS of each
+        other, so we wait that long to accumulate all parts before processing.
 
         Args:
             thread_id: Database thread ID.
         """
         try:
-            await asyncio.sleep(0.2)  # 200ms delay
+            await asyncio.sleep(MESSAGE_BATCH_DELAY_MS / 1000)  # Convert ms to seconds
 
             queue = self.queues[thread_id]
             messages = queue.messages

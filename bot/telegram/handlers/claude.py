@@ -49,6 +49,19 @@ from db.repositories.user_repository import UserRepository
 from sqlalchemy.ext.asyncio import AsyncSession
 from telegram.handlers.files import process_file_upload
 from utils.structured_logging import get_logger
+from utils.metrics import (
+    record_message_received,
+    record_message_sent,
+    record_claude_request,
+    record_claude_tokens,
+    record_claude_response_time,
+    record_tool_call,
+    record_cost,
+    record_error,
+    record_cache_hit,
+    record_cache_miss,
+    record_messages_batched,
+)
 
 logger = get_logger(__name__)
 
@@ -134,6 +147,15 @@ def init_message_queue_manager() -> None:
         process_callback=_process_message_batch)
 
     logger.info("claude_handler.message_queue_initialized")
+
+
+def get_queue_manager() -> MessageQueueManager | None:
+    """Get the global message queue manager.
+
+    Returns:
+        MessageQueueManager instance or None if not initialized.
+    """
+    return message_queue_manager
 
 
 # pylint: disable=too-many-locals,too-many-branches,too-many-statements
@@ -275,10 +297,12 @@ async def _handle_with_tools(request: LLMRequest, first_message: types.Message,
                             tool_index=idx + 1,
                             tool_name=tool_name)
 
-                # Execute tool
+                # Execute tool with timing
+                tool_start_time = time.time()
                 try:
                     result = await execute_tool(tool_name, tool_input,
                                                 first_message.bot, session)
+                    tool_duration = time.time() - tool_start_time
 
                     # Phase 1.5 Stage 6: Process generated files (if any)
                     if "_file_contents" in result:
@@ -442,8 +466,16 @@ async def _handle_with_tools(request: LLMRequest, first_message: types.Message,
                                 tool_name=tool_name,
                                 result_keys=list(result.keys()))
 
+                    # Record tool metrics
+                    record_tool_call(tool_name=tool_name, success=True,
+                                     duration=tool_duration)
+                    if "cost_usd" in result:
+                        record_cost(service=tool_name,
+                                    amount_usd=float(result["cost_usd"]))
+
                 except Exception as e:  # pylint: disable=broad-exception-caught
                     # Tool execution failed - return error in tool_result
+                    tool_duration = time.time() - tool_start_time
                     error_msg = f"Tool execution failed: {str(e)}"
                     results.append({"error": error_msg})
 
@@ -452,6 +484,11 @@ async def _handle_with_tools(request: LLMRequest, first_message: types.Message,
                                  tool_name=tool_name,
                                  error=str(e),
                                  exc_info=True)
+
+                    # Record failed tool metrics
+                    record_tool_call(tool_name=tool_name, success=False,
+                                     duration=tool_duration)
+                    record_error(error_type="tool_execution", handler=tool_name)
 
             # Format tool results for API
             tool_results = format_tool_results(tool_uses, results)
@@ -542,6 +579,10 @@ async def _process_message_batch(
                 content_lengths=content_lengths,
                 has_media=[m is not None for _, m in messages],
                 telegram_thread_id=first_message.message_thread_id)
+
+    # Record batch metrics (Phase 3.1: Prometheus)
+    if len(messages) > 1:
+        record_messages_batched(len(messages))
 
     try:
         # Create new database session for this batch
@@ -861,6 +902,24 @@ async def _process_message_batch(
                         response_length=len(response_text),
                         stop_reason=stop_reason)
 
+            # Record Prometheus metrics
+            record_claude_request(model=user.model_id, success=True)
+            record_claude_tokens(
+                model=user.model_id,
+                input_tokens=usage.input_tokens,
+                output_tokens=usage.output_tokens,
+                cache_read_tokens=usage.cache_read_tokens,
+                cache_write_tokens=usage.cache_creation_tokens,
+            )
+            record_cost(service="claude", amount_usd=cost_usd)
+            record_message_sent(chat_type=first_message.chat.type)
+
+            # Record cache metrics (Phase 3.1: Prometheus)
+            if usage.cache_read_tokens and usage.cache_read_tokens > 0:
+                record_cache_hit(tokens_saved=usage.cache_read_tokens)
+            if usage.cache_creation_tokens and usage.cache_creation_tokens > 0:
+                record_cache_miss()
+
             # Phase 1.4.4: Handle special stop reasons
             if stop_reason == "model_context_window_exceeded":
                 logger.warning("claude_handler.context_overflow",
@@ -988,6 +1047,7 @@ async def _process_message_batch(
                      tokens_used=e.tokens_used,
                      tokens_limit=e.tokens_limit,
                      exc_info=True)
+        record_error(error_type="context_exceeded", handler="claude")
 
         await first_message.answer(
             f"⚠️ Context window exceeded.\n\n"
@@ -1000,6 +1060,8 @@ async def _process_message_batch(
                      error=str(e),
                      retry_after=e.retry_after,
                      exc_info=True)
+        record_error(error_type="rate_limit", handler="claude")
+        record_claude_request(model="unknown", success=False)
 
         retry_msg = ""
         if e.retry_after:
@@ -1014,6 +1076,8 @@ async def _process_message_batch(
                      thread_id=thread_id,
                      error=str(e),
                      exc_info=True)
+        record_error(error_type="connection_error", handler="claude")
+        record_claude_request(model="unknown", success=False)
 
         await first_message.answer(
             "⚠️ Connection error.\n\n"
@@ -1025,6 +1089,8 @@ async def _process_message_batch(
                      thread_id=thread_id,
                      error=str(e),
                      exc_info=True)
+        record_error(error_type="timeout", handler="claude")
+        record_claude_request(model="unknown", success=False)
 
         await first_message.answer(
             "⚠️ Request timed out.\n\n"
@@ -1037,6 +1103,8 @@ async def _process_message_batch(
                      error=str(e),
                      error_type=type(e).__name__,
                      exc_info=True)
+        record_error(error_type="llm_error", handler="claude")
+        record_claude_request(model="unknown", success=False)
 
         await first_message.answer(
             f"⚠️ Error: {str(e)}\n\n"
@@ -1049,6 +1117,7 @@ async def _process_message_batch(
                      error=str(e),
                      error_type=type(e).__name__,
                      exc_info=True)
+        record_error(error_type="unexpected", handler="claude")
 
         await first_message.answer("⚠️ Unexpected error occurred.\n\n"
                                    "Please try again or contact administrator.")
@@ -1105,6 +1174,14 @@ async def handle_claude_message(message: types.Message,
                 message_thread_id=message.message_thread_id,
                 is_topic_message=message.is_topic_message,
                 text_length=len(message.text or message.caption or ""))
+
+    # Record metrics
+    content_type = "text"
+    if message.photo:
+        content_type = "photo"
+    elif message.document:
+        content_type = "document"
+    record_message_received(chat_type=message.chat.type, content_type=content_type)
 
     try:
         # 1. Get or create user

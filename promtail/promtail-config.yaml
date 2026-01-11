@@ -1,0 +1,68 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+  log_level: info
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+    batchwait: 1s
+    batchsize: 1048576  # 1MB
+
+scrape_configs:
+  - job_name: docker
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+    relabel_configs:
+      # Keep only containers from our compose project
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_project']
+        regex: chxxxxbot
+        action: keep
+      # Extract container name (remove leading /)
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/(.+)'
+        target_label: container
+      # Use compose service name as primary label
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_service']
+        target_label: service
+      # Add compose project label
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_project']
+        target_label: project
+    pipeline_stages:
+      # Try to parse JSON logs (structlog format from bot)
+      - match:
+          selector: '{service="bot"}'
+          stages:
+            - json:
+                expressions:
+                  level: level
+                  event: event
+                  logger: logger
+                  user_id: user_id
+                  chat_id: chat_id
+                  thread_id: thread_id
+                  handler: handler
+                  model: model
+                  error: error
+                  timestamp: timestamp
+            # Extract level as label for filtering
+            - labels:
+                level:
+                logger:
+            # Use timestamp from log if present
+            - timestamp:
+                source: timestamp
+                format: RFC3339Nano
+                fallback_formats:
+                  - UnixMs
+      # For non-bot services, just capture the log line
+      - match:
+          selector: '{service!="bot"}'
+          stages:
+            - regex:
+                expression: '^(?P<level>(INFO|WARN|ERROR|DEBUG|info|warn|error|debug)).*'
+            - labels:
+                level:

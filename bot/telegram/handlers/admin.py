@@ -18,9 +18,9 @@ from db.repositories.balance_operation_repository import \
 from db.repositories.user_repository import UserRepository
 from services.balance_service import BalanceService
 from sqlalchemy.ext.asyncio import AsyncSession
-import structlog
+from utils.structured_logging import get_logger
 
-logger = structlog.get_logger(__name__)
+logger = get_logger(__name__)
 router = Router(name="admin")
 
 

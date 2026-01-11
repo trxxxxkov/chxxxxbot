@@ -66,8 +66,6 @@ class UserRepository(BaseRepository[User]):
         Returns:
             User instance or None if not found.
         """
-        from sqlalchemy import select
-
         logger.debug("user_repository.get_by_username", username=username)
         stmt = select(User).where(User.username == username)
         result = await self.session.execute(stmt)

@@ -11,12 +11,17 @@ from pathlib import Path
 from config import get_database_url
 from db.engine import dispose_db
 from db.engine import init_db
+from db.engine import get_pool_stats
 from telegram.handlers.claude import init_claude_provider
 from telegram.handlers.claude import init_message_queue_manager
+from telegram.handlers.claude import get_queue_manager
 from telegram.loader import create_bot
 from telegram.loader import create_dispatcher
 from utils.structured_logging import get_logger
 from utils.structured_logging import setup_logging
+from utils.metrics import start_metrics_server
+from utils.metrics import set_db_pool_stats
+from utils.metrics import set_queue_stats
 
 
 def read_secret(secret_name: str) -> str:
@@ -95,6 +100,43 @@ def load_privileged_users() -> set[int]:
         return set()
 
 
+async def collect_metrics_task(logger) -> None:
+    """Background task to collect metrics every 10 seconds.
+
+    Collects:
+        - Database connection pool statistics
+        - Message queue statistics
+    """
+    while True:
+        try:
+            await asyncio.sleep(10)
+
+            # Collect database pool stats
+            pool_stats = get_pool_stats()
+            if pool_stats:
+                set_db_pool_stats(
+                    active=pool_stats.get("active", 0),
+                    idle=pool_stats.get("idle", 0),
+                    overflow=pool_stats.get("overflow", 0),
+                )
+
+            # Collect queue stats
+            queue_manager = get_queue_manager()
+            if queue_manager:
+                queue_stats = queue_manager.get_stats()
+                set_queue_stats(
+                    total=queue_stats.get("total_threads", 0),
+                    processing=queue_stats.get("processing_threads", 0),
+                    waiting=queue_stats.get("waiting_threads", 0),
+                )
+
+        except asyncio.CancelledError:
+            logger.info("metrics_collection_task_cancelled")
+            break
+        except Exception as e:
+            logger.error("metrics_collection_error", error=str(e), exc_info=True)
+
+
 async def main() -> None:
     """Main bot function.
 
@@ -143,9 +185,25 @@ async def main() -> None:
         bot = create_bot(token=bot_token)
         dispatcher = create_dispatcher()
 
+        # Start metrics server (Phase 3.1: Prometheus integration)
+        await start_metrics_server(host='0.0.0.0', port=8080)
+        logger.info("metrics_server_started", port=8080)
+
+        # Start background metrics collection task
+        metrics_task = asyncio.create_task(collect_metrics_task(logger))
+        logger.info("metrics_collection_task_started")
+
         # Start polling
         logger.info("starting_polling")
-        await dispatcher.start_polling(bot)
+        try:
+            await dispatcher.start_polling(bot)
+        finally:
+            # Cancel metrics collection on shutdown
+            metrics_task.cancel()
+            try:
+                await metrics_task
+            except asyncio.CancelledError:
+                pass
 
     except FileNotFoundError as error:
         logger.error("secret_not_found", error=str(error))

@@ -38,6 +38,12 @@ CLAUDE_TOKEN_BUFFER_PERCENT = 0.10  # Safety buffer for token counting
 # Files API settings (Phase 1.5)
 FILES_API_TTL_HOURS = int(os.getenv("FILES_API_TTL_HOURS", "24"))
 
+# Database settings
+MAX_QUERY_LIMIT = 1000  # Hard cap for get_all() queries to prevent memory issues
+
+# Message queue settings
+MESSAGE_BATCH_DELAY_MS = 200  # Batching window for split message detection (ms)
+
 
 @dataclass
 class ModelConfig:  # pylint: disable=too-many-instance-attributes

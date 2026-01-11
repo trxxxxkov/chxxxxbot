@@ -90,7 +90,9 @@ async def test_main_startup_success():
          patch('main.read_secret') as mock_read_secret, \
          patch('main.create_bot') as mock_create_bot, \
          patch('main.create_dispatcher') as mock_create_dispatcher, \
-         patch('main.dispose_db') as mock_dispose_db:
+         patch('main.dispose_db') as mock_dispose_db, \
+         patch('main.start_metrics_server', new_callable=AsyncMock), \
+         patch('main.collect_metrics_task', new_callable=AsyncMock):
 
         # Setup mocks
         mock_logger = MagicMock()
@@ -289,7 +291,9 @@ async def test_main_finally_block_always_runs():
          patch('main.read_secret'), \
          patch('main.create_bot'), \
          patch('main.create_dispatcher') as mock_create_dispatcher, \
-         patch('main.dispose_db') as mock_dispose_db:
+         patch('main.dispose_db') as mock_dispose_db, \
+         patch('main.start_metrics_server', new_callable=AsyncMock), \
+         patch('main.collect_metrics_task', new_callable=AsyncMock):
 
         mock_dispatcher = MagicMock()
         mock_dispatcher.start_polling = AsyncMock()
@@ -330,7 +334,9 @@ async def test_main_logging_setup():
          patch('main.read_secret'), \
          patch('main.create_bot'), \
          patch('main.create_dispatcher') as mock_create_dispatcher, \
-         patch('main.dispose_db'):
+         patch('main.dispose_db'), \
+         patch('main.start_metrics_server', new_callable=AsyncMock), \
+         patch('main.collect_metrics_task', new_callable=AsyncMock):
 
         mock_get_logger.return_value = MagicMock()
         mock_dispatcher = MagicMock()
@@ -357,7 +363,9 @@ async def test_main_logging_sequence():
          patch('main.read_secret'), \
          patch('main.create_bot'), \
          patch('main.create_dispatcher') as mock_create_dispatcher, \
-         patch('main.dispose_db'):
+         patch('main.dispose_db'), \
+         patch('main.start_metrics_server', new_callable=AsyncMock), \
+         patch('main.collect_metrics_task', new_callable=AsyncMock):
 
         mock_logger = MagicMock()
         mock_get_logger.return_value = mock_logger
@@ -400,7 +408,9 @@ async def test_main_dispatcher_start_polling():
          patch('main.read_secret'), \
          patch('main.create_bot') as mock_create_bot, \
          patch('main.create_dispatcher') as mock_create_dispatcher, \
-         patch('main.dispose_db'):
+         patch('main.dispose_db'), \
+         patch('main.start_metrics_server', new_callable=AsyncMock), \
+         patch('main.collect_metrics_task', new_callable=AsyncMock):
 
         mock_bot = MagicMock()
         mock_create_bot.return_value = mock_bot
@@ -427,7 +437,9 @@ async def test_main_database_echo_disabled():
          patch('main.read_secret'), \
          patch('main.create_bot'), \
          patch('main.create_dispatcher') as mock_create_dispatcher, \
-         patch('main.dispose_db'):
+         patch('main.dispose_db'), \
+         patch('main.start_metrics_server', new_callable=AsyncMock), \
+         patch('main.collect_metrics_task', new_callable=AsyncMock):
 
         mock_dispatcher = MagicMock()
         mock_dispatcher.start_polling = AsyncMock()

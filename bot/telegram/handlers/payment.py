@@ -31,9 +31,9 @@ from db.repositories.user_repository import UserRepository
 from services.balance_service import BalanceService
 from services.payment_service import PaymentService
 from sqlalchemy.ext.asyncio import AsyncSession
-import structlog
+from utils.structured_logging import get_logger
 
-logger = structlog.get_logger(__name__)
+logger = get_logger(__name__)
 router = Router(name="payment")
 
 
@@ -83,11 +83,13 @@ async def cmd_buy(message: Message, state: FSMContext, session: AsyncSession):
     )
 
     # Calculate USD for each package (for display)
+    payment_repo = PaymentRepository(session)
+    balance_op_repo = BalanceOperationRepository(session)
     payment_service = PaymentService(
         session,
-        UserRepository(session),
-        PaymentRepository(session),
-        BalanceOperationRepository(session),
+        user_repo,
+        payment_repo,
+        balance_op_repo,
     )
 
     # Create keyboard with packages
@@ -422,9 +424,13 @@ async def cmd_refund(message: Message, session: AsyncSession):
     user = message.from_user
     user_id = user.id
 
+    # Create repositories (reused across the handler)
+    user_repo = UserRepository(session)
+    payment_repo = PaymentRepository(session)
+    balance_op_repo = BalanceOperationRepository(session)
+
     # Ensure user exists in database (should exist if they made a payment, but be safe)
-    user_repo_temp = UserRepository(session)
-    await user_repo_temp.get_or_create(
+    await user_repo.get_or_create(
         telegram_id=user.id,
         is_bot=user.is_bot,
         first_name=user.first_name,
@@ -455,11 +461,6 @@ async def cmd_refund(message: Message, session: AsyncSession):
         user_id=user_id,
         transaction_id=transaction_id,
     )
-
-    # Create services
-    user_repo = UserRepository(session)
-    payment_repo = PaymentRepository(session)
-    balance_op_repo = BalanceOperationRepository(session)
 
     payment_service = PaymentService(session, user_repo, payment_repo,
                                      balance_op_repo)

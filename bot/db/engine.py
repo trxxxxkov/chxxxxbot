@@ -126,3 +126,29 @@ def get_session_factory() -> async_sessionmaker[AsyncSession]:
     if _session_factory is None:
         raise RuntimeError("Database not initialized. Call init_db() first.")
     return _session_factory
+
+
+def get_pool_stats() -> dict:
+    """Get database connection pool statistics.
+
+    Returns dict with:
+        - active: Number of connections currently in use
+        - idle: Number of connections idle in pool
+        - overflow: Number of overflow connections created
+        - pool_size: Configured pool size
+        - max_overflow: Max allowed overflow
+
+    Returns:
+        Dict with pool statistics, or empty dict if engine not initialized.
+    """
+    if _engine is None:
+        return {}
+
+    pool = _engine.pool
+    return {
+        "active": pool.checkedout(),
+        "idle": pool.checkedin(),
+        "overflow": pool.overflow(),
+        "pool_size": pool.size(),
+        "max_overflow": pool._max_overflow,
+    }

@@ -9,9 +9,9 @@ from db.models.payment import PaymentStatus
 from db.repositories.base import BaseRepository
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-import structlog
+from utils.structured_logging import get_logger
 
-logger = structlog.get_logger(__name__)
+logger = get_logger(__name__)
 
 
 class PaymentRepository(BaseRepository[Payment]):

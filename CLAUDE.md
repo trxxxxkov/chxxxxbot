@@ -374,25 +374,36 @@ See [docs/phase-2.2-devops-agent.md](docs/phase-2.2-devops-agent.md) for full ar
 
 ### Phase 3 — Infrastructure
 
-#### 3.1 Cache
+#### 3.1 Monitoring ✅ Complete
+**Status:** Complete (2026-01-11)
+
+| Component | Port | Purpose |
+|-----------|------|---------|
+| Loki | :3100 (internal) | Log aggregation (30 days retention) |
+| Promtail | internal | Log collector from Docker containers |
+| Prometheus | :9090 (internal) | Metrics storage (30 days retention) |
+| Grafana | :3000 (external) | Web UI for logs & metrics |
+| CloudBeaver | :8978 (external) | Web UI for PostgreSQL |
+
+**Access:**
+- Grafana: `http://88.218.68.98:3000` (admin / secrets/grafana_password.txt)
+- CloudBeaver: `http://88.218.68.98:8978` (create account on first access)
+
+**Files:**
+- loki/loki-config.yaml - Loki configuration
+- promtail/promtail-config.yaml - Log collection config
+- prometheus/prometheus.yml - Metrics scraping config
+- grafana/provisioning/ - Datasources and dashboards
+
+**See:** [docs/phase-3-infrastructure.md](docs/phase-3-infrastructure.md)
+
+#### 3.2 Cache 📋 Planned
 | Component | Technology |
 |-----------|------------|
 | Cache | Redis 7 |
 | Async client | redis-py (async) |
 
-#### 3.2 Monitoring
-| Component | Technology |
-|-----------|------------|
-| Dashboards | Grafana |
-| Metrics | Prometheus |
-| Logs | Loki |
-
-#### 3.3 DB Admin
-| Component | Technology |
-|-----------|------------|
-| Web interface | CloudBeaver |
-
-#### 3.4 Other LLM Providers
+#### 3.3 Other LLM Providers 📋 Planned
 - OpenAI (latest models)
 - Google Gemini (latest models)
 - Unified provider interface
@@ -815,5 +826,13 @@ This script:
 - **Testing**: 46 integration tests, 484 total tests passing (100% pass rate)
 - **Files**: 17 new files (models, repos, services, handlers, middleware, tests)
 - Documentation: docs/phase-2.1-payment-system.md
+
+**Phase 3.1 (Monitoring):** ✅ Complete (2026-01-11)
+- Loki + Promtail for centralized logging (30 days retention)
+- Prometheus for metrics collection
+- Grafana at :3000 (unified UI for logs & metrics)
+- CloudBeaver at :8978 (PostgreSQL web admin)
+- Pre-configured dashboards and datasources
+- Documentation: docs/phase-3-infrastructure.md
 
 **Next:** Phase 2.2 (DevOps Agent)

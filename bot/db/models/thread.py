@@ -99,15 +99,6 @@ class Thread(Base, TimestampMixin):
         "Added to system prompt. NOT cached (changes frequently).",
     )
 
-    # Relationships
-    # chat: Mapped["Chat"] = relationship("Chat", back_populates="threads")
-    # user: Mapped["User"] = relationship("User", back_populates="threads")
-    # messages: Mapped[list["Message"]] = relationship(
-    #     "Message",
-    #     back_populates="thread",
-    #     cascade="all, delete-orphan",
-    # )
-
     # Indexes and constraints
     __table_args__ = (
         # Unique constraint: one thread per user per topic
