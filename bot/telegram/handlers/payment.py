@@ -640,5 +640,5 @@ async def cmd_paysupport(message: Message, session: AsyncSession):
         "   • Maximum 30 days since payment\n"
         "   • Sufficient balance required\n"
         "<b>3.</b> For refunds: <code>/refund &lt;transaction_id&gt;</code>\n\n"
-        "📧 <b>Contact:</b> @your_support_username\n\n"
+        "📧 <b>Contact:</b> @trxxxxkov\n\n"
         "💡 Transaction IDs are provided after each payment.")
