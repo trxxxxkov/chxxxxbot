@@ -634,8 +634,8 @@ MAX_CUSTOM_STARS: int = 2500
 # Payment invoice customization
 PAYMENT_INVOICE_TITLE: str = "Bot Balance Top-up"
 PAYMENT_INVOICE_DESCRIPTION_TEMPLATE: str = (
-    "Add ${usd_amount:.2f} to your bot balance\n"
-    "Pay {stars_amount} Telegram Stars")
+    "Pay {stars_amount}⭐ to add ${usd_amount:.2f} to your balance.\n\n"
+    "💡 After payment, you'll receive a transaction ID for refunds.")
 
 # Privileged users (loaded from secrets at startup)
 PRIVILEGED_USERS: set[int] = set(

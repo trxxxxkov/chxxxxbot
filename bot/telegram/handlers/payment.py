@@ -241,7 +241,7 @@ async def _send_invoice_to_user(
                                      balance_op_repo)
 
     try:
-        # Send invoice via Telegram
+        # Send invoice via Telegram (all info is in invoice description)
         await payment_service.send_invoice(
             message.bot,
             user_id,
@@ -250,15 +250,6 @@ async def _send_invoice_to_user(
             chat_id=message.chat.id,
             message_thread_id=message.message_thread_id,
         )
-
-        # Calculate expected USD for confirmation
-        _, credited_usd, _, _, _ = payment_service.calculate_usd_amount(
-            stars_amount, DEFAULT_OWNER_MARGIN)
-
-        await message.answer(
-            f"✅ <b>Invoice sent!</b>\n\n"
-            f"Pay {stars_amount}⭐ to add <b>${credited_usd}</b> to your balance.\n\n"
-            f"💡 After payment, you'll receive a transaction ID for refunds.")
 
     except Exception as e:
         logger.error(
