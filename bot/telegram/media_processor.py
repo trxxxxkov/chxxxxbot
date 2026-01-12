@@ -489,6 +489,8 @@ async def get_or_create_thread(message: types.Message,
         last_name=message.from_user.last_name,
         language_code=message.from_user.language_code,
         is_premium=message.from_user.is_premium or False,
+        added_to_attachment_menu=(
+            message.from_user.added_to_attachment_menu or False),
     )
 
     # Get or create chat

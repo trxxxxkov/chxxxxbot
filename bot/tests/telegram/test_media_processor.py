@@ -384,10 +384,18 @@ async def test_get_or_create_thread_creates_new():
     message.from_user.username = "testuser"
     message.from_user.first_name = "Test"
     message.from_user.last_name = "User"
+    message.from_user.is_bot = False
+    message.from_user.language_code = "en"
+    message.from_user.is_premium = True
+    message.from_user.added_to_attachment_menu = False
     message.chat = MagicMock()
     message.chat.id = 789012
     message.chat.type = "private"
     message.chat.title = None
+    message.chat.username = None
+    message.chat.first_name = "Test"
+    message.chat.last_name = "User"
+    message.chat.is_forum = False
     message.message_thread_id = None
 
     # Mock session
@@ -420,18 +428,29 @@ async def test_get_or_create_thread_creates_new():
         # Verify
         assert result.id == 3
 
-        # Verify repository calls
+        # Verify repository calls (includes all user fields)
         MockUserRepo.return_value.get_or_create.assert_called_once_with(
             telegram_id=123456,
+            is_bot=False,
             username="testuser",
             first_name="Test",
-            last_name="User")
+            last_name="User",
+            language_code="en",
+            is_premium=True,
+            added_to_attachment_menu=False)
 
         MockChatRepo.return_value.get_or_create.assert_called_once_with(
-            telegram_id=789012, chat_type="private", title=None)
+            telegram_id=789012,
+            chat_type="private",
+            title=None,
+            username=None,
+            first_name="Test",
+            last_name="User",
+            is_forum=False)
 
+        # Thread title is derived from chat.title or chat.first_name
         MockThreadRepo.return_value.get_or_create_thread.assert_called_once_with(
-            chat_id=789012, user_id=123456, thread_id=None)
+            chat_id=789012, user_id=123456, thread_id=None, title="Test")
 
 
 @pytest.mark.asyncio
@@ -440,6 +459,7 @@ async def test_get_or_create_thread_with_forum_topic():
 
     Tests:
     - message_thread_id parameter
+    - title from chat.title (supergroup)
     """
     message = MagicMock()
     message.from_user = MagicMock()
@@ -447,10 +467,18 @@ async def test_get_or_create_thread_with_forum_topic():
     message.from_user.username = None
     message.from_user.first_name = "John"
     message.from_user.last_name = None
+    message.from_user.is_bot = False
+    message.from_user.language_code = None
+    message.from_user.is_premium = False
+    message.from_user.added_to_attachment_menu = False
     message.chat = MagicMock()
     message.chat.id = 222
     message.chat.type = "supergroup"
     message.chat.title = "Test Group"
+    message.chat.username = None
+    message.chat.first_name = None
+    message.chat.last_name = None
+    message.chat.is_forum = True
     message.message_thread_id = 54321  # Forum topic ID
 
     session = AsyncMock()
@@ -476,9 +504,9 @@ async def test_get_or_create_thread_with_forum_topic():
 
         result = await get_or_create_thread(message, session)
 
-        # Verify thread_id parameter
+        # Verify thread_id and title parameters (title from chat.title)
         MockThreadRepo.return_value.get_or_create_thread.assert_called_once_with(
-            chat_id=222, user_id=111, thread_id=54321)
+            chat_id=222, user_id=111, thread_id=54321, title="Test Group")
 
 
 @pytest.mark.asyncio

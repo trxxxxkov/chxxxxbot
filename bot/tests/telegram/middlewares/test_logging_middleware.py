@@ -42,6 +42,7 @@ def mock_update():
     update.message.chat.id = 555555
     update.message.from_user = MagicMock()
     update.message.from_user.id = 987654321
+    update.message.from_user.username = "testuser"
     update.event_type = "message"
     return update
 
@@ -79,11 +80,12 @@ async def test_logging_middleware_message_update(middleware, mock_update,
         data = {}
         result = await middleware(mock_handler, mock_update, data)
 
-        # Verify context binding (includes request_id and chat_id now)
+        # Verify context binding (includes request_id, chat_id, username)
         mock_logger.bind.assert_called_once_with(
             request_id=ANY,  # UUID, can't predict
             update_id=123456,
             user_id=987654321,
+            username="testuser",
             message_id=789,
             chat_id=555555,
         )
@@ -118,6 +120,7 @@ async def test_logging_middleware_callback_update(middleware, mock_handler):
     update.callback_query = MagicMock()
     update.callback_query.from_user = MagicMock()
     update.callback_query.from_user.id = 222
+    update.callback_query.from_user.username = "callbackuser"
     update.event_type = "callback_query"
 
     with patch('telegram.middlewares.logging_middleware.logger') as mock_logger, \
@@ -129,11 +132,12 @@ async def test_logging_middleware_callback_update(middleware, mock_handler):
         data = {}
         await middleware(mock_handler, update, data)
 
-        # Verify context includes callback user_id (and request_id, chat_id)
+        # Verify context includes callback user_id, username (and request_id, chat_id)
         mock_logger.bind.assert_called_once_with(
             request_id=ANY,
             update_id=111,
             user_id=222,
+            username="callbackuser",
             message_id=None,
             chat_id=None,
         )
@@ -167,11 +171,12 @@ async def test_logging_middleware_no_user(middleware, mock_handler):
         data = {}
         await middleware(mock_handler, update, data)
 
-        # Verify user_id is None (but chat_id and request_id present)
+        # Verify user_id and username are None (but chat_id and request_id present)
         mock_logger.bind.assert_called_once_with(
             request_id=ANY,
             update_id=333,
             user_id=None,
+            username=None,
             message_id=444,
             chat_id=666,
         )

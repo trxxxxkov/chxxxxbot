@@ -77,7 +77,7 @@ async def test_generated_file_sent_to_forum_topic():
     from telegram.handlers.claude import _handle_with_tools
 
     # Mock dependencies
-    mock_session = MagicMock()
+    mock_session = AsyncMock()
     mock_user_file_repo = AsyncMock()
     mock_user_file_repo.create = AsyncMock()
 
@@ -91,7 +91,16 @@ async def test_generated_file_sent_to_forum_topic():
 
     # Mock bot for sending files
     mock_bot = AsyncMock()
-    mock_bot.send_photo = AsyncMock()
+
+    # Mock sent photo message with photo sizes
+    mock_photo_size = MagicMock()
+    mock_photo_size.file_id = "AgACAgIAAxkBAAI_test_photo"
+    mock_photo_size.file_size = 12345
+
+    mock_sent_msg = MagicMock()
+    mock_sent_msg.photo = [mock_photo_size]  # List of photo sizes
+
+    mock_bot.send_photo = AsyncMock(return_value=mock_sent_msg)
     mock_bot.send_document = AsyncMock()
     mock_first_message.bot = mock_bot
 
@@ -152,51 +161,59 @@ async def test_generated_file_sent_to_forum_topic():
                     'core.claude.files_api.upload_to_files_api') as mock_upload:
                 mock_upload.return_value = "file_test123"
 
-                # Create request
-                request = LLMRequest(
-                    messages=[
-                        Message(role="user", content="Generate a cat image")
-                    ],
-                    system_prompt="You are a helpful assistant.",
-                    model="claude:sonnet",
-                    max_tokens=4096,
-                    temperature=1.0,
-                    tools=[{
-                        "name": "generate_image"
-                    }])
+                # Mock BalanceService to avoid session issues
+                with patch('services.balance_service.BalanceService'
+                           ) as mock_balance_service:
+                    mock_balance_service.return_value.charge_usage = AsyncMock()
 
-                # CRITICAL: Pass telegram_thread_id (forum topic ID)
-                telegram_thread_id = 12345
-                chat_id = 789
-                user_id = 456
+                    # Create request
+                    request = LLMRequest(
+                        messages=[
+                            Message(role="user",
+                                    content="Generate a cat image")
+                        ],
+                        system_prompt="You are a helpful assistant.",
+                        model="claude:sonnet",
+                        max_tokens=4096,
+                        temperature=1.0,
+                        tools=[{
+                            "name": "generate_image"
+                        }])
 
-                # Execute
-                result = await _handle_with_tools(
-                    request=request,
-                    first_message=mock_first_message,
-                    thread_id=999,
-                    session=mock_session,
-                    user_file_repo=mock_user_file_repo,
-                    chat_id=chat_id,
-                    user_id=user_id,
-                    telegram_thread_id=telegram_thread_id)
+                    # CRITICAL: Pass telegram_thread_id (forum topic ID)
+                    telegram_thread_id = 12345
+                    chat_id = 789
+                    user_id = 456
 
-                # Verify result
-                assert "Here's your image!" in result
+                    # Execute
+                    result = await _handle_with_tools(
+                        request=request,
+                        first_message=mock_first_message,
+                        thread_id=999,
+                        session=mock_session,
+                        user_file_repo=mock_user_file_repo,
+                        chat_id=chat_id,
+                        user_id=user_id,
+                        telegram_thread_id=telegram_thread_id)
 
-                # CRITICAL: Verify send_photo was called with message_thread_id
-                mock_bot.send_photo.assert_called_once()
-                call_kwargs = mock_bot.send_photo.call_args[1]
-                assert call_kwargs["chat_id"] == chat_id
-                assert call_kwargs["message_thread_id"] == telegram_thread_id, (
-                    "BUG: File sent without message_thread_id! "
-                    "It will go to main chat instead of forum topic.")
+                    # Verify result
+                    assert "Here's your image!" in result
 
-                # Verify photo content
-                assert call_kwargs["photo"].filename == "generated_test.png"
+                    # CRITICAL: Verify send_photo was called with
+                    # message_thread_id
+                    mock_bot.send_photo.assert_called_once()
+                    call_kwargs = mock_bot.send_photo.call_args[1]
+                    assert call_kwargs["chat_id"] == chat_id
+                    assert call_kwargs["message_thread_id"] == (
+                        telegram_thread_id), (
+                            "BUG: File sent without message_thread_id! "
+                            "It will go to main chat instead of forum topic.")
 
-                # Verify file was saved to DB
-                mock_user_file_repo.create.assert_called_once()
+                    # Verify photo content
+                    assert call_kwargs["photo"].filename == "generated_test.png"
+
+                    # Verify file was saved to DB
+                    mock_user_file_repo.create.assert_called_once()
 
 
 @pytest.mark.asyncio
