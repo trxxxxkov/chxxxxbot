@@ -56,6 +56,7 @@ class LoggingMiddleware(BaseMiddleware):
         # Extract context
         update_id = event.update_id
         user_id = None
+        username = None
         message_id = None
         chat_id = None
 
@@ -64,8 +65,10 @@ class LoggingMiddleware(BaseMiddleware):
             chat_id = event.message.chat.id
             if event.message.from_user:
                 user_id = event.message.from_user.id
+                username = event.message.from_user.username
         elif event.callback_query and event.callback_query.from_user:
             user_id = event.callback_query.from_user.id
+            username = event.callback_query.from_user.username
 
         # Bind context to structlog contextvars (propagates to all loggers)
         structlog.contextvars.clear_contextvars()
@@ -73,6 +76,7 @@ class LoggingMiddleware(BaseMiddleware):
             request_id=request_id,
             update_id=update_id,
             user_id=user_id,
+            username=username,
             message_id=message_id,
             chat_id=chat_id,
         )
@@ -82,6 +86,7 @@ class LoggingMiddleware(BaseMiddleware):
             request_id=request_id,
             update_id=update_id,
             user_id=user_id,
+            username=username,
             message_id=message_id,
             chat_id=chat_id,
         )

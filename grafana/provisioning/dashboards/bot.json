@@ -67,19 +67,19 @@
       "targets": [
         {
           "datasource": {"type": "loki", "uid": "loki"},
-          "expr": "sum(count_over_time({service=\"bot\"} | json | level=\"info\" [$__interval])) or vector(0)",
+          "expr": "sum(count_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | level=\"info\"  [$__interval])) or vector(0)",
           "legendFormat": "info",
           "refId": "A"
         },
         {
           "datasource": {"type": "loki", "uid": "loki"},
-          "expr": "sum(count_over_time({service=\"bot\"} | json | level=\"warning\" [$__interval])) or vector(0)",
+          "expr": "sum(count_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | level=\"warning\"  [$__interval])) or vector(0)",
           "legendFormat": "warning",
           "refId": "B"
         },
         {
           "datasource": {"type": "loki", "uid": "loki"},
-          "expr": "sum(count_over_time({service=\"bot\"} | json | level=\"error\" [$__interval])) or vector(0)",
+          "expr": "sum(count_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | level=\"error\"  [$__interval])) or vector(0)",
           "legendFormat": "error",
           "refId": "C"
         }
@@ -164,43 +164,43 @@
       "targets": [
         {
           "datasource": {"type": "loki", "uid": "loki"},
-          "expr": "sum(sum_over_time({service=\"bot\"} | json | event=\"claude_handler.user_charged\" | unwrap cost_usd [$__interval])) or vector(0)",
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.user_charged\"  | unwrap cost_usd [$__interval])) or vector(0)",
           "legendFormat": "Claude API",
           "refId": "A"
         },
         {
           "datasource": {"type": "loki", "uid": "loki"},
-          "expr": "sum(sum_over_time({service=\"bot\"} | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"analyze_image\" | unwrap cost_usd [$__interval])) or vector(0)",
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"analyze_image\"  | unwrap cost_usd [$__interval])) or vector(0)",
           "legendFormat": "analyze_image",
           "refId": "B"
         },
         {
           "datasource": {"type": "loki", "uid": "loki"},
-          "expr": "sum(sum_over_time({service=\"bot\"} | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"analyze_pdf\" | unwrap cost_usd [$__interval])) or vector(0)",
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"analyze_pdf\"  | unwrap cost_usd [$__interval])) or vector(0)",
           "legendFormat": "analyze_pdf",
           "refId": "C"
         },
         {
           "datasource": {"type": "loki", "uid": "loki"},
-          "expr": "sum(sum_over_time({service=\"bot\"} | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"generate_image\" | unwrap cost_usd [$__interval])) or vector(0)",
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"generate_image\"  | unwrap cost_usd [$__interval])) or vector(0)",
           "legendFormat": "generate_image",
           "refId": "D"
         },
         {
           "datasource": {"type": "loki", "uid": "loki"},
-          "expr": "sum(sum_over_time({service=\"bot\"} | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"execute_python\" | unwrap cost_usd [$__interval])) or vector(0)",
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"execute_python\"  | unwrap cost_usd [$__interval])) or vector(0)",
           "legendFormat": "execute_python",
           "refId": "E"
         },
         {
           "datasource": {"type": "loki", "uid": "loki"},
-          "expr": "sum(sum_over_time({service=\"bot\"} | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"transcribe_audio\" | unwrap cost_usd [$__interval])) or vector(0)",
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"transcribe_audio\"  | unwrap cost_usd [$__interval])) or vector(0)",
           "legendFormat": "transcribe_audio",
           "refId": "F"
         },
         {
           "datasource": {"type": "loki", "uid": "loki"},
-          "expr": "sum(sum_over_time({service=\"bot\"} | json | event=\"tools.web_search.user_charged\" | unwrap cost_usd [$__interval])) or vector(0)",
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.web_search.user_charged\"  | unwrap cost_usd [$__interval])) or vector(0)",
           "legendFormat": "web_search",
           "refId": "G"
         }
@@ -282,31 +282,31 @@
       "targets": [
         {
           "datasource": {"type": "loki", "uid": "loki"},
-          "expr": "sum(sum_over_time({service=\"bot\"} | json | event=\"stars.donation_received\" | unwrap stars_amount [$__interval])) or vector(0)",
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"stars.donation_received\"  | unwrap stars_amount [$__interval])) or vector(0)",
           "legendFormat": "Donations (stars)",
           "refId": "A"
         },
         {
           "datasource": {"type": "loki", "uid": "loki"},
-          "expr": "sum(sum_over_time({service=\"bot\"} | json | event=\"stars.refund_processed\" | unwrap stars_amount [$__interval])) or vector(0)",
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"stars.refund_processed\"  | unwrap stars_amount [$__interval])) or vector(0)",
           "legendFormat": "Refunds (stars)",
           "refId": "B"
         },
         {
           "datasource": {"type": "loki", "uid": "loki"},
-          "expr": "sum(count_over_time({service=\"bot\"} | json | event=\"user.new_user_joined\" [$__interval])) or vector(0)",
+          "expr": "sum(count_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"user.new_user_joined\"  [$__interval])) or vector(0)",
           "legendFormat": "New users",
           "refId": "C"
         },
         {
           "datasource": {"type": "loki", "uid": "loki"},
-          "expr": "sum(count_over_time({service=\"bot\"} | json | event=\"claude_handler.thread_created\" [$__interval])) or vector(0)",
+          "expr": "sum(count_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.thread_created\"  [$__interval])) or vector(0)",
           "legendFormat": "New threads",
           "refId": "D"
         },
         {
           "datasource": {"type": "loki", "uid": "loki"},
-          "expr": "count(sum by (user_id) (count_over_time({service=\"bot\"} | json | event=\"balance.user_charged\" | user_id!=\"\" [$__interval]))) or vector(0)",
+          "expr": "count(sum by (user_id) (count_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"balance.user_charged\"  [$__interval]))) or vector(0)",
           "legendFormat": "Active paying users",
           "refId": "E"
         }
@@ -372,25 +372,25 @@
       "targets": [
         {
           "datasource": {"type": "loki", "uid": "loki"},
-          "expr": "sum(sum_over_time({service=\"bot\"} | json | event=\"claude_handler.response_complete\" | unwrap input_tokens [$__interval])) or vector(0)",
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.response_complete\"  | unwrap input_tokens [$__interval])) or vector(0)",
           "legendFormat": "Input",
           "refId": "A"
         },
         {
           "datasource": {"type": "loki", "uid": "loki"},
-          "expr": "sum(sum_over_time({service=\"bot\"} | json | event=\"claude_handler.response_complete\" | unwrap output_tokens [$__interval])) or vector(0)",
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.response_complete\"  | unwrap output_tokens [$__interval])) or vector(0)",
           "legendFormat": "Output",
           "refId": "B"
         },
         {
           "datasource": {"type": "loki", "uid": "loki"},
-          "expr": "sum(sum_over_time({service=\"bot\"} | json | event=\"claude_handler.response_complete\" | unwrap thinking_tokens [$__interval])) or vector(0)",
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.response_complete\"  | unwrap thinking_tokens [$__interval])) or vector(0)",
           "legendFormat": "Thinking",
           "refId": "C"
         },
         {
           "datasource": {"type": "loki", "uid": "loki"},
-          "expr": "sum(sum_over_time({service=\"bot\"} | json | event=\"claude_handler.response_complete\" | unwrap cache_read_tokens [$__interval])) or vector(0)",
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.response_complete\"  | unwrap cache_read_tokens [$__interval])) or vector(0)",
           "legendFormat": "Cached",
           "refId": "D"
         }
@@ -498,67 +498,67 @@
       "targets": [
         {
           "datasource": {"type": "loki", "uid": "loki"},
-          "expr": "sum(count_over_time({service=\"bot\"} | json | event=\"files.user_file_received\" | file_type=\"image\" [$__interval])) or vector(0)",
+          "expr": "sum(count_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"files.user_file_received\" | file_type=\"image\"  [$__interval])) or vector(0)",
           "legendFormat": "Received: image",
           "refId": "A"
         },
         {
           "datasource": {"type": "loki", "uid": "loki"},
-          "expr": "sum(count_over_time({service=\"bot\"} | json | event=\"files.user_file_received\" | file_type=\"pdf\" [$__interval])) or vector(0)",
+          "expr": "sum(count_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"files.user_file_received\" | file_type=\"pdf\"  [$__interval])) or vector(0)",
           "legendFormat": "Received: pdf",
           "refId": "B"
         },
         {
           "datasource": {"type": "loki", "uid": "loki"},
-          "expr": "sum(count_over_time({service=\"bot\"} | json | event=\"files.user_file_received\" | file_type=\"document\" [$__interval])) or vector(0)",
+          "expr": "sum(count_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"files.user_file_received\" | file_type=\"document\"  [$__interval])) or vector(0)",
           "legendFormat": "Received: document",
           "refId": "C"
         },
         {
           "datasource": {"type": "loki", "uid": "loki"},
-          "expr": "sum(count_over_time({service=\"bot\"} | json | event=\"files.user_file_received\" | file_type=\"audio\" [$__interval])) or vector(0)",
+          "expr": "sum(count_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"files.user_file_received\" | file_type=\"audio\"  [$__interval])) or vector(0)",
           "legendFormat": "Received: audio",
           "refId": "D"
         },
         {
           "datasource": {"type": "loki", "uid": "loki"},
-          "expr": "sum(count_over_time({service=\"bot\"} | json | event=\"files.user_file_received\" | file_type=\"video\" [$__interval])) or vector(0)",
+          "expr": "sum(count_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"files.user_file_received\" | file_type=\"video\"  [$__interval])) or vector(0)",
           "legendFormat": "Received: video",
           "refId": "E"
         },
         {
           "datasource": {"type": "loki", "uid": "loki"},
-          "expr": "sum(count_over_time({service=\"bot\"} | json | event=\"files.user_file_received\" | file_type=\"voice\" [$__interval])) or vector(0)",
+          "expr": "sum(count_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"files.user_file_received\" | file_type=\"voice\"  [$__interval])) or vector(0)",
           "legendFormat": "Received: voice",
           "refId": "F"
         },
         {
           "datasource": {"type": "loki", "uid": "loki"},
-          "expr": "sum(count_over_time({service=\"bot\"} | json | event=\"files.bot_file_sent\" | file_type=\"image\" [$__interval])) or vector(0)",
+          "expr": "sum(count_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"files.bot_file_sent\" | file_type=\"image\"  [$__interval])) or vector(0)",
           "legendFormat": "Sent: image",
           "refId": "G"
         },
         {
           "datasource": {"type": "loki", "uid": "loki"},
-          "expr": "sum(count_over_time({service=\"bot\"} | json | event=\"files.bot_file_sent\" | file_type=\"pdf\" [$__interval])) or vector(0)",
+          "expr": "sum(count_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"files.bot_file_sent\" | file_type=\"pdf\"  [$__interval])) or vector(0)",
           "legendFormat": "Sent: pdf",
           "refId": "H"
         },
         {
           "datasource": {"type": "loki", "uid": "loki"},
-          "expr": "sum(count_over_time({service=\"bot\"} | json | event=\"files.bot_file_sent\" | file_type=\"document\" [$__interval])) or vector(0)",
+          "expr": "sum(count_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"files.bot_file_sent\" | file_type=\"document\"  [$__interval])) or vector(0)",
           "legendFormat": "Sent: document",
           "refId": "I"
         },
         {
           "datasource": {"type": "loki", "uid": "loki"},
-          "expr": "sum(count_over_time({service=\"bot\"} | json | event=\"files.bot_file_sent\" | file_type=\"audio\" [$__interval])) or vector(0)",
+          "expr": "sum(count_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"files.bot_file_sent\" | file_type=\"audio\"  [$__interval])) or vector(0)",
           "legendFormat": "Sent: audio",
           "refId": "J"
         },
         {
           "datasource": {"type": "loki", "uid": "loki"},
-          "expr": "sum(count_over_time({service=\"bot\"} | json | event=\"files.bot_file_sent\" | file_type=\"video\" [$__interval])) or vector(0)",
+          "expr": "sum(count_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"files.bot_file_sent\" | file_type=\"video\"  [$__interval])) or vector(0)",
           "legendFormat": "Sent: video",
           "refId": "K"
         }
@@ -567,38 +567,29 @@
       "type": "timeseries"
     },
     {
-      "collapsed": true,
-      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 24},
-      "id": 100,
-      "panels": [
+      "datasource": {"type": "loki", "uid": "loki"},
+      "description": "Drag on chart above to zoom into time range. Use Log Level filter to filter logs.",
+      "gridPos": {"h": 12, "w": 24, "x": 0, "y": 24},
+      "id": 10,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": false,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": false
+      },
+      "targets": [
         {
           "datasource": {"type": "loki", "uid": "loki"},
-          "description": "Drag on chart above to zoom into time range. Use Log Level filter to filter logs.",
-          "gridPos": {"h": 15, "w": 24, "x": 0, "y": 25},
-          "id": 10,
-          "options": {
-            "dedupStrategy": "none",
-            "enableLogDetails": true,
-            "prettifyLogMessage": false,
-            "showCommonLabels": false,
-            "showLabels": false,
-            "showTime": true,
-            "sortOrder": "Descending",
-            "wrapLogMessage": false
-          },
-          "targets": [
-            {
-              "datasource": {"type": "loki", "uid": "loki"},
-              "expr": "{service=\"bot\"} | json | level=~\"$log_level\" | line_format \"[{{.user_id}}] {{__line__}}\"",
-              "refId": "A"
-            }
-          ],
-          "title": "Raw Logs",
-          "type": "logs"
+          "expr": "{service=\"bot\"} |~ \"${user_filter}\" | json  | line_format \"[{{.user_id}}] {{__line__}}\"",
+          "refId": "A"
         }
       ],
       "title": "Raw Logs",
-      "type": "row"
+      "type": "logs"
     }
   ],
   "refresh": "30s",
@@ -607,20 +598,13 @@
   "templating": {
     "list": [
       {
-        "allValue": "info|warning|error",
-        "current": {"selected": true, "text": ["All"], "value": ["$__all"]},
+        "current": {"selected": false, "text": "", "value": ""},
         "hide": 0,
-        "includeAll": true,
-        "label": "Log Level",
-        "multi": true,
-        "name": "log_level",
-        "options": [
-          {"selected": false, "text": "info", "value": "info"},
-          {"selected": false, "text": "warning", "value": "warning"},
-          {"selected": false, "text": "error", "value": "error"}
-        ],
-        "query": "info,warning,error",
-        "type": "custom"
+        "label": "User (ID or username)",
+        "name": "user_filter",
+        "options": [],
+        "query": "",
+        "type": "textbox"
       }
     ]
   },
