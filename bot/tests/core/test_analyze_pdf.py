@@ -10,13 +10,9 @@ Tests PDF analysis tool functionality, including:
 from unittest.mock import Mock
 from unittest.mock import patch
 
-# Import the module to test (import module directly, not from __init__.py)
-from core.tools.analyze_pdf import _client as module_client
+# Import the module to test
 from core.tools.analyze_pdf import analyze_pdf
 from core.tools.analyze_pdf import ANALYZE_PDF_TOOL
-from core.tools.analyze_pdf import get_client
-# For patching, we need module reference
-import core.tools.analyze_pdf as analyze_pdf_module
 import pytest
 
 
@@ -24,22 +20,18 @@ import pytest
 def reset_client():
     """Reset global client before and after each test."""
     # Reset before test
-    import core.tools.analyze_pdf
-    core.tools.analyze_pdf._client = None
+    import core.clients
+    core.clients._anthropic_sync_files = None
     yield
     # Reset after test
-    core.tools.analyze_pdf._client = None
-
-
-# NOTE: get_client() tests removed due to import complexity with __init__.py
-# The lazy client initialization is tested implicitly in analyze_pdf tests
+    core.clients._anthropic_sync_files = None
 
 
 class TestAnalyzePdf:
     """Tests for analyze_pdf() function."""
 
     @pytest.mark.asyncio
-    @patch('core.tools.analyze_pdf.get_client')
+    @patch('core.tools.analyze_pdf.get_anthropic_client')
     async def test_analyze_pdf_success(self, mock_get_client):
         """Test successful PDF analysis."""
         # Setup mock
@@ -89,7 +81,7 @@ class TestAnalyzePdf:
         assert text_block["text"] == "What is this document about?"
 
     @pytest.mark.asyncio
-    @patch('core.tools.analyze_pdf.get_client')
+    @patch('core.tools.analyze_pdf.get_anthropic_client')
     async def test_analyze_pdf_with_page_range(self, mock_get_client):
         """Test PDF analysis with specific page range."""
         # Setup mock
@@ -120,7 +112,7 @@ class TestAnalyzePdf:
         assert "Summarize these pages" in text_block["text"]
 
     @pytest.mark.asyncio
-    @patch('core.tools.analyze_pdf.get_client')
+    @patch('core.tools.analyze_pdf.get_anthropic_client')
     async def test_analyze_pdf_with_cache_hit(self, mock_get_client):
         """Test PDF analysis with prompt cache hit."""
         # Setup mock with cache hit
@@ -146,7 +138,7 @@ class TestAnalyzePdf:
         assert "cost_usd" in result  # Phase 2.1: Cost tracking
 
     @pytest.mark.asyncio
-    @patch('core.tools.analyze_pdf.get_client')
+    @patch('core.tools.analyze_pdf.get_anthropic_client')
     async def test_analyze_pdf_api_error(self, mock_get_client):
         """Test analyze_pdf with API error."""
         # Setup mock to raise exception

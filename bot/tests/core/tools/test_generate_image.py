@@ -9,82 +9,23 @@ Tests Google Gemini 3 Pro Image API integration:
 - Tool definition schema
 """
 
-from pathlib import Path
-from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
-from unittest.mock import Mock
 from unittest.mock import patch
 
 from core.tools.generate_image import generate_image
 from core.tools.generate_image import GENERATE_IMAGE_TOOL
-from core.tools.generate_image import get_client
-from core.tools.generate_image import read_secret
 import pytest
 
-# ============================================================================
-# read_secret() Tests
-# ============================================================================
 
-
-def test_read_secret_success():
-    """Test reading secret from Docker secrets."""
-    with patch('pathlib.Path.read_text',
-               return_value='test_google_key\n') as mock_read:
-        result = read_secret('test_secret')
-
-        assert result == 'test_google_key'
-        mock_read.assert_called_once_with(encoding='utf-8')
-
-
-def test_read_secret_path():
-    """Test that read_secret constructs correct path."""
-    with patch.object(Path, 'read_text', return_value='value') as mock_read:
-        read_secret('google_api_key')
-
-        # Verify path construction
-        assert mock_read.called
-
-
-# ============================================================================
-# get_client() Tests
-# ============================================================================
-
-
-def test_get_client_singleton():
-    """Test that get_client returns same instance (singleton pattern)."""
-    # Reset global
-    import core.tools.generate_image as gi
-    gi._client = None
-
-    with patch('core.tools.generate_image.read_secret',
-               return_value='test_key'), \
-         patch('core.tools.generate_image.genai.Client') as MockClient:
-        # Get client twice
-        client1 = get_client()
-        client2 = get_client()
-
-        # Should be same instance
-        assert client1 is client2
-
-
-def test_get_client_initializes_once():
-    """Test that Google GenAI client is initialized only once."""
-    import core.tools.generate_image as gi
-    gi._client = None
-
-    with patch('core.tools.generate_image.read_secret',
-               return_value='test_key') as mock_read_secret, \
-         patch('core.tools.generate_image.genai.Client') as MockClient:
-
-        # Get client twice
-        get_client()
-        get_client()
-
-        # read_secret should be called only once
-        mock_read_secret.assert_called_once_with('google_api_key')
-
-        # Client should be instantiated only once
-        MockClient.assert_called_once()
+@pytest.fixture(autouse=True)
+def reset_client():
+    """Reset global client before and after each test."""
+    # Reset before test
+    import core.clients
+    core.clients._google_client = None
+    yield
+    # Reset after test
+    core.clients._google_client = None
 
 
 # ============================================================================
@@ -146,7 +87,7 @@ async def test_generate_image_success():
     mock_client = MagicMock()
     mock_client.models.generate_content = MagicMock(return_value=mock_response)
 
-    with patch('core.tools.generate_image.get_client',
+    with patch('core.tools.generate_image.get_google_client',
                return_value=mock_client):
 
         result = await generate_image(
@@ -185,7 +126,7 @@ async def test_generate_image_custom_parameters():
     mock_client = MagicMock()
     mock_client.models.generate_content = MagicMock(return_value=mock_response)
 
-    with patch('core.tools.generate_image.get_client',
+    with patch('core.tools.generate_image.get_google_client',
                return_value=mock_client):
 
         result = await generate_image(
@@ -215,7 +156,7 @@ async def test_generate_image_with_generated_text():
     mock_client = MagicMock()
     mock_client.models.generate_content = MagicMock(return_value=mock_response)
 
-    with patch('core.tools.generate_image.get_client',
+    with patch('core.tools.generate_image.get_google_client',
                return_value=mock_client):
 
         result = await generate_image(
@@ -251,7 +192,7 @@ async def test_generate_image_no_image_in_response():
     mock_client = MagicMock()
     mock_client.models.generate_content = MagicMock(return_value=mock_response)
 
-    with patch('core.tools.generate_image.get_client',
+    with patch('core.tools.generate_image.get_google_client',
                return_value=mock_client):
 
         result = await generate_image(
@@ -273,7 +214,7 @@ async def test_generate_image_content_policy_violation():
     mock_client.models.generate_content = MagicMock(
         side_effect=Exception("Content policy violation detected"))
 
-    with patch('core.tools.generate_image.get_client',
+    with patch('core.tools.generate_image.get_google_client',
                return_value=mock_client):
 
         result = await generate_image(
@@ -296,7 +237,7 @@ async def test_generate_image_api_error():
     mock_client.models.generate_content = MagicMock(
         side_effect=Exception("API connection timeout"))
 
-    with patch('core.tools.generate_image.get_client',
+    with patch('core.tools.generate_image.get_google_client',
                return_value=mock_client):
 
         with pytest.raises(Exception, match="API connection timeout"):
@@ -323,7 +264,7 @@ async def test_cost_calculation_1k():
     mock_client = MagicMock()
     mock_client.models.generate_content = MagicMock(return_value=mock_response)
 
-    with patch('core.tools.generate_image.get_client',
+    with patch('core.tools.generate_image.get_google_client',
                return_value=mock_client):
 
         result = await generate_image(
@@ -347,7 +288,7 @@ async def test_cost_calculation_2k():
     mock_client = MagicMock()
     mock_client.models.generate_content = MagicMock(return_value=mock_response)
 
-    with patch('core.tools.generate_image.get_client',
+    with patch('core.tools.generate_image.get_google_client',
                return_value=mock_client):
 
         result = await generate_image(
@@ -371,7 +312,7 @@ async def test_cost_calculation_4k():
     mock_client = MagicMock()
     mock_client.models.generate_content = MagicMock(return_value=mock_response)
 
-    with patch('core.tools.generate_image.get_client',
+    with patch('core.tools.generate_image.get_google_client',
                return_value=mock_client):
 
         result = await generate_image(

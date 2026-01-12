@@ -10,10 +10,11 @@ NO __init__.py - use direct import:
 
 import json
 import mimetypes
-from pathlib import Path
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from e2b_code_interpreter import Sandbox
+from core.clients import get_e2b_api_key
+from core.pricing import calculate_e2b_cost, cost_to_float
 from utils.structured_logging import get_logger
 
 if TYPE_CHECKING:
@@ -21,36 +22,6 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = get_logger(__name__)
-
-
-def read_secret(secret_name: str) -> str:
-    """Read secret from Docker secrets.
-
-    Args:
-        secret_name: Name of the secret file.
-
-    Returns:
-        Secret value as string.
-    """
-    secret_path = Path(f"/run/secrets/{secret_name}")
-    return secret_path.read_text(encoding="utf-8").strip()
-
-
-# Global E2B API key (read once)
-_e2b_api_key: str | None = None
-
-
-def get_e2b_api_key() -> str:
-    """Get E2B API key from secrets.
-
-    Returns:
-        E2B API key string.
-    """
-    global _e2b_api_key  # pylint: disable=global-statement
-    if _e2b_api_key is None:
-        _e2b_api_key = read_secret("e2b_api_key")
-        logger.info("tools.execute_python.api_key_loaded")
-    return _e2b_api_key
 
 
 async def download_user_file(file_id: str, filename: str, bot: 'Bot',
@@ -380,14 +351,10 @@ async def execute_python(code: str,
                 "mime_type": f["mime_type"]
             } for f in generated_files]
 
-            # Phase 2.1: Calculate E2B cost based on sandbox runtime
+            # Use centralized pricing calculation
             sandbox_end_time = time.time()
             sandbox_duration_seconds = sandbox_end_time - sandbox_start_time
-
-            # Import pricing constant
-            from config import \
-                E2B_COST_PER_SECOND  # pylint: disable=import-outside-toplevel
-            cost_usd = sandbox_duration_seconds * E2B_COST_PER_SECOND
+            cost_usd = calculate_e2b_cost(sandbox_duration_seconds)
 
             logger.info("tools.execute_python.success",
                         success=success,
@@ -398,7 +365,7 @@ async def execute_python(code: str,
                         has_error=bool(error_str),
                         sandbox_duration_seconds=round(sandbox_duration_seconds,
                                                        2),
-                        cost_usd=round(cost_usd, 6))
+                        cost_usd=cost_to_float(cost_usd))
 
             return {
                 "stdout":
@@ -416,7 +383,7 @@ async def execute_python(code: str,
                 "_file_contents":
                     generated_files,  # Internal: raw bytes
                 "cost_usd":
-                    f"{cost_usd:.6f}"  # Phase 2.1: E2B sandbox cost
+                    f"{cost_to_float(cost_usd):.6f}"
             }
 
         # Context manager automatically closes sandbox

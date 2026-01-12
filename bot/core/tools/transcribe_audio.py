@@ -11,10 +11,11 @@ NO __init__.py - use direct import:
 """
 
 import io
-from pathlib import Path
 from typing import Any, Dict, TYPE_CHECKING
 
 import openai
+from core.clients import get_openai_async_client
+from core.pricing import calculate_whisper_cost, cost_to_float
 from utils.structured_logging import get_logger
 
 if TYPE_CHECKING:
@@ -22,37 +23,6 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = get_logger(__name__)
-
-
-def read_secret(secret_name: str) -> str:
-    """Read secret from Docker secrets.
-
-    Args:
-        secret_name: Name of the secret file.
-
-    Returns:
-        Secret value as string.
-    """
-    secret_path = Path(f"/run/secrets/{secret_name}")
-    return secret_path.read_text(encoding="utf-8").strip()
-
-
-# Lazy client initialization
-_client: openai.AsyncOpenAI | None = None
-
-
-def get_client() -> openai.AsyncOpenAI:
-    """Get or create OpenAI client for Whisper API.
-
-    Returns:
-        OpenAI async client instance.
-    """
-    global _client  # pylint: disable=global-statement
-    if _client is None:
-        api_key = read_secret("openai_api_key")
-        _client = openai.AsyncOpenAI(api_key=api_key)
-        logger.info("tools.transcribe_audio.client_initialized")
-    return _client
 
 
 async def download_file_from_telegram(file_id: str, bot: 'Bot',
@@ -195,8 +165,8 @@ async def transcribe_audio(file_id: str,
         # Download file from Telegram
         audio_bytes = await download_file_from_telegram(file_id, bot, session)
 
-        # Get OpenAI client
-        client = get_client()
+        # Use centralized client factory
+        client = get_openai_async_client()
 
         # Prepare file for Whisper API
         # Whisper expects file-like object with filename
@@ -216,10 +186,9 @@ async def transcribe_audio(file_id: str,
             response_format="verbose_json"  # Includes duration and segments
         )
 
-        # Calculate cost
-        # Pricing: $0.006 per minute
+        # Use centralized pricing calculation
         duration = response.duration
-        cost_usd = (duration / 60.0) * 0.006
+        cost_usd = calculate_whisper_cost(duration)
 
         logger.info("tools.transcribe_audio.success",
                     file_id=file_id,
@@ -227,13 +196,13 @@ async def transcribe_audio(file_id: str,
                     transcript_length=len(response.text),
                     detected_language=response.language,
                     duration=duration,
-                    cost_usd=cost_usd)
+                    cost_usd=cost_to_float(cost_usd))
 
         return {
             "transcript": response.text,
             "language": response.language,
             "duration": duration,
-            "cost_usd": f"{cost_usd:.6f}"
+            "cost_usd": f"{cost_to_float(cost_usd):.6f}"
         }
 
     except openai.APIError as e:

@@ -13,11 +13,11 @@ NO __init__.py - use direct import:
 
 from datetime import datetime
 from datetime import UTC
-from pathlib import Path
 from typing import Any, Dict, TYPE_CHECKING
 
-from google import genai
 from google.genai import types as genai_types
+from core.clients import get_google_client
+from core.pricing import calculate_gemini_image_cost, cost_to_float
 from utils.structured_logging import get_logger
 
 if TYPE_CHECKING:
@@ -25,37 +25,6 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = get_logger(__name__)
-
-
-def read_secret(secret_name: str) -> str:
-    """Read secret from Docker secrets.
-
-    Args:
-        secret_name: Name of the secret file.
-
-    Returns:
-        Secret value as string.
-    """
-    secret_path = Path(f"/run/secrets/{secret_name}")
-    return secret_path.read_text(encoding="utf-8").strip()
-
-
-# Lazy client initialization
-_client: genai.Client | None = None
-
-
-def get_client() -> genai.Client:
-    """Get or create Google GenAI client.
-
-    Returns:
-        Google GenAI client instance.
-    """
-    global _client  # pylint: disable=global-statement
-    if _client is None:
-        api_key = read_secret("google_api_key")
-        _client = genai.Client(api_key=api_key)
-        logger.info("tools.generate_image.client_initialized")
-    return _client
 
 
 # Tool definition for Claude API
@@ -156,7 +125,8 @@ async def generate_image(  # pylint: disable=unused-argument,too-many-locals
         # Step 1: Call Google GenAI API
         logger.info("tools.generate_image.api_call_start", prompt=prompt[:100])
 
-        client = get_client()
+        # Use centralized client factory
+        client = get_google_client()
         response = client.models.generate_content(
             model="gemini-3-pro-image-preview",
             contents=prompt,
@@ -202,13 +172,14 @@ async def generate_image(  # pylint: disable=unused-argument,too-many-locals
         filename = f"generated_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}.png"
         mime_type = "image/png"
 
-        # Step 4: Calculate cost
-        # Pricing: 1K/2K = $0.134, 4K = $0.24
-        cost_usd = 0.24 if image_size == "4K" else 0.134
+        # Step 4: Use centralized pricing calculation
+        # Maps image_size to resolution string for pricing
+        resolution = "4096x4096" if image_size == "4K" else "2048x2048"
+        cost_usd = calculate_gemini_image_cost(resolution)
 
         logger.info("tools.generate_image.complete",
                     filename=filename,
-                    cost_usd=cost_usd,
+                    cost_usd=cost_to_float(cost_usd),
                     image_size=image_size,
                     size_bytes=len(image_bytes))
 
@@ -218,7 +189,7 @@ async def generate_image(  # pylint: disable=unused-argument,too-many-locals
             "success":
                 "true",
             "cost_usd":
-                f"{cost_usd:.3f}",
+                f"{cost_to_float(cost_usd):.3f}",
             "parameters_used": {
                 "aspect_ratio": aspect_ratio,
                 "image_size": image_size,

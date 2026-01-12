@@ -12,7 +12,6 @@ from unittest.mock import patch
 # Import the module to test
 from core.tools.analyze_image import analyze_image
 from core.tools.analyze_image import ANALYZE_IMAGE_TOOL
-from core.tools.analyze_image import get_client
 import pytest
 
 
@@ -20,18 +19,18 @@ import pytest
 def reset_client():
     """Reset global client before and after each test."""
     # Reset before test
-    import core.tools.analyze_image
-    core.tools.analyze_image._client = None
+    import core.clients
+    core.clients._anthropic_sync_files = None
     yield
     # Reset after test
-    core.tools.analyze_image._client = None
+    core.clients._anthropic_sync_files = None
 
 
 class TestAnalyzeImage:
     """Tests for analyze_image() function."""
 
     @pytest.mark.asyncio
-    @patch('core.tools.analyze_image.get_client')
+    @patch('core.tools.analyze_image.get_anthropic_client')
     async def test_analyze_image_success(self, mock_get_client):
         """Test successful image analysis."""
         # Setup mock
@@ -74,7 +73,7 @@ class TestAnalyzeImage:
         assert text_block["text"] == "What's in this image?"
 
     @pytest.mark.asyncio
-    @patch('core.tools.analyze_image.get_client')
+    @patch('core.tools.analyze_image.get_anthropic_client')
     async def test_analyze_image_detailed_question(self, mock_get_client):
         """Test image analysis with detailed question."""
         # Setup mock
@@ -100,7 +99,7 @@ class TestAnalyzeImage:
         assert "Count how many apples" in text_block["text"]
 
     @pytest.mark.asyncio
-    @patch('core.tools.analyze_image.get_client')
+    @patch('core.tools.analyze_image.get_anthropic_client')
     async def test_analyze_image_api_error(self, mock_get_client):
         """Test analyze_image with API error."""
         # Setup mock to raise exception
@@ -114,7 +113,7 @@ class TestAnalyzeImage:
                                 question="What is this?")
 
     @pytest.mark.asyncio
-    @patch('core.tools.analyze_image.get_client')
+    @patch('core.tools.analyze_image.get_anthropic_client')
     async def test_analyze_image_large_response(self, mock_get_client):
         """Test analyze_image with large token response."""
         # Setup mock with large response

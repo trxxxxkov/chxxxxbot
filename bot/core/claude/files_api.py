@@ -17,10 +17,12 @@ NO __init__.py - use direct import:
 """
 
 from io import BytesIO
-from pathlib import Path
 from typing import Optional
 
 import anthropic
+from core.clients import get_anthropic_client
+from core.mime_types import (detect_mime_type, is_audio_mime, is_image_mime,
+                             is_pdf_mime, is_video_mime, normalize_mime_type)
 from utils.metrics import record_file_upload
 from utils.structured_logging import get_logger
 
@@ -36,63 +38,67 @@ def _get_file_type_from_mime(mime_type: str) -> str:
     Returns:
         File type category: 'image', 'pdf', 'audio', 'video', or 'document'.
     """
-    if mime_type.startswith('image/'):
+    normalized = normalize_mime_type(mime_type)
+    if is_image_mime(normalized):
         return 'image'
-    elif mime_type == 'application/pdf':
+    elif is_pdf_mime(normalized):
         return 'pdf'
-    elif mime_type.startswith('audio/'):
+    elif is_audio_mime(normalized):
         return 'audio'
-    elif mime_type.startswith('video/'):
+    elif is_video_mime(normalized):
         return 'video'
     else:
         return 'document'
 
 
-def read_secret(secret_name: str) -> str:
-    """Read secret from Docker secrets."""
-    secret_path = Path(f"/run/secrets/{secret_name}")
-    return secret_path.read_text(encoding="utf-8").strip()
+async def upload_to_files_api(
+    file_bytes: bytes,
+    filename: str,
+    mime_type: Optional[str] = None,
+) -> str:
+    """Upload file to Claude Files API.
 
+    Args:
+        file_bytes: File content as bytes.
+        filename: Original filename (used for extension-based MIME detection).
+        mime_type: Optional declared MIME type (will be auto-detected if None).
 
-# Synchronous client for Files API (beta feature)
-_client: Optional[anthropic.Anthropic] = None
+    Returns:
+        Claude file ID string.
 
-
-def get_client() -> anthropic.Anthropic:
-    """Get or create Files API client."""
-    global _client  # pylint: disable=global-statement
-    if _client is None:
-        api_key = read_secret("anthropic_api_key")
-        _client = anthropic.Anthropic(
-            api_key=api_key,
-            default_headers={"anthropic-beta": "files-api-2025-04-14"})
-        logger.info("files_api.client_initialized")
-    return _client
-
-
-async def upload_to_files_api(file_bytes: bytes, filename: str,
-                              mime_type: str) -> str:
-    """Upload file to Claude Files API."""
+    Raises:
+        anthropic.APIError: If upload fails.
+    """
     try:
+        # Auto-detect MIME type from content and filename
+        detected_mime = detect_mime_type(
+            filename=filename,
+            file_bytes=file_bytes,
+            declared_mime=mime_type,
+        )
+
         logger.info("files_api.upload_start",
                     filename=filename,
-                    mime_type=mime_type,
+                    declared_mime=mime_type,
+                    detected_mime=detected_mime,
                     size_bytes=len(file_bytes))
 
-        client = get_client()
+        # Use centralized client factory
+        client = get_anthropic_client(use_files_api=True)
+
         # FileTypes accepts tuple: (filename, file_content, mime_type)
-        # See: https://platform.claude.com/docs/en/build-with-claude/files
         file_response = client.beta.files.upload(file=(filename,
                                                        BytesIO(file_bytes),
-                                                       mime_type))
+                                                       detected_mime))
 
         logger.info("files_api.upload_success",
                     filename=filename,
                     claude_file_id=file_response.id,
+                    mime_type=detected_mime,
                     size_bytes=len(file_bytes))
 
         # Record metric
-        file_type = _get_file_type_from_mime(mime_type)
+        file_type = _get_file_type_from_mime(detected_mime)
         record_file_upload(file_type=file_type)
 
         return file_response.id
@@ -123,13 +129,12 @@ async def download_from_files_api(claude_file_id: str) -> bytes:
     try:
         logger.info("files_api.download_start", claude_file_id=claude_file_id)
 
-        client = get_client()
+        # Use centralized client factory
+        client = get_anthropic_client(use_files_api=True)
 
         # Files API method: download() (official SDK method)
-        # See: https://platform.claude.com/docs/en/build-with-claude/files
         content = client.beta.files.download(file_id=claude_file_id)
 
-        # Content is returned as bytes, ready to use
         logger.info("files_api.download_success",
                     claude_file_id=claude_file_id,
                     size_bytes=len(content))
@@ -155,7 +160,8 @@ async def delete_from_files_api(claude_file_id: str) -> None:
     try:
         logger.info("files_api.delete_start", claude_file_id=claude_file_id)
 
-        client = get_client()
+        # Use centralized client factory
+        client = get_anthropic_client(use_files_api=True)
         client.beta.files.delete(file_id=claude_file_id)
 
         logger.info("files_api.delete_success", claude_file_id=claude_file_id)

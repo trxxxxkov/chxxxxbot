@@ -7,46 +7,13 @@ NO __init__.py - use direct import:
     from core.tools.analyze_pdf import analyze_pdf, ANALYZE_PDF_TOOL
 """
 
-from pathlib import Path
 from typing import Dict
 
-import anthropic
+from core.clients import get_anthropic_client
+from core.pricing import calculate_claude_cost, cost_to_float
 from utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
-
-
-def read_secret(secret_name: str) -> str:
-    """Read secret from Docker secrets.
-
-    Args:
-        secret_name: Name of the secret file.
-
-    Returns:
-        Secret value as string.
-    """
-    secret_path = Path(f"/run/secrets/{secret_name}")
-    return secret_path.read_text(encoding="utf-8").strip()
-
-
-# Lazy client initialization
-_client: anthropic.Anthropic | None = None
-
-
-def get_client() -> anthropic.Anthropic:
-    """Get or create Anthropic client for tool execution.
-
-    Returns:
-        Anthropic client instance.
-    """
-    global _client  # pylint: disable=global-statement
-    if _client is None:
-        api_key = read_secret("anthropic_api_key")
-        _client = anthropic.Anthropic(
-            api_key=api_key,
-            default_headers={"anthropic-beta": "files-api-2025-04-14"})
-        logger.info("tools.analyze_pdf.client_initialized")
-    return _client
 
 
 async def analyze_pdf(claude_file_id: str,
@@ -87,7 +54,9 @@ async def analyze_pdf(claude_file_id: str,
                     question_length=len(question),
                     pages=pages)
 
-        client = get_client()
+        # Use centralized client factory with Files API beta header
+        client = get_anthropic_client(use_files_api=True)
+        model_id = "claude-sonnet-4-5-20250929"
 
         # Build question with page range
         if pages != "all":
@@ -97,7 +66,7 @@ async def analyze_pdf(claude_file_id: str,
 
         # Call Claude PDF API with prompt caching
         response = client.messages.create(
-            model="claude-sonnet-4-5-20250929",
+            model=model_id,
             max_tokens=4096,
             messages=[{
                 "role":
@@ -127,24 +96,14 @@ async def analyze_pdf(claude_file_id: str,
         cache_read_tokens = response.usage.cache_read_input_tokens
         tokens_used = input_tokens + output_tokens
 
-        # Phase 2.1: Calculate cost using Sonnet 4.5 pricing with cache
-        from config import \
-            MODEL_REGISTRY  # pylint: disable=import-outside-toplevel
-        model_config = MODEL_REGISTRY["claude:sonnet"]
-
-        # Calculate cost components
-        # Regular input tokens (not cached)
-        cost_input = (input_tokens / 1_000_000) * model_config.pricing_input
-        # Output tokens
-        cost_output = (output_tokens / 1_000_000) * model_config.pricing_output
-        # Cache creation (5-minute ephemeral)
-        cost_cache_write = (cache_creation_tokens /
-                            1_000_000) * model_config.pricing_cache_write_5m
-        # Cache read (0.1x)
-        cost_cache_read = (cache_read_tokens /
-                           1_000_000) * model_config.pricing_cache_read
-
-        cost_usd = cost_input + cost_output + cost_cache_write + cost_cache_read
+        # Use centralized pricing calculation
+        cost_usd = calculate_claude_cost(
+            model_id=model_id,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cache_read_tokens=cache_read_tokens,
+            cache_creation_tokens=cache_creation_tokens,
+        )
 
         logger.info("tools.analyze_pdf.success",
                     claude_file_id=claude_file_id,
@@ -154,15 +113,14 @@ async def analyze_pdf(claude_file_id: str,
                     cache_creation_tokens=cache_creation_tokens,
                     cache_read_tokens=cache_read_tokens,
                     cache_hit=cache_read_tokens > 0,
-                    cost_usd=round(cost_usd, 6),
+                    cost_usd=cost_to_float(cost_usd),
                     analysis_length=len(analysis))
 
         return {
             "analysis": analysis,
             "tokens_used": str(tokens_used),
             "cached_tokens": str(cache_read_tokens),
-            "cost_usd":
-                f"{cost_usd:.6f}"  # Phase 2.1: Claude PDF API cost with cache
+            "cost_usd": f"{cost_to_float(cost_usd):.6f}"
         }
 
     except Exception as e:

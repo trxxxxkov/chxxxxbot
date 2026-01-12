@@ -18,6 +18,17 @@ from core.tools.registry import WEB_SEARCH_TOOL
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def reset_client():
+    """Reset global client before and after each test."""
+    import core.clients
+    core.clients._anthropic_sync_client = None
+    core.clients._anthropic_sync_files = None
+    yield
+    core.clients._anthropic_sync_client = None
+    core.clients._anthropic_sync_files = None
+
+
 @pytest.fixture
 def mock_bot():
     """Mock Telegram Bot for tests."""
@@ -124,7 +135,7 @@ class TestExecuteTool:
     """Tests for execute_tool() dispatcher function."""
 
     @pytest.mark.asyncio
-    @patch('core.tools.analyze_image.get_client')
+    @patch('core.tools.analyze_image.get_anthropic_client')
     async def test_execute_client_tool_success(self, mock_get_client, mock_bot,
                                                mock_session):
         """Test executing client-side tool successfully."""
@@ -132,7 +143,9 @@ class TestExecuteTool:
         mock_client = Mock()
         mock_response = Mock()
         mock_response.content = [Mock(text="Test result")]
-        mock_response.usage = Mock(input_tokens=100, output_tokens=50)
+        mock_response.usage = Mock(input_tokens=100, output_tokens=50,
+                                   cache_creation_input_tokens=0,
+                                   cache_read_input_tokens=0)
         mock_client.messages.create.return_value = mock_response
         mock_get_client.return_value = mock_client
 
@@ -172,7 +185,7 @@ class TestExecuteTool:
                                session=mock_session)
 
     @pytest.mark.asyncio
-    @patch('core.tools.analyze_pdf.get_client')
+    @patch('core.tools.analyze_pdf.get_anthropic_client')
     async def test_execute_tool_with_error(self, mock_get_client, mock_bot,
                                            mock_session):
         """Test that tool execution errors are propagated."""
@@ -192,7 +205,7 @@ class TestExecuteTool:
                                session=mock_session)
 
     @pytest.mark.asyncio
-    @patch('core.tools.analyze_image.get_client')
+    @patch('core.tools.analyze_image.get_anthropic_client')
     async def test_execute_tool_passes_all_parameters(self, mock_get_client,
                                                       mock_bot, mock_session):
         """Test that all input parameters are passed to tool."""
@@ -200,7 +213,9 @@ class TestExecuteTool:
         mock_client = Mock()
         mock_response = Mock()
         mock_response.content = [Mock(text="OK")]
-        mock_response.usage = Mock(input_tokens=50, output_tokens=10)
+        mock_response.usage = Mock(input_tokens=50, output_tokens=10,
+                                   cache_creation_input_tokens=0,
+                                   cache_read_input_tokens=0)
         mock_client.messages.create.return_value = mock_response
         mock_get_client.return_value = mock_client
 

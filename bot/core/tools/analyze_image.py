@@ -7,46 +7,13 @@ NO __init__.py - use direct import:
     from core.tools.analyze_image import analyze_image, ANALYZE_IMAGE_TOOL
 """
 
-from pathlib import Path
 from typing import Dict
 
-import anthropic
+from core.clients import get_anthropic_client
+from core.pricing import calculate_claude_cost, cost_to_float
 from utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
-
-
-def read_secret(secret_name: str) -> str:
-    """Read secret from Docker secrets.
-
-    Args:
-        secret_name: Name of the secret file.
-
-    Returns:
-        Secret value as string.
-    """
-    secret_path = Path(f"/run/secrets/{secret_name}")
-    return secret_path.read_text(encoding="utf-8").strip()
-
-
-# Lazy client initialization
-_client: anthropic.Anthropic | None = None
-
-
-def get_client() -> anthropic.Anthropic:
-    """Get or create Anthropic client for tool execution.
-
-    Returns:
-        Anthropic client instance.
-    """
-    global _client  # pylint: disable=global-statement
-    if _client is None:
-        api_key = read_secret("anthropic_api_key")
-        _client = anthropic.Anthropic(
-            api_key=api_key,
-            default_headers={"anthropic-beta": "files-api-2025-04-14"})
-        logger.info("tools.analyze_image.client_initialized")
-    return _client
 
 
 async def analyze_image(claude_file_id: str, question: str) -> Dict[str, str]:
@@ -80,10 +47,12 @@ async def analyze_image(claude_file_id: str, question: str) -> Dict[str, str]:
                     claude_file_id=claude_file_id,
                     question_length=len(question))
 
-        client = get_client()
+        # Use centralized client factory with Files API beta header
+        client = get_anthropic_client(use_files_api=True)
+        model_id = "claude-sonnet-4-5-20250929"
 
         # Call Claude Vision API with file from Files API
-        response = client.messages.create(model="claude-sonnet-4-5-20250929",
+        response = client.messages.create(model=model_id,
                                           max_tokens=2048,
                                           messages=[{
                                               "role":
@@ -105,28 +74,25 @@ async def analyze_image(claude_file_id: str, question: str) -> Dict[str, str]:
         output_tokens = response.usage.output_tokens
         tokens_used = input_tokens + output_tokens
 
-        # Phase 2.1: Calculate cost using Sonnet 4.5 pricing
-        from config import \
-            MODEL_REGISTRY  # pylint: disable=import-outside-toplevel
-        model_config = MODEL_REGISTRY["claude:sonnet"]
-
-        # Calculate cost: (tokens / 1M) * price_per_million
-        cost_input = (input_tokens / 1_000_000) * model_config.pricing_input
-        cost_output = (output_tokens / 1_000_000) * model_config.pricing_output
-        cost_usd = cost_input + cost_output
+        # Use centralized pricing calculation
+        cost_usd = calculate_claude_cost(
+            model_id=model_id,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+        )
 
         logger.info("tools.analyze_image.success",
                     claude_file_id=claude_file_id,
                     tokens_used=tokens_used,
                     input_tokens=input_tokens,
                     output_tokens=output_tokens,
-                    cost_usd=round(cost_usd, 6),
+                    cost_usd=cost_to_float(cost_usd),
                     analysis_length=len(analysis))
 
         return {
             "analysis": analysis,
             "tokens_used": str(tokens_used),
-            "cost_usd": f"{cost_usd:.6f}"  # Phase 2.1: Claude Vision API cost
+            "cost_usd": f"{cost_to_float(cost_usd):.6f}"
         }
 
     except Exception as e:
@@ -134,7 +100,6 @@ async def analyze_image(claude_file_id: str, question: str) -> Dict[str, str]:
                      claude_file_id=claude_file_id,
                      error=str(e),
                      exc_info=True)
-        # Re-raise to let caller handle
         raise
 
 

@@ -6,88 +6,29 @@ Tests Whisper API integration for speech-to-text transcription:
 - File download from Telegram
 - Error handling (file not found, download failures, API errors)
 - Cost calculation
-- Client singleton pattern
 """
 
 import io
-from pathlib import Path
 from unittest.mock import AsyncMock
-from unittest.mock import MagicMock
 from unittest.mock import Mock
 from unittest.mock import patch
 
 from core.tools.transcribe_audio import download_file_from_telegram
-from core.tools.transcribe_audio import get_client
-from core.tools.transcribe_audio import read_secret
 from core.tools.transcribe_audio import transcribe_audio
 from core.tools.transcribe_audio import TRANSCRIBE_AUDIO_TOOL
 import openai
 import pytest
 
-# ============================================================================
-# read_secret() Tests
-# ============================================================================
 
-
-def test_read_secret_success():
-    """Test reading secret from Docker secrets."""
-    with patch('pathlib.Path.read_text',
-               return_value='test_secret_value\n') as mock_read:
-        result = read_secret('test_secret')
-
-        assert result == 'test_secret_value'
-        mock_read.assert_called_once_with(encoding='utf-8')
-
-
-def test_read_secret_path():
-    """Test that read_secret constructs correct path."""
-    with patch.object(Path, 'read_text', return_value='value') as mock_read:
-        read_secret('openai_api_key')
-
-        # Verify path construction
-        assert mock_read.called
-
-
-# ============================================================================
-# get_client() Tests
-# ============================================================================
-
-
-def test_get_client_singleton():
-    """Test that get_client returns same instance (singleton pattern)."""
-    # Reset global
-    import core.tools.transcribe_audio as ta
-    ta._client = None
-
-    with patch('core.tools.transcribe_audio.read_secret',
-               return_value='test_key'):
-        # Get client twice
-        client1 = get_client()
-        client2 = get_client()
-
-        # Should be same instance
-        assert client1 is client2
-
-
-def test_get_client_initializes_once():
-    """Test that OpenAI client is initialized only once."""
-    import core.tools.transcribe_audio as ta
-    ta._client = None
-
-    with patch('core.tools.transcribe_audio.read_secret',
-               return_value='test_key') as mock_read_secret, \
-         patch('core.tools.transcribe_audio.openai.AsyncOpenAI') as MockClient:
-
-        mock_instance = Mock()
-        MockClient.return_value = mock_instance
-
-        # Call twice
-        get_client()
-        get_client()
-
-        # Should construct only once
-        MockClient.assert_called_once_with(api_key='test_key')
-        mock_read_secret.assert_called_once_with('openai_api_key')
+@pytest.fixture(autouse=True)
+def reset_client():
+    """Reset global client before and after each test."""
+    # Reset before test
+    import core.clients
+    core.clients._openai_async_client = None
+    yield
+    # Reset after test
+    core.clients._openai_async_client = None
 
 
 # ============================================================================
@@ -257,7 +198,7 @@ async def test_transcribe_audio_success_auto_language():
                return_value=mock_repo), \
          patch('core.tools.transcribe_audio.download_file_from_telegram',
                return_value=mock_audio_bytes) as mock_download, \
-         patch('core.tools.transcribe_audio.get_client',
+         patch('core.tools.transcribe_audio.get_openai_async_client',
                return_value=mock_client):
 
         # Execute
@@ -312,7 +253,7 @@ async def test_transcribe_audio_with_specific_language():
                return_value=mock_repo), \
          patch('core.tools.transcribe_audio.download_file_from_telegram',
                return_value=mock_audio_bytes), \
-         patch('core.tools.transcribe_audio.get_client',
+         patch('core.tools.transcribe_audio.get_openai_async_client',
                return_value=mock_client):
 
         # Execute with Russian language
@@ -373,7 +314,7 @@ async def test_transcribe_audio_whisper_api_error():
                return_value=mock_repo), \
          patch('core.tools.transcribe_audio.download_file_from_telegram',
                return_value=mock_audio_bytes), \
-         patch('core.tools.transcribe_audio.get_client',
+         patch('core.tools.transcribe_audio.get_openai_async_client',
                return_value=mock_client):
 
         # Execute and verify exception propagated
@@ -430,7 +371,7 @@ async def test_transcribe_audio_long_file_cost():
                return_value=mock_repo), \
          patch('core.tools.transcribe_audio.download_file_from_telegram',
                return_value=mock_audio_bytes), \
-         patch('core.tools.transcribe_audio.get_client',
+         patch('core.tools.transcribe_audio.get_openai_async_client',
                return_value=mock_client):
 
         # Execute

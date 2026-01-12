@@ -38,6 +38,17 @@ def media_processor():
     return MediaProcessor()
 
 
+@pytest.fixture(autouse=True)
+def reset_clients():
+    """Reset global clients before and after each test."""
+    import core.clients
+    core.clients._openai_async_client = None
+    core.clients._anthropic_async_files = None
+    yield
+    core.clients._openai_async_client = None
+    core.clients._anthropic_async_files = None
+
+
 @pytest.mark.asyncio
 async def test_process_voice_success(media_processor):
     """Test successful voice message transcription.
@@ -54,9 +65,8 @@ async def test_process_voice_success(media_processor):
     mock_response.strip.return_value = "Привет, как дела?"
     mock_client.audio.transcriptions.create.return_value = mock_response
 
-    with patch.object(media_processor,
-                      '_get_openai_client',
-                      return_value=mock_client):
+    with patch('telegram.media_processor.get_openai_async_client',
+               return_value=mock_client):
         # Test data
         audio_bytes = b"fake_audio_data"
         filename = "voice.ogg"
@@ -100,9 +110,8 @@ async def test_process_audio_success(media_processor):
     mock_response.language = "en"
     mock_client.audio.transcriptions.create.return_value = mock_response
 
-    with patch.object(media_processor,
-                      '_get_openai_client',
-                      return_value=mock_client):
+    with patch('telegram.media_processor.get_openai_async_client',
+               return_value=mock_client):
         # Test data
         audio_bytes = b"fake_mp3_data"
         filename = "song.mp3"
@@ -139,9 +148,8 @@ async def test_process_video_success(media_processor):
     mock_response.language = "ru"
     mock_client.audio.transcriptions.create.return_value = mock_response
 
-    with patch.object(media_processor,
-                      '_get_openai_client',
-                      return_value=mock_client):
+    with patch('telegram.media_processor.get_openai_async_client',
+               return_value=mock_client):
         # Test data
         video_bytes = b"fake_mp4_data"
         filename = "video.mp4"
@@ -169,11 +177,10 @@ async def test_process_image_success(media_processor):
     mock_client = AsyncMock()
     mock_response = Mock()
     mock_response.id = "file_abc123"
-    mock_client.files.create.return_value = mock_response
+    mock_client.beta.files.upload.return_value = mock_response
 
-    with patch.object(media_processor,
-                      '_get_anthropic_client',
-                      return_value=mock_client):
+    with patch('telegram.media_processor.get_anthropic_async_client',
+               return_value=mock_client):
         # Test data
         image_bytes = b"fake_image_data"
         filename = "photo.jpg"
@@ -189,9 +196,7 @@ async def test_process_image_success(media_processor):
         assert result.metadata["size_bytes"] == len(image_bytes)
 
         # Verify Files API call
-        mock_client.files.create.assert_called_once()
-        call_kwargs = mock_client.files.create.call_args[1]
-        assert call_kwargs["purpose"] == "vision"
+        mock_client.beta.files.upload.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -206,11 +211,10 @@ async def test_process_pdf_success(media_processor):
     mock_client = AsyncMock()
     mock_response = Mock()
     mock_response.id = "file_def456"
-    mock_client.files.create.return_value = mock_response
+    mock_client.beta.files.upload.return_value = mock_response
 
-    with patch.object(media_processor,
-                      '_get_anthropic_client',
-                      return_value=mock_client):
+    with patch('telegram.media_processor.get_anthropic_async_client',
+               return_value=mock_client):
         # Test data
         pdf_bytes = b"fake_pdf_data"
         filename = "document.pdf"
@@ -236,9 +240,8 @@ async def test_process_voice_with_language(media_processor):
     mock_response.strip.return_value = "Bonjour"
     mock_client.audio.transcriptions.create.return_value = mock_response
 
-    with patch.object(media_processor,
-                      '_get_openai_client',
-                      return_value=mock_client):
+    with patch('telegram.media_processor.get_openai_async_client',
+               return_value=mock_client):
         # Execute with French language
         result = await media_processor.process_voice(b"data",
                                                      "voice.ogg",

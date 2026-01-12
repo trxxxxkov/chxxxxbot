@@ -22,12 +22,12 @@ import io
 from typing import Optional
 
 from aiogram import types
-from anthropic import AsyncAnthropic
+from core.clients import get_openai_async_client, get_anthropic_async_client
+from core.pricing import calculate_whisper_cost, cost_to_float
 from db.models.thread import Thread
 from db.repositories.chat_repository import ChatRepository
 from db.repositories.thread_repository import ThreadRepository
 from db.repositories.user_repository import UserRepository
-import openai
 from sqlalchemy.ext.asyncio import AsyncSession
 from utils.structured_logging import get_logger
 
@@ -83,6 +83,7 @@ class MediaProcessor:
     - All methods are async (network I/O)
     - All methods log cost and metadata
     - No direct DB access (handlers do thread resolution)
+    - Uses centralized client factories from core.clients
 
     Example:
         processor = MediaProcessor()
@@ -97,41 +98,6 @@ class MediaProcessor:
         content = await processor.process_image(image_bytes, "photo.jpg")
         # Returns: MediaContent(type=IMAGE, file_id="file_abc", ...)
     """
-
-    def __init__(self) -> None:
-        """Initialize processor with API clients."""
-        self._openai_client: Optional[openai.AsyncOpenAI] = None
-        self._anthropic_client: Optional[AsyncAnthropic] = None
-
-    def _get_openai_client(self) -> openai.AsyncOpenAI:
-        """Lazy initialize OpenAI client (for Whisper).
-
-        Returns:
-            OpenAI async client.
-        """
-        if self._openai_client is None:
-            # Import here to avoid circular dependency
-            from main import \
-                read_secret  # pylint: disable=import-outside-toplevel
-            api_key = read_secret("openai_api_key")
-            self._openai_client = openai.AsyncOpenAI(api_key=api_key)
-            logger.info("media_processor.openai_initialized")
-        return self._openai_client
-
-    def _get_anthropic_client(self) -> AsyncAnthropic:
-        """Lazy initialize Anthropic client (for Files API).
-
-        Returns:
-            Anthropic async client.
-        """
-        if self._anthropic_client is None:
-            # Import here to avoid circular dependency
-            from main import \
-                read_secret  # pylint: disable=import-outside-toplevel
-            api_key = read_secret("anthropic_api_key")
-            self._anthropic_client = AsyncAnthropic(api_key=api_key)
-            logger.info("media_processor.anthropic_initialized")
-        return self._anthropic_client
 
     async def process_voice(self,
                             audio_bytes: bytes,
@@ -155,7 +121,8 @@ class MediaProcessor:
         Raises:
             openai.APIError: Whisper API failure.
         """
-        client = self._get_openai_client()
+        # Use centralized client factory
+        client = get_openai_async_client()
 
         # Prepare audio file
         audio_file = io.BytesIO(audio_bytes)
@@ -176,15 +143,15 @@ class MediaProcessor:
 
         transcript = response.strip()
 
-        # Calculate cost: $0.006 per minute
-        cost_usd = (duration / 60.0) * 0.006
+        # Use centralized pricing calculation
+        cost_usd = calculate_whisper_cost(duration)
 
         logger.info("media_processor.voice_transcribed",
                     filename=filename,
                     transcript_length=len(transcript),
                     transcript_preview=transcript[:100],
                     duration=duration,
-                    cost_usd=cost_usd,
+                    cost_usd=cost_to_float(cost_usd),
                     language=language or "auto")
 
         return MediaContent(type=MediaType.VOICE,
@@ -192,7 +159,7 @@ class MediaProcessor:
                             file_id=None,
                             metadata={
                                 "duration": duration,
-                                "cost_usd": cost_usd,
+                                "cost_usd": cost_to_float(cost_usd),
                                 "language": language or "auto",
                                 "size_bytes": len(audio_bytes),
                             })
@@ -219,7 +186,8 @@ class MediaProcessor:
         Raises:
             openai.APIError: Whisper API failure.
         """
-        client = self._get_openai_client()
+        # Use centralized client factory
+        client = get_openai_async_client()
 
         audio_file = io.BytesIO(audio_bytes)
         audio_file.name = filename
@@ -240,14 +208,14 @@ class MediaProcessor:
         detected_duration = response.duration
         detected_language = response.language
 
-        # Calculate cost
-        cost_usd = (detected_duration / 60.0) * 0.006
+        # Use centralized pricing calculation
+        cost_usd = calculate_whisper_cost(detected_duration)
 
         logger.info("media_processor.audio_transcribed",
                     filename=filename,
                     transcript_length=len(transcript),
                     duration=detected_duration,
-                    cost_usd=cost_usd,
+                    cost_usd=cost_to_float(cost_usd),
                     language=detected_language)
 
         return MediaContent(type=MediaType.AUDIO,
@@ -255,7 +223,7 @@ class MediaProcessor:
                             file_id=None,
                             metadata={
                                 "duration": detected_duration,
-                                "cost_usd": cost_usd,
+                                "cost_usd": cost_to_float(cost_usd),
                                 "language": detected_language,
                                 "size_bytes": len(audio_bytes),
                                 "filename": filename,
@@ -287,7 +255,8 @@ class MediaProcessor:
             Whisper API accepts video files directly and extracts audio.
             No need for separate ffmpeg processing.
         """
-        client = self._get_openai_client()
+        # Use centralized client factory
+        client = get_openai_async_client()
 
         video_file = io.BytesIO(video_bytes)
         video_file.name = filename
@@ -307,13 +276,14 @@ class MediaProcessor:
         detected_duration = response.duration
         detected_language = response.language
 
-        cost_usd = (detected_duration / 60.0) * 0.006
+        # Use centralized pricing calculation
+        cost_usd = calculate_whisper_cost(detected_duration)
 
         logger.info("media_processor.video_transcribed",
                     filename=filename,
                     transcript_length=len(transcript),
                     duration=detected_duration,
-                    cost_usd=cost_usd,
+                    cost_usd=cost_to_float(cost_usd),
                     language=detected_language)
 
         return MediaContent(type=MediaType.VIDEO,
@@ -321,7 +291,7 @@ class MediaProcessor:
                             file_id=None,
                             metadata={
                                 "duration": detected_duration,
-                                "cost_usd": cost_usd,
+                                "cost_usd": cost_to_float(cost_usd),
                                 "language": detected_language,
                                 "size_bytes": len(video_bytes),
                                 "filename": filename,
@@ -344,22 +314,29 @@ class MediaProcessor:
         Raises:
             anthropic.APIError: Files API upload failure.
         """
-        client = self._get_anthropic_client()
+        # Use centralized client factory with Files API beta header
+        client = get_anthropic_async_client(use_files_api=True)
+
+        # Auto-detect MIME type using centralized module
+        from core.mime_types import \
+            detect_mime_type  # pylint: disable=import-outside-toplevel
+        mime_type = detect_mime_type(filename=filename, file_bytes=image_bytes)
 
         logger.info("media_processor.uploading_image",
                     filename=filename,
+                    mime_type=mime_type,
                     size_bytes=len(image_bytes))
 
-        # Upload to Files API
-        file_response = await client.files.create(file=(filename, image_bytes,
-                                                        "image/jpeg"),
-                                                  purpose="vision")
+        # Upload to Files API with detected MIME type
+        file_response = await client.beta.files.upload(
+            file=(filename, io.BytesIO(image_bytes), mime_type))
 
         file_id = file_response.id
 
         logger.info("media_processor.image_uploaded",
                     filename=filename,
                     file_id=file_id,
+                    mime_type=mime_type,
                     size_bytes=len(image_bytes))
 
         return MediaContent(type=MediaType.IMAGE,
@@ -368,6 +345,7 @@ class MediaProcessor:
                             metadata={
                                 "size_bytes": len(image_bytes),
                                 "filename": filename,
+                                "mime_type": mime_type,
                             })
 
     async def process_pdf(self, pdf_bytes: bytes,
@@ -386,16 +364,16 @@ class MediaProcessor:
         Raises:
             anthropic.APIError: Files API upload failure.
         """
-        client = self._get_anthropic_client()
+        # Use centralized client factory with Files API beta header
+        client = get_anthropic_async_client(use_files_api=True)
 
         logger.info("media_processor.uploading_pdf",
                     filename=filename,
                     size_bytes=len(pdf_bytes))
 
         # Upload to Files API
-        file_response = await client.files.create(file=(filename, pdf_bytes,
-                                                        "application/pdf"),
-                                                  purpose="vision")
+        file_response = await client.beta.files.upload(
+            file=(filename, io.BytesIO(pdf_bytes), "application/pdf"))
 
         file_id = file_response.id
 
