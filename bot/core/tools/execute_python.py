@@ -13,7 +13,6 @@ import mimetypes
 from pathlib import Path
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
-from core.claude.files_api import download_from_files_api
 from e2b_code_interpreter import Sandbox
 from utils.structured_logging import get_logger
 
@@ -98,54 +97,49 @@ async def download_user_file(file_id: str, filename: str, bot: 'Bot',
     if not file_record:
         raise ValueError(f"File not found in database: {file_id}")
 
-    if file_record.source == FileSource.USER:
-        # User uploaded file - download from Telegram
-        if not file_record.telegram_file_id:
-            raise ValueError(f"No telegram_file_id for user file {file_id}. "
-                             "Cannot download from Telegram.")
+    # All files (both USER and ASSISTANT) should have telegram_file_id
+    # and should be downloaded from Telegram
+    if not file_record.telegram_file_id:
+        raise ValueError(
+            f"No telegram_file_id for file {file_id} ({filename}). "
+            "Cannot download from Telegram. File may be from an older "
+            "version before telegram_file_id was saved for generated files.")
 
-        try:
-            logger.info("tools.execute_python.telegram_download",
-                        telegram_file_id=file_record.telegram_file_id,
-                        filename=filename)
+    try:
+        logger.info("tools.execute_python.telegram_download",
+                    telegram_file_id=file_record.telegram_file_id,
+                    filename=filename,
+                    source=file_record.source.value)
 
-            # Get file info from Telegram
-            file_info = await bot.get_file(file_record.telegram_file_id)
+        # Get file info from Telegram
+        file_info = await bot.get_file(file_record.telegram_file_id)
 
-            # Download file content
-            file_bytes_io = await bot.download_file(file_info.file_path)
+        # Download file content
+        file_bytes_io = await bot.download_file(file_info.file_path)
 
-            # Read BytesIO to bytes
-            file_bytes = file_bytes_io.read()
+        # Read BytesIO to bytes
+        file_bytes = file_bytes_io.read()
 
-            logger.info("tools.execute_python.telegram_download_success",
-                        file_id=file_id,
-                        filename=filename,
-                        size_bytes=len(file_bytes))
+        logger.info("tools.execute_python.telegram_download_success",
+                    file_id=file_id,
+                    filename=filename,
+                    size_bytes=len(file_bytes))
 
-            return file_bytes
+        return file_bytes
 
-        except TelegramAPIError as e:
-            logger.error("tools.execute_python.telegram_download_failed",
-                         file_id=file_id,
-                         telegram_file_id=file_record.telegram_file_id,
-                         filename=filename,
-                         error=str(e),
-                         exc_info=True)
+    except TelegramAPIError as e:
+        logger.error("tools.execute_python.telegram_download_failed",
+                     file_id=file_id,
+                     telegram_file_id=file_record.telegram_file_id,
+                     filename=filename,
+                     error=str(e),
+                     exc_info=True)
 
-            # User-friendly error message
-            raise ValueError(
-                f"File '{filename}' is no longer available in Telegram. "
-                "Files are stored for approximately 6 months. "
-                "Please re-upload the file to continue.") from e
-
-    else:
-        # Bot-generated file - download from Files API
-        logger.info("tools.execute_python.files_api_download",
-                    claude_file_id=file_id,
-                    filename=filename)
-
-        return await download_from_files_api(file_id)
+        # User-friendly error message
+        raise ValueError(
+            f"File '{filename}' is no longer available in Telegram. "
+            "Files are stored for approximately 6 months. "
+            "Please re-upload the file to continue.") from e
 
 
 # pylint: disable=too-many-locals,too-many-statements

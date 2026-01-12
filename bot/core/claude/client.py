@@ -176,6 +176,11 @@ class ClaudeProvider(LLMProvider):
 
             # Store usage and message
             thinking_tokens = getattr(response.usage, 'thinking_tokens', 0)
+            server_tool_use = getattr(response.usage, 'server_tool_use', None)
+            web_search_requests = 0
+            if server_tool_use:
+                web_search_requests = getattr(server_tool_use,
+                                              'web_search_requests', 0) or 0
             self.last_usage = TokenUsage(
                 input_tokens=response.usage.input_tokens,
                 output_tokens=response.usage.output_tokens,
@@ -183,7 +188,8 @@ class ClaudeProvider(LLMProvider):
                                           'cache_read_input_tokens', 0),
                 cache_creation_tokens=getattr(response.usage,
                                               'cache_creation_input_tokens', 0),
-                thinking_tokens=thinking_tokens)
+                thinking_tokens=thinking_tokens,
+                web_search_requests=web_search_requests)
             self.last_message = response
 
             duration_ms = (time.time() - start_time) * 1000
@@ -194,7 +200,6 @@ class ClaudeProvider(LLMProvider):
                                      'cache_creation_input_tokens', 0)
 
             # Phase 1.5 Stage 4: Log server-side tool usage (web_search, web_fetch)
-            server_tool_use = getattr(response.usage, 'server_tool_use', None)
             log_params = {
                 "model_full_id": request.model,
                 "input_tokens": response.usage.input_tokens,
@@ -460,13 +465,19 @@ class ClaudeProvider(LLMProvider):
 
             # Track usage (Phase 1.4.2: cache, Phase 1.4.3: thinking)
             usage = final_message.usage
+            server_tool_use = getattr(usage, 'server_tool_use', None)
+            web_search_requests = 0
+            if server_tool_use:
+                web_search_requests = getattr(server_tool_use,
+                                              'web_search_requests', 0) or 0
             self.last_usage = TokenUsage(
                 input_tokens=usage.input_tokens,
                 output_tokens=usage.output_tokens,
                 cache_read_tokens=getattr(usage, 'cache_read_input_tokens', 0),
                 cache_creation_tokens=getattr(usage,
                                               'cache_creation_input_tokens', 0),
-                thinking_tokens=getattr(usage, 'thinking_tokens', 0))
+                thinking_tokens=getattr(usage, 'thinking_tokens', 0),
+                web_search_requests=web_search_requests)
 
             # Phase 1.4.4: Calculate cache hit rate
             total_input = (self.last_usage.input_tokens +
@@ -475,8 +486,7 @@ class ClaudeProvider(LLMProvider):
             cache_hit_rate = (self.last_usage.cache_read_tokens /
                               total_input if total_input > 0 else 0.0)
 
-            # Phase 1.5 Stage 4: Extract server-side tool usage
-            server_tool_use = getattr(usage, 'server_tool_use', None)
+            # Phase 1.5 Stage 4: Extract server-side tool usage (already extracted above)
 
             usage_log_params = {
                 "input_tokens": self.last_usage.input_tokens,

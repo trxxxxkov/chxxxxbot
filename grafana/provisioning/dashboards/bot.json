@@ -1,0 +1,633 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {"type": "loki", "uid": "loki"},
+      "description": "Log entries by level. Drag to zoom - Raw Logs below will update. Use Log Level filter to filter both.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {
+            "axisBorderShow": false,
+            "axisPlacement": "hidden",
+            "drawStyle": "line",
+            "fillOpacity": 25,
+            "gradientMode": "none",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {"mode": "none"}
+          },
+          "min": 0,
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {"id": "byName", "options": "info"},
+            "properties": [
+              {"id": "color", "value": {"fixedColor": "#22C55E", "mode": "fixed"}},
+              {"id": "custom.fillOpacity", "value": 10},
+              {"id": "custom.axisPlacement", "value": "hidden"},
+              {"id": "custom.axisLabel", "value": "info"}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "warning"},
+            "properties": [
+              {"id": "color", "value": {"fixedColor": "#EAB308", "mode": "fixed"}},
+              {"id": "custom.fillOpacity", "value": 30},
+              {"id": "custom.axisPlacement", "value": "hidden"},
+              {"id": "custom.axisLabel", "value": "warning"}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "error"},
+            "properties": [
+              {"id": "color", "value": {"fixedColor": "#EF4444", "mode": "fixed"}},
+              {"id": "custom.fillOpacity", "value": 80},
+              {"id": "custom.axisPlacement", "value": "hidden"},
+              {"id": "custom.axisLabel", "value": "error"}
+            ]
+          }
+        ]
+      },
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 16},
+      "id": 1,
+      "maxDataPoints": 50,
+      "options": {
+        "legend": {"calcs": ["sum"], "displayMode": "table", "placement": "right", "showLegend": true},
+        "tooltip": {"mode": "multi", "sort": "desc"}
+      },
+      "targets": [
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "expr": "sum(count_over_time({service=\"bot\"} | json | level=\"info\" [$__interval])) or vector(0)",
+          "legendFormat": "info",
+          "refId": "A"
+        },
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "expr": "sum(count_over_time({service=\"bot\"} | json | level=\"warning\" [$__interval])) or vector(0)",
+          "legendFormat": "warning",
+          "refId": "B"
+        },
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "expr": "sum(count_over_time({service=\"bot\"} | json | level=\"error\" [$__interval])) or vector(0)",
+          "legendFormat": "error",
+          "refId": "C"
+        }
+      ],
+      "title": "Logs History",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "loki", "uid": "loki"},
+      "description": "Costs breakdown by category",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {
+            "axisBorderShow": false,
+            "axisPlacement": "hidden",
+            "drawStyle": "line",
+            "fillOpacity": 15,
+            "gradientMode": "none",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {"mode": "none"}
+          },
+          "decimals": 4,
+          "min": 0,
+          "unit": "currencyUSD"
+        },
+        "overrides": [
+          {
+            "matcher": {"id": "byName", "options": "Claude API"},
+            "properties": [
+              {"id": "color", "value": {"fixedColor": "#D97706", "mode": "fixed"}}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "analyze_image"},
+            "properties": [
+              {"id": "color", "value": {"fixedColor": "#BAE6FD", "mode": "fixed"}}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "analyze_pdf"},
+            "properties": [
+              {"id": "color", "value": {"fixedColor": "#7DD3FC", "mode": "fixed"}}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "generate_image"},
+            "properties": [
+              {"id": "color", "value": {"fixedColor": "#38BDF8", "mode": "fixed"}}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "execute_python"},
+            "properties": [
+              {"id": "color", "value": {"fixedColor": "#0EA5E9", "mode": "fixed"}}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "transcribe_audio"},
+            "properties": [
+              {"id": "color", "value": {"fixedColor": "#0284C7", "mode": "fixed"}}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "web_search"},
+            "properties": [
+              {"id": "color", "value": {"fixedColor": "#1E40AF", "mode": "fixed"}}
+            ]
+          }
+        ]
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "id": 2,
+      "maxDataPoints": 50,
+      "options": {
+        "legend": {"calcs": ["sum"], "displayMode": "table", "placement": "right", "showLegend": true},
+        "tooltip": {"mode": "multi", "sort": "desc"}
+      },
+      "targets": [
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "expr": "sum(sum_over_time({service=\"bot\"} | json | event=\"claude_handler.user_charged\" | unwrap cost_usd [$__interval])) or vector(0)",
+          "legendFormat": "Claude API",
+          "refId": "A"
+        },
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "expr": "sum(sum_over_time({service=\"bot\"} | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"analyze_image\" | unwrap cost_usd [$__interval])) or vector(0)",
+          "legendFormat": "analyze_image",
+          "refId": "B"
+        },
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "expr": "sum(sum_over_time({service=\"bot\"} | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"analyze_pdf\" | unwrap cost_usd [$__interval])) or vector(0)",
+          "legendFormat": "analyze_pdf",
+          "refId": "C"
+        },
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "expr": "sum(sum_over_time({service=\"bot\"} | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"generate_image\" | unwrap cost_usd [$__interval])) or vector(0)",
+          "legendFormat": "generate_image",
+          "refId": "D"
+        },
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "expr": "sum(sum_over_time({service=\"bot\"} | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"execute_python\" | unwrap cost_usd [$__interval])) or vector(0)",
+          "legendFormat": "execute_python",
+          "refId": "E"
+        },
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "expr": "sum(sum_over_time({service=\"bot\"} | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"transcribe_audio\" | unwrap cost_usd [$__interval])) or vector(0)",
+          "legendFormat": "transcribe_audio",
+          "refId": "F"
+        },
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "expr": "sum(sum_over_time({service=\"bot\"} | json | event=\"tools.web_search.user_charged\" | unwrap cost_usd [$__interval])) or vector(0)",
+          "legendFormat": "web_search",
+          "refId": "G"
+        }
+      ],
+      "title": "Costs",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "loki", "uid": "loki"},
+      "description": "User activity: donations, new users, active paying users",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {
+            "axisBorderShow": false,
+            "axisPlacement": "hidden",
+            "drawStyle": "line",
+            "fillOpacity": 15,
+            "gradientMode": "none",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {"mode": "none"}
+          },
+          "min": 0,
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {"id": "byName", "options": "Donations (stars)"},
+            "properties": [
+              {"id": "color", "value": {"fixedColor": "#EF4444", "mode": "fixed"}},
+              {"id": "custom.axisPlacement", "value": "hidden"},
+              {"id": "custom.axisLabel", "value": "donations"}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Refunds (stars)"},
+            "properties": [
+              {"id": "color", "value": {"fixedColor": "#EC4899", "mode": "fixed"}},
+              {"id": "custom.axisPlacement", "value": "hidden"},
+              {"id": "custom.axisLabel", "value": "refunds"}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "New users"},
+            "properties": [
+              {"id": "color", "value": {"fixedColor": "#F59E0B", "mode": "fixed"}},
+              {"id": "custom.axisPlacement", "value": "hidden"},
+              {"id": "custom.axisLabel", "value": "new_users"}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "New threads"},
+            "properties": [
+              {"id": "color", "value": {"fixedColor": "#22C55E", "mode": "fixed"}},
+              {"id": "custom.axisPlacement", "value": "hidden"},
+              {"id": "custom.axisLabel", "value": "new_threads"}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Active paying users"},
+            "properties": [
+              {"id": "color", "value": {"fixedColor": "#3B82F6", "mode": "fixed"}},
+              {"id": "custom.axisPlacement", "value": "hidden"},
+              {"id": "custom.axisLabel", "value": "active_users"}
+            ]
+          }
+        ]
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "id": 3,
+      "maxDataPoints": 50,
+      "options": {
+        "legend": {"calcs": ["sum"], "displayMode": "table", "placement": "right", "showLegend": true},
+        "tooltip": {"mode": "multi", "sort": "desc"}
+      },
+      "targets": [
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "expr": "sum(sum_over_time({service=\"bot\"} | json | event=\"stars.donation_received\" | unwrap stars_amount [$__interval])) or vector(0)",
+          "legendFormat": "Donations (stars)",
+          "refId": "A"
+        },
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "expr": "sum(sum_over_time({service=\"bot\"} | json | event=\"stars.refund_processed\" | unwrap stars_amount [$__interval])) or vector(0)",
+          "legendFormat": "Refunds (stars)",
+          "refId": "B"
+        },
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "expr": "sum(count_over_time({service=\"bot\"} | json | event=\"user.new_user_joined\" [$__interval])) or vector(0)",
+          "legendFormat": "New users",
+          "refId": "C"
+        },
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "expr": "sum(count_over_time({service=\"bot\"} | json | event=\"claude_handler.thread_created\" [$__interval])) or vector(0)",
+          "legendFormat": "New threads",
+          "refId": "D"
+        },
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "expr": "count(sum by (user_id) (count_over_time({service=\"bot\"} | json | event=\"balance.user_charged\" | user_id!=\"\" [$__interval]))) or vector(0)",
+          "legendFormat": "Active paying users",
+          "refId": "E"
+        }
+      ],
+      "title": "Users",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "loki", "uid": "loki"},
+      "description": "Token usage breakdown by type",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {
+            "axisBorderShow": false,
+            "axisPlacement": "hidden",
+            "drawStyle": "line",
+            "fillOpacity": 15,
+            "gradientMode": "none",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {"mode": "none"}
+          },
+          "min": 0,
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {"id": "byName", "options": "Input"},
+            "properties": [
+              {"id": "color", "value": {"fixedColor": "#22C55E", "mode": "fixed"}}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Output"},
+            "properties": [
+              {"id": "color", "value": {"fixedColor": "#F59E0B", "mode": "fixed"}}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Thinking"},
+            "properties": [
+              {"id": "color", "value": {"fixedColor": "#EF4444", "mode": "fixed"}}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Cached"},
+            "properties": [
+              {"id": "color", "value": {"fixedColor": "#3B82F6", "mode": "fixed"}}
+            ]
+          }
+        ]
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "id": 4,
+      "maxDataPoints": 50,
+      "options": {
+        "legend": {"calcs": ["sum"], "displayMode": "table", "placement": "right", "showLegend": true},
+        "tooltip": {"mode": "multi", "sort": "desc"}
+      },
+      "targets": [
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "expr": "sum(sum_over_time({service=\"bot\"} | json | event=\"claude_handler.response_complete\" | unwrap input_tokens [$__interval])) or vector(0)",
+          "legendFormat": "Input",
+          "refId": "A"
+        },
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "expr": "sum(sum_over_time({service=\"bot\"} | json | event=\"claude_handler.response_complete\" | unwrap output_tokens [$__interval])) or vector(0)",
+          "legendFormat": "Output",
+          "refId": "B"
+        },
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "expr": "sum(sum_over_time({service=\"bot\"} | json | event=\"claude_handler.response_complete\" | unwrap thinking_tokens [$__interval])) or vector(0)",
+          "legendFormat": "Thinking",
+          "refId": "C"
+        },
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "expr": "sum(sum_over_time({service=\"bot\"} | json | event=\"claude_handler.response_complete\" | unwrap cache_read_tokens [$__interval])) or vector(0)",
+          "legendFormat": "Cached",
+          "refId": "D"
+        }
+      ],
+      "title": "Tokens",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "loki", "uid": "loki"},
+      "description": "Files sent and received by type",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {
+            "axisBorderShow": false,
+            "axisPlacement": "hidden",
+            "drawStyle": "line",
+            "fillOpacity": 15,
+            "gradientMode": "none",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {"mode": "none"}
+          },
+          "min": 0,
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {"id": "byName", "options": "Received: image"},
+            "properties": [
+              {"id": "color", "value": {"fixedColor": "#3B82F6", "mode": "fixed"}}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Received: pdf"},
+            "properties": [
+              {"id": "color", "value": {"fixedColor": "#2563EB", "mode": "fixed"}}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Received: document"},
+            "properties": [
+              {"id": "color", "value": {"fixedColor": "#6366F1", "mode": "fixed"}}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Received: audio"},
+            "properties": [
+              {"id": "color", "value": {"fixedColor": "#8B5CF6", "mode": "fixed"}}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Received: video"},
+            "properties": [
+              {"id": "color", "value": {"fixedColor": "#A855F7", "mode": "fixed"}}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Received: voice"},
+            "properties": [
+              {"id": "color", "value": {"fixedColor": "#60A5FA", "mode": "fixed"}}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Sent: image"},
+            "properties": [
+              {"id": "color", "value": {"fixedColor": "#22C55E", "mode": "fixed"}}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Sent: pdf"},
+            "properties": [
+              {"id": "color", "value": {"fixedColor": "#16A34A", "mode": "fixed"}}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Sent: document"},
+            "properties": [
+              {"id": "color", "value": {"fixedColor": "#14B8A6", "mode": "fixed"}}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Sent: audio"},
+            "properties": [
+              {"id": "color", "value": {"fixedColor": "#84CC16", "mode": "fixed"}}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Sent: video"},
+            "properties": [
+              {"id": "color", "value": {"fixedColor": "#10B981", "mode": "fixed"}}
+            ]
+          }
+        ]
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "id": 5,
+      "maxDataPoints": 50,
+      "options": {
+        "legend": {"calcs": ["sum"], "displayMode": "table", "placement": "right", "showLegend": true},
+        "tooltip": {"mode": "multi", "sort": "desc"}
+      },
+      "targets": [
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "expr": "sum(count_over_time({service=\"bot\"} | json | event=\"files.user_file_received\" | file_type=\"image\" [$__interval])) or vector(0)",
+          "legendFormat": "Received: image",
+          "refId": "A"
+        },
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "expr": "sum(count_over_time({service=\"bot\"} | json | event=\"files.user_file_received\" | file_type=\"pdf\" [$__interval])) or vector(0)",
+          "legendFormat": "Received: pdf",
+          "refId": "B"
+        },
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "expr": "sum(count_over_time({service=\"bot\"} | json | event=\"files.user_file_received\" | file_type=\"document\" [$__interval])) or vector(0)",
+          "legendFormat": "Received: document",
+          "refId": "C"
+        },
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "expr": "sum(count_over_time({service=\"bot\"} | json | event=\"files.user_file_received\" | file_type=\"audio\" [$__interval])) or vector(0)",
+          "legendFormat": "Received: audio",
+          "refId": "D"
+        },
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "expr": "sum(count_over_time({service=\"bot\"} | json | event=\"files.user_file_received\" | file_type=\"video\" [$__interval])) or vector(0)",
+          "legendFormat": "Received: video",
+          "refId": "E"
+        },
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "expr": "sum(count_over_time({service=\"bot\"} | json | event=\"files.user_file_received\" | file_type=\"voice\" [$__interval])) or vector(0)",
+          "legendFormat": "Received: voice",
+          "refId": "F"
+        },
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "expr": "sum(count_over_time({service=\"bot\"} | json | event=\"files.bot_file_sent\" | file_type=\"image\" [$__interval])) or vector(0)",
+          "legendFormat": "Sent: image",
+          "refId": "G"
+        },
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "expr": "sum(count_over_time({service=\"bot\"} | json | event=\"files.bot_file_sent\" | file_type=\"pdf\" [$__interval])) or vector(0)",
+          "legendFormat": "Sent: pdf",
+          "refId": "H"
+        },
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "expr": "sum(count_over_time({service=\"bot\"} | json | event=\"files.bot_file_sent\" | file_type=\"document\" [$__interval])) or vector(0)",
+          "legendFormat": "Sent: document",
+          "refId": "I"
+        },
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "expr": "sum(count_over_time({service=\"bot\"} | json | event=\"files.bot_file_sent\" | file_type=\"audio\" [$__interval])) or vector(0)",
+          "legendFormat": "Sent: audio",
+          "refId": "J"
+        },
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "expr": "sum(count_over_time({service=\"bot\"} | json | event=\"files.bot_file_sent\" | file_type=\"video\" [$__interval])) or vector(0)",
+          "legendFormat": "Sent: video",
+          "refId": "K"
+        }
+      ],
+      "title": "Files",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": true,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 24},
+      "id": 100,
+      "panels": [
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "description": "Drag on chart above to zoom into time range. Use Log Level filter to filter logs.",
+          "gridPos": {"h": 15, "w": 24, "x": 0, "y": 25},
+          "id": 10,
+          "options": {
+            "dedupStrategy": "none",
+            "enableLogDetails": true,
+            "prettifyLogMessage": false,
+            "showCommonLabels": false,
+            "showLabels": false,
+            "showTime": true,
+            "sortOrder": "Descending",
+            "wrapLogMessage": false
+          },
+          "targets": [
+            {
+              "datasource": {"type": "loki", "uid": "loki"},
+              "expr": "{service=\"bot\"} | json | level=~\"$log_level\" | line_format \"[{{.user_id}}] {{__line__}}\"",
+              "refId": "A"
+            }
+          ],
+          "title": "Raw Logs",
+          "type": "logs"
+        }
+      ],
+      "title": "Raw Logs",
+      "type": "row"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["bot", "logs", "metrics"],
+  "templating": {
+    "list": [
+      {
+        "allValue": "info|warning|error",
+        "current": {"selected": true, "text": ["All"], "value": ["$__all"]},
+        "hide": 0,
+        "includeAll": true,
+        "label": "Log Level",
+        "multi": true,
+        "name": "log_level",
+        "options": [
+          {"selected": false, "text": "info", "value": "info"},
+          {"selected": false, "text": "warning", "value": "warning"},
+          {"selected": false, "text": "error", "value": "error"}
+        ],
+        "query": "info,warning,error",
+        "type": "custom"
+      }
+    ]
+  },
+  "time": {"from": "now-1h", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Bot",
+  "uid": "bot",
+  "version": 1
+}

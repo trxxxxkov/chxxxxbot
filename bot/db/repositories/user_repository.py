@@ -161,6 +161,14 @@ class UserRepository(BaseRepository[User]):
                     telegram_id=telegram_id,
                     username=username,
                     was_created=True)
+
+        # Separate event for dashboard tracking
+        logger.info("user.new_user_joined",
+                    user_id=telegram_id,
+                    username=username,
+                    first_name=first_name,
+                    is_premium=is_premium)
+
         return user, True
 
     async def update_last_seen(self, telegram_id: int) -> None:

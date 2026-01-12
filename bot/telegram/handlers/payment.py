@@ -186,6 +186,11 @@ async def process_custom_amount(message: Message, state: FSMContext,
     """Process custom Stars amount input from user."""
     user_id = message.from_user.id
 
+    # Check if message has text (could be sticker, photo, etc.)
+    if not message.text:
+        await message.answer("❌ Please send a number (text message).")
+        return
+
     try:
         stars_amount = int(message.text.strip())
     except ValueError:
@@ -390,6 +395,14 @@ async def process_successful_payment(message: Message, session: AsyncSession):
             msg="Payment processed successfully and user notified",
         )
 
+        # Separate event for dashboard tracking
+        logger.info(
+            "stars.donation_received",
+            user_id=user_id,
+            stars_amount=payment.total_amount,
+            credited_usd=float(payment_record.credited_usd_amount),
+        )
+
     except Exception as e:
         logger.error(
             "payment.process_error",
@@ -508,6 +521,13 @@ async def cmd_refund(message: Message, session: AsyncSession):
             usd_deducted=float(payment_record.credited_usd_amount),
             new_balance=float(new_balance),
             msg="Refund processed successfully",
+        )
+
+        # Separate event for dashboard tracking
+        logger.info(
+            "stars.refund_processed",
+            user_id=user_id,
+            stars_amount=payment_record.stars_amount,
         )
 
     except ValueError as e:

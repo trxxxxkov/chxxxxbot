@@ -335,13 +335,11 @@ async def _handle_with_tools(request: LLMRequest, first_message: types.Message,
                                     filename=filename,
                                     mime_type=mime_type)
 
-                                # 2. Save to database (source=ASSISTANT)
+                                # 2. Send to Telegram user FIRST
+                                # (to get telegram_file_id for database)
+                                # Send as photo if image, otherwise as document
+                                # IMPORTANT: Include message_thread_id for forum topics
                                 # pylint: disable=import-outside-toplevel
-                                from datetime import datetime
-                                from datetime import timedelta
-                                from datetime import timezone
-
-                                from config import FILES_API_TTL_HOURS
                                 from db.models.user_file import FileSource
                                 from db.models.user_file import FileType
 
@@ -353,11 +351,53 @@ async def _handle_with_tools(request: LLMRequest, first_message: types.Message,
                                 else:
                                     file_type = FileType.DOCUMENT
 
+                                telegram_file_id = None
+                                telegram_file_unique_id = None
+
+                                if file_type == FileType.IMAGE and mime_type in [
+                                        "image/jpeg", "image/png", "image/gif",
+                                        "image/webp"
+                                ]:
+                                    sent_msg = await first_message.bot.send_photo(
+                                        chat_id=chat_id,
+                                        photo=types.BufferedInputFile(
+                                            file_bytes, filename=filename),
+                                        message_thread_id=telegram_thread_id)
+                                    # Extract file_id from sent photo
+                                    if sent_msg.photo:
+                                        # Get largest photo size
+                                        largest = max(sent_msg.photo,
+                                                      key=lambda p: p.file_size
+                                                      or 0)
+                                        telegram_file_id = largest.file_id
+                                        telegram_file_unique_id = (
+                                            largest.file_unique_id)
+                                else:
+                                    sent_msg = await first_message.bot.send_document(
+                                        chat_id=chat_id,
+                                        document=types.BufferedInputFile(
+                                            file_bytes, filename=filename),
+                                        message_thread_id=telegram_thread_id)
+                                    # Extract file_id from sent document
+                                    if sent_msg.document:
+                                        telegram_file_id = (
+                                            sent_msg.document.file_id)
+                                        telegram_file_unique_id = (
+                                            sent_msg.document.file_unique_id)
+
+                                # 3. Save to database (source=ASSISTANT)
+                                # Now with telegram_file_id for future downloads
+                                # pylint: disable=import-outside-toplevel
+                                from datetime import datetime
+                                from datetime import timedelta
+                                from datetime import timezone
+
+                                from config import FILES_API_TTL_HOURS
+
                                 await user_file_repo.create(
                                     message_id=first_message.message_id,
-                                    telegram_file_id=
-                                    None,  # No Telegram file ID for generated files
-                                    telegram_file_unique_id=None,
+                                    telegram_file_id=telegram_file_id,
+                                    telegram_file_unique_id=telegram_file_unique_id,
                                     claude_file_id=claude_file_id,
                                     filename=filename,
                                     file_type=file_type,
@@ -369,31 +409,18 @@ async def _handle_with_tools(request: LLMRequest, first_message: types.Message,
                                     file_metadata={},
                                 )
 
-                                # 3. Send to Telegram user
-                                # Send as photo if image, otherwise as document
-                                # IMPORTANT: Include message_thread_id for forum topics
-                                if file_type == FileType.IMAGE and mime_type in [
-                                        "image/jpeg", "image/png", "image/gif",
-                                        "image/webp"
-                                ]:
-                                    await first_message.bot.send_photo(
-                                        chat_id=chat_id,
-                                        photo=types.BufferedInputFile(
-                                            file_bytes, filename=filename),
-                                        message_thread_id=telegram_thread_id)
-                                else:
-                                    await first_message.bot.send_document(
-                                        chat_id=chat_id,
-                                        document=types.BufferedInputFile(
-                                            file_bytes, filename=filename),
-                                        message_thread_id=telegram_thread_id)
-
                                 delivered_files.append(filename)
 
                                 logger.info(
                                     "tools.loop.generated_file_delivered",
                                     filename=filename,
                                     claude_file_id=claude_file_id,
+                                    file_type=file_type.value)
+
+                                # Dashboard tracking event
+                                logger.info(
+                                    "files.bot_file_sent",
+                                    user_id=user_id,
                                     file_type=file_type.value)
 
                             except Exception as file_error:  # pylint: disable=broad-exception-caught
@@ -900,10 +927,22 @@ async def _process_message_batch(
             thinking = claude_provider.get_thinking(
             )  # Phase 1.4.3: Extended Thinking
 
+            # Calculate Claude API cost
             cost_usd = (
                 (usage.input_tokens / 1_000_000) * model_config.pricing_input +
                 ((usage.output_tokens + usage.thinking_tokens) / 1_000_000) *
                 model_config.pricing_output)
+
+            # Calculate web_search cost ($0.01 per search request)
+            web_search_cost = usage.web_search_requests * 0.01
+            if web_search_cost > 0:
+                cost_usd += web_search_cost
+                logger.info(
+                    "tools.web_search.user_charged",
+                    user_id=user.id,
+                    web_search_requests=usage.web_search_requests,
+                    cost_usd=web_search_cost,
+                )
 
             logger.info("claude_handler.response_complete",
                         thread_id=thread_id,
@@ -911,6 +950,7 @@ async def _process_message_batch(
                         input_tokens=usage.input_tokens,
                         output_tokens=usage.output_tokens,
                         thinking_tokens=usage.thinking_tokens,
+                        cache_read_tokens=usage.cache_read_tokens,
                         cost_usd=round(cost_usd, 6),
                         response_length=len(response_text),
                         stop_reason=stop_reason)
@@ -1275,6 +1315,7 @@ async def handle_claude_message(message: types.Message,
         if was_created:
             logger.info("claude_handler.thread_created",
                         thread_id=thread.id,
+                        user_id=user.id,
                         telegram_thread_id=message.message_thread_id)
 
         # CRITICAL: Commit immediately so queue manager can see the thread

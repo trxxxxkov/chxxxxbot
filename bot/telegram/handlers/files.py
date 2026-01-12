@@ -233,7 +233,13 @@ async def process_file_upload(message: types.Message,
                 user_id=user_id,
                 filename=filename,
                 claude_file_id=claude_file_id,
-                thread_id=thread.id)
+                thread_id=thread.id,
+                file_type=file_type.value)
+
+    # Dashboard tracking event
+    logger.info("files.user_file_received",
+                user_id=user_id,
+                file_type=file_type.value)
 
     return claude_file_id, thread.id
 

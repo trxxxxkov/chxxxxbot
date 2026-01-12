@@ -130,7 +130,7 @@ chxxxxbot/
 - ✅ `thinking_delta` streaming support
 - ✅ Thinking token tracking
 - ✅ Time-based message batching (200ms window)
-- ⏸️ Extended Thinking parameter DISABLED (requires Phase 1.5 DB schema)
+- ✅ Extended Thinking ENABLED (budget_tokens: 10000)
 
 **Phase 1.4.4 - Best Practices & Optimization:**
 - ✅ System prompt rewritten for Claude 4 style
@@ -143,14 +143,14 @@ chxxxxbot/
 - ✅ Best practices adopted (explicit instructions, thinking vocabulary)
 - ✅ See [docs/phase-1.4-claude-advanced-api.md](docs/phase-1.4-claude-advanced-api.md)
 
-#### 1.5 Multimodal + Tools ✅ Complete (Partial)
-**Status:** Core tools complete (2026-01-10)
+#### 1.5 Multimodal + Tools ✅ Complete
+**Status:** Complete (2026-01-10)
 
-**Multimodal support (Stage 1-5):**
+**Multimodal support:**
 - ✅ Images (vision via Files API - analyze_image)
 - ✅ PDF documents (text + visual via Files API - analyze_pdf)
-- ⏸️ Voice messages (Phase 1.6)
-- ⏸️ Audio/video files (Phase 1.6)
+- ✅ Voice messages (via Phase 1.6)
+- ✅ Audio/video files (via Phase 1.6)
 
 **Tools framework:**
 - ✅ Tool Runner (SDK beta) for all custom tools

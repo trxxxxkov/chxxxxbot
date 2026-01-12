@@ -73,6 +73,7 @@ class TokenUsage(BaseModel):
         cache_read_tokens: Tokens read from cache (Phase 1.4.2).
         cache_creation_tokens: Tokens written to cache (Phase 1.4.2).
         thinking_tokens: Tokens used for extended thinking (Phase 1.4.3).
+        web_search_requests: Number of web search requests (Phase 1.5).
     """
 
     input_tokens: int = Field(..., ge=0, description="Input tokens")
@@ -83,6 +84,8 @@ class TokenUsage(BaseModel):
         default=0, ge=0, description="Cache creation tokens (Phase 1.4.2)")
     thinking_tokens: int = Field(
         default=0, ge=0, description="Extended thinking tokens (Phase 1.4.3)")
+    web_search_requests: int = Field(
+        default=0, ge=0, description="Web search requests (Phase 1.5)")
 
 
 class LLMResponse(BaseModel):
