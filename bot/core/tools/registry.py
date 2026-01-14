@@ -79,6 +79,16 @@ TOOL_EXECUTORS: Dict[str, Any] = {
     # "web_fetch": (server-side)
 }
 
+# Tool metadata: declares which tools need bot/session for Telegram integration
+# This replaces the hardcoded list in execute_tool(), making it easier to add new tools
+TOOL_METADATA: Dict[str, Dict[str, bool]] = {
+    "analyze_image": {"needs_bot_session": False},
+    "analyze_pdf": {"needs_bot_session": False},
+    "transcribe_audio": {"needs_bot_session": True},  # Downloads files from Telegram
+    "generate_image": {"needs_bot_session": True},    # Sends generated files
+    "execute_python": {"needs_bot_session": True},    # Downloads/uploads files
+}
+
 
 async def execute_tool(tool_name: str, tool_input: Dict[str, Any], bot: 'Bot',
                        session: 'AsyncSession') -> Dict[str, str]:
@@ -137,11 +147,9 @@ async def execute_tool(tool_name: str, tool_input: Dict[str, Any], bot: 'Bot',
 
     try:
         # Execute tool (all tools are async)
-        # execute_python, transcribe_audio, generate_image require bot
-        # and session for Telegram integration
-        if tool_name in [
-                "execute_python", "transcribe_audio", "generate_image"
-        ]:
+        # Check TOOL_METADATA for whether tool needs bot/session
+        metadata = TOOL_METADATA.get(tool_name, {})
+        if metadata.get("needs_bot_session", False):
             result = await executor(bot=bot, session=session, **tool_input)
         else:
             result = await executor(**tool_input)

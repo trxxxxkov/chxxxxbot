@@ -18,6 +18,7 @@ from core.exceptions import APITimeoutError
 from core.exceptions import InvalidModelError
 from core.exceptions import RateLimitError
 from core.models import LLMRequest
+from core.models import StreamEvent
 from core.models import TokenUsage
 from utils.structured_logging import get_logger
 
@@ -372,13 +373,8 @@ class ClaudeProvider(LLMProvider):
         #     "keep": "all"
         # }]
 
-        # Phase 1.4.4: Effort parameter (Opus 4.5 only)
-        # Always set to "high" for maximum quality when supported
-        if model_config.has_capability("effort"):
-            api_params["effort"] = "high"
-            logger.info("claude.effort.enabled",
-                        model_full_id=request.model,
-                        effort="high")
+        # NOTE: Effort parameter NOT supported in streaming API
+        # Only works with non-streaming messages.create()
 
         # Phase 1.4.2: System prompt with conditional caching
         # Minimum 1024 tokens required for caching (Sonnet 4.5 limitation)
@@ -672,3 +668,235 @@ class ClaudeProvider(LLMProvider):
             >>>     # Save to database
         """
         return self.last_thinking
+
+    # pylint: disable=too-many-locals,too-many-branches,too-many-statements
+    async def stream_events(
+            self, request: LLMRequest) -> AsyncIterator[StreamEvent]:
+        """Stream response events from Claude API.
+
+        Unified streaming method that yields structured events for thinking,
+        text, and tool use. Replaces separate stream_message/get_message.
+
+        Event flow:
+        1. thinking_delta events (if thinking enabled)
+        2. text_delta events (response text)
+        3. tool_use event (if tool called)
+        4. block_end after each content block
+        5. message_end with stop_reason
+
+        Args:
+            request: LLM request with messages and configuration.
+
+        Yields:
+            StreamEvent objects for each streaming event.
+
+        Raises:
+            RateLimitError: Rate limit exceeded (429).
+            APIConnectionError: Connection to API failed.
+            APITimeoutError: API request timed out.
+            InvalidModelError: Model not supported or wrong provider.
+        """
+        import json
+        start_time = time.time()
+
+        # Get model configuration from registry
+        try:
+            model_config = get_model(request.model)
+        except KeyError as e:
+            raise InvalidModelError(
+                f"Model '{request.model}' not found in registry. {e}") from e
+
+        if model_config.provider != "claude":
+            raise InvalidModelError(
+                f"ClaudeProvider can only handle 'claude' models, "
+                f"got provider '{model_config.provider}' for model "
+                f"'{request.model}'")
+
+        logger.info("claude.stream_events.start",
+                    model_full_id=request.model,
+                    model_api_id=model_config.model_id,
+                    message_count=len(request.messages),
+                    has_tools=request.tools is not None,
+                    tool_count=len(request.tools) if request.tools else 0)
+
+        # Convert messages to Anthropic format
+        api_messages = [{
+            "role": msg.role,
+            "content": msg.content
+        } for msg in request.messages]
+
+        # Prepare API parameters
+        api_params = {
+            "model": model_config.model_id,
+            "max_tokens": request.max_tokens,
+            "temperature": request.temperature,
+            "messages": api_messages,
+        }
+
+        # Add tools if provided
+        if request.tools:
+            api_params["tools"] = request.tools
+
+        # System prompt with conditional caching
+        if request.system_prompt:
+            estimated_tokens = len(request.system_prompt) // 4
+            use_caching = estimated_tokens >= 1024
+
+            if use_caching:
+                api_params["system"] = [{
+                    "type": "text",
+                    "text": request.system_prompt,
+                    "cache_control": {
+                        "type": "ephemeral",
+                        "ttl": "1h"
+                    }
+                }]
+            else:
+                api_params["system"] = request.system_prompt
+
+        # NOTE: Effort parameter NOT supported in streaming API
+        # Only works with non-streaming messages.create()
+
+        # Extended Thinking
+        api_params["thinking"] = {"type": "enabled", "budget_tokens": 10000}
+
+        # Track current block type and accumulated data
+        current_block_type: Optional[str] = None
+        current_tool_name = ""
+        current_tool_id = ""
+        accumulated_json = ""
+        thinking_text = ""
+        response_text = ""
+
+        try:
+            async with self.client.messages.stream(**api_params) as stream:
+                async for event in stream:
+                    # Content block start - detect block type
+                    if event.type == "content_block_start":
+                        block = event.content_block
+                        current_block_type = block.type
+
+                        # Regular tool_use (client-side tools)
+                        if block.type == "tool_use":
+                            current_tool_name = block.name
+                            current_tool_id = block.id
+                            accumulated_json = ""
+                            yield StreamEvent(type="tool_use",
+                                              tool_name=block.name,
+                                              tool_id=block.id)
+
+                        # Server-side tools (web_search, web_fetch)
+                        elif block.type == "server_tool_use":
+                            current_tool_name = block.name
+                            current_tool_id = block.id
+                            accumulated_json = ""
+                            yield StreamEvent(type="tool_use",
+                                              tool_name=block.name,
+                                              tool_id=block.id)
+
+                    # Content block delta - yield appropriate event
+                    elif event.type == "content_block_delta":
+                        delta = event.delta
+
+                        if hasattr(delta, "thinking"):
+                            thinking_text += delta.thinking
+                            yield StreamEvent(type="thinking_delta",
+                                              content=delta.thinking)
+
+                        elif hasattr(delta, "text"):
+                            response_text += delta.text
+                            yield StreamEvent(type="text_delta",
+                                              content=delta.text)
+
+                        elif hasattr(delta, "partial_json"):
+                            accumulated_json += delta.partial_json
+                            yield StreamEvent(type="input_json_delta",
+                                              content=delta.partial_json)
+
+                    # Content block stop
+                    elif event.type == "content_block_stop":
+                        # If this was a tool_use block (client-side), parse JSON
+                        if current_block_type == "tool_use" and accumulated_json:
+                            try:
+                                tool_input = json.loads(accumulated_json)
+                            except json.JSONDecodeError:
+                                tool_input = {"raw": accumulated_json}
+
+                            yield StreamEvent(type="block_end",
+                                              tool_name=current_tool_name,
+                                              tool_id=current_tool_id,
+                                              tool_input=tool_input)
+                        elif current_block_type == "server_tool_use":
+                            # Server-side tool - already executed, just mark end
+                            yield StreamEvent(type="block_end",
+                                              tool_name=current_tool_name,
+                                              tool_id=current_tool_id)
+                        else:
+                            yield StreamEvent(type="block_end")
+
+                        current_block_type = None
+
+                    # Message delta - contains stop_reason
+                    elif event.type == "message_delta":
+                        stop_reason = event.delta.stop_reason or ""
+                        yield StreamEvent(type="message_end",
+                                          stop_reason=stop_reason)
+
+                # Get final message for usage stats
+                final_message = await stream.get_final_message()
+
+            # Store usage and message
+            usage = final_message.usage
+            server_tool_use = getattr(usage, 'server_tool_use', None)
+            web_search_requests = 0
+            if server_tool_use:
+                web_search_requests = getattr(server_tool_use,
+                                              'web_search_requests', 0) or 0
+
+            self.last_usage = TokenUsage(
+                input_tokens=usage.input_tokens,
+                output_tokens=usage.output_tokens,
+                cache_read_tokens=getattr(usage, 'cache_read_input_tokens', 0),
+                cache_creation_tokens=getattr(usage,
+                                              'cache_creation_input_tokens', 0),
+                thinking_tokens=getattr(usage, 'thinking_tokens', 0),
+                web_search_requests=web_search_requests)
+
+            self.last_message = final_message
+            self.last_thinking = thinking_text if thinking_text else None
+
+            duration_ms = (time.time() - start_time) * 1000
+            logger.info("claude.stream_events.complete",
+                        model_full_id=request.model,
+                        input_tokens=self.last_usage.input_tokens,
+                        output_tokens=self.last_usage.output_tokens,
+                        thinking_tokens=self.last_usage.thinking_tokens,
+                        cache_read=self.last_usage.cache_read_tokens,
+                        stop_reason=final_message.stop_reason,
+                        duration_ms=round(duration_ms, 2))
+
+        except anthropic.RateLimitError as e:
+            logger.error("claude.stream_events.rate_limit",
+                         error=str(e),
+                         exc_info=True)
+            raise RateLimitError("Rate limit exceeded. Please try again later.",
+                                 retry_after=None) from e
+
+        except anthropic.APIConnectionError as e:
+            logger.error("claude.stream_events.connection_error",
+                         error=str(e),
+                         exc_info=True)
+            raise APIConnectionError("Failed to connect to Claude API.") from e
+
+        except anthropic.APITimeoutError as e:
+            logger.error("claude.stream_events.timeout",
+                         error=str(e),
+                         exc_info=True)
+            raise APITimeoutError("Request to Claude API timed out.") from e
+
+        except Exception as e:
+            logger.error("claude.stream_events.unexpected_error",
+                         error=str(e),
+                         error_type=type(e).__name__,
+                         exc_info=True)
+            raise

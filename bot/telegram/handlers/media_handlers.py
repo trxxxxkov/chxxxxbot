@@ -314,6 +314,11 @@ async def handle_audio(message: types.Message, session: AsyncSession) -> None:
                     thread_id=thread.id,
                     claude_file_id=claude_file_id)
 
+        # Dashboard tracking event
+        logger.info("files.user_file_received",
+                    user_id=user_id,
+                    file_type="audio")
+
     except Exception as e:  # pylint: disable=broad-exception-caught
         logger.error("audio_handler.failed",
                      user_id=user_id,
@@ -449,6 +454,11 @@ async def handle_video(message: types.Message, session: AsyncSession) -> None:
                     user_id=user_id,
                     thread_id=thread.id,
                     claude_file_id=claude_file_id)
+
+        # Dashboard tracking event
+        logger.info("files.user_file_received",
+                    user_id=user_id,
+                    file_type="video")
 
     except Exception as e:  # pylint: disable=broad-exception-caught
         logger.error("video_handler.failed",

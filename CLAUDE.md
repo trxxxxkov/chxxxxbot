@@ -310,7 +310,7 @@ chxxxxbot/
 **Testing:**
 - ✅ 46 integration tests (payment flow, refunds, middleware, admin commands)
 - ✅ Unit tests for all models, repositories, services
-- ✅ 484 total tests passing (100% pass rate)
+- ✅ 494 total tests passing (100% pass rate)
 - ✅ Edge case coverage (duplicates, expiry, insufficient balance, soft check)
 
 **Files created:**
@@ -631,7 +631,7 @@ docker compose exec bot pytest -s
 - Middlewares: 90%+
 - Overall project: 80%+
 
-**Current Test Coverage:** 361 tests across all components ✅
+**Current Test Coverage:** 494 tests across all components ✅
 
 **Manual Testing:**
 
@@ -719,7 +719,7 @@ This script:
   - Interleaved thinking beta header
   - `thinking_delta` streaming support
   - Time-based message batching (200ms window for split messages)
-  - Extended Thinking parameter DISABLED until Phase 1.5 (requires DB schema)
+  - Extended Thinking ENABLED (budget_tokens: 10000)
 - **Phase 1.4.4 - Best Practices & Optimization**:
   - System prompt rewritten for Claude 4 style (explicit, concise)
   - Effort parameter for Opus 4.5 (`effort: "high"`)

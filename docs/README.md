@@ -66,22 +66,23 @@ Documents are organized by development phase for easy navigation.
 | [phase-1.2-database.md](phase-1.2-database.md) | PostgreSQL architecture: models, repositories, migrations, patterns | **implemented** |
 | [phase-1.2-telegram-api-mapping.md](phase-1.2-telegram-api-mapping.md) | Field-by-field mapping between Telegram Bot API 9.3 and database | **implemented** |
 | [phase-1.3-claude-core.md](phase-1.3-claude-core.md) | Claude integration (core): streaming, context management, error handling | **implemented** |
-| [phase-1.4-claude-advanced-api.md](phase-1.4-claude-advanced-api.md) | Advanced API features: documentation review, best practices, optimizations | **in progress** |
-| [phase-1.5-multimodal-tools.md](phase-1.5-multimodal-tools.md) | Multimodal support (images, voice, files) and tools framework (code execution, image generation) | **planned** |
-| [phase-1.6-rag.md](phase-1.6-rag.md) | RAG (Retrieval-Augmented Generation): vector search, Qdrant, embeddings, search_user_files tool | **planned** |
+| [phase-1.4-claude-advanced-api.md](phase-1.4-claude-advanced-api.md) | Advanced API features: documentation review, best practices, optimizations | **implemented** |
+| [phase-1.5-agent-tools.md](phase-1.5-agent-tools.md) | Tools framework: analyze_image, analyze_pdf, execute_python, web_search, web_fetch | **implemented** |
+| [phase-1.6-multimodal-support.md](phase-1.6-multimodal-support.md) | Universal media architecture: voice, audio, video handlers, Whisper transcription | **implemented** |
+| [phase-1.7-image-generation.md](phase-1.7-image-generation.md) | Image generation: Google Nano Banana Pro, generate_image tool | **implemented** |
 
 ### Phase 2: Features Expansion
 
 | File | Description | Status |
 |------|-------------|--------|
-| [phase-2.1-payment-system.md](phase-2.1-payment-system.md) | Payment system: user balance, Telegram Stars integration, admin tools, cost tracking | **planned** |
+| [phase-2.1-payment-system.md](phase-2.1-payment-system.md) | Payment system: user balance, Telegram Stars integration, admin tools, cost tracking | **implemented** |
 | [phase-2.2-devops-agent.md](phase-2.2-devops-agent.md) | DevOps Agent: self-healing bot with Agent SDK, auto-fix errors, feature development via Telegram, GitHub PRs | **planned** |
 
 ### Phase 3: Infrastructure
 
 | File | Description | Status |
 |------|-------------|--------|
-| infrastructure.md | Docker, cache (Redis), monitoring (Grafana, Loki), database admin (CloudBeaver) | **planned** |
+| [phase-3-infrastructure.md](phase-3-infrastructure.md) | Monitoring (Grafana, Loki, Prometheus), database admin (CloudBeaver) | **implemented** |
 
 ---
 
@@ -110,7 +111,6 @@ Documents are organized by development phase for easy navigation.
 - Repository pattern with base class
 - Alembic migrations
 - DatabaseMiddleware for session management
-- Comprehensive test coverage (201 tests)
 
 ### Phase 1.3: Claude Integration (Core) ✅
 - Claude Sonnet 4.5 (claude-sonnet-4-5-20250929)
@@ -118,55 +118,54 @@ Documents are organized by development phase for easy navigation.
 - Token-based context management (200K window)
 - Thread-based conversation history
 - Cost tracking (input/output tokens)
-- Comprehensive error handling
-- Regression tests (4 tests)
 
-### Phase 1.4: Advanced API Features 🔄
-- Official Claude API documentation review
-- Extract and document best practices
-- Implement advanced features discovered in docs
-- Optimize existing Phase 1.3 implementation
-- Incremental documentation-driven development
+### Phase 1.4: Advanced API Features ✅
+- Model registry (Haiku, Sonnet, Opus)
+- Prompt caching (5-minute ephemeral cache)
+- Extended thinking (budget_tokens: 10000)
+- Effort parameter for Opus
+- Token Counting API
 
-### Phase 1.5: Multimodal + Tools 📋
-- Vision (image analysis with Claude)
-- Voice messages (transcription + processing)
-- File handling (PDF, code, data files)
-- Tools framework (code execution, image generation, web_search, url_fetch)
-- Prompt caching optimization
-- Extended thinking for complex tasks
+### Phase 1.5: Tools Framework ✅
+- analyze_image (Claude Vision + Files API)
+- analyze_pdf (Claude PDF API)
+- execute_python (E2B Code Interpreter)
+- web_search, web_fetch (server-side tools)
+- user_files table for file tracking
 
-### Phase 1.6: RAG (Retrieval-Augmented Generation) 📋
-- Vector database (Qdrant container)
-- Embeddings service (OpenAI or sentence-transformers)
-- File indexing pipeline (PDF, images, text)
-- search_user_files tool (semantic search)
-- Hybrid search (user files + web search + url fetch)
-- Citations handling (internal use only)
+### Phase 1.6: Multimodal Support ✅
+- Universal media architecture (MediaProcessor)
+- Voice messages with Whisper transcription
+- Audio/video file handling
+- transcribe_audio tool
 
-### Phase 2.1: Payment System 📋
-- User balance in USD
-- Pre-request cost validation
-- Telegram Stars integration (deposits, refunds)
-- Admin commands (balance management)
-- Cost reporting and analytics
-- Transaction audit trail
+### Phase 1.7: Image Generation ✅
+- Google Nano Banana Pro integration
+- generate_image tool
+- Flexible parameters (aspect ratio, resolution)
+- Automatic file delivery
+
+### Phase 2.1: Payment System ✅
+- User balance in USD ($0.10 starter)
+- Telegram Stars integration
+- Admin commands (/topup, /set_margin)
+- Cost tracking for all APIs
+- Refund support (30-day window)
 
 ### Phase 2.2: DevOps Agent 📋
 - Agent SDK integration (autonomous code editing)
 - Self-healing (auto-fix errors from logs)
 - Feature development via Telegram (/agent add feature)
 - GitHub integration (create PRs, merge, deploy)
-- Docker control (restart containers)
-- Security (owner-only, protected files, audit)
-- Cost: ~$3-40/month depending on usage
 
-### Phase 3: Infrastructure 📋
-- Redis caching
-- Grafana + Prometheus monitoring
+### Phase 3.1: Monitoring ✅
+- Grafana + Prometheus metrics
 - Loki log aggregation
 - CloudBeaver database UI
-- Performance optimizations
+- Pre-configured dashboards
+
+### Phase 3.2: Cache 📋
+- Redis caching (planned)
 
 ---
 

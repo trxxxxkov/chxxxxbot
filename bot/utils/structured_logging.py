@@ -66,6 +66,9 @@ def setup_logging(level: str = "INFO") -> None:
     root_logger.addHandler(handler)
     root_logger.setLevel(getattr(logging, level.upper()))
 
+    # Suppress aiogram dispatcher warnings (SIGTERM logged as warning)
+    logging.getLogger("aiogram.dispatcher").setLevel(logging.ERROR)
+
 
 def get_logger(name: str) -> structlog.BoundLogger:
     """Gets a configured logger instance.

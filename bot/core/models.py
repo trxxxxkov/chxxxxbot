@@ -6,10 +6,45 @@ All models use Pydantic v2 for validation and serialization.
 NO __init__.py - use direct import: from core.models import LLMRequest
 """
 
-from typing import Any, Dict, List, Optional, Union
+from dataclasses import dataclass
+from dataclasses import field
+from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel
 from pydantic import Field
+
+
+@dataclass
+class StreamEvent:
+    """Streaming event from LLM provider.
+
+    Represents a single event during streaming response. Used for unified
+    streaming of thinking, text, and tool use.
+
+    Attributes:
+        type: Event type indicating what happened.
+        content: Text content (for thinking_delta, text_delta).
+        tool_name: Tool name (for tool_use events).
+        tool_id: Tool use ID (for tool_use events).
+        tool_input: Accumulated tool input JSON (for tool_use events).
+        stop_reason: Why message ended (for message_end events).
+
+    Event Types:
+        - thinking_delta: Chunk of thinking/reasoning text
+        - text_delta: Chunk of response text
+        - tool_use: Tool call detected (contains tool_name, tool_id)
+        - input_json_delta: Partial JSON for tool input
+        - block_end: End of content block (thinking/text/tool)
+        - message_end: End of message (contains stop_reason)
+    """
+
+    type: Literal["thinking_delta", "text_delta", "tool_use",
+                  "input_json_delta", "block_end", "message_end"]
+    content: str = ""
+    tool_name: str = ""
+    tool_id: str = ""
+    tool_input: Dict[str, Any] = field(default_factory=dict)
+    stop_reason: str = ""  # "end_turn" | "tool_use" | "max_tokens"
 
 
 class Message(BaseModel):

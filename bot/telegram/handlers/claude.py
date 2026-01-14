@@ -33,6 +33,7 @@ from core.exceptions import RateLimitError
 from core.message_queue import MessageQueueManager
 from core.models import LLMRequest
 from core.models import Message
+from core.models import StreamEvent
 from core.tools.helpers import extract_tool_uses
 from core.tools.helpers import format_files_section
 from core.tools.helpers import format_tool_results
@@ -68,6 +69,20 @@ logger = get_logger(__name__)
 # Create router with name
 router = Router(name="claude")
 
+# Tool emoji mapping for streaming display
+TOOL_EMOJIS = {
+    "web_search": "🔍",
+    "web_fetch": "🌐",
+    "analyze_image": "👁️",
+    "analyze_pdf": "📄",
+    "execute_python": "🐍",
+    "transcribe_audio": "🎤",
+    "generate_image": "🎨",
+}
+
+# Streaming update interval (400ms)
+STREAM_UPDATE_INTERVAL = 0.4
+
 
 def safe_html(text: str) -> str:
     """Escape HTML special characters for Telegram parse_mode=HTML.
@@ -82,6 +97,87 @@ def safe_html(text: str) -> str:
         HTML-escaped text safe for Telegram.
     """
     return html_lib.escape(text)
+
+
+def format_thinking_display(
+    thinking_text: str,
+    response_text: str,
+    is_streaming: bool = True
+) -> str:
+    """Format thinking and response for Telegram display.
+
+    During streaming: Show thinking in italics with 🧠 prefix
+    Final display: Show thinking in expandable blockquote
+
+    Args:
+        thinking_text: The thinking/reasoning text from Claude.
+        response_text: The actual response text.
+        is_streaming: Whether we're still streaming (affects formatting).
+
+    Returns:
+        Formatted HTML string for Telegram.
+    """
+    parts = []
+
+    if thinking_text:
+        escaped_thinking = safe_html(thinking_text)
+        if is_streaming:
+            # During streaming: show in italics with prefix
+            parts.append(f"<i>🧠 {escaped_thinking}</i>")
+        else:
+            # Final: use expandable blockquote (collapsed by default)
+            parts.append(
+                f"<blockquote expandable>🧠 {escaped_thinking}</blockquote>"
+            )
+
+    if response_text:
+        escaped_response = safe_html(response_text)
+        parts.append(escaped_response)
+
+    return "\n\n".join(parts) if parts else ""
+
+
+def split_text_smart(text: str, max_length: int = 3800) -> list[str]:
+    """Split text into chunks using smart boundaries.
+
+    Uses priority-based splitting:
+    1. Paragraph boundaries (double newline) - preserves semantic units
+    2. Single newlines - preserves line structure
+    3. Hard split at max_length if no better option
+
+    Args:
+        text: Text to split.
+        max_length: Maximum length per chunk.
+
+    Returns:
+        List of text chunks.
+    """
+    if len(text) <= max_length:
+        return [text]
+
+    chunks = []
+    remaining = text
+
+    while len(remaining) > max_length:
+        split_pos = max_length
+
+        # Try paragraph boundary first (within last 1000 chars)
+        para_pos = remaining.rfind('\n\n', 0, split_pos)
+        if para_pos > split_pos - 1000 and para_pos > 0:
+            split_pos = para_pos + 1
+
+        # Fall back to single newline (within last 500 chars)
+        elif (newline_pos := remaining.rfind('\n', 0, split_pos)) > split_pos - 500:
+            if newline_pos > 0:
+                split_pos = newline_pos
+
+        chunks.append(remaining[:split_pos].strip())
+        remaining = remaining[split_pos:].strip()
+
+    if remaining:
+        chunks.append(remaining)
+
+    return chunks
 
 
 # Global Claude provider instance (initialized in main.py)
@@ -156,6 +252,748 @@ def get_queue_manager() -> MessageQueueManager | None:
         MessageQueueManager instance or None if not initialized.
     """
     return message_queue_manager
+
+
+# pylint: disable=too-many-locals,too-many-branches,too-many-statements
+# pylint: disable=too-many-nested-blocks
+async def _stream_with_unified_events(
+    request: LLMRequest,
+    first_message: types.Message,
+    thread_id: int,
+    session: AsyncSession,
+    user_file_repo: UserFileRepository,
+    chat_id: int,
+    user_id: int,
+    telegram_thread_id: int | None,
+) -> tuple[str, list[types.Message]]:
+    """Stream response with unified thinking/text/tool handling.
+
+    Unified streaming approach:
+    1. Stream thinking and text together (both visible to user)
+    2. On tool_use: append [emoji tool_name], execute, continue
+    3. Track all sent messages for cleanup
+    4. Return final answer (text after last tool) and messages to delete
+
+    Args:
+        request: LLMRequest with tools configured.
+        first_message: First Telegram message (for replies).
+        thread_id: Thread ID for logging.
+        session: Database session.
+        user_file_repo: UserFileRepository for file handling.
+        chat_id: Telegram chat ID.
+        user_id: User ID.
+        telegram_thread_id: Telegram thread/topic ID.
+
+    Returns:
+        Tuple of (final_answer_text, list_of_messages_to_delete).
+    """
+    max_iterations = 10
+    all_sent_messages: list[types.Message] = []
+
+    # Build conversation for tool loop
+    conversation = [{
+        "role": msg.role,
+        "content": msg.content
+    } for msg in request.messages]
+
+    logger.info("stream.unified.start",
+                thread_id=thread_id,
+                max_iterations=max_iterations)
+
+    for iteration in range(max_iterations):
+        logger.info("stream.unified.iteration",
+                    thread_id=thread_id,
+                    iteration=iteration + 1)
+
+        # Create request for this iteration
+        iter_request = LLMRequest(
+            messages=[
+                Message(role=msg["role"], content=msg["content"])
+                for msg in conversation
+            ],
+            system_prompt=request.system_prompt,
+            model=request.model,
+            max_tokens=request.max_tokens,
+            temperature=request.temperature,
+            tools=request.tools,
+        )
+
+        # Streaming state - separate tracking for thinking and response
+        accumulated_thinking = ""  # All thinking text accumulated
+        accumulated_response = ""  # All response text (including tool markers)
+        last_sent_text = ""  # Track what we've already sent (formatted)
+        current_message: types.Message | None = None
+        last_update_time = 0.0
+        pending_tools: list[dict] = []  # Tools to execute after stream ends
+        stop_reason = ""
+
+        # Collect content blocks directly from stream (avoid race condition)
+        content_blocks: list[dict] = []
+        current_thinking_text = ""
+        current_response_text = ""
+        current_block_type = ""  # "thinking" | "text" | ""
+
+        # Stream events
+        async for event in claude_provider.stream_events(iter_request):
+            if event.type == "thinking_delta":
+                accumulated_thinking += event.content
+                current_thinking_text += event.content
+                current_block_type = "thinking"
+                current_time = time.time()
+
+                # Format display text with thinking in italics
+                display_text = format_thinking_display(
+                    accumulated_thinking, accumulated_response, is_streaming=True
+                )
+
+                # Update Telegram every 400ms if text changed
+                if (current_time - last_update_time >= STREAM_UPDATE_INTERVAL
+                        and display_text != last_sent_text):
+                    current_message, last_sent_text = (
+                        await _update_telegram_message_formatted(
+                            display_text,
+                            current_message,
+                            first_message,
+                            all_sent_messages,
+                            last_sent_text,
+                        )
+                    )
+                    last_update_time = current_time
+
+            elif event.type == "text_delta":
+                accumulated_response += event.content
+                current_response_text += event.content
+                current_block_type = "text"
+                current_time = time.time()
+
+                # Format display text with thinking in italics
+                display_text = format_thinking_display(
+                    accumulated_thinking, accumulated_response, is_streaming=True
+                )
+
+                # Update Telegram every 400ms if text changed
+                if (current_time - last_update_time >= STREAM_UPDATE_INTERVAL
+                        and display_text != last_sent_text):
+                    current_message, last_sent_text = (
+                        await _update_telegram_message_formatted(
+                            display_text,
+                            current_message,
+                            first_message,
+                            all_sent_messages,
+                            last_sent_text,
+                        )
+                    )
+                    last_update_time = current_time
+
+            elif event.type == "tool_use":
+                # Finalize any pending text block before tool
+                if current_block_type == "thinking" and current_thinking_text:
+                    content_blocks.append({
+                        "type": "thinking",
+                        "thinking": current_thinking_text
+                    })
+                    current_thinking_text = ""
+                elif current_block_type == "text" and current_response_text:
+                    content_blocks.append({
+                        "type": "text",
+                        "text": current_response_text
+                    })
+                    current_response_text = ""
+                current_block_type = ""
+
+                # Add tool marker to response (not thinking)
+                emoji = TOOL_EMOJIS.get(event.tool_name, "🔧")
+                tool_marker = f"\n\n[{emoji} {event.tool_name}]\n\n"
+                accumulated_response += tool_marker
+
+                # Format and force update to show tool marker
+                display_text = format_thinking_display(
+                    accumulated_thinking, accumulated_response, is_streaming=True
+                )
+                current_message, last_sent_text = (
+                    await _update_telegram_message_formatted(
+                        display_text,
+                        current_message,
+                        first_message,
+                        all_sent_messages,
+                        last_sent_text,
+                    )
+                )
+                last_update_time = time.time()
+
+                logger.info("stream.unified.tool_detected",
+                            thread_id=thread_id,
+                            tool_name=event.tool_name,
+                            tool_id=event.tool_id)
+
+            elif event.type == "block_end":
+                # Finalize current block
+                if current_block_type == "thinking" and current_thinking_text:
+                    content_blocks.append({
+                        "type": "thinking",
+                        "thinking": current_thinking_text
+                    })
+                    current_thinking_text = ""
+                elif current_block_type == "text" and current_response_text:
+                    content_blocks.append({
+                        "type": "text",
+                        "text": current_response_text
+                    })
+                    current_response_text = ""
+                current_block_type = ""
+
+                # Add tool_use block to content_blocks
+                if event.tool_name and event.tool_id:
+                    content_blocks.append({
+                        "type": "tool_use",
+                        "id": event.tool_id,
+                        "name": event.tool_name,
+                        "input": event.tool_input or {}
+                    })
+
+                    # Only client-side tools need execution (have tool_input)
+                    if event.tool_input:
+                        pending_tools.append({
+                            "id": event.tool_id,
+                            "name": event.tool_name,
+                            "input": event.tool_input,
+                        })
+
+            elif event.type == "message_end":
+                stop_reason = event.stop_reason
+                # Finalize any remaining text block
+                if current_thinking_text:
+                    content_blocks.append({
+                        "type": "thinking",
+                        "thinking": current_thinking_text
+                    })
+                if current_response_text:
+                    content_blocks.append({
+                        "type": "text",
+                        "text": current_response_text
+                    })
+
+        # Final update for any remaining text (with formatting)
+        display_text = format_thinking_display(
+            accumulated_thinking, accumulated_response, is_streaming=True
+        )
+        if display_text and display_text != last_sent_text:
+            current_message, last_sent_text = (
+                await _update_telegram_message_formatted(
+                    display_text,
+                    current_message,
+                    first_message,
+                    all_sent_messages,
+                    last_sent_text,
+                )
+            )
+
+        logger.info("stream.unified.iteration_complete",
+                    thread_id=thread_id,
+                    iteration=iteration + 1,
+                    stop_reason=stop_reason,
+                    pending_tools=len(pending_tools),
+                    thinking_length=len(accumulated_thinking),
+                    response_length=len(accumulated_response))
+
+        if stop_reason == "end_turn" or stop_reason == "pause_turn":
+            # Final answer is only the response (thinking is shown separately)
+            final_answer = accumulated_response.strip()
+
+            logger.info("stream.unified.complete",
+                        thread_id=thread_id,
+                        total_iterations=iteration + 1,
+                        final_answer_length=len(final_answer),
+                        messages_to_cleanup=len(all_sent_messages) - 1,
+                        stop_reason=stop_reason,
+                        had_thinking=bool(accumulated_thinking))
+
+            return final_answer, all_sent_messages
+
+        if stop_reason == "tool_use" and pending_tools:
+            # Execute tools and continue
+            results = []
+            for tool in pending_tools:
+                tool_name = tool["name"]
+                tool_input = tool["input"]
+
+                logger.info("stream.unified.executing_tool",
+                            thread_id=thread_id,
+                            tool_name=tool_name)
+
+                tool_start_time = time.time()
+                try:
+                    result = await execute_tool(tool_name, tool_input,
+                                                first_message.bot, session)
+                    tool_duration = time.time() - tool_start_time
+
+                    # Process generated files (same as before)
+                    if "_file_contents" in result:
+                        file_contents = result["_file_contents"]
+                        await _process_generated_files(
+                            result, first_message, thread_id, session,
+                            user_file_repo, chat_id, user_id,
+                            telegram_thread_id)
+                        # Add system message markers for delivered files
+                        for file_info in file_contents:
+                            filename = file_info.get("filename", "file")
+                            accumulated_response += (
+                                f"\n[📤 Отправлен файл: {filename}]\n"
+                            )
+
+                    # Add system messages for completed tools
+                    # (useful for user to see what happened)
+                    tool_system_msg = _format_tool_system_message(
+                        tool_name, tool_input, result
+                    )
+                    if tool_system_msg:
+                        accumulated_response += tool_system_msg
+
+                    results.append(result)
+
+                    # Charge user for tool cost
+                    if "cost_usd" in result:
+                        await _charge_for_tool(session, user_id, tool_name,
+                                               result, first_message.message_id)
+
+                    logger.info("stream.unified.tool_success",
+                                thread_id=thread_id,
+                                tool_name=tool_name,
+                                duration_ms=round(tool_duration * 1000))
+
+                    record_tool_call(tool_name=tool_name, success=True,
+                                     duration=tool_duration)
+                    if "cost_usd" in result:
+                        record_cost(service=tool_name,
+                                    amount_usd=float(result["cost_usd"]))
+
+                except Exception as e:  # pylint: disable=broad-exception-caught
+                    tool_duration = time.time() - tool_start_time
+                    error_msg = f"Tool execution failed: {str(e)}"
+                    results.append({"error": error_msg})
+
+                    logger.error("stream.unified.tool_failed",
+                                 thread_id=thread_id,
+                                 tool_name=tool_name,
+                                 error=str(e),
+                                 exc_info=True)
+
+                    record_tool_call(tool_name=tool_name, success=False,
+                                     duration=tool_duration)
+                    record_error(error_type="tool_execution", handler=tool_name)
+
+            # Format tool results
+            tool_uses = [{"id": t["id"], "name": t["name"]} for t in pending_tools]
+            tool_results = format_tool_results(tool_uses, results)
+
+            # Add to conversation using final_message from provider
+            # CRITICAL: Use provider's last_message which has thinking blocks
+            # with signatures (required by API), not manually constructed blocks
+            final_message = claude_provider.get_last_message()
+            if final_message and final_message.content:
+                serialized_content = []
+                for block in final_message.content:
+                    if hasattr(block, 'model_dump'):
+                        serialized_content.append(block.model_dump())
+                    else:
+                        serialized_content.append(block)
+                conversation.append({
+                    "role": "assistant",
+                    "content": serialized_content
+                })
+            conversation.append({"role": "user", "content": tool_results})
+
+            logger.info("stream.unified.tool_results_added",
+                        thread_id=thread_id,
+                        tool_count=len(pending_tools))
+
+        else:
+            # Unexpected stop reason
+            logger.warning("stream.unified.unexpected_stop",
+                           thread_id=thread_id,
+                           stop_reason=stop_reason)
+
+            final_answer = accumulated_response.strip()
+            if not final_answer:
+                final_answer = f"⚠️ Unexpected stop reason: {stop_reason}"
+
+            return final_answer, all_sent_messages
+
+    # Max iterations exceeded
+    logger.error("stream.unified.max_iterations",
+                 thread_id=thread_id,
+                 max_iterations=max_iterations)
+
+    error_msg = (
+        f"⚠️ Tool loop exceeded maximum iterations ({max_iterations}). "
+        "The task might be too complex.")
+    return error_msg, all_sent_messages
+
+
+async def _update_telegram_message_formatted(
+    formatted_html: str,
+    current_message: types.Message | None,
+    first_message: types.Message,
+    all_messages: list[types.Message],
+    last_sent_text: str,
+) -> tuple[types.Message | None, str]:
+    """Update or send Telegram message with pre-formatted HTML.
+
+    Similar to _update_telegram_message but accepts already-formatted HTML
+    (e.g., with thinking in expandable blockquote).
+
+    Has robust error handling: if HTML fails, falls back to plain text.
+
+    Args:
+        formatted_html: Pre-formatted HTML text ready for Telegram.
+        current_message: Current message being edited (or None).
+        first_message: Original user message (for reply).
+        all_messages: List to track all sent messages.
+        last_sent_text: Previously sent text (to avoid duplicate edits).
+
+    Returns:
+        Tuple of (current_message, new_last_sent_text).
+    """
+    # Skip if nothing changed
+    if formatted_html == last_sent_text:
+        return current_message, last_sent_text
+
+    # For formatted HTML, check length directly
+    # (splitting is complex with HTML tags, so just truncate for now)
+    safe_text = formatted_html
+    if len(safe_text) > 3900:
+        # Truncate with ellipsis - simple approach for streaming
+        safe_text = safe_text[:3900] + "..."
+
+    # Try HTML first, fall back to plain text if it fails
+    for parse_mode, text_to_send in [("HTML", safe_text), (None, _strip_html(safe_text))]:
+        try:
+            if current_message:
+                await current_message.edit_text(text_to_send, parse_mode=parse_mode)
+            else:
+                current_message = await first_message.answer(
+                    text_to_send, parse_mode=parse_mode
+                )
+                all_messages.append(current_message)
+            return current_message, formatted_html
+        except Exception:  # pylint: disable=broad-exception-caught
+            # If HTML fails, try plain text in next iteration
+            continue
+
+    # Both attempts failed, return unchanged
+    return current_message, last_sent_text
+
+
+def _strip_html(text: str) -> str:
+    """Remove HTML tags from text, keeping content.
+
+    Simple regex-based stripping for fallback when HTML parsing fails.
+
+    Args:
+        text: Text potentially containing HTML tags.
+
+    Returns:
+        Plain text without HTML tags.
+    """
+    import re
+    # Remove HTML tags but keep content
+    clean = re.sub(r'<[^>]+>', '', text)
+    # Unescape common HTML entities
+    clean = clean.replace('&lt;', '<').replace('&gt;', '>').replace('&amp;', '&')
+    return clean
+
+
+def _format_tool_system_message(
+    tool_name: str,
+    tool_input: dict,
+    result: dict,
+) -> str:
+    """Format system message for completed tool execution.
+
+    Provides user-visible feedback about what the tool did.
+    Only shows useful information, avoids noise.
+
+    Args:
+        tool_name: Name of the executed tool.
+        tool_input: Tool input parameters.
+        result: Tool execution result.
+
+    Returns:
+        Formatted system message string, or empty string if not applicable.
+    """
+    if tool_name == "execute_python":
+        # Show code execution result
+        if result.get("success") == "true":
+            stdout = result.get("stdout", "").strip()
+            if stdout:
+                # Truncate long output
+                preview = stdout[:100] + "..." if len(stdout) > 100 else stdout
+                return f"\n[✅ Код выполнен: {preview}]\n"
+            return "\n[✅ Код выполнен успешно]\n"
+        else:
+            error = result.get("error", "unknown error")
+            # Truncate long error
+            preview = error[:80] + "..." if len(error) > 80 else error
+            return f"\n[❌ Ошибка выполнения: {preview}]\n"
+
+    elif tool_name == "transcribe_audio":
+        # Show transcription info
+        duration = result.get("duration", 0)
+        language = result.get("language", "")
+        lang_info = f", {language}" if language else ""
+        return f"\n[🎤 Транскрибировано: {duration:.0f}s{lang_info}]\n"
+
+    elif tool_name == "generate_image":
+        # Show image generation info
+        params = result.get("parameters_used", {})
+        resolution = params.get("output_resolution", "2K")
+        aspect = params.get("aspect_ratio", "")
+        aspect_info = f", {aspect}" if aspect else ""
+        return f"\n[🎨 Изображение создано ({resolution}{aspect_info})]\n"
+
+    # For analyze_image, analyze_pdf, web_search, web_fetch:
+    # These are handled differently:
+    # - analyze_* are internal requests (no user-visible action)
+    # - web_search shows results in Claude's response
+    # - web_fetch content is used by Claude internally
+    return ""
+
+
+async def _update_telegram_message(
+    text: str,
+    current_message: types.Message | None,
+    first_message: types.Message,
+    all_messages: list[types.Message],
+    last_sent_text: str,
+) -> tuple[types.Message | None, str]:
+    """Update or send Telegram message with accumulated text.
+
+    Handles message splitting when text exceeds 4000 chars.
+    Skips update if text hasn't changed.
+
+    Args:
+        text: Accumulated text to display.
+        current_message: Current message being edited (or None).
+        first_message: Original user message (for reply).
+        all_messages: List to track all sent messages.
+        last_sent_text: Previously sent text (to avoid duplicate edits).
+
+    Returns:
+        Tuple of (current_message, new_last_sent_text).
+    """
+    # Skip if nothing changed
+    if text == last_sent_text:
+        return current_message, last_sent_text
+
+    # Escape HTML for Telegram
+    safe_text = safe_html(text)
+
+    # Check if we need to split (Telegram limit ~4096, use 3800 for safety)
+    if len(safe_text) > 3800:
+        # Find split point in ORIGINAL text to avoid position mismatch
+        # Estimate position (may need adjustment due to HTML escaping)
+        estimated_pos = min(3500, len(text))  # Conservative estimate
+
+        # Try paragraph boundary first (within last 1000 chars)
+        para_pos = text.rfind('\n\n', 0, estimated_pos)
+        if para_pos > estimated_pos - 1000 and para_pos > 0:
+            split_pos = para_pos + 1
+        # Fall back to single newline (within last 500 chars)
+        elif (newline_pos := text.rfind('\n', 0, estimated_pos)) > estimated_pos - 500:
+            if newline_pos > 0:
+                split_pos = newline_pos
+            else:
+                split_pos = estimated_pos
+        else:
+            split_pos = estimated_pos
+
+        # Adjust if escaped version is still too long
+        while len(safe_html(text[:split_pos])) > 3800 and split_pos > 100:
+            newline_pos = text.rfind('\n', 0, split_pos - 1)
+            if newline_pos > 0:
+                split_pos = newline_pos
+            else:
+                split_pos = int(split_pos * 0.9)
+
+        # Split text
+        first_part = text[:split_pos]
+        remaining = text[split_pos:].lstrip()  # Remove leading whitespace
+
+        if current_message:
+            try:
+                await current_message.edit_text(safe_html(first_part))
+            except Exception:  # pylint: disable=broad-exception-caught
+                pass
+
+        # Start new message with remaining text
+        try:
+            new_msg = await first_message.answer(safe_html(remaining))
+            all_messages.append(new_msg)
+            return new_msg, text
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.warning("stream.message_send_failed", error=str(e))
+            return current_message, last_sent_text
+
+    else:
+        # Normal update - no splitting needed
+        if current_message:
+            try:
+                await current_message.edit_text(safe_text)
+                return current_message, text
+            except Exception:  # pylint: disable=broad-exception-caught
+                # Edit failed, but message exists - content might be same
+                return current_message, last_sent_text
+        else:
+            # First message
+            try:
+                new_msg = await first_message.answer(safe_text)
+                all_messages.append(new_msg)
+                return new_msg, text
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                logger.warning("stream.message_send_failed", error=str(e))
+                return None, last_sent_text
+
+
+async def _process_generated_files(
+    result: dict,
+    first_message: types.Message,
+    thread_id: int,
+    session: AsyncSession,
+    user_file_repo: UserFileRepository,
+    chat_id: int,
+    user_id: int,
+    telegram_thread_id: int | None,
+) -> None:
+    """Process and deliver files generated by tools.
+
+    Extracted from _handle_with_tools for reuse.
+    """
+    from datetime import datetime, timedelta, timezone
+    from config import FILES_API_TTL_HOURS
+    from core.claude.files_api import upload_to_files_api
+    from db.models.user_file import FileSource, FileType
+
+    file_contents = result.pop("_file_contents")
+    delivered_files = []
+
+    for file_data in file_contents:
+        try:
+            filename = file_data["filename"]
+            file_bytes = file_data["content"]
+            mime_type = file_data["mime_type"]
+
+            # Upload to Files API
+            claude_file_id = await upload_to_files_api(
+                file_bytes=file_bytes,
+                filename=filename,
+                mime_type=mime_type)
+
+            # Determine file type
+            if mime_type.startswith("image/"):
+                file_type = FileType.IMAGE
+            elif mime_type == "application/pdf":
+                file_type = FileType.PDF
+            else:
+                file_type = FileType.DOCUMENT
+
+            # Send to Telegram
+            telegram_file_id = None
+            telegram_file_unique_id = None
+
+            if file_type == FileType.IMAGE and mime_type in [
+                    "image/jpeg", "image/png", "image/gif", "image/webp"
+            ]:
+                sent_msg = await first_message.bot.send_photo(
+                    chat_id=chat_id,
+                    photo=types.BufferedInputFile(file_bytes, filename=filename),
+                    message_thread_id=telegram_thread_id)
+                if sent_msg.photo:
+                    largest = max(sent_msg.photo, key=lambda p: p.file_size or 0)
+                    telegram_file_id = largest.file_id
+                    telegram_file_unique_id = largest.file_unique_id
+            else:
+                sent_msg = await first_message.bot.send_document(
+                    chat_id=chat_id,
+                    document=types.BufferedInputFile(file_bytes, filename=filename),
+                    message_thread_id=telegram_thread_id)
+                if sent_msg.document:
+                    telegram_file_id = sent_msg.document.file_id
+                    telegram_file_unique_id = sent_msg.document.file_unique_id
+
+            # Save to database
+            await user_file_repo.create(
+                message_id=first_message.message_id,
+                telegram_file_id=telegram_file_id,
+                telegram_file_unique_id=telegram_file_unique_id,
+                claude_file_id=claude_file_id,
+                filename=filename,
+                file_type=file_type,
+                mime_type=mime_type,
+                file_size=len(file_bytes),
+                source=FileSource.ASSISTANT,
+                expires_at=datetime.now(timezone.utc) +
+                           timedelta(hours=FILES_API_TTL_HOURS),
+                file_metadata={},
+            )
+
+            delivered_files.append(filename)
+
+            # Dashboard tracking event (must match Grafana query)
+            logger.info("files.bot_file_sent",
+                        user_id=user_id,
+                        file_type=file_type.value,
+                        filename=filename)
+
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.error("stream.file_delivery_failed",
+                         filename=file_data.get("filename"),
+                         error=str(e),
+                         exc_info=True)
+
+    if delivered_files:
+        result["files_delivered"] = (
+            f"Successfully sent {len(delivered_files)} file(s): "
+            f"{', '.join(delivered_files)}")
+
+
+async def _charge_for_tool(
+    session: AsyncSession,
+    user_id: int,
+    tool_name: str,
+    result: dict,
+    message_id: int,
+) -> None:
+    """Charge user for tool execution cost."""
+    from decimal import Decimal
+    from db.repositories.balance_operation_repository import BalanceOperationRepository
+    from db.repositories.user_repository import UserRepository
+    from services.balance_service import BalanceService
+
+    try:
+        tool_cost_usd = Decimal(str(result["cost_usd"]))
+        user_repo = UserRepository(session)
+        balance_op_repo = BalanceOperationRepository(session)
+        balance_service = BalanceService(session, user_repo, balance_op_repo)
+
+        await balance_service.charge_user(
+            user_id=user_id,
+            amount=tool_cost_usd,
+            description=f"Tool: {tool_name}, cost ${result['cost_usd']}",
+            related_message_id=message_id,
+        )
+        await session.commit()
+
+        logger.info("tools.loop.user_charged_for_tool",
+                    user_id=user_id,
+                    tool_name=tool_name,
+                    cost_usd=float(tool_cost_usd))
+
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        logger.error("stream.tool_charge_failed",
+                     user_id=user_id,
+                     tool_name=tool_name,
+                     error=str(e),
+                     exc_info=True)
 
 
 # pylint: disable=too-many-locals,too-many-branches,too-many-statements
@@ -780,141 +1618,65 @@ async def _process_message_batch(
             # Start timing for response metrics
             request_start_time = time.perf_counter()
 
-            # 8. Handle request (Phase 1.5: always with tools)
-            # Tools are always passed for:
-            # - Prompt caching stability (tools = part of cached prompt)
-            # - Model awareness (can suggest tools proactively)
-            # - Server-side tools work without files (web_search, web_fetch)
-            if request.tools:
-                # Tool loop (non-streaming until final answer)
-                logger.info("claude_handler.using_tools",
-                            thread_id=thread_id,
-                            tool_count=len(request.tools))
+            # 8. Unified streaming with thinking/text/tools
+            # All requests go through stream_events for real-time updates
+            logger.info("claude_handler.unified_streaming",
+                        thread_id=thread_id,
+                        tool_count=len(request.tools) if request.tools else 0)
 
-                try:
-                    response_text = await _handle_with_tools(
-                        request, first_message, thread_id, session,
-                        user_file_repo, thread.chat_id, thread.user_id,
-                        thread.thread_id)
+            try:
+                response_text, all_messages = await _stream_with_unified_events(
+                    request=request,
+                    first_message=first_message,
+                    thread_id=thread_id,
+                    session=session,
+                    user_file_repo=user_file_repo,
+                    chat_id=thread.chat_id,
+                    user_id=thread.user_id,
+                    telegram_thread_id=thread.thread_id,
+                )
 
-                    # Send final response (no streaming, already processed)
-                    # Escape HTML to prevent Telegram parse errors with <, >, & symbols
-                    # IMPORTANT: Escape BEFORE length check (escape increases length)
-                    safe_text = html_lib.escape(response_text)
-
-                    # Split if too long (Telegram limit: 4096 chars)
-                    if len(safe_text) > 4000:
-                        # Send in chunks
-                        for i in range(0, len(safe_text), 4000):
-                            chunk = safe_text[i:i + 4000]
-                            bot_message = await first_message.answer(chunk)
-                    else:
-                        bot_message = await first_message.answer(safe_text)
-
-                    logger.info("claude_handler.tool_response_sent",
-                                thread_id=thread_id,
-                                response_length=len(response_text))
-
-                except Exception as e:  # pylint: disable=broad-exception-caught
-                    logger.error("claude_handler.tool_loop_failed",
-                                 thread_id=thread_id,
-                                 error=str(e),
-                                 exc_info=True)
-                    bot_message = await first_message.answer(
-                        "⚠️ Tool execution failed. Please try again.")
-                    return
-
-            else:
-                # Direct streaming (no tools)
-                logger.info("claude_handler.streaming_response",
-                            thread_id=thread_id)
-
-                response_text = ""
-                last_sent_text = ""
-                bot_message = None
-                last_edit_time = 0.0
-                edit_buffer_ms = 0.5
-
-                async for chunk in claude_provider.stream_message(request):
-                    response_text += chunk
-                    current_time = time.time()
-
-                    time_since_last_edit = current_time - last_edit_time
-                    should_update = (time_since_last_edit >= edit_buffer_ms or
-                                     bot_message is None)
-
-                    # Check if message needs to be split (use smaller limit due to escape)
-                    # Escape can increase length up to 5x for special chars
-                    if len(response_text) > 3500:
-                        text_to_send = response_text[:3500]
-                        safe_text = safe_html(text_to_send)
-
-                        if bot_message is None:
-                            bot_message = await first_message.answer(safe_text)
-                            last_sent_text = text_to_send
-                            last_edit_time = current_time
-                        elif text_to_send != last_sent_text:
-                            try:
-                                await bot_message.edit_text(safe_text)
-                                last_sent_text = text_to_send
-                                last_edit_time = current_time
-                            except Exception as e:  # pylint: disable=broad-exception-caught
-                                logger.warning("claude_handler.edit_failed",
-                                               error=str(e))
-
-                        # Start new message with remaining text
-                        response_text = response_text[3500:]
-                        bot_message = None
-                        last_sent_text = ""
-                        last_edit_time = 0.0
-                    elif should_update:
-                        safe_text = safe_html(response_text)
-                        if bot_message is None:
-                            bot_message = await first_message.answer(safe_text)
-                            last_sent_text = response_text
-                            last_edit_time = current_time
-                        elif response_text != last_sent_text:
-                            try:
-                                await bot_message.edit_text(safe_text)
-                                last_sent_text = response_text
-                                last_edit_time = current_time
-                            except Exception as e:  # pylint: disable=broad-exception-caught
-                                logger.warning("claude_handler.edit_failed",
-                                               error=str(e))
-
-                # Final update if there's remaining text
-                if response_text:
-                    safe_text = safe_html(response_text)
-                    if bot_message is None:
-                        bot_message = await first_message.answer(safe_text)
-                    elif response_text != last_sent_text:
+                # Cleanup: delete ALL thinking/tool messages, send fresh final answer
+                if all_messages:
+                    for msg in all_messages:
                         try:
-                            await bot_message.edit_text(safe_text)
-                        except Exception as e:  # pylint: disable=broad-exception-caught
-                            logger.warning("claude_handler.final_edit_failed",
-                                           error=str(e))
-                            # Try sending as plain text (no HTML parsing)
-                            try:
-                                bot_message = await first_message.answer(
-                                    response_text, parse_mode=None)
-                                logger.info("claude_handler.sent_as_plain_text",
-                                            thread_id=thread_id)
-                            except Exception as plain_error:  # pylint: disable=broad-exception-caught
-                                logger.error("claude_handler.plain_text_failed",
-                                             thread_id=thread_id,
-                                             error=str(plain_error),
-                                             exc_info=True)
-                                raise
-                else:
-                    # Handle empty response from Claude
+                            await msg.delete()
+                        except Exception as del_err:  # pylint: disable=broad-exception-caught
+                            logger.warning("claude_handler.cleanup_delete_failed",
+                                           message_id=msg.message_id,
+                                           error=str(del_err))
+
+                    logger.info("claude_handler.cleanup_complete",
+                                thread_id=thread_id,
+                                deleted_count=len(all_messages))
+
+                # Send final answer as new message(s)
+                bot_message = None
+                if response_text:
+                    safe_final = safe_html(response_text)
+
+                    # Split using smart boundaries (paragraph > newline > hard split)
+                    chunks = split_text_smart(safe_final, max_length=3800)
+                    for chunk in chunks:
+                        bot_message = await first_message.answer(chunk)
+
+                if not response_text:
                     logger.warning("claude_handler.empty_response",
-                                   thread_id=thread_id,
-                                   batch_size=len(messages))
+                                   thread_id=thread_id)
                     bot_message = await first_message.answer(
                         "⚠️ Claude returned an empty response. "
                         "Please try rephrasing your message.")
 
-            # Check bot_message exists (for both tools and streaming paths)
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                logger.error("claude_handler.streaming_failed",
+                             thread_id=thread_id,
+                             error=str(e),
+                             exc_info=True)
+                bot_message = await first_message.answer(
+                    "⚠️ An error occurred. Please try again.")
+                return
+
+            # Check bot_message exists
             if not bot_message:
                 logger.error("claude_handler.no_bot_message",
                              thread_id=thread_id)
@@ -943,6 +1705,11 @@ async def _process_message_batch(
                     web_search_requests=usage.web_search_requests,
                     cost_usd=web_search_cost,
                 )
+                # Record each web_search as a tool call for metrics
+                for _ in range(usage.web_search_requests):
+                    record_tool_call(tool_name="web_search", success=True,
+                                     duration=0.0)
+                record_cost(service="web_search", amount_usd=web_search_cost)
 
             logger.info("claude_handler.response_complete",
                         thread_id=thread_id,
@@ -1086,6 +1853,7 @@ async def _process_message_batch(
                 logger.info(
                     "claude_handler.user_charged",
                     user_id=user.id,
+                    model_id=user.model_id,
                     cost_usd=round(cost_usd, 6),
                     balance_after=float(balance_after),
                     thread_id=thread_id,

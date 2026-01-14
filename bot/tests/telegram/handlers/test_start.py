@@ -193,12 +193,18 @@ async def test_start_handler_logging(mock_message, mock_session):
 
         await start_handler(mock_message, mock_session)
 
-        # Verify logging
-        mock_logger.info.assert_called_once_with(
+        # Verify logging (2 calls: start_command + user.new_user_joined)
+        assert mock_logger.info.call_count == 2
+        mock_logger.info.assert_any_call(
             "start_command",
             user_id=mock_message.from_user.id,
             username=mock_message.from_user.username,
             was_created=True,
+        )
+        mock_logger.info.assert_any_call(
+            "user.new_user_joined",
+            user_id=mock_message.from_user.id,
+            username=mock_message.from_user.username,
         )
 
 

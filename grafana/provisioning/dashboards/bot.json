@@ -111,9 +111,21 @@
         },
         "overrides": [
           {
-            "matcher": {"id": "byName", "options": "Claude API"},
+            "matcher": {"id": "byName", "options": "Claude Opus 4.5"},
             "properties": [
-              {"id": "color", "value": {"fixedColor": "#D97706", "mode": "fixed"}}
+              {"id": "color", "value": {"fixedColor": "#FDBA74", "mode": "fixed"}}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Claude Sonnet 4.5"},
+            "properties": [
+              {"id": "color", "value": {"fixedColor": "#F97316", "mode": "fixed"}}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Claude Haiku 4.5"},
+            "properties": [
+              {"id": "color", "value": {"fixedColor": "#C2410C", "mode": "fixed"}}
             ]
           },
           {
@@ -164,9 +176,21 @@
       "targets": [
         {
           "datasource": {"type": "loki", "uid": "loki"},
-          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.user_charged\"  | unwrap cost_usd [$__interval])) or vector(0)",
-          "legendFormat": "Claude API",
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.user_charged\" | model_id=\"claude-opus-4-5-20251101\" | unwrap cost_usd [$__interval])) or vector(0)",
+          "legendFormat": "Claude Opus 4.5",
           "refId": "A"
+        },
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.user_charged\" | model_id=\"claude-sonnet-4-5-20250929\" | unwrap cost_usd [$__interval])) or vector(0)",
+          "legendFormat": "Claude Sonnet 4.5",
+          "refId": "A2"
+        },
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.user_charged\" | model_id=\"claude-haiku-4-5-20251001\" | unwrap cost_usd [$__interval])) or vector(0)",
+          "legendFormat": "Claude Haiku 4.5",
+          "refId": "A3"
         },
         {
           "datasource": {"type": "loki", "uid": "loki"},

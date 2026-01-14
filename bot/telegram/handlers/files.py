@@ -411,6 +411,11 @@ async def handle_photo(message: types.Message, session: AsyncSession) -> None:
                     claude_file_id=claude_file_id,
                     has_caption=bool(message.caption))
 
+        # Dashboard tracking event
+        logger.info("files.user_file_received",
+                    user_id=user_id,
+                    file_type="image")
+
         # Don't send confirmation - let claude handler process the message
         # (caption will be processed automatically if present)
 
@@ -596,6 +601,11 @@ async def handle_document(message: types.Message,
                     filename=document.file_name,
                     claude_file_id=claude_file_id,
                     has_caption=bool(message.caption))
+
+        # Dashboard tracking event
+        logger.info("files.user_file_received",
+                    user_id=user_id,
+                    file_type=file_type.value)
 
         # Don't send confirmation - let claude handler process the message
         # (caption will be processed automatically if present)
