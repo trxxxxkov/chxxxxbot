@@ -406,6 +406,11 @@ class ClaudeProvider(LLMProvider):
                             estimated_tokens=estimated_tokens,
                             required_tokens=1024)
 
+        # Reset state before new request to prevent stale data on errors
+        self.last_message = None
+        self.last_usage = None
+        self.last_thinking = None
+
         try:
             # Stream response (Phase 1.4.3: handle thinking_delta events)
             total_chunks = 0
@@ -767,6 +772,12 @@ class ClaudeProvider(LLMProvider):
         accumulated_json = ""
         thinking_text = ""
         response_text = ""
+
+        # Reset state before new request to prevent stale data on errors
+        # This prevents tool_use_id mismatch if previous request failed
+        self.last_message = None
+        self.last_usage = None
+        self.last_thinking = None
 
         try:
             async with self.client.messages.stream(**api_params) as stream:

@@ -601,7 +601,15 @@ async def _stream_with_unified_events(
                     "role": "assistant",
                     "content": serialized_content
                 })
-            conversation.append({"role": "user", "content": tool_results})
+                # Only add tool_results if we have the assistant message
+                # (tool_results reference tool_use blocks in assistant message)
+                conversation.append({"role": "user", "content": tool_results})
+            else:
+                # No assistant message - can't continue tool loop safely
+                logger.error("stream.unified.no_assistant_message",
+                             thread_id=thread_id,
+                             tool_count=len(pending_tools))
+                return "⚠️ Tool execution error: missing assistant context", all_sent_messages
 
             logger.info("stream.unified.tool_results_added",
                         thread_id=thread_id,
