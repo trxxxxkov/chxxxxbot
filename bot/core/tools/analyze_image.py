@@ -179,3 +179,16 @@ Token cost: ~1600 tokens per 1092x1092px image. Larger images consume proportion
         "required": ["claude_file_id", "question"]
     }
 }
+
+
+# Unified tool configuration (no format_result - internal analysis tool)
+from core.tools.base import ToolConfig  # pylint: disable=wrong-import-position
+
+TOOL_CONFIG = ToolConfig(
+    name="analyze_image",
+    definition=ANALYZE_IMAGE_TOOL,
+    executor=analyze_image,
+    emoji="🖼️",
+    needs_bot_session=False,
+    format_result=None,  # No system message for analysis tools
+)

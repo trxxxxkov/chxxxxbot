@@ -178,7 +178,7 @@ class TestExecuteTool:
         """Test that server-side tool raises error (should not be called)."""
         # Server-side tools should never reach execute_tool
         # (they're executed by Anthropic automatically)
-        with pytest.raises(ValueError, match="not found"):
+        with pytest.raises(ValueError, match="server-side"):
             await execute_tool(tool_name="web_search",
                                tool_input={"query": "test"},
                                bot=mock_bot,

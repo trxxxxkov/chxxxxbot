@@ -224,3 +224,36 @@ async def generate_image(  # pylint: disable=unused-argument,too-many-locals
 
         # Re-raise other exceptions
         raise
+
+
+def format_generate_image_result(
+    tool_input: Dict[str, Any],
+    result: Dict[str, Any],
+) -> str:
+    """Format generate_image result for user display.
+
+    Args:
+        tool_input: The input parameters (prompt, aspect_ratio, image_size).
+        result: The result dictionary with success, parameters_used, etc.
+
+    Returns:
+        Formatted system message string.
+    """
+    params = result.get("parameters_used", {})
+    resolution = params.get("image_size", "2K")
+    aspect = params.get("aspect_ratio", "")
+    aspect_info = f", {aspect}" if aspect else ""
+    return f"\n[🎨 Изображение создано ({resolution}{aspect_info})]\n"
+
+
+# Unified tool configuration
+from core.tools.base import ToolConfig  # pylint: disable=wrong-import-position
+
+TOOL_CONFIG = ToolConfig(
+    name="generate_image",
+    definition=GENERATE_IMAGE_TOOL,
+    executor=generate_image,
+    emoji="🎨",
+    needs_bot_session=True,
+    format_result=format_generate_image_result,
+)

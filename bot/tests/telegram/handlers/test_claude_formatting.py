@@ -3,14 +3,14 @@
 Tests for:
 - format_thinking_display(): Thinking block formatting
 - _strip_html(): HTML fallback stripping
-- _format_tool_system_message(): Tool execution system messages
+- get_tool_system_message(): Tool execution system messages (from registry)
 - _update_telegram_message_formatted(): Message update with fallback
 """
 
 import pytest
 from telegram.handlers.claude import format_thinking_display
 from telegram.handlers.claude import _strip_html
-from telegram.handlers.claude import _format_tool_system_message
+from core.tools.registry import get_tool_system_message
 
 
 class TestFormatThinkingDisplay:
@@ -151,12 +151,12 @@ class TestStripHtml:
         assert result == "plain text here"
 
 
-class TestFormatToolSystemMessage:
-    """Tests for _format_tool_system_message function."""
+class TestGetToolSystemMessage:
+    """Tests for get_tool_system_message function."""
 
     def test_execute_python_success_with_output(self):
         """Test execute_python success with stdout output."""
-        result = _format_tool_system_message(
+        result = get_tool_system_message(
             tool_name="execute_python",
             tool_input={"code": "print('hello')"},
             result={"success": "true", "stdout": "hello world", "stderr": ""}
@@ -167,7 +167,7 @@ class TestFormatToolSystemMessage:
 
     def test_execute_python_success_no_output(self):
         """Test execute_python success without stdout output."""
-        result = _format_tool_system_message(
+        result = get_tool_system_message(
             tool_name="execute_python",
             tool_input={"code": "x = 1"},
             result={"success": "true", "stdout": "", "stderr": ""}
@@ -178,7 +178,7 @@ class TestFormatToolSystemMessage:
     def test_execute_python_success_long_output_truncated(self):
         """Test execute_python truncates long output."""
         long_output = "x" * 200
-        result = _format_tool_system_message(
+        result = get_tool_system_message(
             tool_name="execute_python",
             tool_input={"code": "print('x' * 200)"},
             result={"success": "true", "stdout": long_output, "stderr": ""}
@@ -188,7 +188,7 @@ class TestFormatToolSystemMessage:
 
     def test_execute_python_failure(self):
         """Test execute_python failure message."""
-        result = _format_tool_system_message(
+        result = get_tool_system_message(
             tool_name="execute_python",
             tool_input={"code": "raise Error"},
             result={"success": "false", "error": "NameError: name 'Error' not defined"}
@@ -199,7 +199,7 @@ class TestFormatToolSystemMessage:
 
     def test_transcribe_audio(self):
         """Test transcribe_audio system message."""
-        result = _format_tool_system_message(
+        result = get_tool_system_message(
             tool_name="transcribe_audio",
             tool_input={"file_id": "abc123"},
             result={"transcript": "Hello", "duration": 15.5, "language": "en"}
@@ -211,7 +211,7 @@ class TestFormatToolSystemMessage:
 
     def test_transcribe_audio_no_language(self):
         """Test transcribe_audio without detected language."""
-        result = _format_tool_system_message(
+        result = get_tool_system_message(
             tool_name="transcribe_audio",
             tool_input={"file_id": "abc123"},
             result={"transcript": "Hello", "duration": 10.0, "language": ""}
@@ -223,12 +223,12 @@ class TestFormatToolSystemMessage:
 
     def test_generate_image(self):
         """Test generate_image system message."""
-        result = _format_tool_system_message(
+        result = get_tool_system_message(
             tool_name="generate_image",
             tool_input={"prompt": "a cat"},
             result={
                 "success": "true",
-                "parameters_used": {"output_resolution": "4K", "aspect_ratio": "16:9"}
+                "parameters_used": {"image_size": "4K", "aspect_ratio": "16:9"}
             }
         )
         assert "🎨" in result
@@ -238,7 +238,7 @@ class TestFormatToolSystemMessage:
 
     def test_generate_image_default_params(self):
         """Test generate_image with default parameters."""
-        result = _format_tool_system_message(
+        result = get_tool_system_message(
             tool_name="generate_image",
             tool_input={"prompt": "a dog"},
             result={"success": "true", "parameters_used": {}}
@@ -248,7 +248,7 @@ class TestFormatToolSystemMessage:
 
     def test_analyze_image_no_message(self):
         """Test analyze_image returns empty string (internal tool)."""
-        result = _format_tool_system_message(
+        result = get_tool_system_message(
             tool_name="analyze_image",
             tool_input={"claude_file_id": "file_123"},
             result={"analysis": "This is a cat."}
@@ -257,7 +257,7 @@ class TestFormatToolSystemMessage:
 
     def test_analyze_pdf_no_message(self):
         """Test analyze_pdf returns empty string (internal tool)."""
-        result = _format_tool_system_message(
+        result = get_tool_system_message(
             tool_name="analyze_pdf",
             tool_input={"claude_file_id": "file_456"},
             result={"analysis": "Document content."}
@@ -266,7 +266,7 @@ class TestFormatToolSystemMessage:
 
     def test_web_search_no_message(self):
         """Test web_search returns empty string (server-side tool)."""
-        result = _format_tool_system_message(
+        result = get_tool_system_message(
             tool_name="web_search",
             tool_input={"query": "weather today"},
             result={}
@@ -275,7 +275,7 @@ class TestFormatToolSystemMessage:
 
     def test_unknown_tool_no_message(self):
         """Test unknown tool returns empty string."""
-        result = _format_tool_system_message(
+        result = get_tool_system_message(
             tool_name="unknown_tool",
             tool_input={},
             result={}

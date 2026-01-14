@@ -9,7 +9,10 @@ NO __init__.py - use direct import: from telegram.handlers.claude import router
 """
 
 import html as html_lib
+import re
 import time
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from typing import Optional, TYPE_CHECKING
 
 from aiogram import F
@@ -21,8 +24,15 @@ if TYPE_CHECKING:
 
 import config
 from config import CLAUDE_TOKEN_BUFFER_PERCENT
+from config import FILES_API_TTL_HOURS
 from config import get_model
 from config import GLOBAL_SYSTEM_PROMPT
+from config import MESSAGE_SPLIT_LENGTH
+from config import MESSAGE_TRUNCATE_LENGTH
+from config import STREAM_UPDATE_INTERVAL
+from config import TEXT_SPLIT_LINE_WINDOW
+from config import TEXT_SPLIT_PARA_WINDOW
+from config import TOOL_LOOP_MAX_ITERATIONS
 from core.claude.client import ClaudeProvider
 from core.claude.context import ContextManager
 from core.exceptions import APIConnectionError
@@ -39,14 +49,20 @@ from core.tools.helpers import format_files_section
 from core.tools.helpers import format_tool_results
 from core.tools.helpers import get_available_files
 from core.tools.registry import execute_tool
-from core.tools.registry import TOOL_DEFINITIONS
+from core.tools.registry import get_tool_definitions
+from core.tools.registry import get_tool_emoji
+from core.tools.registry import get_tool_system_message
+from core.claude.files_api import upload_to_files_api
 from db.engine import get_session
 from db.models.message import MessageRole
+from db.models.user_file import FileSource, FileType
+from db.repositories.balance_operation_repository import BalanceOperationRepository
 from db.repositories.chat_repository import ChatRepository
 from db.repositories.message_repository import MessageRepository
 from db.repositories.thread_repository import ThreadRepository
 from db.repositories.user_file_repository import UserFileRepository
 from db.repositories.user_repository import UserRepository
+from services.balance_service import BalanceService
 from sqlalchemy.ext.asyncio import AsyncSession
 from telegram.handlers.files import process_file_upload
 from utils.structured_logging import get_logger
@@ -68,21 +84,6 @@ logger = get_logger(__name__)
 
 # Create router with name
 router = Router(name="claude")
-
-# Tool emoji mapping for streaming display
-TOOL_EMOJIS = {
-    "web_search": "🔍",
-    "web_fetch": "🌐",
-    "analyze_image": "👁️",
-    "analyze_pdf": "📄",
-    "execute_python": "🐍",
-    "transcribe_audio": "🎤",
-    "generate_image": "🎨",
-}
-
-# Streaming update interval (400ms)
-STREAM_UPDATE_INTERVAL = 0.4
-
 
 def safe_html(text: str) -> str:
     """Escape HTML special characters for Telegram parse_mode=HTML.
@@ -137,7 +138,8 @@ def format_thinking_display(
     return "\n\n".join(parts) if parts else ""
 
 
-def split_text_smart(text: str, max_length: int = 3800) -> list[str]:
+def split_text_smart(text: str,
+                     max_length: int = MESSAGE_SPLIT_LENGTH) -> list[str]:
     """Split text into chunks using smart boundaries.
 
     Uses priority-based splitting:
@@ -147,7 +149,7 @@ def split_text_smart(text: str, max_length: int = 3800) -> list[str]:
 
     Args:
         text: Text to split.
-        max_length: Maximum length per chunk.
+        max_length: Maximum length per chunk (default: MESSAGE_SPLIT_LENGTH).
 
     Returns:
         List of text chunks.
@@ -161,13 +163,13 @@ def split_text_smart(text: str, max_length: int = 3800) -> list[str]:
     while len(remaining) > max_length:
         split_pos = max_length
 
-        # Try paragraph boundary first (within last 1000 chars)
+        # Try paragraph boundary first
         para_pos = remaining.rfind('\n\n', 0, split_pos)
-        if para_pos > split_pos - 1000 and para_pos > 0:
+        if para_pos > split_pos - TEXT_SPLIT_PARA_WINDOW and para_pos > 0:
             split_pos = para_pos + 1
 
-        # Fall back to single newline (within last 500 chars)
-        elif (newline_pos := remaining.rfind('\n', 0, split_pos)) > split_pos - 500:
+        # Fall back to single newline
+        elif (newline_pos := remaining.rfind('\n', 0, split_pos)) > split_pos - TEXT_SPLIT_LINE_WINDOW:
             if newline_pos > 0:
                 split_pos = newline_pos
 
@@ -287,7 +289,7 @@ async def _stream_with_unified_events(
     Returns:
         Tuple of (final_answer_text, list_of_messages_to_delete).
     """
-    max_iterations = 10
+    max_iterations = TOOL_LOOP_MAX_ITERATIONS
     all_sent_messages: list[types.Message] = []
 
     # Build conversation for tool loop
@@ -299,6 +301,13 @@ async def _stream_with_unified_events(
     logger.info("stream.unified.start",
                 thread_id=thread_id,
                 max_iterations=max_iterations)
+
+    # Streaming state - PERSIST ACROSS ITERATIONS to keep single message
+    accumulated_thinking = ""  # All thinking text accumulated
+    accumulated_response = ""  # All response text (including tool markers)
+    last_sent_text = ""  # Track what we've already sent (formatted)
+    current_message: types.Message | None = None
+    last_update_time = 0.0
 
     for iteration in range(max_iterations):
         logger.info("stream.unified.iteration",
@@ -318,12 +327,7 @@ async def _stream_with_unified_events(
             tools=request.tools,
         )
 
-        # Streaming state - separate tracking for thinking and response
-        accumulated_thinking = ""  # All thinking text accumulated
-        accumulated_response = ""  # All response text (including tool markers)
-        last_sent_text = ""  # Track what we've already sent (formatted)
-        current_message: types.Message | None = None
-        last_update_time = 0.0
+        # Per-iteration state (reset each iteration)
         pending_tools: list[dict] = []  # Tools to execute after stream ends
         stop_reason = ""
 
@@ -402,7 +406,7 @@ async def _stream_with_unified_events(
                 current_block_type = ""
 
                 # Add tool marker to response (not thinking)
-                emoji = TOOL_EMOJIS.get(event.tool_name, "🔧")
+                emoji = get_tool_emoji(event.tool_name)
                 tool_marker = f"\n\n[{emoji} {event.tool_name}]\n\n"
                 accumulated_response += tool_marker
 
@@ -543,7 +547,7 @@ async def _stream_with_unified_events(
 
                     # Add system messages for completed tools
                     # (useful for user to see what happened)
-                    tool_system_msg = _format_tool_system_message(
+                    tool_system_msg = get_tool_system_message(
                         tool_name, tool_input, result
                     )
                     if tool_system_msg:
@@ -611,6 +615,22 @@ async def _stream_with_unified_events(
                              tool_count=len(pending_tools))
                 return "⚠️ Tool execution error: missing assistant context", all_sent_messages
 
+            # Update message to show system messages after tool execution
+            display_text = format_thinking_display(
+                accumulated_thinking, accumulated_response, is_streaming=True
+            )
+            if display_text != last_sent_text:
+                current_message, last_sent_text = (
+                    await _update_telegram_message_formatted(
+                        display_text,
+                        current_message,
+                        first_message,
+                        all_sent_messages,
+                        last_sent_text,
+                    )
+                )
+                last_update_time = time.time()
+
             logger.info("stream.unified.tool_results_added",
                         thread_id=thread_id,
                         tool_count=len(pending_tools))
@@ -669,9 +689,9 @@ async def _update_telegram_message_formatted(
     # For formatted HTML, check length directly
     # (splitting is complex with HTML tags, so just truncate for now)
     safe_text = formatted_html
-    if len(safe_text) > 3900:
+    if len(safe_text) > MESSAGE_TRUNCATE_LENGTH:
         # Truncate with ellipsis - simple approach for streaming
-        safe_text = safe_text[:3900] + "..."
+        safe_text = safe_text[:MESSAGE_TRUNCATE_LENGTH] + "..."
 
     # Try HTML first, fall back to plain text if it fails
     for parse_mode, text_to_send in [("HTML", safe_text), (None, _strip_html(safe_text))]:
@@ -703,68 +723,11 @@ def _strip_html(text: str) -> str:
     Returns:
         Plain text without HTML tags.
     """
-    import re
     # Remove HTML tags but keep content
     clean = re.sub(r'<[^>]+>', '', text)
     # Unescape common HTML entities
     clean = clean.replace('&lt;', '<').replace('&gt;', '>').replace('&amp;', '&')
     return clean
-
-
-def _format_tool_system_message(
-    tool_name: str,
-    tool_input: dict,
-    result: dict,
-) -> str:
-    """Format system message for completed tool execution.
-
-    Provides user-visible feedback about what the tool did.
-    Only shows useful information, avoids noise.
-
-    Args:
-        tool_name: Name of the executed tool.
-        tool_input: Tool input parameters.
-        result: Tool execution result.
-
-    Returns:
-        Formatted system message string, or empty string if not applicable.
-    """
-    if tool_name == "execute_python":
-        # Show code execution result
-        if result.get("success") == "true":
-            stdout = result.get("stdout", "").strip()
-            if stdout:
-                # Truncate long output
-                preview = stdout[:100] + "..." if len(stdout) > 100 else stdout
-                return f"\n[✅ Код выполнен: {preview}]\n"
-            return "\n[✅ Код выполнен успешно]\n"
-        else:
-            error = result.get("error", "unknown error")
-            # Truncate long error
-            preview = error[:80] + "..." if len(error) > 80 else error
-            return f"\n[❌ Ошибка выполнения: {preview}]\n"
-
-    elif tool_name == "transcribe_audio":
-        # Show transcription info
-        duration = result.get("duration", 0)
-        language = result.get("language", "")
-        lang_info = f", {language}" if language else ""
-        return f"\n[🎤 Транскрибировано: {duration:.0f}s{lang_info}]\n"
-
-    elif tool_name == "generate_image":
-        # Show image generation info
-        params = result.get("parameters_used", {})
-        resolution = params.get("output_resolution", "2K")
-        aspect = params.get("aspect_ratio", "")
-        aspect_info = f", {aspect}" if aspect else ""
-        return f"\n[🎨 Изображение создано ({resolution}{aspect_info})]\n"
-
-    # For analyze_image, analyze_pdf, web_search, web_fetch:
-    # These are handled differently:
-    # - analyze_* are internal requests (no user-visible action)
-    # - web_search shows results in Claude's response
-    # - web_fetch content is used by Claude internally
-    return ""
 
 
 async def _update_telegram_message(
@@ -796,18 +759,18 @@ async def _update_telegram_message(
     # Escape HTML for Telegram
     safe_text = safe_html(text)
 
-    # Check if we need to split (Telegram limit ~4096, use 3800 for safety)
-    if len(safe_text) > 3800:
+    # Check if we need to split (Telegram limit ~4096)
+    if len(safe_text) > MESSAGE_SPLIT_LENGTH:
         # Find split point in ORIGINAL text to avoid position mismatch
         # Estimate position (may need adjustment due to HTML escaping)
-        estimated_pos = min(3500, len(text))  # Conservative estimate
+        estimated_pos = min(MESSAGE_SPLIT_LENGTH - 300, len(text))  # Conservative
 
-        # Try paragraph boundary first (within last 1000 chars)
+        # Try paragraph boundary first
         para_pos = text.rfind('\n\n', 0, estimated_pos)
-        if para_pos > estimated_pos - 1000 and para_pos > 0:
+        if para_pos > estimated_pos - TEXT_SPLIT_PARA_WINDOW and para_pos > 0:
             split_pos = para_pos + 1
-        # Fall back to single newline (within last 500 chars)
-        elif (newline_pos := text.rfind('\n', 0, estimated_pos)) > estimated_pos - 500:
+        # Fall back to single newline
+        elif (newline_pos := text.rfind('\n', 0, estimated_pos)) > estimated_pos - TEXT_SPLIT_LINE_WINDOW:
             if newline_pos > 0:
                 split_pos = newline_pos
             else:
@@ -816,7 +779,7 @@ async def _update_telegram_message(
             split_pos = estimated_pos
 
         # Adjust if escaped version is still too long
-        while len(safe_html(text[:split_pos])) > 3800 and split_pos > 100:
+        while len(safe_html(text[:split_pos])) > MESSAGE_SPLIT_LENGTH and split_pos > 100:
             newline_pos = text.rfind('\n', 0, split_pos - 1)
             if newline_pos > 0:
                 split_pos = newline_pos
@@ -876,11 +839,6 @@ async def _process_generated_files(
 
     Extracted from _handle_with_tools for reuse.
     """
-    from datetime import datetime, timedelta, timezone
-    from config import FILES_API_TTL_HOURS
-    from core.claude.files_api import upload_to_files_api
-    from db.models.user_file import FileSource, FileType
-
     file_contents = result.pop("_file_contents")
     delivered_files = []
 
@@ -972,11 +930,6 @@ async def _charge_for_tool(
     message_id: int,
 ) -> None:
     """Charge user for tool execution cost."""
-    from decimal import Decimal
-    from db.repositories.balance_operation_repository import BalanceOperationRepository
-    from db.repositories.user_repository import UserRepository
-    from services.balance_service import BalanceService
-
     try:
         tool_cost_usd = Decimal(str(result["cost_usd"]))
         user_repo = UserRepository(session)
@@ -1038,7 +991,7 @@ async def _handle_with_tools(request: LLMRequest, first_message: types.Message,
     Raises:
         LLMError: If tool loop exceeds max iterations or API errors.
     """
-    max_iterations = 10
+    max_iterations = TOOL_LOOP_MAX_ITERATIONS
     status_message = None
 
     # Build conversation history for tool loop
@@ -1174,8 +1127,6 @@ async def _handle_with_tools(request: LLMRequest, first_message: types.Message,
                                     mime_type=mime_type)
 
                                 # 1. Upload to Files API
-                                from core.claude.files_api import \
-                                    upload_to_files_api  # pylint: disable=import-outside-toplevel
                                 claude_file_id = await upload_to_files_api(
                                     file_bytes=file_bytes,
                                     filename=filename,
@@ -1185,10 +1136,6 @@ async def _handle_with_tools(request: LLMRequest, first_message: types.Message,
                                 # (to get telegram_file_id for database)
                                 # Send as photo if image, otherwise as document
                                 # IMPORTANT: Include message_thread_id for forum topics
-                                # pylint: disable=import-outside-toplevel
-                                from db.models.user_file import FileSource
-                                from db.models.user_file import FileType
-
                                 # Determine file type
                                 if mime_type.startswith("image/"):
                                     file_type = FileType.IMAGE
@@ -1233,13 +1180,6 @@ async def _handle_with_tools(request: LLMRequest, first_message: types.Message,
 
                                 # 3. Save to database (source=ASSISTANT)
                                 # Now with telegram_file_id for future downloads
-                                # pylint: disable=import-outside-toplevel
-                                from datetime import datetime
-                                from datetime import timedelta
-                                from datetime import timezone
-
-                                from config import FILES_API_TTL_HOURS
-
                                 await user_file_repo.create(
                                     message_id=first_message.message_id,
                                     telegram_file_id=telegram_file_id,
@@ -1288,16 +1228,6 @@ async def _handle_with_tools(request: LLMRequest, first_message: types.Message,
                     # Phase 2.1: Charge user for tool execution cost
                     if "cost_usd" in result:
                         try:
-                            from decimal import \
-                                Decimal  # pylint: disable=import-outside-toplevel
-
-                            from db.repositories.balance_operation_repository import \
-                                BalanceOperationRepository  # pylint: disable=import-outside-toplevel
-                            from db.repositories.user_repository import \
-                                UserRepository  # pylint: disable=import-outside-toplevel
-                            from services.balance_service import \
-                                BalanceService  # pylint: disable=import-outside-toplevel
-
                             tool_cost_usd = Decimal(result["cost_usd"])
 
                             user_repo = UserRepository(session)
@@ -1612,7 +1542,7 @@ async def _process_message_batch(
                                  model=user.model_id,
                                  max_tokens=model_config.max_output,
                                  temperature=config.CLAUDE_TEMPERATURE,
-                                 tools=TOOL_DEFINITIONS)  # Always pass tools
+                                 tools=get_tool_definitions())  # Always pass tools
 
             logger.info("claude_handler.request_prepared",
                         thread_id=thread_id,
@@ -1664,7 +1594,7 @@ async def _process_message_batch(
                     safe_final = safe_html(response_text)
 
                     # Split using smart boundaries (paragraph > newline > hard split)
-                    chunks = split_text_smart(safe_final, max_length=3800)
+                    chunks = split_text_smart(safe_final)
                     for chunk in chunks:
                         bot_message = await first_message.answer(chunk)
 

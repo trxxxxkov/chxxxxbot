@@ -1,18 +1,24 @@
-"""Tool registry and execution dispatcher (Phase 1.6).
+"""Tool registry and execution dispatcher (Phase 1.6+).
 
 This module provides centralized tool definitions and execution dispatcher
 for Claude's tool use feature.
+
+Unified architecture using ToolConfig:
+- Each tool module exports TOOL_CONFIG with all metadata
+- Registry imports and consolidates into single TOOLS dict
+- Helper functions use TOOLS as single source of truth
 
 Currently implements:
 - analyze_image: Analyze images using Claude Vision API
 - analyze_pdf: Analyze PDF documents using Claude PDF API
 - transcribe_audio: Transcribe audio/video using OpenAI Whisper API
+- generate_image: Generate images using Google Gemini API
 - execute_python: Execute Python code via E2B sandbox
 - web_search: Search the web (server-side, managed by Anthropic)
 - web_fetch: Fetch web pages (server-side, managed by Anthropic)
 
 NO __init__.py - use direct import:
-    from core.tools.registry import TOOL_DEFINITIONS, execute_tool
+    from core.tools.registry import TOOLS, execute_tool, get_tool_definitions
 """
 
 from typing import Any, Dict, List, TYPE_CHECKING
@@ -21,135 +27,175 @@ if TYPE_CHECKING:
     from aiogram import Bot
     from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.tools.analyze_image import analyze_image
-from core.tools.analyze_image import ANALYZE_IMAGE_TOOL
-from core.tools.analyze_pdf import analyze_pdf
-from core.tools.analyze_pdf import ANALYZE_PDF_TOOL
-from core.tools.execute_python import execute_python
-from core.tools.execute_python import EXECUTE_PYTHON_TOOL
-from core.tools.generate_image import generate_image
-from core.tools.generate_image import GENERATE_IMAGE_TOOL
-from core.tools.transcribe_audio import transcribe_audio
-from core.tools.transcribe_audio import TRANSCRIBE_AUDIO_TOOL
+from core.tools.base import ToolConfig
+from core.tools.analyze_image import TOOL_CONFIG as ANALYZE_IMAGE_CONFIG
+from core.tools.analyze_pdf import TOOL_CONFIG as ANALYZE_PDF_CONFIG
+from core.tools.transcribe_audio import TOOL_CONFIG as TRANSCRIBE_AUDIO_CONFIG
+from core.tools.generate_image import TOOL_CONFIG as GENERATE_IMAGE_CONFIG
+from core.tools.execute_python import TOOL_CONFIG as EXECUTE_PYTHON_CONFIG
 from utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
 
+
 # Server-side tools (managed by Anthropic, no executor needed)
-# Phase 1.5 Stage 4
-# NOTE: Server-side tools do NOT accept custom description field.
-# Anthropic provides built-in descriptions for these tools.
-# We rely on GLOBAL_SYSTEM_PROMPT to guide Claude on when to use them.
-WEB_SEARCH_TOOL = {
-    "type": "web_search_20250305",
-    "name": "web_search"
-    # Minimal config: only type and name
-    # Description provided by Anthropic
-}
+# These use ToolConfig with is_server_side=True
+WEB_SEARCH_CONFIG = ToolConfig(
+    name="web_search",
+    definition={
+        "type": "web_search_20250305",
+        "name": "web_search"
+    },
+    executor=None,
+    emoji="🔍",
+    is_server_side=True,
+)
 
-WEB_FETCH_TOOL = {
-    "type": "web_fetch_20250910",
-    "name": "web_fetch"
-    # Minimal config: only type and name
-    # Description provided by Anthropic
-}
+WEB_FETCH_CONFIG = ToolConfig(
+    name="web_fetch",
+    definition={
+        "type": "web_fetch_20250910",
+        "name": "web_fetch"
+    },
+    executor=None,
+    emoji="🌐",
+    is_server_side=True,
+)
 
-# Tool definitions for Claude API (list of tool schemas)
-# Phase 1.6: Added transcribe_audio for speech-to-text
-# Phase 1.7: Added generate_image for image generation
-TOOL_DEFINITIONS: List[Dict[str, Any]] = [
-    ANALYZE_IMAGE_TOOL,
-    ANALYZE_PDF_TOOL,
-    TRANSCRIBE_AUDIO_TOOL,
-    GENERATE_IMAGE_TOOL,
-    WEB_SEARCH_TOOL,
-    WEB_FETCH_TOOL,
-    EXECUTE_PYTHON_TOOL,
-]
 
-# Tool executors mapping (tool name -> execution function)
-TOOL_EXECUTORS: Dict[str, Any] = {
-    "analyze_image": analyze_image,
-    "analyze_pdf": analyze_pdf,
-    "transcribe_audio": transcribe_audio,
-    "generate_image": generate_image,
-    "execute_python": execute_python,
-    # Server-side tools NOT included (managed by Anthropic):
-    # "web_search": (server-side)
-    # "web_fetch": (server-side)
-}
+# ============================================================================
+# UNIFIED TOOLS REGISTRY - Single source of truth
+# ============================================================================
+# When adding a new tool:
+# 1. Create TOOL_CONFIG in the tool module
+# 2. Import it here
+# 3. Add to TOOLS dict
+# That's it! No other files need to be updated.
+# ============================================================================
 
-# Tool metadata: declares which tools need bot/session for Telegram integration
-# This replaces the hardcoded list in execute_tool(), making it easier to add new tools
-TOOL_METADATA: Dict[str, Dict[str, bool]] = {
-    "analyze_image": {"needs_bot_session": False},
-    "analyze_pdf": {"needs_bot_session": False},
-    "transcribe_audio": {"needs_bot_session": True},  # Downloads files from Telegram
-    "generate_image": {"needs_bot_session": True},    # Sends generated files
-    "execute_python": {"needs_bot_session": True},    # Downloads/uploads files
+TOOLS: Dict[str, ToolConfig] = {
+    "analyze_image": ANALYZE_IMAGE_CONFIG,
+    "analyze_pdf": ANALYZE_PDF_CONFIG,
+    "transcribe_audio": TRANSCRIBE_AUDIO_CONFIG,
+    "generate_image": GENERATE_IMAGE_CONFIG,
+    "execute_python": EXECUTE_PYTHON_CONFIG,
+    "web_search": WEB_SEARCH_CONFIG,
+    "web_fetch": WEB_FETCH_CONFIG,
 }
 
 
-async def execute_tool(tool_name: str, tool_input: Dict[str, Any], bot: 'Bot',
-                       session: 'AsyncSession') -> Dict[str, str]:
+# ============================================================================
+# Helper functions - all derive from TOOLS
+# ============================================================================
+
+def get_tool_definitions() -> List[Dict[str, Any]]:
+    """Get all tool definitions for Claude API.
+
+    Returns:
+        List of tool schema dictionaries.
+    """
+    return [tool.definition for tool in TOOLS.values()]
+
+
+def get_tool_emoji(tool_name: str) -> str:
+    """Get emoji for a tool.
+
+    Args:
+        tool_name: Name of the tool.
+
+    Returns:
+        Emoji string, or default 🔧 if not found.
+    """
+    tool = TOOLS.get(tool_name)
+    return tool.emoji if tool else "🔧"
+
+
+def get_tool_system_message(
+    tool_name: str,
+    tool_input: Dict[str, Any],
+    result: Dict[str, Any],
+) -> str:
+    """Get formatted system message for tool result.
+
+    Args:
+        tool_name: Name of the executed tool.
+        tool_input: The input parameters passed to the tool.
+        result: The result dictionary returned by the tool.
+
+    Returns:
+        Formatted message string, or empty string if no formatter.
+    """
+    tool = TOOLS.get(tool_name)
+    if tool:
+        return tool.get_system_message(tool_input, result)
+    return ""
+
+
+def is_server_side_tool(tool_name: str) -> bool:
+    """Check if tool is server-side (managed by Anthropic).
+
+    Args:
+        tool_name: Name of the tool.
+
+    Returns:
+        True if server-side tool, False otherwise.
+    """
+    tool = TOOLS.get(tool_name)
+    return tool.is_server_side if tool else False
+
+
+async def execute_tool(
+    tool_name: str,
+    tool_input: Dict[str, Any],
+    bot: 'Bot',
+    session: 'AsyncSession',
+) -> Dict[str, str]:
     """Execute a tool by name with given input.
 
     Dispatcher function that routes tool calls to appropriate executor.
     Handles errors and logging for all tool executions.
 
     Args:
-        tool_name: Name of the tool to execute (e.g., "analyze_image",
-            "analyze_pdf", "transcribe_audio", "generate_image",
-            "execute_python").
+        tool_name: Name of the tool to execute.
         tool_input: Tool input parameters as dictionary.
         bot: Telegram Bot instance for downloading user files.
         session: Database session for querying file metadata.
 
     Returns:
         Tool execution result as dictionary.
-        For analyze_image: {"analysis": str, "tokens_used": str}
-        For analyze_pdf: {"analysis": str, "tokens_used": str,
-            "cached_tokens": str}
-        For transcribe_audio: {"transcript": str, "language": str,
-            "duration": float, "cost_usd": str}
-        For generate_image: {"success": str, "cost_usd": str,
-            "parameters_used": dict, "_file_contents": list}
-        For execute_python: {"stdout": str, "stderr": str, "results": str,
-            "error": str, "success": str}
 
     Raises:
-        ValueError: If tool_name not found in TOOL_EXECUTORS.
+        ValueError: If tool_name not found or is server-side tool.
         Exception: If tool execution fails (re-raised from tool function).
-
-    Examples:
-        >>> result = await execute_tool(
-        ...     tool_name="analyze_image",
-        ...     tool_input={"claude_file_id": "file_abc...", "question": "What's this?"}
-        ... )
-        >>> print(result['analysis'])
     """
     logger.info("tools.execute_tool.called",
                 tool_name=tool_name,
                 tool_input_keys=list(tool_input.keys()))
 
     # Validate tool exists
-    if tool_name not in TOOL_EXECUTORS:
-        available_tools = ", ".join(TOOL_EXECUTORS.keys())
-        error_msg = (f"Tool '{tool_name}' not found. "
-                     f"Available tools: {available_tools}")
+    tool = TOOLS.get(tool_name)
+    if not tool:
+        available = ", ".join(TOOLS.keys())
+        error_msg = f"Tool '{tool_name}' not found. Available: {available}"
         logger.error("tools.execute_tool.not_found",
                      tool_name=tool_name,
-                     available_tools=available_tools)
+                     available_tools=available)
         raise ValueError(error_msg)
 
-    # Get executor function
-    executor = TOOL_EXECUTORS[tool_name]
+    # Server-side tools cannot be executed locally
+    if tool.is_server_side:
+        error_msg = f"Tool '{tool_name}' is server-side (managed by Anthropic)"
+        logger.error("tools.execute_tool.server_side", tool_name=tool_name)
+        raise ValueError(error_msg)
+
+    # Get executor
+    executor = tool.executor
+    if executor is None:
+        raise ValueError(f"Tool '{tool_name}' has no executor")
 
     try:
         # Execute tool (all tools are async)
-        # Check TOOL_METADATA for whether tool needs bot/session
-        metadata = TOOL_METADATA.get(tool_name, {})
-        if metadata.get("needs_bot_session", False):
+        if tool.needs_bot_session:
             result = await executor(bot=bot, session=session, **tool_input)
         else:
             result = await executor(**tool_input)
@@ -165,5 +211,36 @@ async def execute_tool(tool_name: str, tool_input: Dict[str, Any], bot: 'Bot',
                      tool_name=tool_name,
                      error=str(e),
                      exc_info=True)
-        # Re-raise to let handler decide what to do
         raise
+
+
+# ============================================================================
+# Backward compatibility - deprecated, will be removed
+# ============================================================================
+# These are kept for compatibility with existing code.
+# Use TOOLS dict and helper functions instead.
+
+# Old-style definitions (deprecated)
+TOOL_DEFINITIONS = get_tool_definitions()
+
+TOOL_EXECUTORS = {
+    name: tool.executor
+    for name, tool in TOOLS.items()
+    if not tool.is_server_side and tool.executor
+}
+
+TOOL_METADATA = {
+    name: {"needs_bot_session": tool.needs_bot_session}
+    for name, tool in TOOLS.items()
+    if not tool.is_server_side
+}
+
+# Re-export individual tool definitions for backward compatibility
+from core.tools.analyze_image import ANALYZE_IMAGE_TOOL
+from core.tools.analyze_pdf import ANALYZE_PDF_TOOL
+from core.tools.transcribe_audio import TRANSCRIBE_AUDIO_TOOL
+from core.tools.generate_image import GENERATE_IMAGE_TOOL
+from core.tools.execute_python import EXECUTE_PYTHON_TOOL
+
+WEB_SEARCH_TOOL = WEB_SEARCH_CONFIG.definition
+WEB_FETCH_TOOL = WEB_FETCH_CONFIG.definition

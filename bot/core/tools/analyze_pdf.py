@@ -224,3 +224,16 @@ Prompt caching reduces repeated analysis cost by 90%.""",
         "required": ["claude_file_id", "question"]
     }
 }
+
+
+# Unified tool configuration (no format_result - internal analysis tool)
+from core.tools.base import ToolConfig  # pylint: disable=wrong-import-position
+
+TOOL_CONFIG = ToolConfig(
+    name="analyze_pdf",
+    definition=ANALYZE_PDF_TOOL,
+    executor=analyze_pdf,
+    emoji="📄",
+    needs_bot_session=False,
+    format_result=None,  # No system message for analysis tools
+)

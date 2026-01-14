@@ -14,9 +14,15 @@ from typing import Optional
 REQUEST_TIMEOUT = 30  # seconds
 POLLING_TIMEOUT = 60  # seconds
 
-# Message limits
-MAX_MESSAGE_LENGTH = 4096  # Telegram limit
-MAX_CAPTION_LENGTH = 1024  # Telegram limit
+# Message limits (Telegram)
+MAX_MESSAGE_LENGTH = 4096  # Telegram hard limit
+MAX_CAPTION_LENGTH = 1024  # Telegram caption limit
+MESSAGE_SPLIT_LENGTH = 3800  # Safe limit for splitting (buffer for HTML escape)
+MESSAGE_TRUNCATE_LENGTH = 3900  # Safe limit for truncation during streaming
+
+# Text splitting parameters
+TEXT_SPLIT_PARA_WINDOW = 1000  # Search window for paragraph boundary
+TEXT_SPLIT_LINE_WINDOW = 500  # Search window for line boundary
 
 # Bot settings
 BOT_NAME = "LLM Bot"
@@ -43,6 +49,10 @@ MAX_QUERY_LIMIT = 1000  # Hard cap for get_all() queries to prevent memory issue
 
 # Message queue settings
 MESSAGE_BATCH_DELAY_MS = 200  # Batching window for split message detection (ms)
+
+# Streaming settings
+STREAM_UPDATE_INTERVAL = 0.4  # Telegram message update interval (seconds)
+TOOL_LOOP_MAX_ITERATIONS = 10  # Max tool calls per request
 
 
 @dataclass

@@ -591,3 +591,44 @@ Free tier: $100 credit (~2000 hours).""",
         "ttl": "1h"  # 1-hour cache for better cost efficiency
     }
 }
+
+
+def format_execute_python_result(
+    tool_input: Dict[str, Any],
+    result: Dict[str, Any],
+) -> str:
+    """Format execute_python result for user display.
+
+    Args:
+        tool_input: The input parameters (code, file_inputs, etc.).
+        result: The result dictionary with stdout, stderr, success, error.
+
+    Returns:
+        Formatted system message string.
+    """
+    if result.get("success") == "true":
+        stdout = result.get("stdout", "").strip()
+        if stdout:
+            # Truncate long output
+            preview = stdout[:100] + "..." if len(stdout) > 100 else stdout
+            return f"\n[✅ Код выполнен: {preview}]\n"
+        return "\n[✅ Код выполнен успешно]\n"
+    else:
+        error = result.get("error", "unknown error")
+        # Truncate long error
+        preview = error[:80] + "..." if len(error) > 80 else error
+        return f"\n[❌ Ошибка выполнения: {preview}]\n"
+
+
+# Unified tool configuration
+# Import here to avoid circular dependencies at module level
+from core.tools.base import ToolConfig  # pylint: disable=wrong-import-position
+
+TOOL_CONFIG = ToolConfig(
+    name="execute_python",
+    definition=EXECUTE_PYTHON_TOOL,
+    executor=execute_python,
+    emoji="🐍",
+    needs_bot_session=True,
+    format_result=format_execute_python_result,
+)

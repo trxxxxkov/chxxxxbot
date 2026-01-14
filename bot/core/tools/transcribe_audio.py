@@ -335,3 +335,35 @@ German, Chinese, Japanese, and many more.""",
         "required": ["file_id"]
     }
 }
+
+
+def format_transcribe_audio_result(
+    tool_input: dict,
+    result: dict,
+) -> str:
+    """Format transcribe_audio result for user display.
+
+    Args:
+        tool_input: The input parameters (file_id, language).
+        result: The result dictionary with transcript, duration, language.
+
+    Returns:
+        Formatted system message string.
+    """
+    duration = result.get("duration", 0)
+    language = result.get("language", "")
+    lang_info = f", {language}" if language else ""
+    return f"\n[🎤 Транскрибировано: {duration:.0f}s{lang_info}]\n"
+
+
+# Unified tool configuration
+from core.tools.base import ToolConfig  # pylint: disable=wrong-import-position
+
+TOOL_CONFIG = ToolConfig(
+    name="transcribe_audio",
+    definition=TRANSCRIBE_AUDIO_TOOL,
+    executor=transcribe_audio,
+    emoji="🎤",
+    needs_bot_session=True,
+    format_result=format_transcribe_audio_result,
+)
