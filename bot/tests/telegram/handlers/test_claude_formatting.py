@@ -168,6 +168,29 @@ class TestFormatInterleavedContent:
         assert "🧠" not in result
         assert "Only text" in result
 
+    def test_whitespace_only_content_skipped(self):
+        """Test blocks with whitespace-only content are skipped."""
+        blocks = [
+            {"type": "text", "content": "   \n\n  "},
+            {"type": "text", "content": "Real text."},
+        ]
+        result = format_interleaved_content(blocks, is_streaming=True)
+        assert result == "Real text."
+
+    def test_no_triple_newlines(self):
+        """Test that content with surrounding newlines doesn't create triple newlines."""
+        blocks = [
+            {"type": "text", "content": "First."},
+            {"type": "text", "content": "\n\n[tool marker]\n\n"},
+            {"type": "text", "content": "Second."},
+        ]
+        result = format_interleaved_content(blocks, is_streaming=True)
+        # Should have at most double newlines between parts
+        assert "\n\n\n" not in result
+        assert "First." in result
+        assert "[tool marker]" in result
+        assert "Second." in result
+
 
 class TestStripHtml:
     """Tests for _strip_html fallback function."""

@@ -146,10 +146,11 @@ def format_interleaved_content(
 
     for block in blocks:
         content = block.get("content", "")
-        if not content:
+        if not content or not content.strip():
             continue
 
-        escaped = safe_html(content)
+        # Strip whitespace to avoid double newlines between blocks
+        escaped = safe_html(content.strip())
 
         if block.get("type") == "thinking":
             if is_streaming:
@@ -161,7 +162,9 @@ def format_interleaved_content(
         else:  # text block
             parts.append(escaped)
 
-    return "\n\n".join(parts) if parts else ""
+    result = "\n\n".join(parts) if parts else ""
+    # Clean up any triple+ newlines that might still occur
+    return re.sub(r'\n{3,}', '\n\n', result)
 
 
 def format_thinking_display(
