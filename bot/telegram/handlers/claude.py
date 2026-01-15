@@ -100,6 +100,70 @@ def safe_html(text: str) -> str:
     return html_lib.escape(text)
 
 
+def strip_tool_markers(text: str) -> str:
+    """Remove tool markers and system messages from final response.
+
+    During streaming, markers like [📄 analyze_pdf] are shown in thinking.
+    The final answer should be clean text without these markers.
+
+    Patterns removed:
+    - Tool markers: [📄 analyze_pdf], [🐍 execute_python], etc.
+    - System messages: [✅ ...], [❌ ...], [🎨 ...], [📤 ...]
+
+    Args:
+        text: Response text with possible markers.
+
+    Returns:
+        Clean text without tool markers.
+    """
+    # Pattern matches: newline + [emoji + text] + newline
+    # Also handles markers at start/end of text
+    pattern = r'\n?\[(?:📄|🐍|🎨|🔍|📤|✅|❌|🌐|📎)[^\]]*\]\n?'
+    cleaned = re.sub(pattern, '\n', text)
+    # Clean up multiple newlines
+    cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
+    return cleaned.strip()
+
+
+def format_interleaved_content(
+    blocks: list[dict],
+    is_streaming: bool = True
+) -> str:
+    """Format interleaved thinking and text blocks for Telegram display.
+
+    Preserves the original order of blocks as output by Claude.
+    During streaming: Show thinking in italics with 🧠 prefix
+    Final display: Show thinking in expandable blockquote
+
+    Args:
+        blocks: List of {"type": "thinking"|"text", "content": str} dicts.
+        is_streaming: Whether we're still streaming (affects formatting).
+
+    Returns:
+        Formatted HTML string for Telegram.
+    """
+    parts = []
+
+    for block in blocks:
+        content = block.get("content", "")
+        if not content:
+            continue
+
+        escaped = safe_html(content)
+
+        if block.get("type") == "thinking":
+            if is_streaming:
+                parts.append(f"<i>🧠 {escaped}</i>")
+            else:
+                parts.append(
+                    f"<blockquote expandable>🧠 {escaped}</blockquote>"
+                )
+        else:  # text block
+            parts.append(escaped)
+
+    return "\n\n".join(parts) if parts else ""
+
+
 def format_thinking_display(
     thinking_text: str,
     response_text: str,
@@ -107,8 +171,8 @@ def format_thinking_display(
 ) -> str:
     """Format thinking and response for Telegram display.
 
-    During streaming: Show thinking in italics with 🧠 prefix
-    Final display: Show thinking in expandable blockquote
+    DEPRECATED: Use format_interleaved_content for proper ordering.
+    This function assumes thinking always comes before response.
 
     Args:
         thinking_text: The thinking/reasoning text from Claude.
@@ -118,24 +182,12 @@ def format_thinking_display(
     Returns:
         Formatted HTML string for Telegram.
     """
-    parts = []
-
+    blocks = []
     if thinking_text:
-        escaped_thinking = safe_html(thinking_text)
-        if is_streaming:
-            # During streaming: show in italics with prefix
-            parts.append(f"<i>🧠 {escaped_thinking}</i>")
-        else:
-            # Final: use expandable blockquote (collapsed by default)
-            parts.append(
-                f"<blockquote expandable>🧠 {escaped_thinking}</blockquote>"
-            )
-
+        blocks.append({"type": "thinking", "content": thinking_text})
     if response_text:
-        escaped_response = safe_html(response_text)
-        parts.append(escaped_response)
-
-    return "\n\n".join(parts) if parts else ""
+        blocks.append({"type": "text", "content": response_text})
+    return format_interleaved_content(blocks, is_streaming)
 
 
 def split_text_smart(text: str,
@@ -303,8 +355,9 @@ async def _stream_with_unified_events(
                 max_iterations=max_iterations)
 
     # Streaming state - PERSIST ACROSS ITERATIONS to keep single message
-    accumulated_thinking = ""  # All thinking text accumulated
-    accumulated_response = ""  # All response text (including tool markers)
+    # Track blocks in order for proper interleaving of thinking and text
+    display_blocks: list[dict] = []  # [{"type": "thinking"|"text", "content": str}]
+    current_block_type_global = ""  # Track current block type across stream
     last_sent_text = ""  # Track what we've already sent (formatted)
     current_message: types.Message | None = None
     last_update_time = 0.0
@@ -337,17 +390,29 @@ async def _stream_with_unified_events(
         current_response_text = ""
         current_block_type = ""  # "thinking" | "text" | ""
 
+        # Helper to append content to display_blocks with proper ordering
+        def append_to_display(block_type: str, content: str) -> None:
+            """Append content to display_blocks, merging with last block if same type."""
+            nonlocal current_block_type_global
+            if not display_blocks or display_blocks[-1]["type"] != block_type:
+                # Start new block
+                display_blocks.append({"type": block_type, "content": content})
+                current_block_type_global = block_type
+            else:
+                # Append to existing block
+                display_blocks[-1]["content"] += content
+
         # Stream events
         async for event in claude_provider.stream_events(iter_request):
             if event.type == "thinking_delta":
-                accumulated_thinking += event.content
+                append_to_display("thinking", event.content)
                 current_thinking_text += event.content
                 current_block_type = "thinking"
                 current_time = time.time()
 
-                # Format display text with thinking in italics
-                display_text = format_thinking_display(
-                    accumulated_thinking, accumulated_response, is_streaming=True
+                # Format display text preserving block order
+                display_text = format_interleaved_content(
+                    display_blocks, is_streaming=True
                 )
 
                 # Update Telegram every 400ms if text changed
@@ -365,14 +430,14 @@ async def _stream_with_unified_events(
                     last_update_time = current_time
 
             elif event.type == "text_delta":
-                accumulated_response += event.content
+                append_to_display("text", event.content)
                 current_response_text += event.content
                 current_block_type = "text"
                 current_time = time.time()
 
-                # Format display text with thinking in italics
-                display_text = format_thinking_display(
-                    accumulated_thinking, accumulated_response, is_streaming=True
+                # Format display text preserving block order
+                display_text = format_interleaved_content(
+                    display_blocks, is_streaming=True
                 )
 
                 # Update Telegram every 400ms if text changed
@@ -405,14 +470,14 @@ async def _stream_with_unified_events(
                     current_response_text = ""
                 current_block_type = ""
 
-                # Add tool marker to response (not thinking)
+                # Add tool marker as text block (shown during streaming)
                 emoji = get_tool_emoji(event.tool_name)
-                tool_marker = f"\n\n[{emoji} {event.tool_name}]\n\n"
-                accumulated_response += tool_marker
+                tool_marker = f"[{emoji} {event.tool_name}]"
+                append_to_display("text", f"\n\n{tool_marker}\n\n")
 
                 # Format and force update to show tool marker
-                display_text = format_thinking_display(
-                    accumulated_thinking, accumulated_response, is_streaming=True
+                display_text = format_interleaved_content(
+                    display_blocks, is_streaming=True
                 )
                 current_message, last_sent_text = (
                     await _update_telegram_message_formatted(
@@ -478,8 +543,8 @@ async def _stream_with_unified_events(
                     })
 
         # Final update for any remaining text (with formatting)
-        display_text = format_thinking_display(
-            accumulated_thinking, accumulated_response, is_streaming=True
+        display_text = format_interleaved_content(
+            display_blocks, is_streaming=True
         )
         if display_text and display_text != last_sent_text:
             current_message, last_sent_text = (
@@ -492,17 +557,27 @@ async def _stream_with_unified_events(
                 )
             )
 
+        # Calculate lengths for logging
+        total_thinking = sum(
+            len(b["content"]) for b in display_blocks if b["type"] == "thinking"
+        )
+        total_response = sum(
+            len(b["content"]) for b in display_blocks if b["type"] == "text"
+        )
+
         logger.info("stream.unified.iteration_complete",
                     thread_id=thread_id,
                     iteration=iteration + 1,
                     stop_reason=stop_reason,
                     pending_tools=len(pending_tools),
-                    thinking_length=len(accumulated_thinking),
-                    response_length=len(accumulated_response))
+                    thinking_length=total_thinking,
+                    response_length=total_response)
 
         if stop_reason == "end_turn" or stop_reason == "pause_turn":
-            # Final answer is only the response (thinking is shown separately)
-            final_answer = accumulated_response.strip()
+            # Final answer: join all text blocks (strip tool markers later)
+            final_answer = "\n\n".join(
+                b["content"] for b in display_blocks if b["type"] == "text"
+            ).strip()
 
             logger.info("stream.unified.complete",
                         thread_id=thread_id,
@@ -510,7 +585,7 @@ async def _stream_with_unified_events(
                         final_answer_length=len(final_answer),
                         messages_to_cleanup=len(all_sent_messages) - 1,
                         stop_reason=stop_reason,
-                        had_thinking=bool(accumulated_thinking))
+                        had_thinking=total_thinking > 0)
 
             return final_answer, all_sent_messages
 
@@ -541,8 +616,8 @@ async def _stream_with_unified_events(
                         # Add system message markers for delivered files
                         for file_info in file_contents:
                             filename = file_info.get("filename", "file")
-                            accumulated_response += (
-                                f"\n[📤 Отправлен файл: {filename}]\n"
+                            append_to_display(
+                                "text", f"\n[📤 Отправлен файл: {filename}]\n"
                             )
 
                     # Add system messages for completed tools
@@ -551,7 +626,7 @@ async def _stream_with_unified_events(
                         tool_name, tool_input, result
                     )
                     if tool_system_msg:
-                        accumulated_response += tool_system_msg
+                        append_to_display("text", tool_system_msg)
 
                     results.append(result)
 
@@ -616,8 +691,8 @@ async def _stream_with_unified_events(
                 return "⚠️ Tool execution error: missing assistant context", all_sent_messages
 
             # Update message to show system messages after tool execution
-            display_text = format_thinking_display(
-                accumulated_thinking, accumulated_response, is_streaming=True
+            display_text = format_interleaved_content(
+                display_blocks, is_streaming=True
             )
             if display_text != last_sent_text:
                 current_message, last_sent_text = (
@@ -641,7 +716,9 @@ async def _stream_with_unified_events(
                            thread_id=thread_id,
                            stop_reason=stop_reason)
 
-            final_answer = accumulated_response.strip()
+            final_answer = "\n\n".join(
+                b["content"] for b in display_blocks if b["type"] == "text"
+            ).strip()
             if not final_answer:
                 final_answer = f"⚠️ Unexpected stop reason: {stop_reason}"
 
@@ -1589,16 +1666,18 @@ async def _process_message_batch(
                                 deleted_count=len(all_messages))
 
                 # Send final answer as new message(s)
+                # Strip tool markers (shown during streaming, not in final answer)
                 bot_message = None
-                if response_text:
-                    safe_final = safe_html(response_text)
+                clean_response = strip_tool_markers(response_text) if response_text else ""
+
+                if clean_response:
+                    safe_final = safe_html(clean_response)
 
                     # Split using smart boundaries (paragraph > newline > hard split)
                     chunks = split_text_smart(safe_final)
                     for chunk in chunks:
                         bot_message = await first_message.answer(chunk)
-
-                if not response_text:
+                else:
                     logger.warning("claude_handler.empty_response",
                                    thread_id=thread_id)
                     bot_message = await first_message.answer(

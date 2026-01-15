@@ -3,13 +3,16 @@
 Tests for:
 - format_thinking_display(): Thinking block formatting
 - _strip_html(): HTML fallback stripping
+- strip_tool_markers(): Remove tool markers from final response
 - get_tool_system_message(): Tool execution system messages (from registry)
 - _update_telegram_message_formatted(): Message update with fallback
 """
 
 import pytest
 from telegram.handlers.claude import format_thinking_display
+from telegram.handlers.claude import format_interleaved_content
 from telegram.handlers.claude import _strip_html
+from telegram.handlers.claude import strip_tool_markers
 from core.tools.registry import get_tool_system_message
 
 
@@ -107,6 +110,65 @@ class TestFormatThinkingDisplay:
         assert "&amp;" in result
 
 
+class TestFormatInterleavedContent:
+    """Tests for format_interleaved_content function."""
+
+    def test_thinking_then_text(self):
+        """Test thinking followed by text preserves order."""
+        blocks = [
+            {"type": "thinking", "content": "Let me think..."},
+            {"type": "text", "content": "Here is my answer."},
+        ]
+        result = format_interleaved_content(blocks, is_streaming=True)
+        thinking_pos = result.find("🧠")
+        answer_pos = result.find("Here is my answer")
+        assert thinking_pos < answer_pos
+
+    def test_text_then_thinking_then_text(self):
+        """Test interleaved blocks preserve order."""
+        blocks = [
+            {"type": "text", "content": "First text."},
+            {"type": "thinking", "content": "Now thinking..."},
+            {"type": "text", "content": "Second text."},
+        ]
+        result = format_interleaved_content(blocks, is_streaming=True)
+        first_pos = result.find("First text")
+        thinking_pos = result.find("🧠")
+        second_pos = result.find("Second text")
+        assert first_pos < thinking_pos < second_pos
+
+    def test_streaming_uses_italics(self):
+        """Test streaming mode uses italics for thinking."""
+        blocks = [{"type": "thinking", "content": "Thinking..."}]
+        result = format_interleaved_content(blocks, is_streaming=True)
+        assert "<i>" in result
+        assert "</i>" in result
+        assert "blockquote" not in result
+
+    def test_final_uses_blockquote(self):
+        """Test final mode uses blockquote for thinking."""
+        blocks = [{"type": "thinking", "content": "Thinking..."}]
+        result = format_interleaved_content(blocks, is_streaming=False)
+        assert "<blockquote" in result
+        assert "</blockquote>" in result
+        assert "<i>" not in result
+
+    def test_empty_blocks(self):
+        """Test empty blocks list returns empty string."""
+        result = format_interleaved_content([], is_streaming=True)
+        assert result == ""
+
+    def test_empty_content_skipped(self):
+        """Test blocks with empty content are skipped."""
+        blocks = [
+            {"type": "thinking", "content": ""},
+            {"type": "text", "content": "Only text."},
+        ]
+        result = format_interleaved_content(blocks, is_streaming=True)
+        assert "🧠" not in result
+        assert "Only text" in result
+
+
 class TestStripHtml:
     """Tests for _strip_html fallback function."""
 
@@ -149,6 +211,79 @@ class TestStripHtml:
         """Test with plain text (no tags)."""
         result = _strip_html("plain text here")
         assert result == "plain text here"
+
+
+class TestStripToolMarkers:
+    """Tests for strip_tool_markers function."""
+
+    def test_strip_tool_marker_analyze_pdf(self):
+        """Test stripping analyze_pdf marker."""
+        text = "Here is my analysis:\n[📄 analyze_pdf]\nThe document contains..."
+        result = strip_tool_markers(text)
+        assert "[📄" not in result
+        assert "Here is my analysis:" in result
+        assert "The document contains..." in result
+
+    def test_strip_tool_marker_execute_python(self):
+        """Test stripping execute_python marker."""
+        text = "Let me run this code:\n[🐍 execute_python]\nThe result is 42."
+        result = strip_tool_markers(text)
+        assert "[🐍" not in result
+        assert "Let me run this code:" in result
+        assert "The result is 42." in result
+
+    def test_strip_system_message_success(self):
+        """Test stripping success system message."""
+        text = "Done!\n[✅ Код выполнен: output]\nHere is the result."
+        result = strip_tool_markers(text)
+        assert "[✅" not in result
+        assert "Done!" in result
+        assert "Here is the result." in result
+
+    def test_strip_system_message_error(self):
+        """Test stripping error system message."""
+        text = "Trying:\n[❌ Ошибка выполнения: error]\nLet me fix this."
+        result = strip_tool_markers(text)
+        assert "[❌" not in result
+
+    def test_strip_file_sent_marker(self):
+        """Test stripping file sent marker."""
+        text = "Generated image:\n[📤 Отправлен файл: image.png]\nHere it is."
+        result = strip_tool_markers(text)
+        assert "[📤" not in result
+        assert "Generated image:" in result
+
+    def test_strip_multiple_markers(self):
+        """Test stripping multiple markers."""
+        text = ("First step:\n[📄 analyze_pdf]\n"
+                "Analysis complete.\n[✅ Анализ выполнен]\n"
+                "Now searching:\n[🔍 web_search]\n"
+                "Found results.")
+        result = strip_tool_markers(text)
+        assert "[📄" not in result
+        assert "[✅" not in result
+        assert "[🔍" not in result
+        assert "First step:" in result
+        assert "Analysis complete." in result
+        assert "Found results." in result
+
+    def test_no_markers(self):
+        """Test text without any markers."""
+        text = "This is plain text without any tool markers."
+        result = strip_tool_markers(text)
+        assert result == text
+
+    def test_empty_input(self):
+        """Test with empty input."""
+        result = strip_tool_markers("")
+        assert result == ""
+
+    def test_cleans_multiple_newlines(self):
+        """Test that multiple newlines are reduced."""
+        text = "Before\n[📄 tool]\n\n\n\nAfter"
+        result = strip_tool_markers(text)
+        # Should not have more than 2 consecutive newlines
+        assert "\n\n\n" not in result
 
 
 class TestGetToolSystemMessage:
