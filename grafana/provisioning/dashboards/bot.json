@@ -608,7 +608,7 @@
       "targets": [
         {
           "datasource": {"type": "loki", "uid": "loki"},
-          "expr": "{service=\"bot\"} |~ \"${user_filter}\" | json  | line_format \"[{{.user_id}}] {{__line__}}\"",
+          "expr": "{service=\"bot\"} |~ \"${user_filter}\" | json  | line_format \"[{{.username}}] {{__line__}}\"",
           "refId": "A"
         }
       ],
