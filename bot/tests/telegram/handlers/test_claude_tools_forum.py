@@ -77,7 +77,12 @@ async def test_generated_file_sent_to_forum_topic():
     from telegram.handlers.claude import _handle_with_tools
 
     # Mock dependencies
-    mock_session = AsyncMock()
+    # Use MagicMock for session to avoid sync methods (like add()) returning
+    # coroutines. Explicitly set async methods.
+    mock_session = MagicMock()
+    mock_session.commit = AsyncMock()
+    mock_session.rollback = AsyncMock()
+    mock_session.refresh = AsyncMock()
     mock_user_file_repo = AsyncMock()
     mock_user_file_repo.create = AsyncMock()
 

@@ -14,21 +14,60 @@ Telegram bot with access to LLM models (Claude, OpenAI, Google) and tools via ag
 chxxxxbot/
 ├── bot/                        # Container: Telegram bot
 │   ├── main.py                 # Entry point: secrets, logger, startup
-│   ├── config.py               # Constants, app settings
+│   ├── config.py               # Constants, app settings, system prompt
 │   ├── telegram/               # Telegram API integration
 │   │   ├── handlers/           # Message and command handlers
-│   │   ├── middlewares/        # Middleware (logging, DI)
+│   │   │   ├── start.py        # /start, /help
+│   │   │   ├── claude.py       # Claude message handler (catch-all)
+│   │   │   ├── model.py        # /model command
+│   │   │   ├── personality.py  # /personality command
+│   │   │   ├── payment.py      # /buy, /balance, /refund
+│   │   │   ├── admin.py        # /topup, /set_margin
+│   │   │   ├── files.py        # File attachments
+│   │   │   └── media_handlers.py  # Voice/audio/video
+│   │   ├── middlewares/        # Middleware
+│   │   │   ├── logging_middleware.py
+│   │   │   ├── database_middleware.py
+│   │   │   └── balance_middleware.py
 │   │   ├── keyboards/          # Inline and reply keyboards
+│   │   │   ├── model_selector.py
+│   │   │   └── personality_selector.py
+│   │   ├── media_processor.py  # Universal media processing
 │   │   └── loader.py           # Bot, Dispatcher initialization
 │   ├── core/                   # LLM providers (core functionality)
 │   │   ├── base.py             # Abstract provider interface
-│   │   └── claude/             # Claude implementation
+│   │   ├── claude/             # Claude implementation
+│   │   │   ├── client.py       # Claude API client
+│   │   │   ├── context.py      # Context window manager
+│   │   │   └── files_api.py    # Files API wrapper
+│   │   ├── tools/              # Tool implementations
+│   │   │   ├── registry.py     # Tool definitions and dispatch
+│   │   │   ├── analyze_image.py
+│   │   │   ├── analyze_pdf.py
+│   │   │   ├── execute_python.py
+│   │   │   ├── transcribe_audio.py
+│   │   │   └── generate_image.py
+│   │   ├── message_queue.py    # Message batching (200ms)
+│   │   ├── pricing.py          # Cost calculation
+│   │   └── clients.py          # Shared API clients
+│   ├── services/               # Business logic
+│   │   ├── payment_service.py  # Stars payment processing
+│   │   └── balance_service.py  # User balance operations
 │   ├── db/                     # PostgreSQL integration
 │   │   ├── engine.py           # Async engine, session
 │   │   ├── models/             # SQLAlchemy models
+│   │   │   ├── user.py         # User (with balance)
+│   │   │   ├── chat.py         # Chat/group/channel
+│   │   │   ├── thread.py       # Conversation thread
+│   │   │   ├── message.py      # Message (with tokens)
+│   │   │   ├── user_file.py    # Files API references
+│   │   │   ├── payment.py      # Stars payments
+│   │   │   └── balance_operation.py  # Balance audit
 │   │   └── repositories/       # CRUD operations
 │   ├── utils/                  # Helper utilities
-│   │   └── structured_logging.py  # structlog configuration
+│   │   ├── structured_logging.py  # structlog configuration
+│   │   └── metrics.py          # Prometheus metrics
+│   ├── tests/                  # Test suite (540+ tests)
 │   ├── Dockerfile
 │   └── pyproject.toml
 │
@@ -41,6 +80,12 @@ chxxxxbot/
 │
 ├── loki/                       # Container: Loki
 │   └── loki-config.yaml
+│
+├── promtail/                   # Container: Promtail (log collector)
+│   └── promtail-config.yaml
+│
+├── prometheus/                 # Container: Prometheus (metrics)
+│   └── prometheus.yml
 │
 ├── secrets/                    # Docker secrets (in .gitignore)
 ├── docs/                       # Documentation (see docs/README.md)

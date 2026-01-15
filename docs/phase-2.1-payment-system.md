@@ -596,6 +596,59 @@ Add new secret file for privileged users:
 2. ✅ Register middleware in loader
 3. ✅ Test blocking logic
 
+#### BalanceMiddleware Details
+
+**Location:** `bot/telegram/middlewares/balance_middleware.py`
+
+**Purpose:** Block requests to paid features (Claude API, tools) if user's balance is insufficient (balance ≤ 0).
+
+**Free Commands (no balance check):**
+```python
+FREE_COMMANDS = {
+    "/start",      # Bot introduction
+    "/help",       # Help text
+    "/buy",        # Balance purchase
+    "/balance",    # Balance inquiry
+    "/refund",     # Request refund
+    "/paysupport", # Payment support
+    "/topup",      # Admin: manual topup
+    "/set_margin", # Admin: configure margin
+    "/model",      # Model selection
+}
+```
+
+**Middleware Flow:**
+```
+1. Check if event is Message or CallbackQuery
+2. Skip payment messages (successful_payment)
+3. Skip bot/system messages
+4. Check if command is in FREE_COMMANDS → Allow
+5. For paid requests:
+   - Get session from DatabaseMiddleware
+   - Check balance via BalanceService.can_make_request()
+   - If user doesn't exist → Auto-register with starter balance
+   - If balance ≤ 0 → Block with error message
+   - If balance > 0 → Allow request
+6. Fail-open on errors (allow request if check fails)
+```
+
+**Error Message (when blocked):**
+```
+❌ Insufficient balance
+
+Current balance: $0.00
+
+To use paid features, please top up your balance.
+Use /buy to purchase balance with Telegram Stars.
+```
+
+**Logging:**
+- `balance_middleware.free_command` - Free command allowed
+- `balance_middleware.request_allowed` - Paid request passed balance check
+- `balance_middleware.request_blocked` - Request blocked (insufficient balance)
+- `balance_middleware.auto_registered` - New user auto-registered
+- `balance_middleware.check_error` - Error during balance check (fail-open)
+
 ### Stage 8: Cost Tracking Integration ✅ Complete
 1. ✅ Update Claude handler to charge user after response
 2. ✅ Update tool handlers to charge user after execution
@@ -652,7 +705,9 @@ Add new secret file for privileged users:
 - `tests/middlewares/test_balance_middleware.py`
 
 **Migration:**
-- `postgres/alembic/versions/007_add_payment_system_tables.py`
+- `postgres/alembic/versions/2026_01_10_2010-317c14d820cd_add_payment_system_tables.py`
+
+**Note:** Payment system migration uses date-based naming (`YYYY_MM_DD_HHMM-<hash>`) instead of sequential numbering due to concurrent development branch merging.
 
 **Secrets:**
 - `secrets/privileged_users.txt`

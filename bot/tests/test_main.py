@@ -90,9 +90,12 @@ async def test_main_startup_success():
          patch('main.read_secret') as mock_read_secret, \
          patch('main.create_bot') as mock_create_bot, \
          patch('main.create_dispatcher') as mock_create_dispatcher, \
-         patch('main.dispose_db') as mock_dispose_db, \
+         patch('main.dispose_db', new_callable=AsyncMock) as mock_dispose_db, \
          patch('main.start_metrics_server', new_callable=AsyncMock), \
-         patch('main.collect_metrics_task', new_callable=AsyncMock):
+         patch('main.collect_metrics_task', new_callable=AsyncMock), \
+         patch('main.init_claude_provider'), \
+         patch('main.init_message_queue_manager'), \
+         patch('main.load_privileged_users', return_value=set()):
 
         # Setup mocks
         mock_logger = MagicMock()
@@ -104,7 +107,6 @@ async def test_main_startup_success():
         mock_dispatcher = MagicMock()
         mock_dispatcher.start_polling = AsyncMock()
         mock_create_dispatcher.return_value = mock_dispatcher
-        mock_dispose_db.return_value = AsyncMock()()
 
         await main()
 
@@ -137,13 +139,12 @@ async def test_main_missing_bot_token():
          patch('main.get_database_url'), \
          patch('main.init_db'), \
          patch('main.read_secret') as mock_read_secret, \
-         patch('main.dispose_db') as mock_dispose_db:
+         patch('main.dispose_db', new_callable=AsyncMock) as mock_dispose_db:
 
         mock_logger = MagicMock()
         mock_get_logger.return_value = mock_logger
         mock_read_secret.side_effect = FileNotFoundError(
             "telegram_bot_token not found")
-        mock_dispose_db.return_value = AsyncMock()()
 
         # Should raise FileNotFoundError
         with pytest.raises(FileNotFoundError):
@@ -170,13 +171,12 @@ async def test_main_missing_postgres_password():
     with patch('main.setup_logging'), \
          patch('main.get_logger') as mock_get_logger, \
          patch('main.get_database_url') as mock_get_db_url, \
-         patch('main.dispose_db') as mock_dispose_db:
+         patch('main.dispose_db', new_callable=AsyncMock) as mock_dispose_db:
 
         mock_logger = MagicMock()
         mock_get_logger.return_value = mock_logger
         mock_get_db_url.side_effect = FileNotFoundError(
             "postgres_password not found")
-        mock_dispose_db.return_value = AsyncMock()()
 
         # Should propagate FileNotFoundError
         with pytest.raises(FileNotFoundError):
@@ -196,12 +196,11 @@ async def test_main_database_init_failure():
          patch('main.get_logger') as mock_get_logger, \
          patch('main.get_database_url'), \
          patch('main.init_db') as mock_init_db, \
-         patch('main.dispose_db') as mock_dispose_db:
+         patch('main.dispose_db', new_callable=AsyncMock) as mock_dispose_db:
 
         mock_logger = MagicMock()
         mock_get_logger.return_value = mock_logger
         mock_init_db.side_effect = Exception("Database connection failed")
-        mock_dispose_db.return_value = AsyncMock()()
 
         # Should propagate exception
         with pytest.raises(Exception, match="Database connection failed"):
@@ -230,13 +229,15 @@ async def test_main_invalid_bot_token():
          patch('main.init_db'), \
          patch('main.read_secret') as mock_read_secret, \
          patch('main.create_bot') as mock_create_bot, \
-         patch('main.dispose_db') as mock_dispose_db:
+         patch('main.dispose_db', new_callable=AsyncMock) as mock_dispose_db, \
+         patch('main.init_claude_provider'), \
+         patch('main.init_message_queue_manager'), \
+         patch('main.load_privileged_users', return_value=set()):
 
         mock_logger = MagicMock()
         mock_get_logger.return_value = mock_logger
         mock_read_secret.return_value = "invalid_token"
         mock_create_bot.side_effect = Exception("Invalid token format")
-        mock_dispose_db.return_value = AsyncMock()()
 
         # Should propagate exception
         with pytest.raises(Exception, match="Invalid token format"):
@@ -255,12 +256,11 @@ async def test_main_cleanup_on_error():
     with patch('main.setup_logging'), \
          patch('main.get_logger') as mock_get_logger, \
          patch('main.get_database_url') as mock_get_db_url, \
-         patch('main.dispose_db') as mock_dispose_db:
+         patch('main.dispose_db', new_callable=AsyncMock) as mock_dispose_db:
 
         mock_logger = MagicMock()
         mock_get_logger.return_value = mock_logger
         mock_get_db_url.side_effect = RuntimeError("Unexpected error")
-        mock_dispose_db.return_value = AsyncMock()()
 
         # Error should propagate
         with pytest.raises(RuntimeError):
@@ -291,14 +291,16 @@ async def test_main_finally_block_always_runs():
          patch('main.read_secret'), \
          patch('main.create_bot'), \
          patch('main.create_dispatcher') as mock_create_dispatcher, \
-         patch('main.dispose_db') as mock_dispose_db, \
+         patch('main.dispose_db', new_callable=AsyncMock) as mock_dispose_db, \
          patch('main.start_metrics_server', new_callable=AsyncMock), \
-         patch('main.collect_metrics_task', new_callable=AsyncMock):
+         patch('main.collect_metrics_task', new_callable=AsyncMock), \
+         patch('main.init_claude_provider'), \
+         patch('main.init_message_queue_manager'), \
+         patch('main.load_privileged_users', return_value=set()):
 
         mock_dispatcher = MagicMock()
         mock_dispatcher.start_polling = AsyncMock()
         mock_create_dispatcher.return_value = mock_dispatcher
-        mock_dispose_db.return_value = AsyncMock()()
 
         await main()
 
@@ -309,10 +311,9 @@ async def test_main_finally_block_always_runs():
     with patch('main.setup_logging'), \
          patch('main.get_logger'), \
          patch('main.get_database_url') as mock_get_db_url, \
-         patch('main.dispose_db') as mock_dispose_db:
+         patch('main.dispose_db', new_callable=AsyncMock) as mock_dispose_db:
 
         mock_get_db_url.side_effect = Exception("Error")
-        mock_dispose_db.return_value = AsyncMock()()
 
         with pytest.raises(Exception):
             await main()
@@ -334,9 +335,12 @@ async def test_main_logging_setup():
          patch('main.read_secret'), \
          patch('main.create_bot'), \
          patch('main.create_dispatcher') as mock_create_dispatcher, \
-         patch('main.dispose_db'), \
+         patch('main.dispose_db', new_callable=AsyncMock), \
          patch('main.start_metrics_server', new_callable=AsyncMock), \
-         patch('main.collect_metrics_task', new_callable=AsyncMock):
+         patch('main.collect_metrics_task', new_callable=AsyncMock), \
+         patch('main.init_claude_provider'), \
+         patch('main.init_message_queue_manager'), \
+         patch('main.load_privileged_users', return_value=set()):
 
         mock_get_logger.return_value = MagicMock()
         mock_dispatcher = MagicMock()
@@ -365,7 +369,10 @@ async def test_main_logging_sequence():
          patch('main.create_dispatcher') as mock_create_dispatcher, \
          patch('main.dispose_db'), \
          patch('main.start_metrics_server', new_callable=AsyncMock), \
-         patch('main.collect_metrics_task', new_callable=AsyncMock):
+         patch('main.collect_metrics_task', new_callable=AsyncMock), \
+         patch('main.init_claude_provider'), \
+         patch('main.init_message_queue_manager'), \
+         patch('main.load_privileged_users', return_value=set()):
 
         mock_logger = MagicMock()
         mock_get_logger.return_value = mock_logger
@@ -408,9 +415,12 @@ async def test_main_dispatcher_start_polling():
          patch('main.read_secret'), \
          patch('main.create_bot') as mock_create_bot, \
          patch('main.create_dispatcher') as mock_create_dispatcher, \
-         patch('main.dispose_db'), \
+         patch('main.dispose_db', new_callable=AsyncMock), \
          patch('main.start_metrics_server', new_callable=AsyncMock), \
-         patch('main.collect_metrics_task', new_callable=AsyncMock):
+         patch('main.collect_metrics_task', new_callable=AsyncMock), \
+         patch('main.init_claude_provider'), \
+         patch('main.init_message_queue_manager'), \
+         patch('main.load_privileged_users', return_value=set()):
 
         mock_bot = MagicMock()
         mock_create_bot.return_value = mock_bot
@@ -437,9 +447,12 @@ async def test_main_database_echo_disabled():
          patch('main.read_secret'), \
          patch('main.create_bot'), \
          patch('main.create_dispatcher') as mock_create_dispatcher, \
-         patch('main.dispose_db'), \
+         patch('main.dispose_db', new_callable=AsyncMock), \
          patch('main.start_metrics_server', new_callable=AsyncMock), \
-         patch('main.collect_metrics_task', new_callable=AsyncMock):
+         patch('main.collect_metrics_task', new_callable=AsyncMock), \
+         patch('main.init_claude_provider'), \
+         patch('main.init_message_queue_manager'), \
+         patch('main.load_privileged_users', return_value=set()):
 
         mock_dispatcher = MagicMock()
         mock_dispatcher.start_polling = AsyncMock()

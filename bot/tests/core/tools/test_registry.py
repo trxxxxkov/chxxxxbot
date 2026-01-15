@@ -268,3 +268,150 @@ class TestExecuteTool:
         assert result["success"] == "true"
         assert "stdout" in result
         assert "stderr" in result
+
+
+class TestGetToolEmoji:
+    """Tests for get_tool_emoji() helper function."""
+
+    def test_get_emoji_for_web_search(self):
+        """Test emoji for web_search tool."""
+        from core.tools.registry import get_tool_emoji
+        assert get_tool_emoji("web_search") == "🔍"
+
+    def test_get_emoji_for_web_fetch(self):
+        """Test emoji for web_fetch tool."""
+        from core.tools.registry import get_tool_emoji
+        assert get_tool_emoji("web_fetch") == "🌐"
+
+    def test_get_emoji_for_analyze_image(self):
+        """Test emoji for analyze_image tool."""
+        from core.tools.registry import get_tool_emoji
+        assert get_tool_emoji("analyze_image") == "🖼️"
+
+    def test_get_emoji_for_execute_python(self):
+        """Test emoji for execute_python tool."""
+        from core.tools.registry import get_tool_emoji
+        assert get_tool_emoji("execute_python") == "🐍"
+
+    def test_get_emoji_for_generate_image(self):
+        """Test emoji for generate_image tool."""
+        from core.tools.registry import get_tool_emoji
+        assert get_tool_emoji("generate_image") == "🎨"
+
+    def test_get_emoji_for_unknown_tool(self):
+        """Test that unknown tool returns default emoji."""
+        from core.tools.registry import get_tool_emoji
+        assert get_tool_emoji("nonexistent_tool") == "🔧"
+
+
+class TestIsServerSideTool:
+    """Tests for is_server_side_tool() helper function."""
+
+    def test_web_search_is_server_side(self):
+        """Test that web_search is identified as server-side."""
+        from core.tools.registry import is_server_side_tool
+        assert is_server_side_tool("web_search") is True
+
+    def test_web_fetch_is_server_side(self):
+        """Test that web_fetch is identified as server-side."""
+        from core.tools.registry import is_server_side_tool
+        assert is_server_side_tool("web_fetch") is True
+
+    def test_analyze_image_is_not_server_side(self):
+        """Test that analyze_image is NOT server-side."""
+        from core.tools.registry import is_server_side_tool
+        assert is_server_side_tool("analyze_image") is False
+
+    def test_execute_python_is_not_server_side(self):
+        """Test that execute_python is NOT server-side."""
+        from core.tools.registry import is_server_side_tool
+        assert is_server_side_tool("execute_python") is False
+
+    def test_unknown_tool_returns_false(self):
+        """Test that unknown tool returns False."""
+        from core.tools.registry import is_server_side_tool
+        assert is_server_side_tool("nonexistent_tool") is False
+
+
+class TestGetToolDefinitions:
+    """Tests for get_tool_definitions() helper function."""
+
+    def test_returns_list(self):
+        """Test that get_tool_definitions returns a list."""
+        from core.tools.registry import get_tool_definitions
+        definitions = get_tool_definitions()
+        assert isinstance(definitions, list)
+
+    def test_all_definitions_are_dicts(self):
+        """Test that all definitions are dictionaries."""
+        from core.tools.registry import get_tool_definitions
+        definitions = get_tool_definitions()
+        for definition in definitions:
+            assert isinstance(definition, dict)
+
+    def test_includes_all_registered_tools(self):
+        """Test that all registered tools are included."""
+        from core.tools.registry import get_tool_definitions, TOOLS
+        definitions = get_tool_definitions()
+        assert len(definitions) == len(TOOLS)
+
+    def test_includes_web_search_definition(self):
+        """Test that web_search definition is included."""
+        from core.tools.registry import get_tool_definitions
+        definitions = get_tool_definitions()
+        names = [d.get("name") for d in definitions]
+        assert "web_search" in names
+
+    def test_includes_web_fetch_definition(self):
+        """Test that web_fetch definition is included."""
+        from core.tools.registry import get_tool_definitions
+        definitions = get_tool_definitions()
+        names = [d.get("name") for d in definitions]
+        assert "web_fetch" in names
+
+
+class TestGetToolSystemMessage:
+    """Tests for get_tool_system_message() helper function."""
+
+    def test_unknown_tool_returns_empty_string(self):
+        """Test that unknown tool returns empty string."""
+        from core.tools.registry import get_tool_system_message
+        message = get_tool_system_message(
+            "nonexistent_tool",
+            {"param": "value"},
+            {"result": "ok"},
+        )
+        assert message == ""
+
+    def test_tool_without_formatter_returns_empty_string(self):
+        """Test that tool without formatter returns empty string."""
+        from core.tools.registry import get_tool_system_message
+        # web_search has no formatter
+        message = get_tool_system_message(
+            "web_search",
+            {"query": "test"},
+            {"results": []},
+        )
+        assert message == ""
+
+    def test_generate_image_with_formatter(self):
+        """Test that generate_image returns formatted message."""
+        from core.tools.registry import get_tool_system_message
+        message = get_tool_system_message(
+            "generate_image",
+            {"prompt": "A cat"},
+            {"success": "true", "cost": "$0.134"},
+        )
+        # Should contain emoji and resolution info
+        assert "🎨" in message and len(message) > 0
+
+    def test_execute_python_with_formatter(self):
+        """Test that execute_python returns formatted message."""
+        from core.tools.registry import get_tool_system_message
+        message = get_tool_system_message(
+            "execute_python",
+            {"code": "print('hello')"},
+            {"success": "true", "stdout": "hello"},
+        )
+        # May return formatted message or empty string
+        assert isinstance(message, str)

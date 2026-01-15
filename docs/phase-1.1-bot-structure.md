@@ -18,10 +18,17 @@ bot/
 ├── telegram/                     # Telegram API
 │   ├── handlers/                 # Command and message handlers
 │   │   ├── start.py              # /start, /help commands
-│   │   └── echo.py               # Echo handler (catch-all)
+│   │   ├── claude.py             # Claude handler (catch-all) - Phase 1.3
+│   │   ├── model.py              # /model command - Phase 1.4
+│   │   ├── personality.py        # /personality command - Phase 1.4
+│   │   ├── files.py              # File attachments - Phase 1.5
+│   │   ├── media_handlers.py     # Voice/audio/video - Phase 1.6
+│   │   ├── payment.py            # /buy, /balance, /refund - Phase 2.1
+│   │   └── admin.py              # /topup, /set_margin - Phase 2.1
 │   ├── middlewares/              # Middleware
 │   │   ├── logging_middleware.py     # Request logging
-│   │   └── database_middleware.py    # Session management
+│   │   ├── database_middleware.py    # Session management
+│   │   └── balance_middleware.py     # Balance check - Phase 2.1
 │   ├── keyboards/                # Keyboards (inline, reply)
 │   └── loader.py                 # Bot, Dispatcher setup
 ├── core/                         # LLM providers
@@ -106,14 +113,23 @@ postgres/                         # Alembic migrations
 **Middleware Order (first registered = first executed):**
 1. LoggingMiddleware - Request logging
 2. DatabaseMiddleware - Session injection
+3. BalanceMiddleware - Balance check (Phase 2.1)
 
 #### telegram/handlers/
 **Purpose:** Command and message handlers.
 
-| File | Description |
-|------|-------------|
-| `start.py` | /start and /help commands with database integration |
-| `echo.py` | Echo handler (catch-all) |
+| File | Description | Phase |
+|------|-------------|-------|
+| `start.py` | /start and /help commands with database integration | 1.1 |
+| `claude.py` | Claude handler (catch-all for text messages) | 1.3 |
+| `model.py` | /model command for model selection | 1.4 |
+| `personality.py` | /personality command for custom prompts | 1.4 |
+| `files.py` | File attachment handling (images, PDFs) | 1.5 |
+| `media_handlers.py` | Voice, audio, video message handlers | 1.6 |
+| `payment.py` | /buy, /balance, /refund commands | 2.1 |
+| `admin.py` | /topup, /set_margin (privileged users) | 2.1 |
+
+**Note:** The original echo.py handler was replaced by claude.py in Phase 1.3.
 
 **Handler Signature:**
 ```python
@@ -127,10 +143,11 @@ async def handler(message: Message, session: AsyncSession):
 #### telegram/middlewares/
 **Purpose:** Request processing middleware.
 
-| File | Middleware | Description |
-|------|------------|-------------|
-| `logging_middleware.py` | LoggingMiddleware | Logs all updates with context (user_id, message_id, execution time) |
-| `database_middleware.py` | DatabaseMiddleware | Injects AsyncSession, auto-commits on success, auto-rollbacks on error |
+| File | Middleware | Description | Phase |
+|------|------------|-------------|-------|
+| `logging_middleware.py` | LoggingMiddleware | Logs all updates with context (user_id, message_id, execution time) | 1.1 |
+| `database_middleware.py` | DatabaseMiddleware | Injects AsyncSession, auto-commits on success, auto-rollbacks on error | 1.2 |
+| `balance_middleware.py` | BalanceMiddleware | Checks user balance before processing paid requests | 2.1 |
 
 **DatabaseMiddleware Flow:**
 1. Create AsyncSession for update

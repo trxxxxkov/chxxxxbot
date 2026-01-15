@@ -1523,6 +1523,52 @@ All handled by Tool Runner automatically.
 - ✅ Update cost calculation: cache-aware pricing (0.1x reads, 1.25x writes)
 - ✅ Display cache hit rate in monitoring logs
 - ✅ 3-level system prompt composition: GLOBAL + User.custom_prompt + Thread.files_context
+- ✅ `/personality` command for User.custom_prompt management (see below)
+
+#### /personality Command
+
+The `/personality` command allows users to customize their assistant's behavior.
+
+**Location:** `bot/telegram/handlers/personality.py`
+
+**Features:**
+- View current custom prompt
+- Edit custom prompt (FSM state: `PersonalityStates.waiting_for_text`)
+- Clear custom prompt
+- Inline keyboard for all actions
+
+**Inline Keyboard Actions:**
+- `personality:view` - Show full custom prompt text
+- `personality:edit` - Enter edit mode
+- `personality:clear` - Remove custom prompt
+- `personality:cancel` - Close menu
+
+**FSM States:**
+```python
+class PersonalityStates(StatesGroup):
+    waiting_for_text = State()  # Waiting for new personality text
+```
+
+**System Prompt Composition:**
+```
+1. GLOBAL_SYSTEM_PROMPT (from config.py, cached)
+2. User.custom_prompt (from /personality, cached)
+3. Thread.files_context (auto-generated, NOT cached)
+```
+
+**Usage Example:**
+```
+User: /personality
+Bot: 🎭 Personality Settings
+     Current personality: (not set)
+     [View] [Edit] [Clear] [Cancel]
+
+User: [Edit]
+Bot: ✏️ Enter your new personality instructions...
+
+User: Always respond in formal English.
+Bot: ✅ Personality updated successfully!
+```
 
 ### ✅ Phase 1.4.3: Extended Thinking & Message Batching (Completed)
 - ✅ Add Interleaved Thinking beta header: `interleaved-thinking-2025-05-14`
