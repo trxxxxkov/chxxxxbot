@@ -8,6 +8,7 @@ and streams responses back to Telegram in real-time.
 NO __init__.py - use direct import: from telegram.handlers.claude import router
 """
 
+import asyncio
 import html as html_lib
 import re
 import time
@@ -18,6 +19,7 @@ from typing import Optional, TYPE_CHECKING
 from aiogram import F
 from aiogram import Router
 from aiogram import types
+from aiogram.exceptions import TelegramRetryAfter
 
 if TYPE_CHECKING:
     from telegram.media_processor import MediaContent
@@ -808,6 +810,41 @@ def _strip_html(text: str) -> str:
     # Unescape common HTML entities
     clean = clean.replace('&lt;', '<').replace('&gt;', '>').replace('&amp;', '&')
     return clean
+
+
+async def _send_with_retry(
+    message: types.Message,
+    text: str,
+    max_retries: int = 3,
+    parse_mode: str | None = "HTML",
+) -> types.Message:
+    """Send message with retry on flood control.
+
+    Args:
+        message: Message to reply to.
+        text: Text to send.
+        max_retries: Maximum retry attempts.
+        parse_mode: Parse mode for the message.
+
+    Returns:
+        Sent message.
+
+    Raises:
+        TelegramRetryAfter: If all retries exhausted.
+    """
+    for attempt in range(max_retries):
+        try:
+            return await message.answer(text, parse_mode=parse_mode)
+        except TelegramRetryAfter as e:
+            if attempt == max_retries - 1:
+                raise
+            wait_time = min(e.retry_after, 30)  # Cap at 30 seconds
+            logger.warning("telegram.flood_control",
+                           retry_after=e.retry_after,
+                           wait_time=wait_time,
+                           attempt=attempt + 1)
+            await asyncio.sleep(wait_time)
+    raise TelegramRetryAfter(retry_after=0, method="send_with_retry", message="Max retries")
 
 
 async def _update_telegram_message(
@@ -1679,11 +1716,12 @@ async def _process_message_batch(
                     # Split using smart boundaries (paragraph > newline > hard split)
                     chunks = split_text_smart(safe_final)
                     for chunk in chunks:
-                        bot_message = await first_message.answer(chunk)
+                        bot_message = await _send_with_retry(first_message, chunk)
                 else:
                     logger.warning("claude_handler.empty_response",
                                    thread_id=thread_id)
-                    bot_message = await first_message.answer(
+                    bot_message = await _send_with_retry(
+                        first_message,
                         "⚠️ Claude returned an empty response. "
                         "Please try rephrasing your message.")
 
