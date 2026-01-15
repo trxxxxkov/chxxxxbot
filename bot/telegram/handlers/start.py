@@ -52,11 +52,7 @@ async def start_handler(message: types.Message, session: AsyncSession) -> None:
         was_created=was_created,
     )
 
-    # Dashboard tracking event for new users
-    if was_created:
-        logger.info("user.new_user_joined",
-                    user_id=user.id,
-                    username=user.username)
+    # Note: user.new_user_joined is logged in UserRepository.get_or_create()
 
     # Different message for new vs returning users
     greeting = "👋 Welcome!" if was_created else "👋 Welcome back!"
