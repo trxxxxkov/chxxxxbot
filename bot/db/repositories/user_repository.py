@@ -207,8 +207,8 @@ class UserRepository(BaseRepository[User]):
         result = await self.session.execute(stmt)
         count = result.scalar_one()
 
-        logger.info("user_repository.get_users_count.complete",
-                    total_users=count)
+        logger.debug("user_repository.get_users_count.complete",
+                     total_users=count)
         return count
 
     async def increment_stats(
