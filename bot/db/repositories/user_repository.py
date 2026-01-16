@@ -167,7 +167,8 @@ class UserRepository(BaseRepository[User]):
                     user_id=telegram_id,
                     username=username,
                     first_name=first_name,
-                    is_premium=is_premium)
+                    is_premium=is_premium,
+                    _source="user_repository")
 
         return user, True
 

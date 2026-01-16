@@ -29,6 +29,15 @@
         },
         "overrides": [
           {
+            "matcher": {"id": "byName", "options": "debug"},
+            "properties": [
+              {"id": "color", "value": {"fixedColor": "#3B82F6", "mode": "fixed"}},
+              {"id": "custom.fillOpacity", "value": 0},
+              {"id": "custom.axisPlacement", "value": "hidden"},
+              {"id": "custom.axisLabel", "value": "debug"}
+            ]
+          },
+          {
             "matcher": {"id": "byName", "options": "info"},
             "properties": [
               {"id": "color", "value": {"fixedColor": "#22C55E", "mode": "fixed"}},
@@ -67,8 +76,8 @@
       "targets": [
         {
           "datasource": {"type": "loki", "uid": "loki"},
-          "expr": "sum(count_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | level=\"info\"  [$__interval])) or vector(0)",
-          "legendFormat": "info",
+          "expr": "sum(count_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | level=\"error\"  [$__interval])) or vector(0)",
+          "legendFormat": "error",
           "refId": "A"
         },
         {
@@ -79,9 +88,15 @@
         },
         {
           "datasource": {"type": "loki", "uid": "loki"},
-          "expr": "sum(count_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | level=\"error\"  [$__interval])) or vector(0)",
-          "legendFormat": "error",
+          "expr": "sum(count_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | level=\"info\"  [$__interval])) or vector(0)",
+          "legendFormat": "info",
           "refId": "C"
+        },
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "expr": "sum(count_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | level=\"debug\"  [$__interval])) or vector(0)",
+          "legendFormat": "debug",
+          "refId": "D"
         }
       ],
       "title": "Logs History",
@@ -400,8 +415,8 @@
       "targets": [
         {
           "datasource": {"type": "loki", "uid": "loki"},
-          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.response_complete\"  | unwrap input_tokens [$__interval])) or vector(0)",
-          "legendFormat": "Input",
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.response_complete\"  | unwrap thinking_tokens [$__interval])) or vector(0)",
+          "legendFormat": "Thinking",
           "refId": "A"
         },
         {
@@ -412,8 +427,8 @@
         },
         {
           "datasource": {"type": "loki", "uid": "loki"},
-          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.response_complete\"  | unwrap thinking_tokens [$__interval])) or vector(0)",
-          "legendFormat": "Thinking",
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.response_complete\"  | unwrap input_tokens [$__interval])) or vector(0)",
+          "legendFormat": "Input",
           "refId": "C"
         },
         {

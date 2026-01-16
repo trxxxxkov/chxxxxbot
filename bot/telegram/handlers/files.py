@@ -203,11 +203,27 @@ async def process_file_upload(message: types.Message,
         or message.chat.first_name  # Private chats
         or message.from_user.first_name if message.from_user else None)
 
-    thread, _ = await thread_repo.get_or_create_thread(
+    thread, was_created = await thread_repo.get_or_create_thread(
         chat_id=chat_id,
         user_id=user_id,
         thread_id=telegram_thread_id,
         title=thread_title)
+
+    # Dashboard tracking events
+    if was_created:
+        logger.info("claude_handler.thread_created",
+                    thread_id=thread.id,
+                    user_id=user_id,
+                    telegram_thread_id=telegram_thread_id)
+
+    logger.info("claude_handler.message_received",
+                chat_id=chat_id,
+                user_id=user_id,
+                message_id=message.message_id,
+                message_thread_id=telegram_thread_id,
+                is_topic_message=message.is_topic_message,
+                text_length=len(message.text or message.caption or ""),
+                is_new_thread="true" if was_created else "false")
 
     logger.info("file_upload.thread_resolved",
                 thread_id=thread.id,
@@ -351,11 +367,27 @@ async def handle_photo(message: types.Message, session: AsyncSession) -> None:
             or message.from_user.first_name if message.from_user else None)
 
         # Get or create thread
-        thread, _ = await thread_repo.get_or_create_thread(
+        thread, was_created = await thread_repo.get_or_create_thread(
             chat_id=chat_id,
             user_id=user_id,
             thread_id=telegram_thread_id,
             title=thread_title)
+
+        # Dashboard tracking events
+        if was_created:
+            logger.info("claude_handler.thread_created",
+                        thread_id=thread.id,
+                        user_id=user_id,
+                        telegram_thread_id=telegram_thread_id)
+
+        logger.info("claude_handler.message_received",
+                    chat_id=chat_id,
+                    user_id=user_id,
+                    message_id=message.message_id,
+                    message_thread_id=telegram_thread_id,
+                    is_topic_message=message.is_topic_message,
+                    text_length=len(message.text or message.caption or ""),
+                    is_new_thread="true" if was_created else "false")
 
         logger.info("photo_handler.thread_resolved",
                     thread_id=thread.id,
@@ -546,11 +578,27 @@ async def handle_document(message: types.Message,
             or message.from_user.first_name if message.from_user else None)
 
         # Get or create thread
-        thread, _ = await thread_repo.get_or_create_thread(
+        thread, was_created = await thread_repo.get_or_create_thread(
             chat_id=chat_id,
             user_id=user_id,
             thread_id=telegram_thread_id,
             title=thread_title)
+
+        # Dashboard tracking events
+        if was_created:
+            logger.info("claude_handler.thread_created",
+                        thread_id=thread.id,
+                        user_id=user_id,
+                        telegram_thread_id=telegram_thread_id)
+
+        logger.info("claude_handler.message_received",
+                    chat_id=chat_id,
+                    user_id=user_id,
+                    message_id=message.message_id,
+                    message_thread_id=telegram_thread_id,
+                    is_topic_message=message.is_topic_message,
+                    text_length=len(message.text or message.caption or ""),
+                    is_new_thread="true" if was_created else "false")
 
         logger.info("document_handler.thread_resolved",
                     thread_id=thread.id,

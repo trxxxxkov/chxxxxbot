@@ -170,6 +170,11 @@ async def handle_voice(message: types.Message, session: AsyncSession) -> None:
                     thread_id=thread.id,
                     transcript_length=len(media_content.text_content or ""))
 
+        # Dashboard tracking event
+        logger.info("files.user_file_received",
+                    user_id=user_id,
+                    file_type="voice")
+
     except openai.APIError as e:
         logger.error("voice_handler.whisper_api_failed",
                      user_id=user_id,
@@ -586,6 +591,11 @@ async def handle_video_note(message: types.Message,
         logger.info("video_note_handler.complete",
                     user_id=user_id,
                     thread_id=thread.id)
+
+        # Dashboard tracking event (video_note is visually a video)
+        logger.info("files.user_file_received",
+                    user_id=user_id,
+                    file_type="video")
 
     except openai.APIError as e:
         logger.error("video_note_handler.whisper_api_failed",
