@@ -21,7 +21,7 @@ chxxxxbot/
 │   │   │   ├── claude.py       # Claude message handler (catch-all)
 │   │   │   ├── model.py        # /model command
 │   │   │   ├── personality.py  # /personality command
-│   │   │   ├── payment.py      # /buy, /balance, /refund
+│   │   │   ├── payment.py      # /pay, /balance, /refund
 │   │   │   ├── admin.py        # /topup, /set_margin
 │   │   │   ├── files.py        # File attachments
 │   │   │   └── media_handlers.py  # Voice/audio/video
@@ -323,7 +323,7 @@ chxxxxbot/
 - ✅ Duplicate payment protection
 
 **User commands:**
-- ✅ `/buy` - Purchase balance with Stars (packages or custom)
+- ✅ `/pay` - Purchase balance with Stars (packages or custom)
 - ✅ `/balance` - View current balance and transaction history
 - ✅ `/refund <transaction_id>` - Request refund (30-day window)
 - ✅ `/paysupport` - Payment support information (Telegram requirement)
@@ -860,7 +860,7 @@ This script:
 **Phase 2.1 (Payment System):** ✅ Complete (2026-01-10)
 - Telegram Stars payment integration with commission handling
 - User balance system ($0.10 starter, soft balance check)
-- Payment handlers (/buy with packages, /refund, /balance, /paysupport)
+- Payment handlers (/pay with packages, /refund, /balance, /paysupport)
 - Admin commands (/topup, /set_margin for privileged users)
 - Balance middleware (blocks requests when balance ≤ 0)
 - Cost tracking integration (Claude API, tools, external APIs)

@@ -1,7 +1,7 @@
 """Payment handlers for Telegram Stars integration.
 
 This module handles all payment-related user interactions:
-- /buy command with predefined packages and custom amount
+- /pay command with predefined packages and custom amount
 - Pre-checkout query validation
 - Successful payment processing
 - /refund command with validation
@@ -44,15 +44,15 @@ class BuyStarsStates(StatesGroup):
     waiting_for_custom_amount = State()
 
 
-@router.message(Command("buy"))
-async def cmd_buy(message: Message, state: FSMContext, session: AsyncSession):
-    """Handler for /buy command - show Stars packages.
+@router.message(Command("pay"))
+async def cmd_pay(message: Message, state: FSMContext, session: AsyncSession):
+    """Handler for /pay command - show Stars packages.
 
     Displays predefined packages + custom amount option.
     Each package shows: Label, Stars amount, and resulting USD balance.
 
     Args:
-        message: Telegram message with /buy command.
+        message: Telegram message with /pay command.
         state: FSM context for custom amount flow.
         session: Database session from middleware.
     """
@@ -77,7 +77,7 @@ async def cmd_buy(message: Message, state: FSMContext, session: AsyncSession):
     )
 
     logger.info(
-        "payment.buy_command",
+        "payment.pay_command",
         user_id=user_id,
         username=user.username,
     )
@@ -621,7 +621,7 @@ async def cmd_balance(message: Message, session: AsyncSession):
                              f"Current: <b>${balance}</b>\n\n"
                              f"📊 <b>Recent history:</b>\n"
                              f"<pre>{history_text}</pre>\n\n"
-                             f"💡 Top up: /buy")
+                             f"💡 Top up: /pay")
 
         logger.info(
             "payment.balance_checked",

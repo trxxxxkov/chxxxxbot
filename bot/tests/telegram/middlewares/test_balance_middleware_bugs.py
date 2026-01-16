@@ -152,7 +152,7 @@ async def test_bug1_free_command_always_allowed(
     """Test that free commands work even with zero balance."""
     # Test all free commands
     free_commands = [
-        "/start", "/help", "/buy", "/balance", "/refund", "/paysupport",
+        "/start", "/help", "/pay", "/balance", "/refund", "/paysupport",
         "/topup", "/set_margin", "/model"
     ]
 

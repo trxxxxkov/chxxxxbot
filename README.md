@@ -174,7 +174,7 @@ git update-index --skip-worktree secrets/*
 | `/help` | Show help information |
 | `/model` | Select Claude model (Haiku, Sonnet, Opus) |
 | `/balance` | View current balance and transaction history |
-| `/buy` | Purchase balance with Telegram Stars |
+| `/pay` | Purchase balance with Telegram Stars |
 | `/refund <transaction_id>` | Request refund (within 30 days) |
 | `/paysupport` | Payment support information |
 
@@ -196,7 +196,7 @@ git update-index --skip-worktree secrets/*
 - After balance ≤ 0, further requests are blocked until top-up
 
 **Buying Balance:**
-- Use `/buy` command to purchase Stars packages
+- Use `/pay` command to purchase Stars packages
 - Available packages: 10, 50, 100, 250, 500 Stars
 - Or enter custom amount (1-2500 Stars)
 - Instant balance crediting after successful payment

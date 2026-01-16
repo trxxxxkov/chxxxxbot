@@ -23,7 +23,7 @@ bot/
 │   │   ├── personality.py        # /personality command - Phase 1.4
 │   │   ├── files.py              # File attachments - Phase 1.5
 │   │   ├── media_handlers.py     # Voice/audio/video - Phase 1.6
-│   │   ├── payment.py            # /buy, /balance, /refund - Phase 2.1
+│   │   ├── payment.py            # /pay, /balance, /refund - Phase 2.1
 │   │   └── admin.py              # /topup, /set_margin - Phase 2.1
 │   ├── middlewares/              # Middleware
 │   │   ├── logging_middleware.py     # Request logging
@@ -126,7 +126,7 @@ postgres/                         # Alembic migrations
 | `personality.py` | /personality command for custom prompts | 1.4 |
 | `files.py` | File attachment handling (images, PDFs) | 1.5 |
 | `media_handlers.py` | Voice, audio, video message handlers | 1.6 |
-| `payment.py` | /buy, /balance, /refund commands | 2.1 |
+| `payment.py` | /pay, /balance, /refund commands | 2.1 |
 | `admin.py` | /topup, /set_margin (privileged users) | 2.1 |
 
 **Note:** The original echo.py handler was replaced by claude.py in Phase 1.3.

@@ -634,7 +634,7 @@ MINIMUM_BALANCE_FOR_REQUEST: float = 0.0  # Allow requests while balance > 0
 # Refund settings
 REFUND_PERIOD_DAYS: int = 30  # Maximum days for refund eligibility
 
-# Predefined Stars packages (for /buy command)
+# Predefined Stars packages (for /pay command)
 STARS_PACKAGES: list[dict[str, int | str]] = [
     {
         "stars": 10,

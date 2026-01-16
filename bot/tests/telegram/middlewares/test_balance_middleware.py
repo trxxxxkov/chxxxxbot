@@ -29,7 +29,7 @@ class TestBalanceMiddlewareFreeCommands:
     @pytest.mark.parametrize("command", [
         "/start",
         "/help",
-        "/buy",
+        "/pay",
         "/balance",
         "/refund",
         "/paysupport",
@@ -101,7 +101,7 @@ class TestBalanceMiddlewareFreeCommands:
         mock_message.from_user = Mock(spec=User)
         mock_message.from_user.id = sample_user.id
         mock_message.from_user.is_bot = False
-        mock_message.text = "/buy 100"  # Command with argument
+        mock_message.text = "/pay 100"  # Command with argument
         mock_message.caption = None
         mock_message.answer = AsyncMock()
         mock_message.successful_payment = None
@@ -156,7 +156,7 @@ class TestBalanceMiddlewarePaidRequests:
         mock_message.answer.assert_called_once()
         call_args = mock_message.answer.call_args[0][0]
         assert "Insufficient balance" in call_args
-        assert "/buy" in call_args
+        assert "/pay" in call_args
 
     async def test_text_message_allowed_positive_balance(
             self, test_session, sample_user):

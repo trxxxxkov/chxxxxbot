@@ -2,7 +2,7 @@
 
 This module contains tests for Bug 3:
 - Users without /start could not use payment commands, causing "user not found"
-  errors when they tried to /buy, /balance, or /refund.
+  errors when they tried to /pay, /balance, or /refund.
 
 Bug Report: 2026-01-10
 
@@ -13,7 +13,7 @@ due to frozen models. The fixes are validated by:
 3. Code review showing get_or_create() is now called in all payment handlers
 
 Key fixes made:
-- /buy now calls user_repo.get_or_create() before processing
+- /pay now calls user_repo.get_or_create() before processing
 - /balance now calls user_repo.get_or_create() before checking balance
 - /refund now calls user_repo.get_or_create() before validating refund
 

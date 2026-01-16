@@ -23,11 +23,11 @@ class BalanceMiddleware(BaseMiddleware):
     """Middleware to check user balance before processing paid requests.
 
     Blocks requests to paid features (Claude API, tools) if balance <= 0.
-    Allows all free commands (start, help, buy, balance, refund, etc.).
+    Allows all free commands (start, help, pay, balance, refund, etc.).
 
     Free commands (no balance check):
     - /start, /help
-    - /buy, /balance, /refund, /paysupport
+    - /pay, /balance, /refund, /paysupport
     - /topup, /set_margin (admin commands)
     - /model (model selection is free)
     """
@@ -36,7 +36,7 @@ class BalanceMiddleware(BaseMiddleware):
     FREE_COMMANDS = {
         "/start",
         "/help",
-        "/buy",
+        "/pay",
         "/balance",
         "/refund",
         "/paysupport",
@@ -167,7 +167,7 @@ class BalanceMiddleware(BaseMiddleware):
                     f"❌ <b>Insufficient balance</b>\n\n"
                     f"Current balance: <b>${balance}</b>\n\n"
                     f"To use paid features, please top up your balance.\n"
-                    f"Use /buy to purchase balance with Telegram Stars.")
+                    f"Use /pay to purchase balance with Telegram Stars.")
 
                 logger.warning(
                     "balance_middleware.request_blocked",
