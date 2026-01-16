@@ -2071,14 +2071,6 @@ async def handle_claude_message(message: types.Message,
             await message.answer("❌ Failed to upload file. Please try again.")
             return
 
-    logger.info("claude_handler.message_received",
-                chat_id=message.chat.id,
-                user_id=message.from_user.id if message.from_user else None,
-                message_id=message.message_id,
-                message_thread_id=message.message_thread_id,
-                is_topic_message=message.is_topic_message,
-                text_length=len(message.text or message.caption or ""))
-
     # Record metrics
     content_type = "text"
     if message.photo:
@@ -2155,6 +2147,16 @@ async def handle_claude_message(message: types.Message,
                         thread_id=thread.id,
                         user_id=user.id,
                         telegram_thread_id=message.message_thread_id)
+
+        # Log message received (after thread resolution to know is_new_thread)
+        logger.info("claude_handler.message_received",
+                    chat_id=message.chat.id,
+                    user_id=message.from_user.id if message.from_user else None,
+                    message_id=message.message_id,
+                    message_thread_id=message.message_thread_id,
+                    is_topic_message=message.is_topic_message,
+                    text_length=len(message.text or message.caption or ""),
+                    is_new_thread="true" if was_created else "false")
 
         # CRITICAL: Commit immediately so queue manager can see the thread
         # Phase 1.4.3: Avoid race condition between parallel sessions

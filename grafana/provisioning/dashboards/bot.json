@@ -293,6 +293,7 @@
             "matcher": {"id": "byName", "options": "New messages"},
             "properties": [
               {"id": "color", "value": {"fixedColor": "#8B5CF6", "mode": "fixed"}},
+              {"id": "custom.fillOpacity", "value": 10},
               {"id": "custom.axisPlacement", "value": "hidden"},
               {"id": "custom.axisLabel", "value": "new_messages"}
             ]
@@ -309,14 +310,14 @@
       "targets": [
         {
           "datasource": {"type": "loki", "uid": "loki"},
-          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"stars.donation_received\"  | unwrap stars_amount [$__interval])) or vector(0)",
-          "legendFormat": "Donations (stars)",
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"stars.refund_processed\"  | unwrap stars_amount [$__interval])) or vector(0)",
+          "legendFormat": "Refunds (stars)",
           "refId": "A"
         },
         {
           "datasource": {"type": "loki", "uid": "loki"},
-          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"stars.refund_processed\"  | unwrap stars_amount [$__interval])) or vector(0)",
-          "legendFormat": "Refunds (stars)",
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"stars.donation_received\"  | unwrap stars_amount [$__interval])) or vector(0)",
+          "legendFormat": "Donations (stars)",
           "refId": "B"
         },
         {
@@ -333,7 +334,7 @@
         },
         {
           "datasource": {"type": "loki", "uid": "loki"},
-          "expr": "sum(count_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.message_received\"  [$__interval])) or vector(0)",
+          "expr": "sum(count_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.message_received\" | is_new_thread=\"false\"  [$__interval])) or vector(0)",
           "legendFormat": "New messages",
           "refId": "E"
         }
