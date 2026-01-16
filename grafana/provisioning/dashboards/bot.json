@@ -234,7 +234,7 @@
     },
     {
       "datasource": {"type": "loki", "uid": "loki"},
-      "description": "User activity: donations, new users, active paying users",
+      "description": "User activity: donations, refunds, new users, threads, messages",
       "fieldConfig": {
         "defaults": {
           "color": {"mode": "palette-classic"},
@@ -257,7 +257,8 @@
           {
             "matcher": {"id": "byName", "options": "Donations (stars)"},
             "properties": [
-              {"id": "color", "value": {"fixedColor": "#EF4444", "mode": "fixed"}},
+              {"id": "color", "value": {"fixedColor": "#EAB308", "mode": "fixed"}},
+              {"id": "custom.fillOpacity", "value": 80},
               {"id": "custom.axisPlacement", "value": "hidden"},
               {"id": "custom.axisLabel", "value": "donations"}
             ]
@@ -265,7 +266,8 @@
           {
             "matcher": {"id": "byName", "options": "Refunds (stars)"},
             "properties": [
-              {"id": "color", "value": {"fixedColor": "#EC4899", "mode": "fixed"}},
+              {"id": "color", "value": {"fixedColor": "#EF4444", "mode": "fixed"}},
+              {"id": "custom.fillOpacity", "value": 80},
               {"id": "custom.axisPlacement", "value": "hidden"},
               {"id": "custom.axisLabel", "value": "refunds"}
             ]
@@ -273,7 +275,8 @@
           {
             "matcher": {"id": "byName", "options": "New users"},
             "properties": [
-              {"id": "color", "value": {"fixedColor": "#F59E0B", "mode": "fixed"}},
+              {"id": "color", "value": {"fixedColor": "#22C55E", "mode": "fixed"}},
+              {"id": "custom.fillOpacity", "value": 30},
               {"id": "custom.axisPlacement", "value": "hidden"},
               {"id": "custom.axisLabel", "value": "new_users"}
             ]
@@ -281,17 +284,17 @@
           {
             "matcher": {"id": "byName", "options": "New threads"},
             "properties": [
-              {"id": "color", "value": {"fixedColor": "#22C55E", "mode": "fixed"}},
+              {"id": "color", "value": {"fixedColor": "#3B82F6", "mode": "fixed"}},
               {"id": "custom.axisPlacement", "value": "hidden"},
               {"id": "custom.axisLabel", "value": "new_threads"}
             ]
           },
           {
-            "matcher": {"id": "byName", "options": "Active paying users"},
+            "matcher": {"id": "byName", "options": "New messages"},
             "properties": [
-              {"id": "color", "value": {"fixedColor": "#3B82F6", "mode": "fixed"}},
+              {"id": "color", "value": {"fixedColor": "#8B5CF6", "mode": "fixed"}},
               {"id": "custom.axisPlacement", "value": "hidden"},
-              {"id": "custom.axisLabel", "value": "active_users"}
+              {"id": "custom.axisLabel", "value": "new_messages"}
             ]
           }
         ]
@@ -330,8 +333,8 @@
         },
         {
           "datasource": {"type": "loki", "uid": "loki"},
-          "expr": "count(sum by (user_id) (count_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"balance.user_charged\"  [$__interval]))) or vector(0)",
-          "legendFormat": "Active paying users",
+          "expr": "sum(count_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.message_received\"  [$__interval])) or vector(0)",
+          "legendFormat": "New messages",
           "refId": "E"
         }
       ],
