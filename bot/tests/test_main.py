@@ -103,6 +103,8 @@ async def test_main_startup_success():
         mock_get_db_url.return_value = "postgresql://test"
         mock_read_secret.return_value = "test_bot_token"
         mock_bot = MagicMock()
+        mock_bot_info = MagicMock(id=123456789, username="test_bot")
+        mock_bot.get_me = AsyncMock(return_value=mock_bot_info)
         mock_create_bot.return_value = mock_bot
         mock_dispatcher = MagicMock()
         mock_dispatcher.start_polling = AsyncMock()
@@ -289,7 +291,7 @@ async def test_main_finally_block_always_runs():
          patch('main.get_database_url'), \
          patch('main.init_db'), \
          patch('main.read_secret'), \
-         patch('main.create_bot'), \
+         patch('main.create_bot') as mock_create_bot, \
          patch('main.create_dispatcher') as mock_create_dispatcher, \
          patch('main.dispose_db', new_callable=AsyncMock) as mock_dispose_db, \
          patch('main.start_metrics_server', new_callable=AsyncMock), \
@@ -298,6 +300,10 @@ async def test_main_finally_block_always_runs():
          patch('main.init_message_queue_manager'), \
          patch('main.load_privileged_users', return_value=set()):
 
+        mock_bot = MagicMock()
+        mock_bot.get_me = AsyncMock(
+            return_value=MagicMock(id=123, username="test"))
+        mock_create_bot.return_value = mock_bot
         mock_dispatcher = MagicMock()
         mock_dispatcher.start_polling = AsyncMock()
         mock_create_dispatcher.return_value = mock_dispatcher
@@ -333,7 +339,7 @@ async def test_main_logging_setup():
          patch('main.get_database_url'), \
          patch('main.init_db'), \
          patch('main.read_secret'), \
-         patch('main.create_bot'), \
+         patch('main.create_bot') as mock_create_bot, \
          patch('main.create_dispatcher') as mock_create_dispatcher, \
          patch('main.dispose_db', new_callable=AsyncMock), \
          patch('main.start_metrics_server', new_callable=AsyncMock), \
@@ -343,6 +349,10 @@ async def test_main_logging_setup():
          patch('main.load_privileged_users', return_value=set()):
 
         mock_get_logger.return_value = MagicMock()
+        mock_bot = MagicMock()
+        mock_bot.get_me = AsyncMock(
+            return_value=MagicMock(id=123, username="test"))
+        mock_create_bot.return_value = mock_bot
         mock_dispatcher = MagicMock()
         mock_dispatcher.start_polling = AsyncMock()
         mock_create_dispatcher.return_value = mock_dispatcher
@@ -365,7 +375,7 @@ async def test_main_logging_sequence():
          patch('main.get_database_url'), \
          patch('main.init_db'), \
          patch('main.read_secret'), \
-         patch('main.create_bot'), \
+         patch('main.create_bot') as mock_create_bot, \
          patch('main.create_dispatcher') as mock_create_dispatcher, \
          patch('main.dispose_db'), \
          patch('main.start_metrics_server', new_callable=AsyncMock), \
@@ -376,6 +386,10 @@ async def test_main_logging_sequence():
 
         mock_logger = MagicMock()
         mock_get_logger.return_value = mock_logger
+        mock_bot = MagicMock()
+        mock_bot.get_me = AsyncMock(
+            return_value=MagicMock(id=123, username="test"))
+        mock_create_bot.return_value = mock_bot
         mock_dispatcher = MagicMock()
         mock_dispatcher.start_polling = AsyncMock()
         mock_create_dispatcher.return_value = mock_dispatcher
@@ -423,6 +437,8 @@ async def test_main_dispatcher_start_polling():
          patch('main.load_privileged_users', return_value=set()):
 
         mock_bot = MagicMock()
+        mock_bot.get_me = AsyncMock(
+            return_value=MagicMock(id=123, username="test"))
         mock_create_bot.return_value = mock_bot
         mock_dispatcher = MagicMock()
         mock_dispatcher.start_polling = AsyncMock()
@@ -445,7 +461,7 @@ async def test_main_database_echo_disabled():
          patch('main.get_database_url'), \
          patch('main.init_db') as mock_init_db, \
          patch('main.read_secret'), \
-         patch('main.create_bot'), \
+         patch('main.create_bot') as mock_create_bot, \
          patch('main.create_dispatcher') as mock_create_dispatcher, \
          patch('main.dispose_db', new_callable=AsyncMock), \
          patch('main.start_metrics_server', new_callable=AsyncMock), \
@@ -454,6 +470,10 @@ async def test_main_database_echo_disabled():
          patch('main.init_message_queue_manager'), \
          patch('main.load_privileged_users', return_value=set()):
 
+        mock_bot = MagicMock()
+        mock_bot.get_me = AsyncMock(
+            return_value=MagicMock(id=123, username="test"))
+        mock_create_bot.return_value = mock_bot
         mock_dispatcher = MagicMock()
         mock_dispatcher.start_polling = AsyncMock()
         mock_create_dispatcher.return_value = mock_dispatcher
