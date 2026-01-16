@@ -309,6 +309,14 @@ async def main() -> None:
         bot = create_bot(token=bot_token)
         dispatcher = create_dispatcher()
 
+        # Get bot info and store globally for logging
+        bot_info = await bot.get_me()
+        bot_config.BOT_ID = bot_info.id
+        bot_config.BOT_USERNAME = bot_info.username
+        logger.info("bot_info_loaded",
+                    bot_id=bot_info.id,
+                    bot_username=bot_info.username)
+
         # Start metrics server (Phase 3.1: Prometheus integration)
         await start_metrics_server(host='0.0.0.0', port=8080)
         logger.info("metrics_server_started", port=8080)

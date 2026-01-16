@@ -31,6 +31,7 @@ from db.repositories.user_repository import UserRepository
 from services.balance_service import BalanceService
 from services.payment_service import PaymentService
 from sqlalchemy.ext.asyncio import AsyncSession
+from utils.bot_response import log_bot_response
 from utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
@@ -127,12 +128,17 @@ async def cmd_pay(message: Message, state: FSMContext, session: AsyncSession):
 
     keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
 
-    await message.answer(
-        "💰 <b>Top-up your balance</b>\n\n"
-        "Choose a Stars package to purchase balance.\n"
-        "You'll receive USD balance after commissions.\n\n"
-        f"💡 Use /balance to check your current balance",
-        reply_markup=keyboard,
+    response_text = ("💰 <b>Top-up your balance</b>\n\n"
+                     "Choose a Stars package to purchase balance.\n"
+                     "You'll receive USD balance after commissions.\n\n"
+                     "💡 Use /balance to check your current balance")
+    await message.answer(response_text, reply_markup=keyboard)
+
+    log_bot_response(
+        "bot.pay_response",
+        chat_id=message.chat.id,
+        user_id=user_id,
+        message_length=len(response_text),
     )
 
 
@@ -617,17 +623,26 @@ async def cmd_balance(message: Message, session: AsyncSession):
                         if history_lines else "No history yet")
 
         # Send response
-        await message.answer(f"💰 <b>Your Balance</b>\n\n"
-                             f"Current: <b>${balance}</b>\n\n"
-                             f"📊 <b>Recent history:</b>\n"
-                             f"<pre>{history_text}</pre>\n\n"
-                             f"💡 Top up: /pay")
+        response_text = (f"💰 <b>Your Balance</b>\n\n"
+                         f"Current: <b>${balance}</b>\n\n"
+                         f"📊 <b>Recent history:</b>\n"
+                         f"<pre>{history_text}</pre>\n\n"
+                         f"💡 Top up: /pay")
+        await message.answer(response_text)
 
         logger.info(
             "payment.balance_checked",
             user_id=user_id,
             balance=float(balance),
             operations_count=len(operations),
+        )
+
+        log_bot_response(
+            "bot.balance_response",
+            chat_id=message.chat.id,
+            user_id=user_id,
+            message_length=len(response_text),
+            balance=float(balance),
         )
 
     except Exception as e:
@@ -653,7 +668,7 @@ async def cmd_paysupport(message: Message, session: AsyncSession):
         user_id=user_id,
     )
 
-    await message.answer(
+    response_text = (
         "💬 <b>Payment Support</b>\n\n"
         "If you have issues with payments, refunds, or balance:\n\n"
         "<b>1.</b> Check your balance: /balance\n"
@@ -663,3 +678,11 @@ async def cmd_paysupport(message: Message, session: AsyncSession):
         "<b>3.</b> For refunds: <code>/refund &lt;transaction_id&gt;</code>\n\n"
         "📧 <b>Contact:</b> @trxxxxkov\n\n"
         "💡 Transaction IDs are provided after each payment.")
+    await message.answer(response_text)
+
+    log_bot_response(
+        "bot.paysupport_response",
+        chat_id=message.chat.id,
+        user_id=user_id,
+        message_length=len(response_text),
+    )

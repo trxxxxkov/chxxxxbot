@@ -258,7 +258,7 @@
             "matcher": {"id": "byName", "options": "Donations (stars)"},
             "properties": [
               {"id": "color", "value": {"fixedColor": "#EAB308", "mode": "fixed"}},
-              {"id": "custom.fillOpacity", "value": 80},
+              {"id": "custom.fillOpacity", "value": 30},
               {"id": "custom.axisPlacement", "value": "hidden"},
               {"id": "custom.axisLabel", "value": "donations"}
             ]
@@ -276,7 +276,7 @@
             "matcher": {"id": "byName", "options": "New users"},
             "properties": [
               {"id": "color", "value": {"fixedColor": "#22C55E", "mode": "fixed"}},
-              {"id": "custom.fillOpacity", "value": 30},
+              {"id": "custom.fillOpacity", "value": 40},
               {"id": "custom.axisPlacement", "value": "hidden"},
               {"id": "custom.axisLabel", "value": "new_users"}
             ]

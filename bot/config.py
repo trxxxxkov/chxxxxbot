@@ -27,6 +27,8 @@ TEXT_SPLIT_LINE_WINDOW = 500  # Search window for line boundary
 # Bot settings
 BOT_NAME = "LLM Bot"
 BOT_DESCRIPTION = "Telegram bot with LLM access"
+BOT_ID: Optional[int] = None  # Set at runtime in main.py
+BOT_USERNAME: Optional[str] = None  # Set at runtime in main.py
 
 # Database settings
 DATABASE_POOL_SIZE = 5  # Base connection pool size

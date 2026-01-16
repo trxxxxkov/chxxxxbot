@@ -9,6 +9,7 @@ from aiogram import types
 from aiogram.filters import Command
 from db.repositories.user_repository import UserRepository
 from sqlalchemy.ext.asyncio import AsyncSession
+from utils.bot_response import log_bot_response
 from utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
@@ -57,11 +58,20 @@ async def start_handler(message: types.Message, session: AsyncSession) -> None:
     # Different message for new vs returning users
     greeting = "👋 Welcome!" if was_created else "👋 Welcome back!"
 
-    await message.answer(f"{greeting} I'm an LLM bot.\n\n"
-                         "Available commands:\n"
-                         "/start - Show this message\n"
-                         "/help - Get help\n\n"
-                         "Send me any message and I'll echo it back!")
+    response_text = (f"{greeting} I'm an LLM bot.\n\n"
+                     "Available commands:\n"
+                     "/start - Show this message\n"
+                     "/help - Get help\n\n"
+                     "Send me any message and I'll echo it back!")
+    await message.answer(response_text)
+
+    log_bot_response(
+        "bot.start_response",
+        chat_id=message.chat.id,
+        user_id=user.id,
+        message_length=len(response_text),
+        was_new_user=was_created,
+    )
 
 
 @router.message(Command("help"))
@@ -79,13 +89,19 @@ async def help_handler(message: types.Message) -> None:
         user_id=message.from_user.id if message.from_user else None,
     )
 
-    await message.answer(
-        "🤖 *Help*\n\n"
-        "*Commands:*\n"
-        "/start - Start the bot\n"
-        "/help - Show this help message\n\n"
-        "*Usage:*\n"
-        "Just send me any text message and I'll echo it back.\n\n"
-        "This is a minimal bot implementation. "
-        "LLM integration coming soon!",
-        parse_mode="Markdown")
+    response_text = ("🤖 *Help*\n\n"
+                     "*Commands:*\n"
+                     "/start - Start the bot\n"
+                     "/help - Show this help message\n\n"
+                     "*Usage:*\n"
+                     "Just send me any text message and I'll echo it back.\n\n"
+                     "This is a minimal bot implementation. "
+                     "LLM integration coming soon!")
+    await message.answer(response_text, parse_mode="Markdown")
+
+    log_bot_response(
+        "bot.help_response",
+        chat_id=message.chat.id,
+        user_id=message.from_user.id if message.from_user else None,
+        message_length=len(response_text),
+    )
