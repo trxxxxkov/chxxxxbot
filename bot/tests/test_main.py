@@ -111,7 +111,7 @@ async def test_main_startup_success():
         await main()
 
         # Verify initialization sequence
-        mock_setup_logging.assert_called_once_with(level="INFO")
+        mock_setup_logging.assert_called_once_with(level="DEBUG")
         mock_get_db_url.assert_called_once()
         mock_init_db.assert_called_once_with("postgresql://test", echo=False)
 
@@ -350,7 +350,7 @@ async def test_main_logging_setup():
         await main()
 
         # Verify logging setup
-        mock_setup_logging.assert_called_once_with(level="INFO")
+        mock_setup_logging.assert_called_once_with(level="DEBUG")
 
 
 @pytest.mark.asyncio

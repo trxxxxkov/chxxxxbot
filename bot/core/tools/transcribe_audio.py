@@ -13,9 +13,10 @@ NO __init__.py - use direct import:
 import io
 from typing import Any, Dict, TYPE_CHECKING
 
-import openai
 from core.clients import get_openai_async_client
-from core.pricing import calculate_whisper_cost, cost_to_float
+from core.pricing import calculate_whisper_cost
+from core.pricing import cost_to_float
+import openai
 from utils.structured_logging import get_logger
 
 if TYPE_CHECKING:

@@ -5,14 +5,13 @@ performance, usage, and costs. Metrics are exposed via HTTP endpoint.
 """
 
 import asyncio
+
 from aiohttp import web
-from prometheus_client import (
-    Counter,
-    Gauge,
-    Histogram,
-    generate_latest,
-    CONTENT_TYPE_LATEST,
-)
+from prometheus_client import CONTENT_TYPE_LATEST
+from prometheus_client import Counter
+from prometheus_client import Gauge
+from prometheus_client import generate_latest
+from prometheus_client import Histogram
 from utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
@@ -25,11 +24,8 @@ MESSAGES_RECEIVED = Counter(
     ['chat_type', 'content_type']  # private/group, text/photo/voice/etc
 )
 
-MESSAGES_SENT = Counter(
-    'bot_messages_sent_total',
-    'Total number of messages sent by bot',
-    ['chat_type']
-)
+MESSAGES_SENT = Counter('bot_messages_sent_total',
+                        'Total number of messages sent by bot', ['chat_type'])
 
 # === Claude API Metrics ===
 
@@ -42,15 +38,13 @@ CLAUDE_REQUESTS = Counter(
 CLAUDE_TOKENS = Counter(
     'bot_claude_tokens_total',
     'Total Claude tokens used',
-    ['model', 'type']  # type: input/output/cache_read/cache_write
+    ['model', 'type']  # values: input/output/cache_read/cache_write
 )
 
-CLAUDE_RESPONSE_TIME = Histogram(
-    'bot_claude_response_seconds',
-    'Claude API response time in seconds',
-    ['model'],
-    buckets=[0.5, 1, 2, 5, 10, 20, 30, 60, 120]
-)
+CLAUDE_RESPONSE_TIME = Histogram('bot_claude_response_seconds',
+                                 'Claude API response time in seconds',
+                                 ['model'],
+                                 buckets=[0.5, 1, 2, 5, 10, 20, 30, 60, 120])
 
 # === Tool Metrics ===
 
@@ -60,12 +54,9 @@ TOOL_CALLS = Counter(
     ['tool_name', 'status']  # success/error
 )
 
-TOOL_EXECUTION_TIME = Histogram(
-    'bot_tool_execution_seconds',
-    'Tool execution time in seconds',
-    ['tool_name'],
-    buckets=[0.1, 0.5, 1, 2, 5, 10, 30, 60]
-)
+TOOL_EXECUTION_TIME = Histogram('bot_tool_execution_seconds',
+                                'Tool execution time in seconds', ['tool_name'],
+                                buckets=[0.1, 0.5, 1, 2, 5, 10, 30, 60])
 
 # === Cost Metrics ===
 
@@ -77,25 +68,15 @@ COSTS_USD = Counter(
 
 # === User Metrics ===
 
-ACTIVE_USERS = Gauge(
-    'bot_active_users',
-    'Number of unique users in last hour'
-)
+ACTIVE_USERS = Gauge('bot_active_users', 'Number of unique users in last hour')
 
-TOTAL_BALANCE_USD = Gauge(
-    'bot_total_balance_usd',
-    'Sum of all user balances in USD'
-)
+TOTAL_BALANCE_USD = Gauge('bot_total_balance_usd',
+                          'Sum of all user balances in USD')
 
-TOTAL_USERS = Gauge(
-    'bot_total_users',
-    'Total number of registered users'
-)
+TOTAL_USERS = Gauge('bot_total_users', 'Total number of registered users')
 
-TOTAL_THREADS = Gauge(
-    'bot_total_threads',
-    'Total number of conversation threads'
-)
+TOTAL_THREADS = Gauge('bot_total_threads',
+                      'Total number of conversation threads')
 
 # === Disk Usage Metrics ===
 
@@ -105,88 +86,62 @@ DISK_USAGE_BYTES = Gauge(
     ['volume']  # postgres/loki/prometheus/grafana/total
 )
 
-TOP_USER_MESSAGES = Gauge(
-    'bot_top_user_messages',
-    'Message count for top users',
-    ['user_id', 'username', 'rank']
-)
+TOP_USER_MESSAGES = Gauge('bot_top_user_messages',
+                          'Message count for top users',
+                          ['user_id', 'username', 'rank'])
 
-TOP_USER_TOKENS = Gauge(
-    'bot_top_user_tokens',
-    'Token usage for top users',
-    ['user_id', 'username', 'rank']
-)
+TOP_USER_TOKENS = Gauge('bot_top_user_tokens', 'Token usage for top users',
+                        ['user_id', 'username', 'rank'])
 
 # === Error Metrics ===
 
-ERRORS = Counter(
-    'bot_errors_total',
-    'Total number of errors',
-    ['error_type', 'handler']
-)
+ERRORS = Counter('bot_errors_total', 'Total number of errors',
+                 ['error_type', 'handler'])
 
 # === Database Metrics ===
 
-DB_CONNECTIONS_ACTIVE = Gauge(
-    'bot_db_connections_active',
-    'Number of active database connections'
-)
+DB_CONNECTIONS_ACTIVE = Gauge('bot_db_connections_active',
+                              'Number of active database connections')
 
-DB_CONNECTIONS_IDLE = Gauge(
-    'bot_db_connections_idle',
-    'Number of idle database connections in pool'
-)
+DB_CONNECTIONS_IDLE = Gauge('bot_db_connections_idle',
+                            'Number of idle database connections in pool')
 
-DB_POOL_OVERFLOW = Gauge(
-    'bot_db_pool_overflow',
-    'Number of overflow connections'
-)
+DB_POOL_OVERFLOW = Gauge('bot_db_pool_overflow',
+                         'Number of overflow connections')
 
 DB_QUERY_TIME = Histogram(
     'bot_db_query_seconds',
     'Database query execution time in seconds',
     ['operation'],  # select/insert/update/delete
-    buckets=[0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1]
-)
+    buckets=[0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1])
 
 # === Queue Metrics ===
 
-QUEUE_THREADS_TOTAL = Gauge(
-    'bot_queue_threads_total',
-    'Total number of threads in message queue'
-)
+QUEUE_THREADS_TOTAL = Gauge('bot_queue_threads_total',
+                            'Total number of threads in message queue')
 
 QUEUE_THREADS_PROCESSING = Gauge(
     'bot_queue_threads_processing',
-    'Number of threads currently processing messages'
-)
+    'Number of threads currently processing messages')
 
-QUEUE_THREADS_WAITING = Gauge(
-    'bot_queue_threads_waiting',
-    'Number of threads with messages waiting'
-)
+QUEUE_THREADS_WAITING = Gauge('bot_queue_threads_waiting',
+                              'Number of threads with messages waiting')
 
-QUEUE_MESSAGES_BATCHED = Counter(
-    'bot_queue_messages_batched_total',
-    'Total number of messages batched together'
-)
+QUEUE_MESSAGES_BATCHED = Counter('bot_queue_messages_batched_total',
+                                 'Total number of messages batched together')
 
 # === Cache Metrics ===
 
-PROMPT_CACHE_HITS = Counter(
-    'bot_prompt_cache_hits_total',
-    'Total number of prompt cache hits'
-)
+PROMPT_CACHE_HITS = Counter('bot_prompt_cache_hits_total',
+                            'Total number of prompt cache hits')
 
 PROMPT_CACHE_MISSES = Counter(
     'bot_prompt_cache_misses_total',
-    'Total number of prompt cache misses (new writes)'
-)
+    'Total number of prompt cache misses (new writes)')
 
 PROMPT_CACHE_TOKENS_SAVED = Counter(
     'bot_prompt_cache_tokens_saved_total',
-    'Total tokens saved by prompt cache (cache_read_tokens)'
-)
+    'Total tokens saved by prompt cache (cache_read_tokens)')
 
 # === Files API Metrics ===
 
@@ -198,18 +153,15 @@ FILES_API_UPLOADS = Counter(
 
 FILES_API_ACTIVE = Gauge(
     'bot_files_api_active',
-    'Number of active files in Claude Files API (24h TTL)'
-)
-
+    'Number of active files in Claude Files API (24h TTL)')
 
 # === Helper Functions ===
 
+
 def record_message_received(chat_type: str, content_type: str) -> None:
     """Record a received message."""
-    MESSAGES_RECEIVED.labels(
-        chat_type=chat_type,
-        content_type=content_type
-    ).inc()
+    MESSAGES_RECEIVED.labels(chat_type=chat_type,
+                             content_type=content_type).inc()
 
 
 def record_message_sent(chat_type: str) -> None:
@@ -219,28 +171,26 @@ def record_message_sent(chat_type: str) -> None:
 
 def record_claude_request(model: str, success: bool) -> None:
     """Record a Claude API request."""
-    CLAUDE_REQUESTS.labels(
-        model=model,
-        status='success' if success else 'error'
-    ).inc()
+    CLAUDE_REQUESTS.labels(model=model,
+                           status='success' if success else 'error').inc()
 
 
-def record_claude_tokens(
-    model: str,
-    input_tokens: int = 0,
-    output_tokens: int = 0,
-    cache_read_tokens: int = 0,
-    cache_write_tokens: int = 0
-) -> None:
+def record_claude_tokens(model: str,
+                         input_tokens: int = 0,
+                         output_tokens: int = 0,
+                         cache_read_tokens: int = 0,
+                         cache_write_tokens: int = 0) -> None:
     """Record Claude token usage."""
     if input_tokens:
         CLAUDE_TOKENS.labels(model=model, type='input').inc(input_tokens)
     if output_tokens:
         CLAUDE_TOKENS.labels(model=model, type='output').inc(output_tokens)
     if cache_read_tokens:
-        CLAUDE_TOKENS.labels(model=model, type='cache_read').inc(cache_read_tokens)
+        CLAUDE_TOKENS.labels(model=model,
+                             type='cache_read').inc(cache_read_tokens)
     if cache_write_tokens:
-        CLAUDE_TOKENS.labels(model=model, type='cache_write').inc(cache_write_tokens)
+        CLAUDE_TOKENS.labels(model=model,
+                             type='cache_write').inc(cache_write_tokens)
 
 
 def record_claude_response_time(model: str, seconds: float) -> None:
@@ -250,10 +200,8 @@ def record_claude_response_time(model: str, seconds: float) -> None:
 
 def record_tool_call(tool_name: str, success: bool, duration: float) -> None:
     """Record a tool call with its execution time."""
-    TOOL_CALLS.labels(
-        tool_name=tool_name,
-        status='success' if success else 'error'
-    ).inc()
+    TOOL_CALLS.labels(tool_name=tool_name,
+                      status='success' if success else 'error').inc()
     TOOL_EXECUTION_TIME.labels(tool_name=tool_name).observe(duration)
 
 
@@ -292,10 +240,8 @@ def set_disk_usage(volume: str, bytes_used: int) -> None:
     DISK_USAGE_BYTES.labels(volume=volume).set(bytes_used)
 
 
-def set_top_users(
-    users: list[tuple[str, str, int, int]],
-    metric_type: str = "messages"
-) -> None:
+def set_top_users(users: list[tuple[str, str, int, int]],
+                  metric_type: str = "messages") -> None:
     """Set top users metrics.
 
     Args:
@@ -307,11 +253,9 @@ def set_top_users(
 
     for rank, (user_id, username, messages, tokens) in enumerate(users, 1):
         value = messages if metric_type == "messages" else tokens
-        gauge.labels(
-            user_id=str(user_id),
-            username=username or "unknown",
-            rank=str(rank)
-        ).set(value)
+        gauge.labels(user_id=str(user_id),
+                     username=username or "unknown",
+                     rank=str(rank)).set(value)
 
 
 def set_db_pool_stats(active: int, idle: int, overflow: int) -> None:
@@ -362,14 +306,13 @@ def set_active_files(count: int) -> None:
 
 # === HTTP Server ===
 
+
 async def metrics_handler(request: web.Request) -> web.Response:
     """Handle /metrics endpoint for Prometheus scraping."""
     # CONTENT_TYPE_LATEST includes charset, but aiohttp doesn't allow that
     # So we set headers manually
-    return web.Response(
-        body=generate_latest(),
-        headers={'Content-Type': CONTENT_TYPE_LATEST}
-    )
+    return web.Response(body=generate_latest(),
+                        headers={'Content-Type': CONTENT_TYPE_LATEST})
 
 
 async def health_handler(request: web.Request) -> web.Response:
@@ -416,12 +359,12 @@ async def health_ready_handler(request: web.Request) -> web.Response:
     all_ok = all(v == "ok" for v in checks.values())
     status_code = 200 if all_ok else 503
 
-    return web.Response(
-        text=json.dumps({"status": "ready" if all_ok else "not_ready",
-                        "checks": checks}),
-        status=status_code,
-        content_type="application/json"
-    )
+    return web.Response(text=json.dumps({
+        "status": "ready" if all_ok else "not_ready",
+        "checks": checks
+    }),
+                        status=status_code,
+                        content_type="application/json")
 
 
 async def start_metrics_server(host: str = '0.0.0.0', port: int = 8080) -> None:

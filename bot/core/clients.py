@@ -11,7 +11,6 @@ from typing import Optional
 
 import anthropic
 from anthropic import AsyncAnthropic
-
 from core.secrets import read_secret
 from utils.structured_logging import get_logger
 
@@ -30,9 +29,7 @@ _google_client = None
 FILES_API_BETA_HEADER = "files-api-2025-04-14"
 
 
-def get_anthropic_client(
-    use_files_api: bool = False,
-) -> anthropic.Anthropic:
+def get_anthropic_client(use_files_api: bool = False,) -> anthropic.Anthropic:
     """Get synchronous Anthropic client.
 
     Args:
@@ -48,8 +45,7 @@ def get_anthropic_client(
             api_key = read_secret("anthropic_api_key")
             _anthropic_sync_files = anthropic.Anthropic(
                 api_key=api_key,
-                default_headers={"anthropic-beta": FILES_API_BETA_HEADER}
-            )
+                default_headers={"anthropic-beta": FILES_API_BETA_HEADER})
             logger.info("clients.anthropic_sync_files.initialized")
         return _anthropic_sync_files
     else:
@@ -60,9 +56,7 @@ def get_anthropic_client(
         return _anthropic_sync
 
 
-def get_anthropic_async_client(
-    use_files_api: bool = False,
-) -> AsyncAnthropic:
+def get_anthropic_async_client(use_files_api: bool = False,) -> AsyncAnthropic:
     """Get asynchronous Anthropic client.
 
     Args:
@@ -78,8 +72,7 @@ def get_anthropic_async_client(
             api_key = read_secret("anthropic_api_key")
             _anthropic_async_files = AsyncAnthropic(
                 api_key=api_key,
-                default_headers={"anthropic-beta": FILES_API_BETA_HEADER}
-            )
+                default_headers={"anthropic-beta": FILES_API_BETA_HEADER})
             logger.info("clients.anthropic_async_files.initialized")
         return _anthropic_async_files
     else:

@@ -8,18 +8,17 @@ Bug history:
   causing TypeError when comparing with datetime.now(timezone.utc)
 """
 
-import pytest
-from sqlalchemy import DateTime
-from sqlalchemy import inspect as sa_inspect
-
+from db.models.balance_operation import BalanceOperation
 from db.models.base import Base
 from db.models.chat import Chat
 from db.models.message import Message
+from db.models.payment import Payment
 from db.models.thread import Thread
 from db.models.user import User
 from db.models.user_file import UserFile
-from db.models.payment import Payment
-from db.models.balance_operation import BalanceOperation
+import pytest
+from sqlalchemy import DateTime
+from sqlalchemy import inspect as sa_inspect
 
 
 class TestDateTimeTimezoneConsistency:
@@ -83,8 +82,7 @@ class TestDateTimeTimezoneConsistency:
                 f"Model {model_class.__name__} has DateTime columns "
                 f"without timezone=True: {non_tz_columns}. "
                 f"All DateTime columns must use DateTime(timezone=True) "
-                f"to prevent timezone comparison errors."
-            )
+                f"to prevent timezone comparison errors.")
 
     def test_user_file_uploaded_at_has_timezone(self):
         """Regression test for uploaded_at timezone.
@@ -108,11 +106,9 @@ class TestDateTimeTimezoneConsistency:
         assert expires_at is not None, "expires_at column not found"
 
         assert uploaded_at.timezone is True, (
-            "uploaded_at must have timezone=True (regression bug fix)"
-        )
+            "uploaded_at must have timezone=True (regression bug fix)")
         assert expires_at.timezone is True, (
-            "expires_at must have timezone=True"
-        )
+            "expires_at must have timezone=True")
 
     def test_base_mixin_columns_have_timezone(self):
         """Verify TimestampMixin columns (created_at, updated_at) have timezone.
@@ -129,8 +125,6 @@ class TestDateTimeTimezoneConsistency:
         assert 'updated_at' in datetime_columns, "updated_at not found in User"
 
         assert datetime_columns['created_at'].timezone is True, (
-            "TimestampMixin.created_at must have timezone=True"
-        )
+            "TimestampMixin.created_at must have timezone=True")
         assert datetime_columns['updated_at'].timezone is True, (
-            "TimestampMixin.updated_at must have timezone=True"
-        )
+            "TimestampMixin.updated_at must have timezone=True")

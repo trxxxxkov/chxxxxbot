@@ -21,8 +21,12 @@ from typing import Optional
 
 import anthropic
 from core.clients import get_anthropic_client
-from core.mime_types import (detect_mime_type, is_audio_mime, is_image_mime,
-                             is_pdf_mime, is_video_mime, normalize_mime_type)
+from core.mime_types import detect_mime_type
+from core.mime_types import is_audio_mime
+from core.mime_types import is_image_mime
+from core.mime_types import is_pdf_mime
+from core.mime_types import is_video_mime
+from core.mime_types import normalize_mime_type
 from utils.metrics import record_file_upload
 from utils.structured_logging import get_logger
 

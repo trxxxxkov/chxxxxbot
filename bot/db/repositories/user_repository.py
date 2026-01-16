@@ -251,14 +251,14 @@ class UserRepository(BaseRepository[User]):
             Number of active users.
         """
         cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
-        stmt = select(func.count()).select_from(User).where(
-            User.last_seen_at >= cutoff
-        )
+        stmt = select(
+            func.count()).select_from(User).where(User.last_seen_at >= cutoff)
         result = await self.session.execute(stmt)
         count = result.scalar_one()
 
         logger.debug("user_repository.get_active_users_count",
-                     hours=hours, count=count)
+                     hours=hours,
+                     count=count)
         return count
 
     async def get_total_balance(self) -> Decimal:
@@ -299,5 +299,7 @@ class UserRepository(BaseRepository[User]):
         users = list(result.scalars().all())
 
         logger.debug("user_repository.get_top_users",
-                     by=by, limit=limit, returned=len(users))
+                     by=by,
+                     limit=limit,
+                     returned=len(users))
         return users

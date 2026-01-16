@@ -358,9 +358,9 @@ async def test_get_or_create_thread_handles_race_condition(
             return None  # Simulate cache miss / race condition
         return await original_get_active_thread(chat_id, user_id, thread_id)
 
-    with patch.object(
-        repo, 'get_active_thread', side_effect=mock_get_active_thread_first_miss
-    ):
+    with patch.object(repo,
+                      'get_active_thread',
+                      side_effect=mock_get_active_thread_first_miss):
         # This should:
         # 1. Call get_active_thread -> returns None (mocked)
         # 2. Try to INSERT -> IntegrityError (thread exists)

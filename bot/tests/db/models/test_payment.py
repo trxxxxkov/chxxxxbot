@@ -48,7 +48,8 @@ class TestPaymentModel:
         assert PaymentStatus.COMPLETED.value == "completed"
         assert PaymentStatus.REFUNDED.value == "refunded"
 
-    async def test_payment_commission_constraints(self, pg_session, pg_sample_user):
+    async def test_payment_commission_constraints(self, pg_session,
+                                                  pg_sample_user):
         """Test commission constraints (k1, k2, k3 range 0-1)."""
         # Valid commissions
         payment = Payment(
@@ -69,7 +70,8 @@ class TestPaymentModel:
 
         assert payment.id is not None
 
-    async def test_payment_positive_amounts_constraint(self, pg_session, pg_sample_user):
+    async def test_payment_positive_amounts_constraint(self, pg_session,
+                                                       pg_sample_user):
         """Test that stars_amount must be positive."""
         payment = Payment(
             user_id=pg_sample_user.id,
@@ -130,7 +132,8 @@ class TestPaymentModel:
 
         await pg_session.rollback()
 
-    async def test_payment_can_refund_within_period(self, pg_session, pg_sample_user):
+    async def test_payment_can_refund_within_period(self, pg_session,
+                                                    pg_sample_user):
         """Test can_refund() returns True within refund period."""
         payment = Payment(
             user_id=pg_sample_user.id,
@@ -152,7 +155,8 @@ class TestPaymentModel:
         # Just created - should be refundable
         assert payment.can_refund(refund_period_days=30) is True
 
-    async def test_payment_can_refund_outside_period(self, pg_session, pg_sample_user):
+    async def test_payment_can_refund_outside_period(self, pg_session,
+                                                     pg_sample_user):
         """Test can_refund() returns False outside refund period."""
         payment = Payment(
             user_id=pg_sample_user.id,
@@ -202,7 +206,8 @@ class TestPaymentModel:
         # Already refunded - should not be refundable
         assert payment.can_refund(refund_period_days=30) is False
 
-    async def test_payment_total_commission_constraint(self, pg_session, pg_sample_user):
+    async def test_payment_total_commission_constraint(self, pg_session,
+                                                       pg_sample_user):
         """Test that k1 + k2 + k3 <= 1.0001."""
         # Valid: total = 0.9999 (very high but still leaves small amount)
         payment = Payment(

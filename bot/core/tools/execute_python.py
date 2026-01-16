@@ -12,9 +12,10 @@ import json
 import mimetypes
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
-from e2b_code_interpreter import Sandbox
 from core.clients import get_e2b_api_key
-from core.pricing import calculate_e2b_cost, cost_to_float
+from core.pricing import calculate_e2b_cost
+from core.pricing import cost_to_float
+from e2b_code_interpreter import Sandbox
 from utils.structured_logging import get_logger
 
 if TYPE_CHECKING:

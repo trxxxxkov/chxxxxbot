@@ -168,14 +168,13 @@ async def test_generated_file_sent_to_forum_topic():
 
                 # Mock BalanceService to avoid session issues
                 with patch('services.balance_service.BalanceService'
-                           ) as mock_balance_service:
+                          ) as mock_balance_service:
                     mock_balance_service.return_value.charge_usage = AsyncMock()
 
                     # Create request
                     request = LLMRequest(
                         messages=[
-                            Message(role="user",
-                                    content="Generate a cat image")
+                            Message(role="user", content="Generate a cat image")
                         ],
                         system_prompt="You are a helpful assistant.",
                         model="claude:sonnet",

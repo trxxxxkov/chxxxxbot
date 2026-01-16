@@ -35,9 +35,7 @@ def setup_logging(level: str = "INFO") -> None:
 
     # Configure structlog
     structlog.configure(
-        processors=shared_processors + [
-            structlog.processors.JSONRenderer()
-        ],
+        processors=shared_processors + [structlog.processors.JSONRenderer()],
         wrapper_class=structlog.make_filtering_bound_logger(
             getattr(logging, level.upper())),
         context_class=dict,
@@ -68,6 +66,11 @@ def setup_logging(level: str = "INFO") -> None:
 
     # Suppress aiogram dispatcher warnings (SIGTERM logged as warning)
     logging.getLogger("aiogram.dispatcher").setLevel(logging.ERROR)
+
+    # Suppress verbose debug logs from HTTP libraries (contain full request bodies)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("anthropic").setLevel(logging.INFO)
 
 
 def get_logger(name: str) -> structlog.BoundLogger:

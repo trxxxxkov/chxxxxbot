@@ -84,6 +84,7 @@ def calculate_gemini_image_cost(resolution: str = "2048x2048") -> Decimal:
 # Claude model pricing - imported from config.py MODEL_REGISTRY
 # This module provides calculation utilities
 
+
 def calculate_claude_cost(
     model_id: str,
     input_tokens: int,
@@ -106,7 +107,8 @@ def calculate_claude_cost(
         Cost in USD as Decimal.
     """
     # Import here to avoid circular dependency
-    from config import MODEL_REGISTRY  # pylint: disable=import-outside-toplevel
+    from config import \
+        MODEL_REGISTRY  # pylint: disable=import-outside-toplevel
 
     # Find model by model_id (ModelConfig is a dataclass, use attribute access)
     model_config = None
@@ -116,36 +118,36 @@ def calculate_claude_cost(
             break
 
     if not model_config:
-        logger.warning("pricing.model_not_found",
-                       model_id=model_id)
+        logger.warning("pricing.model_not_found", model_id=model_id)
         return Decimal("0")
 
     # Calculate costs per million tokens
-    input_cost = (Decimal(str(input_tokens)) / Decimal("1000000")
-                  * Decimal(str(model_config.pricing_input)))
+    input_cost = (Decimal(str(input_tokens)) / Decimal("1000000") *
+                  Decimal(str(model_config.pricing_input)))
 
-    output_cost = (Decimal(str(output_tokens)) / Decimal("1000000")
-                   * Decimal(str(model_config.pricing_output)))
+    output_cost = (Decimal(str(output_tokens)) / Decimal("1000000") *
+                   Decimal(str(model_config.pricing_output)))
 
     # Thinking tokens are billed as output tokens
-    thinking_cost = (Decimal(str(thinking_tokens)) / Decimal("1000000")
-                     * Decimal(str(model_config.pricing_output)))
+    thinking_cost = (Decimal(str(thinking_tokens)) / Decimal("1000000") *
+                     Decimal(str(model_config.pricing_output)))
 
     # Cache costs
     cache_read_cost = Decimal("0")
     cache_creation_cost = Decimal("0")
 
     if model_config.pricing_cache_read and cache_read_tokens > 0:
-        cache_read_cost = (Decimal(str(cache_read_tokens)) / Decimal("1000000")
-                          * Decimal(str(model_config.pricing_cache_read)))
+        cache_read_cost = (Decimal(str(cache_read_tokens)) /
+                           Decimal("1000000") *
+                           Decimal(str(model_config.pricing_cache_read)))
 
     if model_config.pricing_cache_write_5m and cache_creation_tokens > 0:
-        cache_creation_cost = (Decimal(str(cache_creation_tokens))
-                               / Decimal("1000000")
-                               * Decimal(str(model_config.pricing_cache_write_5m)))
+        cache_creation_cost = (
+            Decimal(str(cache_creation_tokens)) / Decimal("1000000") *
+            Decimal(str(model_config.pricing_cache_write_5m)))
 
-    total = (input_cost + output_cost + thinking_cost
-             + cache_read_cost + cache_creation_cost)
+    total = (input_cost + output_cost + thinking_cost + cache_read_cost +
+             cache_creation_cost)
 
     return total
 
@@ -173,6 +175,7 @@ def calculate_web_search_cost(request_count: int) -> Decimal:
 # =============================================================================
 # Utility Functions
 # =============================================================================
+
 
 def format_cost(cost: Decimal, precision: int = 6) -> str:
     """Format cost for display.

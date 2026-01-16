@@ -496,7 +496,8 @@ async def handle_video_note(message: types.Message,
                 file_size=video_note.file_size)
 
     # Record metrics
-    record_message_received(chat_type=message.chat.type, content_type="video_note")
+    record_message_received(chat_type=message.chat.type,
+                            content_type="video_note")
 
     try:
         # 1. Download video note

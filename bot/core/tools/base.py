@@ -8,7 +8,8 @@ NO __init__.py - use direct import:
     from core.tools.base import ToolConfig, ToolResultFormatter
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from dataclasses import field
 from typing import Any, Callable, Dict, Optional, Protocol, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -23,8 +24,8 @@ class ToolResultFormatter(Protocol):
     user-visible system messages about tool execution.
     """
 
-    def __call__(self, tool_input: Dict[str, Any],
-                 result: Dict[str, Any]) -> str:
+    def __call__(self, tool_input: Dict[str, Any], result: Dict[str,
+                                                                Any]) -> str:
         """Format tool result for display.
 
         Args:
@@ -34,7 +35,7 @@ class ToolResultFormatter(Protocol):
         Returns:
             Formatted message string, or empty string if no message needed.
         """
-        ...
+        ...  # pylint: disable=unnecessary-ellipsis
 
 
 @dataclass
@@ -84,18 +85,14 @@ class ToolConfig:
         """Validate configuration after initialization."""
         # Server-side tools don't have executors
         if not self.is_server_side and self.executor is None:
-            raise ValueError(
-                f"Tool '{self.name}' must have an executor "
-                f"(or set is_server_side=True)"
-            )
+            raise ValueError(f"Tool '{self.name}' must have an executor "
+                             f"(or set is_server_side=True)")
 
         # Validate name matches definition
         def_name = self.definition.get("name")
         if def_name and def_name != self.name:
-            raise ValueError(
-                f"Tool name mismatch: config.name='{self.name}' "
-                f"but definition.name='{def_name}'"
-            )
+            raise ValueError(f"Tool name mismatch: config.name='{self.name}' "
+                             f"but definition.name='{def_name}'")
 
     def get_system_message(self, tool_input: Dict[str, Any],
                            result: Dict[str, Any]) -> str:

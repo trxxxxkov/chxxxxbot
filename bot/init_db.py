@@ -7,15 +7,15 @@ Run once after creating new database.
 import asyncio
 
 from config import get_database_url
-from db.models.base import Base
 # Import all models to ensure they're registered
 # pylint: disable=unused-import
+from db.models.balance_operation import BalanceOperation  # noqa: F401
+from db.models.base import Base
 from db.models.chat import Chat  # noqa: F401
 from db.models.message import Message  # noqa: F401
+from db.models.payment import Payment  # noqa: F401
 from db.models.thread import Thread  # noqa: F401
 from db.models.user import User  # noqa: F401
-from db.models.payment import Payment  # noqa: F401
-from db.models.balance_operation import BalanceOperation  # noqa: F401
 from db.models.user_file import UserFile  # noqa: F401
 # pylint: enable=unused-import
 from sqlalchemy.ext.asyncio import create_async_engine

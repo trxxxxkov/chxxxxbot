@@ -27,16 +27,15 @@ if TYPE_CHECKING:
     from aiogram import Bot
     from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.tools.base import ToolConfig
 from core.tools.analyze_image import TOOL_CONFIG as ANALYZE_IMAGE_CONFIG
 from core.tools.analyze_pdf import TOOL_CONFIG as ANALYZE_PDF_CONFIG
-from core.tools.transcribe_audio import TOOL_CONFIG as TRANSCRIBE_AUDIO_CONFIG
-from core.tools.generate_image import TOOL_CONFIG as GENERATE_IMAGE_CONFIG
+from core.tools.base import ToolConfig
 from core.tools.execute_python import TOOL_CONFIG as EXECUTE_PYTHON_CONFIG
+from core.tools.generate_image import TOOL_CONFIG as GENERATE_IMAGE_CONFIG
+from core.tools.transcribe_audio import TOOL_CONFIG as TRANSCRIBE_AUDIO_CONFIG
 from utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
-
 
 # Server-side tools (managed by Anthropic, no executor needed)
 # These use ToolConfig with is_server_side=True
@@ -62,7 +61,6 @@ WEB_FETCH_CONFIG = ToolConfig(
     is_server_side=True,
 )
 
-
 # ============================================================================
 # UNIFIED TOOLS REGISTRY - Single source of truth
 # ============================================================================
@@ -83,10 +81,10 @@ TOOLS: Dict[str, ToolConfig] = {
     "web_fetch": WEB_FETCH_CONFIG,
 }
 
-
 # ============================================================================
 # Helper functions - all derive from TOOLS
 # ============================================================================
+
 
 def get_tool_definitions() -> List[Dict[str, Any]]:
     """Get all tool definitions for Claude API.
@@ -230,17 +228,17 @@ TOOL_EXECUTORS = {
 }
 
 TOOL_METADATA = {
-    name: {"needs_bot_session": tool.needs_bot_session}
-    for name, tool in TOOLS.items()
-    if not tool.is_server_side
+    name: {
+        "needs_bot_session": tool.needs_bot_session
+    } for name, tool in TOOLS.items() if not tool.is_server_side
 }
 
 # Re-export individual tool definitions for backward compatibility
 from core.tools.analyze_image import ANALYZE_IMAGE_TOOL
 from core.tools.analyze_pdf import ANALYZE_PDF_TOOL
-from core.tools.transcribe_audio import TRANSCRIBE_AUDIO_TOOL
-from core.tools.generate_image import GENERATE_IMAGE_TOOL
 from core.tools.execute_python import EXECUTE_PYTHON_TOOL
+from core.tools.generate_image import GENERATE_IMAGE_TOOL
+from core.tools.transcribe_audio import TRANSCRIBE_AUDIO_TOOL
 
 WEB_SEARCH_TOOL = WEB_SEARCH_CONFIG.definition
 WEB_FETCH_TOOL = WEB_FETCH_CONFIG.definition

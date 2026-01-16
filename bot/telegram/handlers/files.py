@@ -37,7 +37,8 @@ from db.repositories.message_repository import MessageRepository
 from db.repositories.thread_repository import ThreadRepository
 from db.repositories.user_file_repository import UserFileRepository
 from sqlalchemy.ext.asyncio import AsyncSession
-from utils.metrics import record_file_upload, record_message_received
+from utils.metrics import record_file_upload
+from utils.metrics import record_message_received
 from utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
@@ -200,11 +201,12 @@ async def process_file_upload(message: types.Message,
     thread_title = (
         message.chat.title  # Groups/supergroups
         or message.chat.first_name  # Private chats
-        or message.from_user.first_name if message.from_user else None
-    )
+        or message.from_user.first_name if message.from_user else None)
 
     thread, _ = await thread_repo.get_or_create_thread(
-        chat_id=chat_id, user_id=user_id, thread_id=telegram_thread_id,
+        chat_id=chat_id,
+        user_id=user_id,
+        thread_id=telegram_thread_id,
         title=thread_title)
 
     logger.info("file_upload.thread_resolved",
@@ -346,12 +348,13 @@ async def handle_photo(message: types.Message, session: AsyncSession) -> None:
         thread_title = (
             message.chat.title  # Groups/supergroups
             or message.chat.first_name  # Private chats
-            or message.from_user.first_name if message.from_user else None
-        )
+            or message.from_user.first_name if message.from_user else None)
 
         # Get or create thread
         thread, _ = await thread_repo.get_or_create_thread(
-            chat_id=chat_id, user_id=user_id, thread_id=telegram_thread_id,
+            chat_id=chat_id,
+            user_id=user_id,
+            thread_id=telegram_thread_id,
             title=thread_title)
 
         logger.info("photo_handler.thread_resolved",
@@ -461,7 +464,8 @@ async def handle_document(message: types.Message,
                 is_premium=message.from_user.is_premium)
 
     # Record metrics
-    record_message_received(chat_type=message.chat.type, content_type="document")
+    record_message_received(chat_type=message.chat.type,
+                            content_type="document")
 
     # Check file size (Telegram limits: 20MB free, 2GB Premium)
     file_size_limit = get_file_size_limit(message.from_user)
@@ -539,12 +543,13 @@ async def handle_document(message: types.Message,
         thread_title = (
             message.chat.title  # Groups/supergroups
             or message.chat.first_name  # Private chats
-            or message.from_user.first_name if message.from_user else None
-        )
+            or message.from_user.first_name if message.from_user else None)
 
         # Get or create thread
         thread, _ = await thread_repo.get_or_create_thread(
-            chat_id=chat_id, user_id=user_id, thread_id=telegram_thread_id,
+            chat_id=chat_id,
+            user_id=user_id,
+            thread_id=telegram_thread_id,
             title=thread_title)
 
         logger.info("document_handler.thread_resolved",

@@ -66,8 +66,8 @@ async def personality_command(message: types.Message,
             username=message.from_user.username,
             language_code=message.from_user.language_code,
             is_premium=message.from_user.is_premium or False,
-            added_to_attachment_menu=(
-                message.from_user.added_to_attachment_menu or False),
+            added_to_attachment_menu=(message.from_user.added_to_attachment_menu
+                                      or False),
         )
         await session.commit()
 

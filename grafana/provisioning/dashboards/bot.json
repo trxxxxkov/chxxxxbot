@@ -608,7 +608,7 @@
       "targets": [
         {
           "datasource": {"type": "loki", "uid": "loki"},
-          "expr": "{service=\"bot\"} |~ \"${user_filter}\" | json  | line_format \"[{{.username}}] {{__line__}}\"",
+          "expr": "{service=\"bot\"} |~ \"${user_filter}\" | json | level=~\"${log_level:pipe}\" | line_format \"[{{.username}}] {{__line__}}\"",
           "refId": "A"
         }
       ],
@@ -629,6 +629,22 @@
         "options": [],
         "query": "",
         "type": "textbox"
+      },
+      {
+        "current": {"selected": true, "text": ["info", "warning", "error"], "value": ["info", "warning", "error"]},
+        "hide": 0,
+        "includeAll": false,
+        "label": "Log Level",
+        "multi": true,
+        "name": "log_level",
+        "options": [
+          {"selected": false, "text": "debug", "value": "debug"},
+          {"selected": true, "text": "info", "value": "info"},
+          {"selected": true, "text": "warning", "value": "warning"},
+          {"selected": true, "text": "error", "value": "error"}
+        ],
+        "query": "debug,info,warning,error",
+        "type": "custom"
       }
     ]
   },

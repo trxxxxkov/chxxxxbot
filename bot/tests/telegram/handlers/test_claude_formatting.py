@@ -8,12 +8,12 @@ Tests for:
 - _update_telegram_message_formatted(): Message update with fallback
 """
 
-import pytest
-from telegram.handlers.claude import format_thinking_display
-from telegram.handlers.claude import format_interleaved_content
-from telegram.handlers.claude import _strip_html
-from telegram.handlers.claude import strip_tool_markers
 from core.tools.registry import get_tool_system_message
+import pytest
+from telegram.handlers.claude import _strip_html
+from telegram.handlers.claude import format_interleaved_content
+from telegram.handlers.claude import format_thinking_display
+from telegram.handlers.claude import strip_tool_markers
 
 
 class TestFormatThinkingDisplay:
@@ -24,8 +24,7 @@ class TestFormatThinkingDisplay:
         result = format_thinking_display(
             thinking_text="I need to analyze this...",
             response_text="",
-            is_streaming=True
-        )
+            is_streaming=True)
         assert "🧠" in result
         assert "<i>" in result
         assert "I need to analyze this..." in result
@@ -36,8 +35,7 @@ class TestFormatThinkingDisplay:
         result = format_thinking_display(
             thinking_text="I need to analyze this...",
             response_text="",
-            is_streaming=False
-        )
+            is_streaming=False)
         assert "🧠" in result
         assert "<blockquote expandable>" in result
         assert "</blockquote>" in result
@@ -45,11 +43,9 @@ class TestFormatThinkingDisplay:
 
     def test_thinking_and_response_streaming(self):
         """Test display with thinking and response during streaming."""
-        result = format_thinking_display(
-            thinking_text="Let me think...",
-            response_text="Here is the answer.",
-            is_streaming=True
-        )
+        result = format_thinking_display(thinking_text="Let me think...",
+                                         response_text="Here is the answer.",
+                                         is_streaming=True)
         assert "🧠" in result
         assert "<i>" in result
         assert "Let me think..." in result
@@ -59,33 +55,27 @@ class TestFormatThinkingDisplay:
 
     def test_thinking_and_response_final(self):
         """Test display with thinking and response in final mode."""
-        result = format_thinking_display(
-            thinking_text="Let me think...",
-            response_text="Here is the answer.",
-            is_streaming=False
-        )
+        result = format_thinking_display(thinking_text="Let me think...",
+                                         response_text="Here is the answer.",
+                                         is_streaming=False)
         assert "<blockquote expandable>" in result
         assert "Let me think..." in result
         assert "Here is the answer." in result
 
     def test_response_only(self):
         """Test display with only response text."""
-        result = format_thinking_display(
-            thinking_text="",
-            response_text="Here is the answer.",
-            is_streaming=True
-        )
+        result = format_thinking_display(thinking_text="",
+                                         response_text="Here is the answer.",
+                                         is_streaming=True)
         assert "🧠" not in result
         assert "<i>" not in result
         assert "Here is the answer." in result
 
     def test_empty_inputs(self):
         """Test display with empty inputs."""
-        result = format_thinking_display(
-            thinking_text="",
-            response_text="",
-            is_streaming=True
-        )
+        result = format_thinking_display(thinking_text="",
+                                         response_text="",
+                                         is_streaming=True)
         assert result == ""
 
     def test_html_escaping_in_thinking(self):
@@ -93,8 +83,7 @@ class TestFormatThinkingDisplay:
         result = format_thinking_display(
             thinking_text="Check if x < y && y > z",
             response_text="",
-            is_streaming=True
-        )
+            is_streaming=True)
         assert "&lt;" in result  # < escaped
         assert "&gt;" in result  # > escaped
         assert "&amp;" in result  # & escaped
@@ -104,8 +93,7 @@ class TestFormatThinkingDisplay:
         result = format_thinking_display(
             thinking_text="",
             response_text="Use <code> for code & > for greater",
-            is_streaming=True
-        )
+            is_streaming=True)
         assert "&lt;code&gt;" in result
         assert "&amp;" in result
 
@@ -116,8 +104,14 @@ class TestFormatInterleavedContent:
     def test_thinking_then_text(self):
         """Test thinking followed by text preserves order."""
         blocks = [
-            {"type": "thinking", "content": "Let me think..."},
-            {"type": "text", "content": "Here is my answer."},
+            {
+                "type": "thinking",
+                "content": "Let me think..."
+            },
+            {
+                "type": "text",
+                "content": "Here is my answer."
+            },
         ]
         result = format_interleaved_content(blocks, is_streaming=True)
         thinking_pos = result.find("🧠")
@@ -127,9 +121,18 @@ class TestFormatInterleavedContent:
     def test_text_then_thinking_then_text(self):
         """Test interleaved blocks preserve order."""
         blocks = [
-            {"type": "text", "content": "First text."},
-            {"type": "thinking", "content": "Now thinking..."},
-            {"type": "text", "content": "Second text."},
+            {
+                "type": "text",
+                "content": "First text."
+            },
+            {
+                "type": "thinking",
+                "content": "Now thinking..."
+            },
+            {
+                "type": "text",
+                "content": "Second text."
+            },
         ]
         result = format_interleaved_content(blocks, is_streaming=True)
         first_pos = result.find("First text")
@@ -161,8 +164,14 @@ class TestFormatInterleavedContent:
     def test_empty_content_skipped(self):
         """Test blocks with empty content are skipped."""
         blocks = [
-            {"type": "thinking", "content": ""},
-            {"type": "text", "content": "Only text."},
+            {
+                "type": "thinking",
+                "content": ""
+            },
+            {
+                "type": "text",
+                "content": "Only text."
+            },
         ]
         result = format_interleaved_content(blocks, is_streaming=True)
         assert "🧠" not in result
@@ -171,8 +180,14 @@ class TestFormatInterleavedContent:
     def test_whitespace_only_content_skipped(self):
         """Test blocks with whitespace-only content are skipped."""
         blocks = [
-            {"type": "text", "content": "   \n\n  "},
-            {"type": "text", "content": "Real text."},
+            {
+                "type": "text",
+                "content": "   \n\n  "
+            },
+            {
+                "type": "text",
+                "content": "Real text."
+            },
         ]
         result = format_interleaved_content(blocks, is_streaming=True)
         assert result == "Real text."
@@ -180,9 +195,18 @@ class TestFormatInterleavedContent:
     def test_no_triple_newlines(self):
         """Test that content with surrounding newlines doesn't create triple newlines."""
         blocks = [
-            {"type": "text", "content": "First."},
-            {"type": "text", "content": "\n\n[tool marker]\n\n"},
-            {"type": "text", "content": "Second."},
+            {
+                "type": "text",
+                "content": "First."
+            },
+            {
+                "type": "text",
+                "content": "\n\n[tool marker]\n\n"
+            },
+            {
+                "type": "text",
+                "content": "Second."
+            },
         ]
         result = format_interleaved_content(blocks, is_streaming=True)
         # Should have at most double newlines between parts
@@ -314,22 +338,26 @@ class TestGetToolSystemMessage:
 
     def test_execute_python_success_with_output(self):
         """Test execute_python success with stdout output."""
-        result = get_tool_system_message(
-            tool_name="execute_python",
-            tool_input={"code": "print('hello')"},
-            result={"success": "true", "stdout": "hello world", "stderr": ""}
-        )
+        result = get_tool_system_message(tool_name="execute_python",
+                                         tool_input={"code": "print('hello')"},
+                                         result={
+                                             "success": "true",
+                                             "stdout": "hello world",
+                                             "stderr": ""
+                                         })
         assert "✅" in result
         assert "Код выполнен" in result
         assert "hello world" in result
 
     def test_execute_python_success_no_output(self):
         """Test execute_python success without stdout output."""
-        result = get_tool_system_message(
-            tool_name="execute_python",
-            tool_input={"code": "x = 1"},
-            result={"success": "true", "stdout": "", "stderr": ""}
-        )
+        result = get_tool_system_message(tool_name="execute_python",
+                                         tool_input={"code": "x = 1"},
+                                         result={
+                                             "success": "true",
+                                             "stdout": "",
+                                             "stderr": ""
+                                         })
         assert "✅" in result
         assert "успешно" in result
 
@@ -339,8 +367,11 @@ class TestGetToolSystemMessage:
         result = get_tool_system_message(
             tool_name="execute_python",
             tool_input={"code": "print('x' * 200)"},
-            result={"success": "true", "stdout": long_output, "stderr": ""}
-        )
+            result={
+                "success": "true",
+                "stdout": long_output,
+                "stderr": ""
+            })
         assert "..." in result
         assert len(result) < 200  # Should be truncated
 
@@ -349,19 +380,23 @@ class TestGetToolSystemMessage:
         result = get_tool_system_message(
             tool_name="execute_python",
             tool_input={"code": "raise Error"},
-            result={"success": "false", "error": "NameError: name 'Error' not defined"}
-        )
+            result={
+                "success": "false",
+                "error": "NameError: name 'Error' not defined"
+            })
         assert "❌" in result
         assert "Ошибка" in result
         assert "NameError" in result
 
     def test_transcribe_audio(self):
         """Test transcribe_audio system message."""
-        result = get_tool_system_message(
-            tool_name="transcribe_audio",
-            tool_input={"file_id": "abc123"},
-            result={"transcript": "Hello", "duration": 15.5, "language": "en"}
-        )
+        result = get_tool_system_message(tool_name="transcribe_audio",
+                                         tool_input={"file_id": "abc123"},
+                                         result={
+                                             "transcript": "Hello",
+                                             "duration": 15.5,
+                                             "language": "en"
+                                         })
         assert "🎤" in result
         assert "Транскрибировано" in result
         assert "15s" in result or "16s" in result  # Rounded
@@ -369,11 +404,13 @@ class TestGetToolSystemMessage:
 
     def test_transcribe_audio_no_language(self):
         """Test transcribe_audio without detected language."""
-        result = get_tool_system_message(
-            tool_name="transcribe_audio",
-            tool_input={"file_id": "abc123"},
-            result={"transcript": "Hello", "duration": 10.0, "language": ""}
-        )
+        result = get_tool_system_message(tool_name="transcribe_audio",
+                                         tool_input={"file_id": "abc123"},
+                                         result={
+                                             "transcript": "Hello",
+                                             "duration": 10.0,
+                                             "language": ""
+                                         })
         assert "🎤" in result
         assert "10s" in result
         # Should not have extra comma for empty language
@@ -381,14 +418,15 @@ class TestGetToolSystemMessage:
 
     def test_generate_image(self):
         """Test generate_image system message."""
-        result = get_tool_system_message(
-            tool_name="generate_image",
-            tool_input={"prompt": "a cat"},
-            result={
-                "success": "true",
-                "parameters_used": {"image_size": "4K", "aspect_ratio": "16:9"}
-            }
-        )
+        result = get_tool_system_message(tool_name="generate_image",
+                                         tool_input={"prompt": "a cat"},
+                                         result={
+                                             "success": "true",
+                                             "parameters_used": {
+                                                 "image_size": "4K",
+                                                 "aspect_ratio": "16:9"
+                                             }
+                                         })
         assert "🎨" in result
         assert "Изображение создано" in result
         assert "4K" in result
@@ -396,11 +434,12 @@ class TestGetToolSystemMessage:
 
     def test_generate_image_default_params(self):
         """Test generate_image with default parameters."""
-        result = get_tool_system_message(
-            tool_name="generate_image",
-            tool_input={"prompt": "a dog"},
-            result={"success": "true", "parameters_used": {}}
-        )
+        result = get_tool_system_message(tool_name="generate_image",
+                                         tool_input={"prompt": "a dog"},
+                                         result={
+                                             "success": "true",
+                                             "parameters_used": {}
+                                         })
         assert "🎨" in result
         assert "2K" in result  # Default resolution
 
@@ -409,8 +448,7 @@ class TestGetToolSystemMessage:
         result = get_tool_system_message(
             tool_name="analyze_image",
             tool_input={"claude_file_id": "file_123"},
-            result={"analysis": "This is a cat."}
-        )
+            result={"analysis": "This is a cat."})
         assert result == ""
 
     def test_analyze_pdf_no_message(self):
@@ -418,24 +456,19 @@ class TestGetToolSystemMessage:
         result = get_tool_system_message(
             tool_name="analyze_pdf",
             tool_input={"claude_file_id": "file_456"},
-            result={"analysis": "Document content."}
-        )
+            result={"analysis": "Document content."})
         assert result == ""
 
     def test_web_search_no_message(self):
         """Test web_search returns empty string (server-side tool)."""
-        result = get_tool_system_message(
-            tool_name="web_search",
-            tool_input={"query": "weather today"},
-            result={}
-        )
+        result = get_tool_system_message(tool_name="web_search",
+                                         tool_input={"query": "weather today"},
+                                         result={})
         assert result == ""
 
     def test_unknown_tool_no_message(self):
         """Test unknown tool returns empty string."""
-        result = get_tool_system_message(
-            tool_name="unknown_tool",
-            tool_input={},
-            result={}
-        )
+        result = get_tool_system_message(tool_name="unknown_tool",
+                                         tool_input={},
+                                         result={})
         assert result == ""

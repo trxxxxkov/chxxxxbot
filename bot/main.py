@@ -10,26 +10,26 @@ from pathlib import Path
 
 from config import get_database_url
 from db.engine import dispose_db
-from db.engine import init_db
 from db.engine import get_pool_stats
 from db.engine import get_session
+from db.engine import init_db
+from telegram.handlers.claude import get_queue_manager
 from telegram.handlers.claude import init_claude_provider
 from telegram.handlers.claude import init_message_queue_manager
-from telegram.handlers.claude import get_queue_manager
 from telegram.loader import create_bot
 from telegram.loader import create_dispatcher
+from utils.metrics import set_active_files
+from utils.metrics import set_active_users
+from utils.metrics import set_db_pool_stats
+from utils.metrics import set_disk_usage
+from utils.metrics import set_queue_stats
+from utils.metrics import set_top_users
+from utils.metrics import set_total_balance
+from utils.metrics import set_total_threads
+from utils.metrics import set_total_users
+from utils.metrics import start_metrics_server
 from utils.structured_logging import get_logger
 from utils.structured_logging import setup_logging
-from utils.metrics import start_metrics_server
-from utils.metrics import set_db_pool_stats
-from utils.metrics import set_queue_stats
-from utils.metrics import set_active_users
-from utils.metrics import set_active_files
-from utils.metrics import set_total_balance
-from utils.metrics import set_total_users
-from utils.metrics import set_total_threads
-from utils.metrics import set_disk_usage
-from utils.metrics import set_top_users
 
 
 def read_secret(secret_name: str) -> str:
@@ -197,26 +197,25 @@ async def collect_metrics_task(logger) -> None:
                         # Top users by messages
                         top_by_messages = await user_repo.get_top_users(
                             limit=10, by="messages")
-                        users_data = [
-                            (str(u.id), u.username, u.message_count,
-                             u.total_tokens_used) for u in top_by_messages
-                        ]
+                        users_data = [(str(u.id), u.username, u.message_count,
+                                       u.total_tokens_used)
+                                      for u in top_by_messages]
                         set_top_users(users_data, metric_type="messages")
 
                         # Top users by tokens
                         top_by_tokens = await user_repo.get_top_users(
                             limit=10, by="tokens")
-                        users_data = [
-                            (str(u.id), u.username, u.message_count,
-                             u.total_tokens_used) for u in top_by_tokens
-                        ]
+                        users_data = [(str(u.id), u.username, u.message_count,
+                                       u.total_tokens_used)
+                                      for u in top_by_tokens]
                         set_top_users(users_data, metric_type="tokens")
 
                         # Active files in Files API
                         from db.repositories.user_file_repository import \
                             UserFileRepository  # pylint: disable=import-outside-toplevel
                         user_file_repo = UserFileRepository(session)
-                        active_files = await user_file_repo.get_active_files_count()
+                        active_files = await user_file_repo.get_active_files_count(
+                        )
                         set_active_files(active_files)
 
                         # Total threads
@@ -257,7 +256,9 @@ async def collect_metrics_task(logger) -> None:
             logger.info("metrics_collection_task_cancelled")
             break
         except Exception as e:
-            logger.error("metrics_collection_error", error=str(e), exc_info=True)
+            logger.error("metrics_collection_error",
+                         error=str(e),
+                         exc_info=True)
 
 
 async def main() -> None:
@@ -271,7 +272,7 @@ async def main() -> None:
         Exception: Any other startup errors.
     """
     # Setup logging
-    setup_logging(level="INFO")
+    setup_logging(level="DEBUG")
     logger = get_logger(__name__)
 
     logger.info("bot_starting")

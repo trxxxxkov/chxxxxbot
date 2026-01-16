@@ -79,8 +79,7 @@ async def model_command(  # pylint: disable=too-many-locals
     thread_title = (
         chat.title  # Groups/supergroups
         or chat.first_name  # Private chats
-        or message.from_user.first_name if message.from_user else None
-    )
+        or message.from_user.first_name if message.from_user else None)
 
     db_thread, was_created = await thread_repo.get_or_create_thread(
         chat_id=db_chat.id,

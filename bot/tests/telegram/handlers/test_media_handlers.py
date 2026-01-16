@@ -210,10 +210,9 @@ async def test_handle_audio_success():
         await handle_audio(message, session)
 
         # Verify upload to Files API (no transcription)
-        mock_upload.assert_called_once_with(
-            file_bytes=mock_audio_bytes,
-            filename="song.mp3",
-            mime_type="audio/mpeg")
+        mock_upload.assert_called_once_with(file_bytes=mock_audio_bytes,
+                                            filename="song.mp3",
+                                            mime_type="audio/mpeg")
 
         # Verify saved to database
         mock_create.assert_called_once()
@@ -274,10 +273,9 @@ async def test_handle_video_success():
         await handle_video(message, session)
 
         # Verify upload to Files API (no transcription)
-        mock_upload.assert_called_once_with(
-            file_bytes=mock_video_bytes,
-            filename="clip.mp4",
-            mime_type="video/mp4")
+        mock_upload.assert_called_once_with(file_bytes=mock_video_bytes,
+                                            filename="clip.mp4",
+                                            mime_type="video/mp4")
 
         # Verify saved to database
         mock_create.assert_called_once()

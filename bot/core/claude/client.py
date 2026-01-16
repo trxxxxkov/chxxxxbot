@@ -675,8 +675,8 @@ class ClaudeProvider(LLMProvider):
         return self.last_thinking
 
     # pylint: disable=too-many-locals,too-many-branches,too-many-statements
-    async def stream_events(
-            self, request: LLMRequest) -> AsyncIterator[StreamEvent]:
+    async def stream_events(self,
+                            request: LLMRequest) -> AsyncIterator[StreamEvent]:
         """Stream response events from Claude API.
 
         Unified streaming method that yields structured events for thinking,

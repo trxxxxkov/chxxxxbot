@@ -7,10 +7,10 @@ Tests the ToolConfig dataclass functionality:
 - System message formatting
 """
 
-import pytest
 from unittest.mock import Mock
 
 from core.tools.base import ToolConfig
+import pytest
 
 
 class TestToolConfigInit:
@@ -21,7 +21,10 @@ class TestToolConfigInit:
         mock_executor = Mock()
         config = ToolConfig(
             name="test_tool",
-            definition={"name": "test_tool", "description": "Test"},
+            definition={
+                "name": "test_tool",
+                "description": "Test"
+            },
             executor=mock_executor,
             emoji="🔧",
         )
@@ -36,7 +39,10 @@ class TestToolConfigInit:
         """Test that server-side tools can be created without executor."""
         config = ToolConfig(
             name="web_search",
-            definition={"type": "web_search_20250305", "name": "web_search"},
+            definition={
+                "type": "web_search_20250305",
+                "name": "web_search"
+            },
             executor=None,
             emoji="🔍",
             is_server_side=True,
@@ -142,7 +148,8 @@ class TestToolConfigGetSystemMessage:
             format_result=None,
         )
 
-        message = config.get_system_message({"param": "value"}, {"status": "ok"})
+        message = config.get_system_message({"param": "value"},
+                                            {"status": "ok"})
 
         assert message == ""
 
@@ -194,8 +201,12 @@ class TestToolConfigEdgeCases:
             "input_schema": {
                 "type": "object",
                 "properties": {
-                    "param1": {"type": "string"},
-                    "param2": {"type": "integer"},
+                    "param1": {
+                        "type": "string"
+                    },
+                    "param2": {
+                        "type": "integer"
+                    },
                 },
                 "required": ["param1"],
             },
@@ -214,6 +225,7 @@ class TestToolConfigEdgeCases:
 
     def test_async_executor_accepted(self):
         """Test that async functions are accepted as executors."""
+
         async def async_executor(**kwargs):
             return {"result": "ok"}
 
@@ -223,5 +235,7 @@ class TestToolConfigEdgeCases:
             executor=async_executor,
         )
 
+        # pylint: disable=comparison-with-callable
         assert config.executor == async_executor
+        # pylint: enable=comparison-with-callable
         assert callable(config.executor)

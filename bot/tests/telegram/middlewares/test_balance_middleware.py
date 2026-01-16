@@ -299,7 +299,7 @@ class TestBalanceMiddlewareEdgeCases:
         assert result == "allowed"
 
     async def test_unregistered_user_auto_registered(self, test_session,
-                                                      sample_user):
+                                                     sample_user):
         """Test that unregistered users are auto-registered.
 
         Args:
@@ -368,16 +368,14 @@ class TestBalanceMiddlewareEdgeCases:
         data = {"session": test_session}
 
         # Mock can_make_request to raise an exception (database error)
-        with patch(
-                'telegram.middlewares.balance_middleware.BalanceService'
-        ) as mock_service_class:
+        with patch('telegram.middlewares.balance_middleware.BalanceService'
+                  ) as mock_service_class:
             mock_service = mock_service_class.return_value
             mock_service.can_make_request = AsyncMock(
                 side_effect=Exception("Database error"))
 
             # Patch logger.error to avoid rich rendering Mock objects
-            with patch(
-                    'telegram.middlewares.balance_middleware.logger.error'):
+            with patch('telegram.middlewares.balance_middleware.logger.error'):
                 result = await middleware(mock_handler, mock_message, data)
 
         # Should allow (fail-open on error)
@@ -411,7 +409,8 @@ class TestBalanceMiddlewareEdgeCases:
         mock_handler.assert_called_once()
         assert result == "ok"
 
-    async def test_unknown_command_blocked_zero_balance(self, test_session, sample_user):
+    async def test_unknown_command_blocked_zero_balance(self, test_session,
+                                                        sample_user):
         """Test that unknown commands are blocked with zero balance.
 
         Unknown commands (not in FREE_COMMANDS) are treated as paid requests

@@ -9,12 +9,12 @@ Phase 3: Adds request_id (correlation ID) for tracing all logs from one request.
 """
 
 import time
-import uuid
 from typing import Any, Awaitable, Callable, Dict
+import uuid
 
-import structlog
 from aiogram import BaseMiddleware
 from aiogram.types import Update
+import structlog
 from utils.structured_logging import get_logger
 
 logger = get_logger(__name__)

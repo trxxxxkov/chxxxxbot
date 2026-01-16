@@ -143,7 +143,8 @@ class TestExecuteTool:
         mock_client = Mock()
         mock_response = Mock()
         mock_response.content = [Mock(text="Test result")]
-        mock_response.usage = Mock(input_tokens=100, output_tokens=50,
+        mock_response.usage = Mock(input_tokens=100,
+                                   output_tokens=50,
                                    cache_creation_input_tokens=0,
                                    cache_read_input_tokens=0)
         mock_client.messages.create.return_value = mock_response
@@ -213,7 +214,8 @@ class TestExecuteTool:
         mock_client = Mock()
         mock_response = Mock()
         mock_response.content = [Mock(text="OK")]
-        mock_response.usage = Mock(input_tokens=50, output_tokens=10,
+        mock_response.usage = Mock(input_tokens=50,
+                                   output_tokens=10,
                                    cache_creation_input_tokens=0,
                                    cache_read_input_tokens=0)
         mock_client.messages.create.return_value = mock_response
@@ -351,7 +353,8 @@ class TestGetToolDefinitions:
 
     def test_includes_all_registered_tools(self):
         """Test that all registered tools are included."""
-        from core.tools.registry import get_tool_definitions, TOOLS
+        from core.tools.registry import get_tool_definitions
+        from core.tools.registry import TOOLS
         definitions = get_tool_definitions()
         assert len(definitions) == len(TOOLS)
 
@@ -386,6 +389,7 @@ class TestGetToolSystemMessage:
     def test_tool_without_formatter_returns_empty_string(self):
         """Test that tool without formatter returns empty string."""
         from core.tools.registry import get_tool_system_message
+
         # web_search has no formatter
         message = get_tool_system_message(
             "web_search",
@@ -400,7 +404,10 @@ class TestGetToolSystemMessage:
         message = get_tool_system_message(
             "generate_image",
             {"prompt": "A cat"},
-            {"success": "true", "cost": "$0.134"},
+            {
+                "success": "true",
+                "cost": "$0.134"
+            },
         )
         # Should contain emoji and resolution info
         assert "🎨" in message and len(message) > 0
@@ -411,7 +418,10 @@ class TestGetToolSystemMessage:
         message = get_tool_system_message(
             "execute_python",
             {"code": "print('hello')"},
-            {"success": "true", "stdout": "hello"},
+            {
+                "success": "true",
+                "stdout": "hello"
+            },
         )
         # May return formatted message or empty string
         assert isinstance(message, str)

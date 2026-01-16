@@ -15,9 +15,10 @@ from datetime import datetime
 from datetime import UTC
 from typing import Any, Dict, TYPE_CHECKING
 
-from google.genai import types as genai_types
 from core.clients import get_google_client
-from core.pricing import calculate_gemini_image_cost, cost_to_float
+from core.pricing import calculate_gemini_image_cost
+from core.pricing import cost_to_float
+from google.genai import types as genai_types
 from utils.structured_logging import get_logger
 
 if TYPE_CHECKING:
@@ -25,7 +26,6 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = get_logger(__name__)
-
 
 # Tool definition for Claude API
 GENERATE_IMAGE_TOOL = {

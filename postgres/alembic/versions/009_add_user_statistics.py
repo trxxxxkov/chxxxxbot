@@ -14,8 +14,8 @@ Create Date: 2026-01-11 14:00:00.000000
 # pylint: disable=invalid-name
 from typing import Sequence, Union
 
-import sqlalchemy as sa
 from alembic import op
+import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = '009'
@@ -33,8 +33,7 @@ def upgrade() -> None:
             sa.BigInteger(),
             nullable=False,
             server_default='0',
-        )
-    )
+        ))
     op.add_column(
         'users',
         sa.Column(
@@ -42,8 +41,7 @@ def upgrade() -> None:
             sa.BigInteger(),
             nullable=False,
             server_default='0',
-        )
-    )
+        ))
 
 
 def downgrade() -> None:

@@ -22,8 +22,10 @@ import io
 from typing import Optional
 
 from aiogram import types
-from core.clients import get_openai_async_client, get_anthropic_async_client
-from core.pricing import calculate_whisper_cost, cost_to_float
+from core.clients import get_anthropic_async_client
+from core.clients import get_openai_async_client
+from core.pricing import calculate_whisper_cost
+from core.pricing import cost_to_float
 from db.models.thread import Thread
 from db.repositories.chat_repository import ChatRepository
 from db.repositories.thread_repository import ThreadRepository
@@ -467,8 +469,8 @@ async def get_or_create_thread(message: types.Message,
         last_name=message.from_user.last_name,
         language_code=message.from_user.language_code,
         is_premium=message.from_user.is_premium or False,
-        added_to_attachment_menu=(
-            message.from_user.added_to_attachment_menu or False),
+        added_to_attachment_menu=(message.from_user.added_to_attachment_menu or
+                                  False),
     )
 
     # Get or create chat
@@ -490,8 +492,7 @@ async def get_or_create_thread(message: types.Message,
     thread_title = (
         message.chat.title  # Groups/supergroups
         or message.chat.first_name  # Private chats
-        or message.from_user.first_name if message.from_user else None
-    )
+        or message.from_user.first_name if message.from_user else None)
 
     thread, _ = await thread_repo.get_or_create_thread(
         chat_id=chat_id,

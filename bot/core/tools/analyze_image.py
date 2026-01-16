@@ -10,7 +10,8 @@ NO __init__.py - use direct import:
 from typing import Dict
 
 from core.clients import get_anthropic_client
-from core.pricing import calculate_claude_cost, cost_to_float
+from core.pricing import calculate_claude_cost
+from core.pricing import cost_to_float
 from utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
@@ -179,7 +180,6 @@ Token cost: ~1600 tokens per 1092x1092px image. Larger images consume proportion
         "required": ["claude_file_id", "question"]
     }
 }
-
 
 # Unified tool configuration (no format_result - internal analysis tool)
 from core.tools.base import ToolConfig  # pylint: disable=wrong-import-position

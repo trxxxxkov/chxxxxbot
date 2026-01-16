@@ -194,7 +194,8 @@ class MessageQueueManager:
             thread_id: Database thread ID.
         """
         try:
-            await asyncio.sleep(MESSAGE_BATCH_DELAY_MS / 1000)  # Convert ms to seconds
+            await asyncio.sleep(MESSAGE_BATCH_DELAY_MS / 1000
+                               )  # Convert ms to seconds
 
             queue = self.queues[thread_id]
             messages = queue.messages
