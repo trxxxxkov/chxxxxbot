@@ -289,6 +289,51 @@ grafana:
 - Username: `admin`
 - Password: from `secrets/grafana_password.txt`
 
+### Grafana Dashboard Events
+
+Bot dashboard отслеживает следующие события:
+
+#### Users Panel
+| Event | Description | Fields |
+|-------|-------------|--------|
+| `user.new_user_joined` | Новый пользователь | `user_id`, `username` |
+| `claude_handler.thread_created` | Новый тред | `thread_id`, `user_id` |
+| `claude_handler.message_received` | Новое сообщение | `user_id`, `is_new_thread` |
+| `stars.donation_received` | Донат звёздами | `user_id`, `stars_amount` |
+| `stars.refund_processed` | Возврат звёзд | `user_id`, `stars_amount` |
+
+#### Costs Panel
+| Event | Description | Fields |
+|-------|-------------|--------|
+| `claude_handler.user_charged` | Списание за Claude API | `model_id`, `cost_usd` |
+| `tools.loop.user_charged_for_tool` | Списание за инструмент | `tool_name`, `cost_usd` |
+| `tools.web_search.user_charged` | Списание за web search | `cost_usd` |
+
+#### Tokens Panel
+| Event | Description | Fields |
+|-------|-------------|--------|
+| `claude_handler.response_complete` | Завершение ответа | `input_tokens`, `output_tokens`, `thinking_tokens`, `cache_read_tokens` |
+
+#### Files Panel
+| Event | Description | Fields |
+|-------|-------------|--------|
+| `files.user_file_received` | Получен файл | `user_id`, `file_type` |
+| `files.bot_file_sent` | Отправлен файл | `user_id`, `file_type` |
+
+**File types:** `image`, `pdf`, `document`, `audio`, `video`, `voice`
+
+#### Handlers that log dashboard events
+
+| Handler | File | Events Logged |
+|---------|------|---------------|
+| Text messages | `claude.py` | `thread_created`, `message_received`, `response_complete`, `user_charged` |
+| Photos | `files.py` | `thread_created`, `message_received`, `user_file_received` |
+| Documents | `files.py` | `thread_created`, `message_received`, `user_file_received` |
+| Voice | `media_handlers.py` | `thread_created`, `message_received`, `user_file_received` |
+| Audio | `media_handlers.py` | `thread_created`, `message_received`, `user_file_received` |
+| Video | `media_handlers.py` | `thread_created`, `message_received`, `user_file_received` |
+| Video notes | `media_handlers.py` | `thread_created`, `message_received`, `user_file_received` |
+
 ### Useful LogQL Queries
 
 ```logql
@@ -308,10 +353,10 @@ grafana:
 {service="bot"} | json | level="error" | line_format "{{.event}}: {{.error}}"
 
 # Count messages per minute
-count_over_time({service="bot"} | json | event="message_received" [1m])
+count_over_time({service="bot"} | json | event="claude_handler.message_received" [1m])
 
-# Response time histogram
-{service="bot"} | json | event="response_sent" | unwrap duration | histogram_over_time(1m)
+# Total costs per model
+sum_over_time({service="bot"} | json | event="claude_handler.user_charged" | unwrap cost_usd [1h])
 ```
 
 ---

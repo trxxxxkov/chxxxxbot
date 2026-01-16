@@ -67,7 +67,7 @@ chxxxxbot/
 │   ├── utils/                  # Helper utilities
 │   │   ├── structured_logging.py  # structlog configuration
 │   │   └── metrics.py          # Prometheus metrics
-│   ├── tests/                  # Test suite (540+ tests)
+│   ├── tests/                  # Test suite (566 tests)
 │   ├── Dockerfile
 │   └── pyproject.toml
 │
@@ -355,7 +355,7 @@ chxxxxbot/
 **Testing:**
 - ✅ 46 integration tests (payment flow, refunds, middleware, admin commands)
 - ✅ Unit tests for all models, repositories, services
-- ✅ 494 total tests passing (100% pass rate)
+- ✅ 566 total tests passing (100% pass rate)
 - ✅ Edge case coverage (duplicates, expiry, insufficient balance, soft check)
 
 **Files created:**
@@ -676,7 +676,7 @@ docker compose exec bot pytest -s
 - Middlewares: 90%+
 - Overall project: 80%+
 
-**Current Test Coverage:** 494 tests across all components ✅
+**Current Test Coverage:** 566 tests across all components ✅
 
 **Manual Testing:**
 
@@ -868,7 +868,7 @@ This script:
 - Refund support (30-day window with validation)
 - Commission formula: y = x * (1 - 0.35 - 0.15 - k3)
 - **Database**: 2 new models (Payment, BalanceOperation), migration 007
-- **Testing**: 46 integration tests, 484 total tests passing (100% pass rate)
+- **Testing**: 46 integration tests, 566 total tests passing (100% pass rate)
 - **Files**: 17 new files (models, repos, services, handlers, middleware, tests)
 - Documentation: docs/phase-2.1-payment-system.md
 
