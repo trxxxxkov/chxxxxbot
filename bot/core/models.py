@@ -15,7 +15,7 @@ from pydantic import Field
 
 
 @dataclass
-class StreamEvent:
+class StreamEvent:  # pylint: disable=too-many-instance-attributes
     """Streaming event from LLM provider.
 
     Represents a single event during streaming response. Used for unified
@@ -28,6 +28,9 @@ class StreamEvent:
         tool_id: Tool use ID (for tool_use events).
         tool_input: Accumulated tool input JSON (for tool_use events).
         stop_reason: Why message ended (for message_end events).
+        final_message: Complete API response message (for stream_complete).
+        usage: Token usage statistics (for stream_complete).
+        thinking: Thinking text (for stream_complete).
 
     Event Types:
         - thinking_delta: Chunk of thinking/reasoning text
@@ -36,15 +39,21 @@ class StreamEvent:
         - input_json_delta: Partial JSON for tool input
         - block_end: End of content block (thinking/text/tool)
         - message_end: End of message (contains stop_reason)
+        - stream_complete: Stream finished (contains final_message, usage)
     """
 
     type: Literal["thinking_delta", "text_delta", "tool_use",
-                  "input_json_delta", "block_end", "message_end"]
+                  "input_json_delta", "block_end", "message_end",
+                  "stream_complete"]
     content: str = ""
     tool_name: str = ""
     tool_id: str = ""
     tool_input: Dict[str, Any] = field(default_factory=dict)
     stop_reason: str = ""  # "end_turn" | "tool_use" | "max_tokens"
+    # For stream_complete event (avoids race condition with shared state)
+    final_message: Any = None  # anthropic.types.Message
+    usage: Any = None  # TokenUsage
+    thinking: Optional[str] = None
 
 
 class Message(BaseModel):

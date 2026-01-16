@@ -388,6 +388,9 @@ async def _stream_with_unified_events(
         # Per-iteration state (reset each iteration)
         pending_tools: list[dict] = []  # Tools to execute after stream ends
         stop_reason = ""
+        # Capture final message from stream_complete to avoid race condition
+        # (other requests can reset claude_provider.last_message during tool exec)
+        captured_final_message = None
 
         # Collect content blocks directly from stream (avoid race condition)
         content_blocks: list[dict] = []
@@ -541,6 +544,11 @@ async def _stream_with_unified_events(
                         "text": current_response_text
                     })
 
+            elif event.type == "stream_complete":
+                # Capture final message immediately to avoid race condition
+                # (another request could reset claude_provider state during tools)
+                captured_final_message = event.final_message
+
         # Final update for any remaining text (with formatting)
         display_text = format_interleaved_content(display_blocks,
                                                   is_streaming=True)
@@ -666,10 +674,11 @@ async def _stream_with_unified_events(
             } for t in pending_tools]
             tool_results = format_tool_results(tool_uses, results)
 
-            # Add to conversation using final_message from provider
-            # CRITICAL: Use provider's last_message which has thinking blocks
-            # with signatures (required by API), not manually constructed blocks
-            final_message = claude_provider.get_last_message()
+            # Add to conversation using captured_final_message (NOT provider state)
+            # CRITICAL: Use captured message which has thinking blocks with
+            # signatures (required by API). Provider state may be reset by other
+            # concurrent requests during tool execution.
+            final_message = captured_final_message
             if final_message and final_message.content:
                 serialized_content = []
                 for block in final_message.content:

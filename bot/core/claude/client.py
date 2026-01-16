@@ -876,6 +876,15 @@ class ClaudeProvider(LLMProvider):
             self.last_message = final_message
             self.last_thinking = thinking_text if thinking_text else None
 
+            # Yield stream_complete event with all data to avoid race condition
+            # Consumer MUST capture this before another request resets state
+            yield StreamEvent(
+                type="stream_complete",
+                final_message=final_message,
+                usage=self.last_usage,
+                thinking=self.last_thinking,
+            )
+
             duration_ms = (time.time() - start_time) * 1000
             logger.info("claude.stream_events.complete",
                         model_full_id=request.model,
