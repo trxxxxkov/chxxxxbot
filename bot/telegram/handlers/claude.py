@@ -123,7 +123,10 @@ def strip_tool_markers(text: str) -> str:
     """
     # Pattern matches: newline + [emoji + text] + newline
     # Also handles markers at start/end of text
-    pattern = r'\n?\[(?:📄|🐍|🎨|🔍|📤|✅|❌|🌐|📎)[^\]]*\]\n?'
+    # Emojis: 📄 analyze_pdf, 🐍 execute_python, 🎨 generate_image,
+    #         🔍 web_search, 🌐 web_fetch, 🖼️ analyze_image, 🎤 transcribe_audio
+    #         📤 file sent, ✅/❌ status, 📎 document
+    pattern = r'\n?\[(?:📄|🐍|🎨|🔍|📤|✅|❌|🌐|📎|🖼️|🎤)[^\]]*\]\n?'
     cleaned = re.sub(pattern, '\n', text)
     # Clean up multiple newlines
     cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)

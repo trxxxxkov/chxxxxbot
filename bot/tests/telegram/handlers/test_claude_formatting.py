@@ -332,6 +332,84 @@ class TestStripToolMarkers:
         # Should not have more than 2 consecutive newlines
         assert "\n\n\n" not in result
 
+    def test_strip_tool_marker_analyze_image(self):
+        """Test stripping analyze_image marker (🖼️)."""
+        text = "Let me analyze this image:\n[🖼️ analyze_image]\nI see a cat."
+        result = strip_tool_markers(text)
+        assert "[🖼️" not in result
+        assert "Let me analyze this image:" in result
+        assert "I see a cat." in result
+
+    def test_strip_tool_marker_transcribe_audio(self):
+        """Test stripping transcribe_audio marker (🎤)."""
+        text = "Transcribing audio:\n[🎤 transcribe_audio]\nThe speaker says..."
+        result = strip_tool_markers(text)
+        assert "[🎤" not in result
+        assert "Transcribing audio:" in result
+        assert "The speaker says..." in result
+
+    def test_strip_tool_marker_generate_image(self):
+        """Test stripping generate_image marker (🎨)."""
+        text = "Generating image:\n[🎨 generate_image]\nHere's your image."
+        result = strip_tool_markers(text)
+        assert "[🎨" not in result
+        assert "Generating image:" in result
+        assert "Here's your image." in result
+
+    def test_strip_tool_marker_web_fetch(self):
+        """Test stripping web_fetch marker (🌐)."""
+        text = "Fetching webpage:\n[🌐 web_fetch]\nThe page contains..."
+        result = strip_tool_markers(text)
+        assert "[🌐" not in result
+        assert "Fetching webpage:" in result
+        assert "The page contains..." in result
+
+    def test_strip_all_tool_markers_combined(self):
+        """Test stripping all possible tool markers in one text.
+
+        This is a regression test for the bug where 🖼️ and 🎤 markers
+        were not being stripped from final user messages.
+        """
+        text = (
+            "Starting analysis:\n"
+            "[🖼️ analyze_image]\n"  # Was missing from pattern
+            "Image analyzed.\n"
+            "[📄 analyze_pdf]\n"
+            "PDF analyzed.\n"
+            "[🎤 transcribe_audio]\n"  # Was missing from pattern
+            "Audio transcribed.\n"
+            "[🎨 generate_image]\n"
+            "Image generated.\n"
+            "[🐍 execute_python]\n"
+            "Code executed.\n"
+            "[🔍 web_search]\n"
+            "Search done.\n"
+            "[🌐 web_fetch]\n"
+            "Page fetched.\n"
+            "[📤 Отправлен файл: result.png]\n"
+            "File sent.\n"
+            "[✅ Success]\n"
+            "[❌ Error]\n"
+            "All done.")
+        result = strip_tool_markers(text)
+        # All markers should be stripped
+        assert "[🖼️" not in result
+        assert "[📄" not in result
+        assert "[🎤" not in result
+        assert "[🎨" not in result
+        assert "[🐍" not in result
+        assert "[🔍" not in result
+        assert "[🌐" not in result
+        assert "[📤" not in result
+        assert "[✅" not in result
+        assert "[❌" not in result
+        # Content should be preserved
+        assert "Starting analysis:" in result
+        assert "Image analyzed." in result
+        assert "PDF analyzed." in result
+        assert "Audio transcribed." in result
+        assert "All done." in result
+
 
 class TestGetToolSystemMessage:
     """Tests for get_tool_system_message function."""
