@@ -654,6 +654,21 @@ async def _stream_with_unified_events(
                         record_cost(service=tool_name,
                                     amount_usd=float(result["cost_usd"]))
 
+                    # Update display immediately after each tool completes
+                    # (so user sees progress, not all at once)
+                    display_text = format_interleaved_content(display_blocks,
+                                                              is_streaming=True)
+                    if display_text != last_sent_text:
+                        current_message, last_sent_text = (
+                            await _update_telegram_message_formatted(
+                                display_text,
+                                current_message,
+                                first_message,
+                                all_sent_messages,
+                                last_sent_text,
+                            ))
+                        last_update_time = time.time()
+
                 except Exception as e:  # pylint: disable=broad-exception-caught
                     tool_duration = time.time() - tool_start_time
                     error_msg = f"Tool execution failed: {str(e)}"
