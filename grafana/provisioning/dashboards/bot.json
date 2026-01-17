@@ -76,25 +76,25 @@
       "targets": [
         {
           "datasource": {"type": "loki", "uid": "loki"},
-          "expr": "sum(count_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | level=\"error\"  [$__interval])) or vector(0)",
+          "expr": "sum(count_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | level=\"error\" | level=~\"${log_level:pipe}\" [$__interval])) or vector(0)",
           "legendFormat": "error",
           "refId": "A"
         },
         {
           "datasource": {"type": "loki", "uid": "loki"},
-          "expr": "sum(count_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | level=\"warning\"  [$__interval])) or vector(0)",
+          "expr": "sum(count_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | level=\"warning\" | level=~\"${log_level:pipe}\" [$__interval])) or vector(0)",
           "legendFormat": "warning",
           "refId": "B"
         },
         {
           "datasource": {"type": "loki", "uid": "loki"},
-          "expr": "sum(count_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | level=\"info\"  [$__interval])) or vector(0)",
+          "expr": "sum(count_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | level=\"info\" | level=~\"${log_level:pipe}\" [$__interval])) or vector(0)",
           "legendFormat": "info",
           "refId": "C"
         },
         {
           "datasource": {"type": "loki", "uid": "loki"},
-          "expr": "sum(count_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | level=\"debug\"  [$__interval])) or vector(0)",
+          "expr": "sum(count_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | level=\"debug\" | level=~\"${log_level:pipe}\" [$__interval])) or vector(0)",
           "legendFormat": "debug",
           "refId": "D"
         }
