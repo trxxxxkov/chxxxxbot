@@ -971,7 +971,7 @@ async def _process_generated_files(
     Extracted from _handle_with_tools for reuse.
     """
     file_contents = result.pop("_file_contents")
-    delivered_files = []
+    delivered_files = []  # List of {filename, claude_file_id, file_type}
 
     for file_data in file_contents:
         try:
@@ -1035,7 +1035,12 @@ async def _process_generated_files(
                 file_metadata={},
             )
 
-            delivered_files.append(filename)
+            # Store file info with claude_file_id for tool result
+            delivered_files.append({
+                "filename": filename,
+                "claude_file_id": claude_file_id,
+                "file_type": file_type.value,
+            })
 
             # Dashboard tracking event (must match Grafana query)
             logger.info("files.bot_file_sent",
@@ -1050,9 +1055,15 @@ async def _process_generated_files(
                          exc_info=True)
 
     if delivered_files:
+        # Format result with claude_file_id so Claude can reference files
+        file_list = "\n".join(f"- {f['filename']} ({f['file_type']}): "
+                              f"claude_file_id={f['claude_file_id']}"
+                              for f in delivered_files)
         result["files_delivered"] = (
-            f"Successfully sent {len(delivered_files)} file(s): "
-            f"{', '.join(delivered_files)}")
+            f"Successfully sent {len(delivered_files)} file(s) to user:\n"
+            f"{file_list}\n\n"
+            f"Use these claude_file_id values with analyze_image or "
+            f"analyze_pdf tools if you need to analyze the files.")
 
 
 async def _charge_for_tool(
