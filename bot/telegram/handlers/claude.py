@@ -614,7 +614,14 @@ async def _stream_with_unified_events(
                                                 first_message.bot, session)
                     tool_duration = time.time() - tool_start_time
 
-                    # Process generated files (same as before)
+                    # Add system messages for completed tools FIRST
+                    # (e.g., "🎨 Изображение сгенерировано" before "📤 Отправлен")
+                    tool_system_msg = get_tool_system_message(
+                        tool_name, tool_input, result)
+                    if tool_system_msg:
+                        append_to_display("text", tool_system_msg)
+
+                    # Process generated files (upload to Files API, send to user)
                     if "_file_contents" in result:
                         file_contents = result["_file_contents"]
                         await _process_generated_files(result, first_message,
@@ -627,13 +634,6 @@ async def _stream_with_unified_events(
                             filename = file_info.get("filename", "file")
                             append_to_display(
                                 "text", f"\n[📤 Отправлен файл: {filename}]\n")
-
-                    # Add system messages for completed tools
-                    # (useful for user to see what happened)
-                    tool_system_msg = get_tool_system_message(
-                        tool_name, tool_input, result)
-                    if tool_system_msg:
-                        append_to_display("text", tool_system_msg)
 
                     results.append(result)
 
