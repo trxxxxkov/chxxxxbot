@@ -7,14 +7,21 @@ NO __init__.py - use direct import:
     from core.tools.analyze_image import analyze_image, ANALYZE_IMAGE_TOOL
 """
 
+import asyncio
 from typing import Dict
 
+from anthropic import APIStatusError
 from core.clients import get_anthropic_client
 from core.pricing import calculate_claude_cost
 from core.pricing import cost_to_float
 from utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
+
+# Retry configuration for transient API errors
+MAX_RETRIES = 3
+RETRY_DELAY_SECONDS = 2.0
+RETRYABLE_STATUS_CODES = {500, 502, 503, 504, 529}
 
 
 async def analyze_image(claude_file_id: str, question: str) -> Dict[str, str]:
@@ -43,65 +50,93 @@ async def analyze_image(claude_file_id: str, question: str) -> Dict[str, str]:
         ... )
         >>> print(result['analysis'])
     """
-    try:
-        logger.info("tools.analyze_image.called",
-                    claude_file_id=claude_file_id,
-                    question_length=len(question))
+    logger.info("tools.analyze_image.called",
+                claude_file_id=claude_file_id,
+                question_length=len(question))
 
-        # Use centralized client factory with Files API beta header
-        client = get_anthropic_client(use_files_api=True)
-        model_id = "claude-sonnet-4-5-20250929"
+    # Use centralized client factory with Files API beta header
+    client = get_anthropic_client(use_files_api=True)
+    model_id = "claude-sonnet-4-5-20250929"
 
-        # Call Claude Vision API with file from Files API
-        response = client.messages.create(model=model_id,
-                                          max_tokens=2048,
-                                          messages=[{
-                                              "role":
-                                                  "user",
-                                              "content": [{
-                                                  "type": "image",
-                                                  "source": {
-                                                      "type": "file",
-                                                      "file_id": claude_file_id
-                                                  }
-                                              }, {
-                                                  "type": "text",
-                                                  "text": question
-                                              }]
-                                          }])
+    last_error = None
+    for attempt in range(MAX_RETRIES):
+        try:
+            # Call Claude Vision API with file from Files API
+            response = client.messages.create(
+                model=model_id,
+                max_tokens=2048,
+                messages=[{
+                    "role":
+                        "user",
+                    "content": [{
+                        "type": "image",
+                        "source": {
+                            "type": "file",
+                            "file_id": claude_file_id
+                        }
+                    }, {
+                        "type": "text",
+                        "text": question
+                    }]
+                }])
 
-        analysis = response.content[0].text
-        input_tokens = response.usage.input_tokens
-        output_tokens = response.usage.output_tokens
-        tokens_used = input_tokens + output_tokens
+            analysis = response.content[0].text
+            input_tokens = response.usage.input_tokens
+            output_tokens = response.usage.output_tokens
+            tokens_used = input_tokens + output_tokens
 
-        # Use centralized pricing calculation
-        cost_usd = calculate_claude_cost(
-            model_id=model_id,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-        )
+            # Use centralized pricing calculation
+            cost_usd = calculate_claude_cost(
+                model_id=model_id,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+            )
 
-        logger.info("tools.analyze_image.success",
-                    claude_file_id=claude_file_id,
-                    tokens_used=tokens_used,
-                    input_tokens=input_tokens,
-                    output_tokens=output_tokens,
-                    cost_usd=cost_to_float(cost_usd),
-                    analysis_length=len(analysis))
+            logger.info("tools.analyze_image.success",
+                        claude_file_id=claude_file_id,
+                        tokens_used=tokens_used,
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens,
+                        cost_usd=cost_to_float(cost_usd),
+                        analysis_length=len(analysis))
 
-        return {
-            "analysis": analysis,
-            "tokens_used": str(tokens_used),
-            "cost_usd": f"{cost_to_float(cost_usd):.6f}"
-        }
+            return {
+                "analysis": analysis,
+                "tokens_used": str(tokens_used),
+                "cost_usd": f"{cost_to_float(cost_usd):.6f}"
+            }
 
-    except Exception as e:
-        logger.error("tools.analyze_image.failed",
-                     claude_file_id=claude_file_id,
-                     error=str(e),
-                     exc_info=True)
-        raise
+        except APIStatusError as e:
+            last_error = e
+            if e.status_code in RETRYABLE_STATUS_CODES:
+                if attempt < MAX_RETRIES - 1:
+                    delay = RETRY_DELAY_SECONDS * (2**attempt)
+                    logger.warning("tools.analyze_image.retry",
+                                   claude_file_id=claude_file_id,
+                                   attempt=attempt + 1,
+                                   max_retries=MAX_RETRIES,
+                                   status_code=e.status_code,
+                                   delay_seconds=delay)
+                    await asyncio.sleep(delay)
+                    continue
+            # Non-retryable error or max retries reached
+            logger.error("tools.analyze_image.failed",
+                         claude_file_id=claude_file_id,
+                         error=str(e),
+                         exc_info=True)
+            raise
+
+        except Exception as e:
+            logger.error("tools.analyze_image.failed",
+                         claude_file_id=claude_file_id,
+                         error=str(e),
+                         exc_info=True)
+            raise
+
+    # Should not reach here, but satisfy mypy
+    if last_error:
+        raise last_error
+    raise RuntimeError("Unexpected: retry loop completed without result")
 
 
 # Tool definition for Claude API (anthropic tools format)
