@@ -128,8 +128,9 @@ async def handle_voice(message: types.Message, session: AsyncSession) -> None:
 
                 await session.commit()
 
-                logger.info("voice_handler.user_charged",
+                logger.info("tools.loop.user_charged_for_tool",
                             user_id=user_id,
+                            tool_name="transcribe_audio",
                             cost_usd=float(whisper_cost))
 
             except Exception as charge_error:  # pylint: disable=broad-exception-caught
@@ -556,8 +557,9 @@ async def handle_video_note(message: types.Message,
 
                 await session.commit()
 
-                logger.info("video_note_handler.user_charged",
+                logger.info("tools.loop.user_charged_for_tool",
                             user_id=user_id,
+                            tool_name="transcribe_audio",
                             cost_usd=float(whisper_cost))
 
             except Exception as charge_error:  # pylint: disable=broad-exception-caught
