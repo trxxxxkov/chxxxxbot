@@ -542,16 +542,18 @@ async def _stream_with_unified_events(
                         stop_reason=stop_reason,
                         had_thinking=total_thinking > 0)
 
-            # Format final message: text only (no thinking), with HTML escaping
-            # Thinking was shown during streaming, final message is clean
+            # Format final message: text only (no thinking, no tool markers)
+            # Thinking and markers were shown during streaming, final is clean
             text_only_blocks = [
                 b for b in display_blocks if b["type"] == "text"
             ]
             final_display = format_interleaved_content(text_only_blocks,
                                                        is_streaming=False)
+            # Strip tool markers from final display
+            final_display = strip_tool_markers(final_display)
 
             # Update draft with final text before finalizing
-            await draft_streamer.update(final_display)
+            await draft_streamer.update(final_display, force=True)
 
             # Finalize draft to permanent message
             try:
@@ -584,7 +586,7 @@ async def _stream_with_unified_events(
                         while True:
                             await asyncio.sleep(DRAFT_KEEPALIVE_INTERVAL)
                             # Re-send current text to keep draft alive
-                            await draft_streamer.update(last_sent_text)
+                            await draft_streamer.keepalive()
 
                     keepalive_task = asyncio.create_task(keepalive_loop())
                     try:
@@ -712,17 +714,19 @@ async def _stream_with_unified_events(
             if not final_answer:
                 final_answer = f"⚠️ Unexpected stop reason: {stop_reason}"
 
-            # Format final message: text only (no thinking)
+            # Format final message: text only (no thinking, no tool markers)
             text_only_blocks = [
                 b for b in display_blocks if b["type"] == "text"
             ]
             final_display = format_interleaved_content(text_only_blocks,
                                                        is_streaming=False)
+            final_display = strip_tool_markers(final_display)
             if final_display:
-                await draft_streamer.update(final_display)
+                await draft_streamer.update(final_display, force=True)
             else:
                 await draft_streamer.update(
-                    safe_html(f"⚠️ Unexpected stop reason: {stop_reason}"))
+                    safe_html(f"⚠️ Unexpected stop reason: {stop_reason}"),
+                    force=True)
 
             # Finalize draft
             try:

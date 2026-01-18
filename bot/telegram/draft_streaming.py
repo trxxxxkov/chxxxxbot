@@ -183,6 +183,47 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
             return await self.update(self._pending_text, parse_mode, force=True)
         return True
 
+    async def keepalive(self, parse_mode: Optional[str] = "HTML") -> bool:
+        """Send keep-alive update to prevent draft from disappearing.
+
+        Unlike update(), this always sends even if text unchanged.
+        Use during long operations like image generation.
+
+        Args:
+            parse_mode: Parse mode for formatting.
+
+        Returns:
+            True on success, False on failure.
+        """
+        if not self.last_text:
+            return True
+
+        try:
+            await self.bot(
+                SendMessageDraft(
+                    chat_id=self.chat_id,
+                    draft_id=self.draft_id,
+                    text=self.last_text,
+                    message_thread_id=self.topic_id,
+                    parse_mode=parse_mode,
+                ))
+            self._last_update_time = time.time()
+            logger.debug("draft_streamer.keepalive",
+                         chat_id=self.chat_id,
+                         draft_id=self.draft_id)
+            return True
+        except TelegramRetryAfter as e:
+            logger.warning("draft_streamer.keepalive_flood",
+                           chat_id=self.chat_id,
+                           retry_after=e.retry_after)
+            await asyncio.sleep(e.retry_after)
+            return True
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.warning("draft_streamer.keepalive_failed",
+                           chat_id=self.chat_id,
+                           error=str(e))
+            return False
+
     async def finalize(self,
                        parse_mode: Optional[str] = "HTML") -> types.Message:
         """Convert draft to permanent message.
