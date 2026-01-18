@@ -1,101 +1,14 @@
 """Tests for Claude handler formatting functions.
 
 Tests for:
-- format_thinking_display(): Thinking block formatting
-- _strip_html(): HTML fallback stripping
+- format_interleaved_content(): Interleaved thinking/text block formatting
 - strip_tool_markers(): Remove tool markers from final response
 - get_tool_system_message(): Tool execution system messages (from registry)
-- _update_telegram_message_formatted(): Message update with fallback
 """
 
 from core.tools.registry import get_tool_system_message
-import pytest
-from telegram.handlers.claude import _strip_html
 from telegram.handlers.claude import format_interleaved_content
-from telegram.handlers.claude import format_thinking_display
 from telegram.handlers.claude import strip_tool_markers
-
-
-class TestFormatThinkingDisplay:
-    """Tests for format_thinking_display function."""
-
-    def test_thinking_only_streaming(self):
-        """Test display with only thinking text during streaming."""
-        result = format_thinking_display(
-            thinking_text="I need to analyze this...",
-            response_text="",
-            is_streaming=True)
-        assert "🧠" in result
-        assert "<i>" in result
-        assert "I need to analyze this..." in result
-        assert "blockquote" not in result
-
-    def test_thinking_only_final(self):
-        """Test display with only thinking text in final mode."""
-        result = format_thinking_display(
-            thinking_text="I need to analyze this...",
-            response_text="",
-            is_streaming=False)
-        assert "🧠" in result
-        assert "<blockquote expandable>" in result
-        assert "</blockquote>" in result
-        assert "<i>" not in result
-
-    def test_thinking_and_response_streaming(self):
-        """Test display with thinking and response during streaming."""
-        result = format_thinking_display(thinking_text="Let me think...",
-                                         response_text="Here is the answer.",
-                                         is_streaming=True)
-        assert "🧠" in result
-        assert "<i>" in result
-        assert "Let me think..." in result
-        assert "Here is the answer." in result
-        # Parts should be separated
-        assert "\n\n" in result
-
-    def test_thinking_and_response_final(self):
-        """Test display with thinking and response in final mode."""
-        result = format_thinking_display(thinking_text="Let me think...",
-                                         response_text="Here is the answer.",
-                                         is_streaming=False)
-        assert "<blockquote expandable>" in result
-        assert "Let me think..." in result
-        assert "Here is the answer." in result
-
-    def test_response_only(self):
-        """Test display with only response text."""
-        result = format_thinking_display(thinking_text="",
-                                         response_text="Here is the answer.",
-                                         is_streaming=True)
-        assert "🧠" not in result
-        assert "<i>" not in result
-        assert "Here is the answer." in result
-
-    def test_empty_inputs(self):
-        """Test display with empty inputs."""
-        result = format_thinking_display(thinking_text="",
-                                         response_text="",
-                                         is_streaming=True)
-        assert result == ""
-
-    def test_html_escaping_in_thinking(self):
-        """Test that HTML characters are escaped in thinking text."""
-        result = format_thinking_display(
-            thinking_text="Check if x < y && y > z",
-            response_text="",
-            is_streaming=True)
-        assert "&lt;" in result  # < escaped
-        assert "&gt;" in result  # > escaped
-        assert "&amp;" in result  # & escaped
-
-    def test_html_escaping_in_response(self):
-        """Test that HTML characters are escaped in response text."""
-        result = format_thinking_display(
-            thinking_text="",
-            response_text="Use <code> for code & > for greater",
-            is_streaming=True)
-        assert "&lt;code&gt;" in result
-        assert "&amp;" in result
 
 
 class TestFormatInterleavedContent:
@@ -214,50 +127,6 @@ class TestFormatInterleavedContent:
         assert "First." in result
         assert "[tool marker]" in result
         assert "Second." in result
-
-
-class TestStripHtml:
-    """Tests for _strip_html fallback function."""
-
-    def test_strip_simple_tags(self):
-        """Test stripping simple HTML tags."""
-        result = _strip_html("<b>bold</b> text")
-        assert result == "bold text"
-
-    def test_strip_nested_tags(self):
-        """Test stripping nested HTML tags."""
-        result = _strip_html("<div><span>nested</span></div>")
-        assert result == "nested"
-
-    def test_strip_blockquote(self):
-        """Test stripping blockquote tags."""
-        result = _strip_html("<blockquote expandable>quoted text</blockquote>")
-        assert result == "quoted text"
-
-    def test_strip_italics(self):
-        """Test stripping italic tags."""
-        result = _strip_html("<i>italic text</i>")
-        assert result == "italic text"
-
-    def test_unescape_entities(self):
-        """Test unescaping HTML entities."""
-        result = _strip_html("x &lt; y &amp;&amp; y &gt; z")
-        assert result == "x < y && y > z"
-
-    def test_mixed_tags_and_entities(self):
-        """Test stripping tags and unescaping entities together."""
-        result = _strip_html("<i>🧠 x &lt; y</i>")
-        assert result == "🧠 x < y"
-
-    def test_empty_input(self):
-        """Test with empty input."""
-        result = _strip_html("")
-        assert result == ""
-
-    def test_no_tags(self):
-        """Test with plain text (no tags)."""
-        result = _strip_html("plain text here")
-        assert result == "plain text here"
 
 
 class TestStripToolMarkers:

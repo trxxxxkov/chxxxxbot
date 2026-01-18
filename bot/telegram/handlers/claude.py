@@ -33,7 +33,6 @@ from config import FILES_API_TTL_HOURS
 from config import get_model
 from config import GLOBAL_SYSTEM_PROMPT
 from config import MESSAGE_SPLIT_LENGTH
-from config import MESSAGE_TRUNCATE_LENGTH
 from config import TEXT_SPLIT_LINE_WINDOW
 from config import TEXT_SPLIT_PARA_WINDOW
 from config import TOOL_LOOP_MAX_ITERATIONS
@@ -170,30 +169,6 @@ def format_interleaved_content(blocks: list[dict],
     result = "\n\n".join(parts) if parts else ""
     # Clean up any triple+ newlines that might still occur
     return re.sub(r'\n{3,}', '\n\n', result)
-
-
-def format_thinking_display(thinking_text: str,
-                            response_text: str,
-                            is_streaming: bool = True) -> str:
-    """Format thinking and response for Telegram display.
-
-    DEPRECATED: Use format_interleaved_content for proper ordering.
-    This function assumes thinking always comes before response.
-
-    Args:
-        thinking_text: The thinking/reasoning text from Claude.
-        response_text: The actual response text.
-        is_streaming: Whether we're still streaming (affects formatting).
-
-    Returns:
-        Formatted HTML string for Telegram.
-    """
-    blocks = []
-    if thinking_text:
-        blocks.append({"type": "thinking", "content": thinking_text})
-    if response_text:
-        blocks.append({"type": "text", "content": response_text})
-    return format_interleaved_content(blocks, is_streaming)
 
 
 def split_text_smart(text: str,
@@ -567,6 +542,17 @@ async def _stream_with_unified_events(
                         stop_reason=stop_reason,
                         had_thinking=total_thinking > 0)
 
+            # Format final message: text only (no thinking), with HTML escaping
+            # Thinking was shown during streaming, final message is clean
+            text_only_blocks = [
+                b for b in display_blocks if b["type"] == "text"
+            ]
+            final_display = format_interleaved_content(text_only_blocks,
+                                                       is_streaming=False)
+
+            # Update draft with final text before finalizing
+            await draft_streamer.update(final_display)
+
             # Finalize draft to permanent message
             try:
                 final_message = await draft_streamer.finalize()
@@ -726,7 +712,19 @@ async def _stream_with_unified_events(
             if not final_answer:
                 final_answer = f"⚠️ Unexpected stop reason: {stop_reason}"
 
-            # Finalize draft with whatever we have
+            # Format final message: text only (no thinking)
+            text_only_blocks = [
+                b for b in display_blocks if b["type"] == "text"
+            ]
+            final_display = format_interleaved_content(text_only_blocks,
+                                                       is_streaming=False)
+            if final_display:
+                await draft_streamer.update(final_display)
+            else:
+                await draft_streamer.update(
+                    safe_html(f"⚠️ Unexpected stop reason: {stop_reason}"))
+
+            # Finalize draft
             try:
                 final_message = await draft_streamer.finalize()
             except Exception:  # pylint: disable=broad-exception-caught
@@ -751,96 +749,6 @@ async def _stream_with_unified_events(
         final_message = None
 
     return error_msg, final_message
-
-
-async def _update_telegram_message_formatted(
-    formatted_html: str,
-    current_message: types.Message | None,
-    first_message: types.Message,
-    all_messages: list[types.Message],
-    last_sent_text: str,
-) -> tuple[types.Message | None, str]:
-    """Update or send Telegram message with pre-formatted HTML.
-
-    Similar to _update_telegram_message but accepts already-formatted HTML
-    (e.g., with thinking in expandable blockquote).
-
-    Has robust error handling: if HTML fails, falls back to plain text.
-
-    Args:
-        formatted_html: Pre-formatted HTML text ready for Telegram.
-        current_message: Current message being edited (or None).
-        first_message: Original user message (for reply).
-        all_messages: List to track all sent messages.
-        last_sent_text: Previously sent text (to avoid duplicate edits).
-
-    Returns:
-        Tuple of (current_message, new_last_sent_text).
-    """
-    # Skip if nothing changed
-    if formatted_html == last_sent_text:
-        return current_message, last_sent_text
-
-    # For formatted HTML, check length directly
-    # (splitting is complex with HTML tags, so just truncate for now)
-    safe_text = formatted_html
-    if len(safe_text) > MESSAGE_TRUNCATE_LENGTH:
-        # Truncate with ellipsis - simple approach for streaming
-        safe_text = safe_text[:MESSAGE_TRUNCATE_LENGTH] + "..."
-
-    # Try HTML first, fall back to plain text if it fails
-    for parse_mode, text_to_send in [("HTML", safe_text),
-                                     (None, _strip_html(safe_text))]:
-        try:
-            if current_message:
-                await current_message.edit_text(text_to_send,
-                                                parse_mode=parse_mode)
-            else:
-                current_message = await first_message.answer(
-                    text_to_send, parse_mode=parse_mode)
-                all_messages.append(current_message)
-            return current_message, formatted_html
-        except TelegramRetryAfter as e:
-            # Flood control - wait full time Telegram requires
-            logger.warning("stream.flood_control", retry_after=e.retry_after)
-            await asyncio.sleep(e.retry_after)
-            try:
-                if current_message:
-                    await current_message.edit_text(text_to_send,
-                                                    parse_mode=parse_mode)
-                else:
-                    current_message = await first_message.answer(
-                        text_to_send, parse_mode=parse_mode)
-                    all_messages.append(current_message)
-                return current_message, formatted_html
-            except Exception:  # pylint: disable=broad-exception-caught
-                # Still failed after wait, skip this update
-                return current_message, last_sent_text
-        except Exception:  # pylint: disable=broad-exception-caught
-            # If HTML fails, try plain text in next iteration
-            continue
-
-    # Both attempts failed, return unchanged
-    return current_message, last_sent_text
-
-
-def _strip_html(text: str) -> str:
-    """Remove HTML tags from text, keeping content.
-
-    Simple regex-based stripping for fallback when HTML parsing fails.
-
-    Args:
-        text: Text potentially containing HTML tags.
-
-    Returns:
-        Plain text without HTML tags.
-    """
-    # Remove HTML tags but keep content
-    clean = re.sub(r'<[^>]+>', '', text)
-    # Unescape common HTML entities
-    clean = clean.replace('&lt;', '<').replace('&gt;',
-                                               '>').replace('&amp;', '&')
-    return clean
 
 
 async def _send_with_retry(
@@ -876,105 +784,6 @@ async def _send_with_retry(
     raise TelegramRetryAfter(retry_after=0,
                              method="send_with_retry",
                              message="Max retries")
-
-
-async def _update_telegram_message(  # pylint: disable=too-many-return-statements
-    text: str,
-    current_message: types.Message | None,
-    first_message: types.Message,
-    all_messages: list[types.Message],
-    last_sent_text: str,
-) -> tuple[types.Message | None, str]:
-    """Update or send Telegram message with accumulated text.
-
-    Handles message splitting when text exceeds 4000 chars.
-    Skips update if text hasn't changed.
-
-    Args:
-        text: Accumulated text to display.
-        current_message: Current message being edited (or None).
-        first_message: Original user message (for reply).
-        all_messages: List to track all sent messages.
-        last_sent_text: Previously sent text (to avoid duplicate edits).
-
-    Returns:
-        Tuple of (current_message, new_last_sent_text).
-    """
-    # Skip if nothing changed
-    if text == last_sent_text:
-        return current_message, last_sent_text
-
-    # Escape HTML for Telegram
-    safe_text = safe_html(text)
-
-    # Check if we need to split (Telegram limit ~4096)
-    if len(safe_text) > MESSAGE_SPLIT_LENGTH:
-        # Find split point in ORIGINAL text to avoid position mismatch
-        # Estimate position (may need adjustment due to HTML escaping)
-        estimated_pos = min(MESSAGE_SPLIT_LENGTH - 300,
-                            len(text))  # Conservative
-
-        # Try paragraph boundary first
-        para_pos = text.rfind('\n\n', 0, estimated_pos)
-        if para_pos > estimated_pos - TEXT_SPLIT_PARA_WINDOW and para_pos > 0:
-            split_pos = para_pos + 1
-        # Fall back to single newline
-        elif (newline_pos := text.rfind(
-                '\n', 0,
-                estimated_pos)) > estimated_pos - TEXT_SPLIT_LINE_WINDOW:
-            if newline_pos > 0:
-                split_pos = newline_pos
-            else:
-                split_pos = estimated_pos
-        else:
-            split_pos = estimated_pos
-
-        # Adjust if escaped version is still too long
-        while len(safe_html(
-                text[:split_pos])) > MESSAGE_SPLIT_LENGTH and split_pos > 100:
-            newline_pos = text.rfind('\n', 0, split_pos - 1)
-            if newline_pos > 0:
-                split_pos = newline_pos
-            else:
-                split_pos = int(split_pos * 0.9)
-
-        # Split text
-        first_part = text[:split_pos]
-        remaining = text[split_pos:].lstrip()  # Remove leading whitespace
-
-        if current_message:
-            try:
-                await current_message.edit_text(safe_html(first_part))
-            except Exception:  # pylint: disable=broad-exception-caught
-                pass
-
-        # Start new message with remaining text
-        try:
-            new_msg = await first_message.answer(safe_html(remaining))
-            all_messages.append(new_msg)
-            return new_msg, text
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            logger.warning("stream.message_send_failed", error=str(e))
-            return current_message, last_sent_text
-
-    else:
-        # Normal update - no splitting needed
-        if current_message:
-            try:
-                await current_message.edit_text(safe_text)
-                return current_message, text
-            except Exception:  # pylint: disable=broad-exception-caught
-                # Edit failed, but message exists - content might be same
-                return current_message, last_sent_text
-        else:
-            # First message
-            try:
-                new_msg = await first_message.answer(safe_text)
-                all_messages.append(new_msg)
-                return new_msg, text
-            except Exception as e:  # pylint: disable=broad-exception-caught
-                logger.warning("stream.message_send_failed", error=str(e))
-                return None, last_sent_text
 
 
 async def _process_generated_files(
