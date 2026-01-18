@@ -443,10 +443,11 @@ async def _stream_with_unified_events(
                 tool_marker = f"[{emoji} {event.tool_name}]"
                 append_to_display("text", f"\n\n{tool_marker}\n\n")
 
-                # Format and force update to show tool marker
+                # Format and force update to show tool marker immediately
+                # (force=True ensures marker appears before tool execution)
                 display_text = format_interleaved_content(display_blocks,
                                                           is_streaming=True)
-                await draft_streamer.update(display_text)
+                await draft_streamer.update(display_text, force=True)
                 last_sent_text = display_text
 
                 logger.info("stream.unified.tool_detected",
@@ -552,12 +553,12 @@ async def _stream_with_unified_events(
             # Strip tool markers from final display
             final_display = strip_tool_markers(final_display)
 
-            # Update draft with final text before finalizing
-            await draft_streamer.update(final_display, force=True)
-
             # Finalize draft to permanent message
+            # Pass final_display so finalize() can edit out thinking smoothly
+            # (send_message with current text, then edit_message_text to final)
             try:
-                final_message = await draft_streamer.finalize()
+                final_message = await draft_streamer.finalize(
+                    final_text=final_display)
             except Exception as e:  # pylint: disable=broad-exception-caught
                 logger.error("stream.draft_finalize_failed",
                              thread_id=thread_id,

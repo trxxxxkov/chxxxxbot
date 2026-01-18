@@ -106,9 +106,14 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
             self._pending_text = text
             return True
 
-        # Use pending text if we have it (ensures we send latest)
-        text_to_send = self._pending_text or text
-        self._pending_text = None
+        # When forced, always use the passed text (e.g., final stripped message)
+        # Otherwise use pending text if we have it (ensures we send latest)
+        if force:
+            text_to_send = text
+            self._pending_text = None  # Clear pending since we're sending now
+        else:
+            text_to_send = self._pending_text or text
+            self._pending_text = None
 
         # Truncate if too long (Telegram limit)
         if len(text_to_send) > 4096:
@@ -196,6 +201,10 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
             True on success, False on failure.
         """
         if not self.last_text:
+            logger.debug("draft_streamer.keepalive_skipped",
+                         chat_id=self.chat_id,
+                         draft_id=self.draft_id,
+                         reason="no_last_text")
             return True
 
         try:
@@ -225,13 +234,21 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
             return False
 
     async def finalize(self,
+                       final_text: Optional[str] = None,
                        parse_mode: Optional[str] = "HTML") -> types.Message:
         """Convert draft to permanent message.
 
         Flushes any pending text, then sends final message.
         Draft disappears automatically.
 
+        If final_text differs from current draft content, the message will be
+        sent with current content first (for smooth visual transition), then
+        immediately edited to final_text. This creates a seamless transition
+        without the "blinking" effect.
+
         Args:
+            final_text: Optional final text to show. If provided and different
+                from last_text, message will be edited after sending.
             parse_mode: Parse mode for final message.
 
         Returns:
@@ -249,13 +266,37 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
                     total_updates=self._update_count,
                     final_length=len(self.last_text))
 
-        # Send final message (draft disappears)
-        return await self.bot.send_message(
+        # Send message with current draft content (draft disappears smoothly)
+        message = await self.bot.send_message(
             chat_id=self.chat_id,
             text=self.last_text,
             message_thread_id=self.topic_id,
             parse_mode=parse_mode,
         )
+
+        # If final_text is different, edit message to show clean version
+        # This creates smooth transition: thinking visible → thinking removed
+        if final_text and final_text.strip() != self.last_text.strip():
+            try:
+                await self.bot.edit_message_text(
+                    chat_id=self.chat_id,
+                    message_id=message.message_id,
+                    text=final_text,
+                    parse_mode=parse_mode,
+                )
+                logger.debug("draft_streamer.edited_final",
+                             chat_id=self.chat_id,
+                             message_id=message.message_id,
+                             old_length=len(self.last_text),
+                             new_length=len(final_text))
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                logger.warning("draft_streamer.edit_failed",
+                               chat_id=self.chat_id,
+                               message_id=message.message_id,
+                               error=str(e))
+                # Message was sent, just couldn't edit - still return it
+
+        return message
 
     async def clear(self) -> bool:
         """Clear/hide draft without sending final message.

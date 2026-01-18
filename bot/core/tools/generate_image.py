@@ -11,6 +11,7 @@ NO __init__.py - use direct import:
     )
 """
 
+import asyncio
 from datetime import datetime
 from datetime import UTC
 from typing import Any, Dict, TYPE_CHECKING
@@ -127,17 +128,23 @@ async def generate_image(  # pylint: disable=unused-argument,too-many-locals
 
         # Use centralized client factory
         client = get_google_client()
-        response = client.models.generate_content(
-            model="gemini-3-pro-image-preview",
-            contents=prompt,
-            config=genai_types.GenerateContentConfig(
-                response_modalities=['TEXT', 'IMAGE'],
-                image_config=genai_types.ImageConfig(
-                    aspect_ratio=aspect_ratio,
-                    image_size=image_size,
+
+        # Run in thread pool to avoid blocking event loop
+        # This allows keepalive updates during long API calls
+        def _sync_generate() -> Any:
+            return client.models.generate_content(
+                model="gemini-3-pro-image-preview",
+                contents=prompt,
+                config=genai_types.GenerateContentConfig(
+                    response_modalities=['TEXT', 'IMAGE'],
+                    image_config=genai_types.ImageConfig(
+                        aspect_ratio=aspect_ratio,
+                        image_size=image_size,
+                    ),
                 ),
-            ),
-        )
+            )
+
+        response = await asyncio.to_thread(_sync_generate)
 
         logger.info("tools.generate_image.api_call_success",
                     parts_count=len(response.parts) if response.parts else 0)

@@ -8,7 +8,7 @@ NO __init__.py - use direct import:
 """
 
 import asyncio
-from typing import Dict
+from typing import Any, Dict
 
 from anthropic import APIStatusError
 from core.clients import get_anthropic_client
@@ -62,23 +62,28 @@ async def analyze_image(claude_file_id: str, question: str) -> Dict[str, str]:
     for attempt in range(MAX_RETRIES):
         try:
             # Call Claude Vision API with file from Files API
-            response = client.messages.create(
-                model=model_id,
-                max_tokens=2048,
-                messages=[{
-                    "role":
-                        "user",
-                    "content": [{
-                        "type": "image",
-                        "source": {
-                            "type": "file",
-                            "file_id": claude_file_id
-                        }
-                    }, {
-                        "type": "text",
-                        "text": question
-                    }]
-                }])
+            # Run in thread pool to avoid blocking event loop
+            # This allows keepalive updates during long API calls
+            def _sync_call() -> Any:
+                return client.messages.create(
+                    model=model_id,
+                    max_tokens=2048,
+                    messages=[{
+                        "role":
+                            "user",
+                        "content": [{
+                            "type": "image",
+                            "source": {
+                                "type": "file",
+                                "file_id": claude_file_id
+                            }
+                        }, {
+                            "type": "text",
+                            "text": question
+                        }]
+                    }])
+
+            response = await asyncio.to_thread(_sync_call)
 
             analysis = response.content[0].text
             input_tokens = response.usage.input_tokens

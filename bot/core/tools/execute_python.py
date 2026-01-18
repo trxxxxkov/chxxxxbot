@@ -8,9 +8,10 @@ NO __init__.py - use direct import:
     from core.tools.execute_python import execute_python, EXECUTE_PYTHON_TOOL
 """
 
+import asyncio
 import json
 import mimetypes
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 
 from core.clients import get_e2b_api_key
 from core.pricing import calculate_e2b_cost
@@ -114,6 +115,176 @@ async def download_user_file(file_id: str, filename: str, bot: 'Bot',
             "Please re-upload the file to continue.") from e
 
 
+def _run_sandbox_sync(  # pylint: disable=too-many-locals,too-many-statements
+    code: str,
+    downloaded_files: Dict[str, bytes],
+    requirements: Optional[str],
+    timeout: float,
+) -> Tuple[Dict[str, Any], float]:
+    """Run code in E2B sandbox synchronously.
+
+    This function is designed to be called via asyncio.to_thread() to avoid
+    blocking the event loop during sandbox operations.
+
+    Args:
+        code: Python code to execute.
+        downloaded_files: Pre-downloaded files as {filename: bytes}.
+        requirements: Optional pip packages to install.
+        timeout: Execution timeout in seconds.
+
+    Returns:
+        Tuple of (result_dict, sandbox_duration_seconds).
+    """
+    import os  # pylint: disable=import-outside-toplevel
+    import time  # pylint: disable=import-outside-toplevel
+
+    api_key = get_e2b_api_key()
+    os.environ["E2B_API_KEY"] = api_key
+
+    sandbox_start_time = time.time()
+
+    with Sandbox.create() as sandbox:
+        # Upload pre-downloaded files to sandbox
+        if downloaded_files:
+            sandbox.commands.run("mkdir -p /tmp/inputs")
+
+            for filename, file_content in downloaded_files.items():
+                sandbox_path = f"/tmp/inputs/{filename}"
+                sandbox.files.write(sandbox_path, file_content)
+                logger.info("tools.execute_python.file_uploaded_to_sandbox",
+                            filename=filename,
+                            sandbox_path=sandbox_path,
+                            size_bytes=len(file_content))
+
+        # Install pip packages if specified
+        if requirements:
+            logger.info("tools.execute_python.installing_packages",
+                        requirements=requirements)
+            install_output = sandbox.commands.run(f"pip install {requirements}")
+            logger.info("tools.execute_python.packages_installed",
+                        exit_code=install_output.exit_code,
+                        stdout_length=len(install_output.stdout))
+
+        # Execute code
+        logger.info("tools.execute_python.executing_code",
+                    code_length=len(code),
+                    timeout=timeout)
+
+        execution = sandbox.run_code(code=code, timeout=timeout)
+
+        # Process execution results
+        stdout_list = execution.logs.stdout if execution.logs else []
+        stderr_list = execution.logs.stderr if execution.logs else []
+
+        logger.info("tools.execute_python.execution_complete",
+                    stdout_lines=len(stdout_list),
+                    stderr_lines=len(stderr_list),
+                    has_error=bool(execution.error),
+                    has_results=bool(execution.results))
+
+        stdout_str = "".join(stdout_list)
+        stderr_str = "".join(stderr_list)
+        error_str = str(execution.error) if execution.error else ""
+        success = execution.error is None
+
+        # Serialize results
+        results_list = []
+        if execution.results:
+            for r in execution.results:
+                logger.debug("tools.execute_python.result_object",
+                             result_type=type(r).__name__,
+                             result_str=str(r)[:200])
+                results_list.append(str(r)[:1000])
+
+        results_serialized = json.dumps(results_list, ensure_ascii=False)
+
+        # Scan for generated files
+        generated_files: List[Dict[str, Any]] = []
+
+        try:
+            logger.info("tools.execute_python.scanning_output_files")
+            all_files = sandbox.files.list("/tmp")
+
+            for entry in all_files:
+                if not entry.name:
+                    continue
+
+                file_path = entry.path
+
+                if file_path.startswith("/tmp/inputs/"):
+                    continue
+
+                if entry.name in ("inputs", ".ICE-unix", ".X11-unix"):
+                    continue
+
+                logger.info("tools.execute_python.downloading_output_file",
+                            path=file_path,
+                            name=entry.name)
+
+                try:
+                    file_bytes = sandbox.files.read(file_path, format="bytes")
+                except Exception as read_error:  # pylint: disable=broad-exception-caught
+                    logger.debug("tools.execute_python.skip_file",
+                                 path=file_path,
+                                 error=str(read_error))
+                    continue
+
+                mime_type, _ = mimetypes.guess_type(entry.name)
+                if not mime_type:
+                    mime_type = "application/octet-stream"
+
+                generated_files.append({
+                    "filename": entry.name,
+                    "path": file_path,
+                    "size": len(file_bytes),
+                    "mime_type": mime_type,
+                    "content": file_bytes
+                })
+
+                logger.info("tools.execute_python.output_file_found",
+                            filename=entry.name,
+                            size=len(file_bytes),
+                            mime_type=mime_type)
+
+            logger.info("tools.execute_python.output_files_scanned",
+                        file_count=len(generated_files))
+
+        except Exception as scan_error:  # pylint: disable=broad-exception-caught
+            logger.warning("tools.execute_python.output_scan_failed",
+                           error=str(scan_error),
+                           exc_info=True)
+
+        sandbox_end_time = time.time()
+        sandbox_duration = sandbox_end_time - sandbox_start_time
+
+        # Prepare result dict
+        generated_files_meta = [{
+            "filename": f["filename"],
+            "path": f["path"],
+            "size": f["size"],
+            "mime_type": f["mime_type"]
+        } for f in generated_files]
+
+        result = {
+            "stdout":
+                stdout_str,
+            "stderr":
+                stderr_str,
+            "results":
+                results_serialized,
+            "error":
+                error_str,
+            "success":
+                str(success).lower(),
+            "generated_files":
+                json.dumps(generated_files_meta, ensure_ascii=False),
+            "_file_contents":
+                generated_files,
+        }
+
+        return result, sandbox_duration
+
+
 # pylint: disable=too-many-locals,too-many-statements
 async def execute_python(code: str,
                          bot: 'Bot',
@@ -188,207 +359,54 @@ async def execute_python(code: str,
                     requirements=requirements,
                     timeout=timeout)
 
-        api_key = get_e2b_api_key()
+        # Step 1: Download all input files ASYNCHRONOUSLY before sandbox
+        # This allows event loop to handle keepalive during downloads
+        downloaded_files: Dict[str, bytes] = {}
+        if file_inputs:
+            logger.info("tools.execute_python.downloading_input_files",
+                        file_count=len(file_inputs))
 
-        # Set E2B_API_KEY environment variable for Sandbox.create()
-        import os  # pylint: disable=import-outside-toplevel
-        import time  # pylint: disable=import-outside-toplevel
-        os.environ["E2B_API_KEY"] = api_key
+            for file_input in file_inputs:
+                file_id = file_input["file_id"]
+                filename = file_input["name"]
 
-        # Phase 2.1: Track sandbox execution time for cost calculation
-        sandbox_start_time = time.time()
+                logger.info("tools.execute_python.downloading_file_from_api",
+                            file_id=file_id,
+                            filename=filename)
 
-        # Create sandbox (new API in v1.0+ with context manager)
-        with Sandbox.create() as sandbox:
-            # Upload input files to sandbox if specified
-            if file_inputs:
-                logger.info("tools.execute_python.uploading_input_files",
-                            file_count=len(file_inputs))
+                file_content = await download_user_file(file_id, filename, bot,
+                                                        session)
+                downloaded_files[filename] = file_content
 
-                # Create /tmp/inputs/ directory
-                sandbox.commands.run("mkdir -p /tmp/inputs")
+                logger.info("tools.execute_python.file_downloaded",
+                            file_id=file_id,
+                            filename=filename,
+                            size_bytes=len(file_content))
 
-                for file_input in file_inputs:
-                    file_id = file_input["file_id"]
-                    filename = file_input["name"]
+        # Step 2: Run sandbox in thread pool to avoid blocking event loop
+        # This allows keepalive updates during long sandbox operations
+        result, sandbox_duration = await asyncio.to_thread(
+            _run_sandbox_sync,
+            code,
+            downloaded_files,
+            requirements,
+            timeout or 180.0,
+        )
 
-                    logger.info(
-                        "tools.execute_python.downloading_file_from_api",
-                        file_id=file_id,
-                        filename=filename)
+        # Step 3: Add cost to result
+        cost_usd = calculate_e2b_cost(sandbox_duration)
+        result["cost_usd"] = f"{cost_to_float(cost_usd):.6f}"
 
-                    # Download from Telegram (user files) or Files API (bot files)
-                    file_content = await download_user_file(
-                        file_id, filename, bot, session)
+        logger.info("tools.execute_python.success",
+                    success=result["success"],
+                    stdout_length=len(result["stdout"]),
+                    stderr_length=len(result["stderr"]),
+                    generated_files_count=len(result.get("_file_contents", [])),
+                    has_error=bool(result["error"]),
+                    sandbox_duration_seconds=round(sandbox_duration, 2),
+                    cost_usd=cost_to_float(cost_usd))
 
-                    # Upload to sandbox
-                    sandbox_path = f"/tmp/inputs/{filename}"
-                    sandbox.files.write(sandbox_path, file_content)
-
-                    logger.info("tools.execute_python.file_uploaded_to_sandbox",
-                                file_id=file_id,
-                                filename=filename,
-                                sandbox_path=sandbox_path,
-                                size_bytes=len(file_content))
-
-            # Install pip packages if specified
-            if requirements:
-                logger.info("tools.execute_python.installing_packages",
-                            requirements=requirements)
-                install_output = sandbox.commands.run(
-                    f"pip install {requirements}")
-                logger.info("tools.execute_python.packages_installed",
-                            exit_code=install_output.exit_code,
-                            stdout_length=len(install_output.stdout))
-
-            # Execute code (E2B v1.0+ API)
-            logger.info("tools.execute_python.executing_code",
-                        code_length=len(code),
-                        timeout=timeout)
-
-            execution = sandbox.run_code(code=code, timeout=timeout)
-
-            # E2B v1.0+ API: execution.logs.stdout/stderr are lists of strings
-            stdout_list = execution.logs.stdout if execution.logs else []
-            stderr_list = execution.logs.stderr if execution.logs else []
-
-            logger.info("tools.execute_python.execution_complete",
-                        stdout_lines=len(stdout_list),
-                        stderr_lines=len(stderr_list),
-                        has_error=bool(execution.error),
-                        has_results=bool(execution.results))
-
-            # Build result strings
-            stdout_str = "".join(stdout_list)
-            stderr_str = "".join(stderr_list)
-            error_str = str(execution.error) if execution.error else ""
-            success = execution.error is None
-
-            # Serialize results
-            # execution.results is a list of result objects
-            results_list = []
-            if execution.results:
-                for r in execution.results:
-                    # Log result structure for debugging
-                    logger.debug("tools.execute_python.result_object",
-                                 result_type=type(r).__name__,
-                                 result_str=str(r)[:200])
-                    results_list.append(str(r)[:1000])
-
-            results_serialized = json.dumps(results_list, ensure_ascii=False)
-
-            # Scan for generated files in /tmp/ (excluding /tmp/inputs/)
-            generated_files: List[Dict[str, Any]] = []
-
-            try:
-                logger.info("tools.execute_python.scanning_output_files")
-
-                # List all files in /tmp/ recursively
-                all_files = sandbox.files.list("/tmp")
-
-                for entry in all_files:
-                    # Skip empty names
-                    if not entry.name:
-                        continue
-
-                    file_path = entry.path
-
-                    # Skip /tmp/inputs/ files
-                    if file_path.startswith("/tmp/inputs/"):
-                        continue
-
-                    # Skip system directories and known non-file entries
-                    if entry.name in ("inputs", ".ICE-unix", ".X11-unix"):
-                        continue
-
-                    # Download file content (skip directories)
-                    logger.info("tools.execute_python.downloading_output_file",
-                                path=file_path,
-                                name=entry.name)
-
-                    try:
-                        file_bytes = sandbox.files.read(file_path,
-                                                        format="bytes")
-                    except Exception as read_error:  # pylint: disable=broad-exception-caught
-                        # Skip if it's a directory or inaccessible
-                        logger.debug("tools.execute_python.skip_file",
-                                     path=file_path,
-                                     error=str(read_error))
-                        continue
-
-                    # Determine mime type from extension
-                    mime_type, _ = mimetypes.guess_type(entry.name)
-                    if not mime_type:
-                        mime_type = "application/octet-stream"
-
-                    # Store file metadata (content will be handled by caller)
-                    generated_files.append({
-                        "filename": entry.name,
-                        "path": file_path,
-                        "size": len(file_bytes),
-                        "mime_type": mime_type,
-                        "content": file_bytes  # Raw bytes for caller
-                    })
-
-                    logger.info("tools.execute_python.output_file_found",
-                                filename=entry.name,
-                                size=len(file_bytes),
-                                mime_type=mime_type)
-
-                logger.info("tools.execute_python.output_files_scanned",
-                            file_count=len(generated_files))
-
-            except Exception as scan_error:  # pylint: disable=broad-exception-caught
-                logger.warning("tools.execute_python.output_scan_failed",
-                               error=str(scan_error),
-                               exc_info=True)
-                # Continue execution even if scan fails
-
-            # Serialize generated_files for JSON (remove content bytes)
-            generated_files_meta = [{
-                "filename": f["filename"],
-                "path": f["path"],
-                "size": f["size"],
-                "mime_type": f["mime_type"]
-            } for f in generated_files]
-
-            # Use centralized pricing calculation
-            sandbox_end_time = time.time()
-            sandbox_duration_seconds = sandbox_end_time - sandbox_start_time
-            cost_usd = calculate_e2b_cost(sandbox_duration_seconds)
-
-            logger.info("tools.execute_python.success",
-                        success=success,
-                        stdout_length=len(stdout_str),
-                        stderr_length=len(stderr_str),
-                        results_count=len(execution.results or []),
-                        generated_files_count=len(generated_files),
-                        has_error=bool(error_str),
-                        sandbox_duration_seconds=round(sandbox_duration_seconds,
-                                                       2),
-                        cost_usd=cost_to_float(cost_usd))
-
-            return {
-                "stdout":
-                    stdout_str,
-                "stderr":
-                    stderr_str,
-                "results":
-                    results_serialized,
-                "error":
-                    error_str,
-                "success":
-                    str(success).lower(),
-                "generated_files":
-                    json.dumps(generated_files_meta, ensure_ascii=False),
-                "_file_contents":
-                    generated_files,  # Internal: raw bytes
-                "cost_usd":
-                    f"{cost_to_float(cost_usd):.6f}"
-            }
-
-        # Context manager automatically closes sandbox
-        logger.info("tools.execute_python.sandbox_closed")
+        return result
 
     except Exception as e:
         logger.error("tools.execute_python.failed", error=str(e), exc_info=True)

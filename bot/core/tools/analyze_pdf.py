@@ -8,7 +8,7 @@ NO __init__.py - use direct import:
 """
 
 import asyncio
-from typing import Dict
+from typing import Any, Dict
 
 from anthropic import APIStatusError
 from core.clients import get_anthropic_client
@@ -75,29 +75,34 @@ async def analyze_pdf(claude_file_id: str,
     for attempt in range(MAX_RETRIES):
         try:
             # Call Claude PDF API with prompt caching
-            response = client.messages.create(
-                model=model_id,
-                max_tokens=4096,
-                messages=[{
-                    "role":
-                        "user",
-                    "content": [
-                        {
-                            "type": "document",
-                            "source": {
-                                "type": "file",
-                                "file_id": claude_file_id
+            # Run in thread pool to avoid blocking event loop
+            # This allows keepalive updates during long API calls
+            def _sync_call() -> Any:
+                return client.messages.create(
+                    model=model_id,
+                    max_tokens=4096,
+                    messages=[{
+                        "role":
+                            "user",
+                        "content": [
+                            {
+                                "type": "document",
+                                "source": {
+                                    "type": "file",
+                                    "file_id": claude_file_id
+                                },
+                                "cache_control": {
+                                    "type": "ephemeral"
+                                }  # Cache PDF content!
                             },
-                            "cache_control": {
-                                "type": "ephemeral"
-                            }  # Cache PDF content!
-                        },
-                        {
-                            "type": "text",
-                            "text": full_question
-                        }
-                    ]
-                }])
+                            {
+                                "type": "text",
+                                "text": full_question
+                            }
+                        ]
+                    }])
+
+            response = await asyncio.to_thread(_sync_call)
 
             analysis = response.content[0].text
             input_tokens = response.usage.input_tokens
