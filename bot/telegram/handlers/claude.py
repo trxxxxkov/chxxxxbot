@@ -28,12 +28,12 @@ if TYPE_CHECKING:
 
 import config
 from config import CLAUDE_TOKEN_BUFFER_PERCENT
+from config import DRAFT_KEEPALIVE_INTERVAL
 from config import FILES_API_TTL_HOURS
 from config import get_model
 from config import GLOBAL_SYSTEM_PROMPT
 from config import MESSAGE_SPLIT_LENGTH
 from config import MESSAGE_TRUNCATE_LENGTH
-from config import STREAM_UPDATE_INTERVAL
 from config import TEXT_SPLIT_LINE_WINDOW
 from config import TEXT_SPLIT_PARA_WINDOW
 from config import TOOL_LOOP_MAX_ITERATIONS
@@ -370,7 +370,6 @@ async def _stream_with_unified_events(
     ]  # [{"type": "thinking"|"text", "content": str}]
     current_block_type_global = ""  # Track current block type across stream
     last_sent_text = ""  # Track what we've already sent (formatted)
-    last_update_time = 0.0
 
     # Initialize draft streamer for smooth animated updates (no flood control)
     draft_streamer = DraftStreamer(
@@ -428,35 +427,25 @@ async def _stream_with_unified_events(
                 append_to_display("thinking", event.content)
                 current_thinking_text += event.content
                 current_block_type = "thinking"
-                current_time = time.time()
 
-                # Format display text preserving block order
+                # Format and update immediately (no interval with drafts)
                 display_text = format_interleaved_content(display_blocks,
                                                           is_streaming=True)
-
-                # Update draft if text changed (no flood control with drafts)
-                if (current_time - last_update_time >= STREAM_UPDATE_INTERVAL
-                        and display_text != last_sent_text):
+                if display_text != last_sent_text:
                     await draft_streamer.update(display_text)
                     last_sent_text = display_text
-                    last_update_time = current_time
 
             elif event.type == "text_delta":
                 append_to_display("text", event.content)
                 current_response_text += event.content
                 current_block_type = "text"
-                current_time = time.time()
 
-                # Format display text preserving block order
+                # Format and update immediately (no interval with drafts)
                 display_text = format_interleaved_content(display_blocks,
                                                           is_streaming=True)
-
-                # Update draft if text changed (no flood control with drafts)
-                if (current_time - last_update_time >= STREAM_UPDATE_INTERVAL
-                        and display_text != last_sent_text):
+                if display_text != last_sent_text:
                     await draft_streamer.update(display_text)
                     last_sent_text = display_text
-                    last_update_time = current_time
 
             elif event.type == "tool_use":
                 # Finalize any pending text block before tool
@@ -484,7 +473,6 @@ async def _stream_with_unified_events(
                                                           is_streaming=True)
                 await draft_streamer.update(display_text)
                 last_sent_text = display_text
-                last_update_time = time.time()
 
                 logger.info("stream.unified.tool_detected",
                             thread_id=thread_id,
@@ -603,8 +591,25 @@ async def _stream_with_unified_events(
 
                 tool_start_time = time.time()
                 try:
-                    result = await execute_tool(tool_name, tool_input,
-                                                first_message.bot, session)
+                    # Run tool execution with keep-alive to prevent draft
+                    # from disappearing during long operations
+                    async def keepalive_loop() -> None:
+                        """Send periodic updates to keep draft visible."""
+                        while True:
+                            await asyncio.sleep(DRAFT_KEEPALIVE_INTERVAL)
+                            # Re-send current text to keep draft alive
+                            await draft_streamer.update(last_sent_text)
+
+                    keepalive_task = asyncio.create_task(keepalive_loop())
+                    try:
+                        result = await execute_tool(tool_name, tool_input,
+                                                    first_message.bot, session)
+                    finally:
+                        keepalive_task.cancel()
+                        try:
+                            await keepalive_task
+                        except asyncio.CancelledError:
+                            pass
                     tool_duration = time.time() - tool_start_time
 
                     # Add system messages for completed tools FIRST
@@ -616,17 +621,11 @@ async def _stream_with_unified_events(
 
                     # Process generated files (upload to Files API, send to user)
                     if "_file_contents" in result:
-                        file_contents = result["_file_contents"]
                         await _process_generated_files(result, first_message,
                                                        thread_id, session,
                                                        user_file_repo, chat_id,
                                                        user_id,
                                                        telegram_thread_id)
-                        # Add system message markers for delivered files
-                        for file_info in file_contents:
-                            filename = file_info.get("filename", "file")
-                            append_to_display(
-                                "text", f"\n[📤 Отправлен файл: {filename}]\n")
 
                     results.append(result)
 
@@ -648,13 +647,11 @@ async def _stream_with_unified_events(
                                     amount_usd=float(result["cost_usd"]))
 
                     # Update display immediately after each tool completes
-                    # (so user sees progress, not all at once)
                     display_text = format_interleaved_content(display_blocks,
                                                               is_streaming=True)
                     if display_text != last_sent_text:
                         await draft_streamer.update(display_text)
                         last_sent_text = display_text
-                        last_update_time = time.time()
 
                 except Exception as e:  # pylint: disable=broad-exception-caught
                     tool_duration = time.time() - tool_start_time
@@ -712,7 +709,6 @@ async def _stream_with_unified_events(
             if display_text != last_sent_text:
                 await draft_streamer.update(display_text)
                 last_sent_text = display_text
-                last_update_time = time.time()
 
             logger.info("stream.unified.tool_results_added",
                         thread_id=thread_id,

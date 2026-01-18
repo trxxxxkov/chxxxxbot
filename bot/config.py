@@ -53,8 +53,8 @@ MAX_QUERY_LIMIT = 1000  # Hard cap for get_all() queries to prevent memory issue
 MESSAGE_BATCH_DELAY_MS = 200  # Batching window for split message detection (ms)
 
 # Streaming settings
-# With sendMessageDraft (Bot API 9.3), no flood control - can update more frequently
-STREAM_UPDATE_INTERVAL = 0.3  # Telegram message update interval (seconds)
+# With sendMessageDraft (Bot API 9.3), no flood control - update immediately
+DRAFT_KEEPALIVE_INTERVAL = 5.0  # Keep draft visible during long operations (seconds)
 TOOL_LOOP_MAX_ITERATIONS = 10  # Max tool calls per request
 
 
