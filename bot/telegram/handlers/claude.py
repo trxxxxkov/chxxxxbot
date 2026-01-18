@@ -808,6 +808,22 @@ async def _update_telegram_message_formatted(
                     text_to_send, parse_mode=parse_mode)
                 all_messages.append(current_message)
             return current_message, formatted_html
+        except TelegramRetryAfter as e:
+            # Flood control - wait full time Telegram requires
+            logger.warning("stream.flood_control", retry_after=e.retry_after)
+            await asyncio.sleep(e.retry_after)
+            try:
+                if current_message:
+                    await current_message.edit_text(text_to_send,
+                                                    parse_mode=parse_mode)
+                else:
+                    current_message = await first_message.answer(
+                        text_to_send, parse_mode=parse_mode)
+                    all_messages.append(current_message)
+                return current_message, formatted_html
+            except Exception:  # pylint: disable=broad-exception-caught
+                # Still failed after wait, skip this update
+                return current_message, last_sent_text
         except Exception:  # pylint: disable=broad-exception-caught
             # If HTML fails, try plain text in next iteration
             continue
@@ -861,12 +877,10 @@ async def _send_with_retry(
         except TelegramRetryAfter as e:
             if attempt == max_retries - 1:
                 raise
-            wait_time = min(e.retry_after, 30)  # Cap at 30 seconds
             logger.warning("telegram.flood_control",
                            retry_after=e.retry_after,
-                           wait_time=wait_time,
                            attempt=attempt + 1)
-            await asyncio.sleep(wait_time)
+            await asyncio.sleep(e.retry_after)
     raise TelegramRetryAfter(retry_after=0,
                              method="send_with_retry",
                              message="Max retries")

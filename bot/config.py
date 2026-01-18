@@ -53,7 +53,7 @@ MAX_QUERY_LIMIT = 1000  # Hard cap for get_all() queries to prevent memory issue
 MESSAGE_BATCH_DELAY_MS = 200  # Batching window for split message detection (ms)
 
 # Streaming settings
-STREAM_UPDATE_INTERVAL = 0.5  # Telegram message update interval (seconds)
+STREAM_UPDATE_INTERVAL = 0.6  # Telegram message update interval (seconds)
 TOOL_LOOP_MAX_ITERATIONS = 10  # Max tool calls per request
 
 
