@@ -70,6 +70,7 @@ from db.repositories.user_file_repository import UserFileRepository
 from db.repositories.user_repository import UserRepository
 from services.balance_service import BalanceService
 from sqlalchemy.ext.asyncio import AsyncSession
+from telegram.draft_streaming import DraftStreamer
 from telegram.handlers.files import process_file_upload
 from utils.metrics import record_cache_hit
 from utils.metrics import record_cache_miss
@@ -326,14 +327,16 @@ async def _stream_with_unified_events(
     chat_id: int,
     user_id: int,
     telegram_thread_id: int | None,
-) -> tuple[str, list[types.Message]]:
+) -> tuple[str, types.Message | None]:
     """Stream response with unified thinking/text/tool handling.
 
+    Uses sendMessageDraft (Bot API 9.3) for streaming without flood control.
+
     Unified streaming approach:
-    1. Stream thinking and text together (both visible to user)
+    1. Stream thinking and text together via draft updates (animated)
     2. On tool_use: append [emoji tool_name], execute, continue
-    3. Track all sent messages for cleanup
-    4. Return final answer (text after last tool) and messages to delete
+    3. Finalize draft to permanent message at the end
+    4. Return final answer text and final message
 
     Args:
         request: LLMRequest with tools configured.
@@ -346,10 +349,9 @@ async def _stream_with_unified_events(
         telegram_thread_id: Telegram thread/topic ID.
 
     Returns:
-        Tuple of (final_answer_text, list_of_messages_to_delete).
+        Tuple of (final_answer_text, final_message).
     """
     max_iterations = TOOL_LOOP_MAX_ITERATIONS
-    all_sent_messages: list[types.Message] = []
 
     # Build conversation for tool loop
     conversation = [{
@@ -359,16 +361,23 @@ async def _stream_with_unified_events(
 
     logger.info("stream.unified.start",
                 thread_id=thread_id,
-                max_iterations=max_iterations)
+                max_iterations=max_iterations,
+                streaming_method="sendMessageDraft")
 
-    # Streaming state - PERSIST ACROSS ITERATIONS to keep single message
+    # Streaming state - PERSIST ACROSS ITERATIONS
     # Track blocks in order for proper interleaving of thinking and text
     display_blocks: list[dict] = [
     ]  # [{"type": "thinking"|"text", "content": str}]
     current_block_type_global = ""  # Track current block type across stream
     last_sent_text = ""  # Track what we've already sent (formatted)
-    current_message: types.Message | None = None
     last_update_time = 0.0
+
+    # Initialize draft streamer for smooth animated updates (no flood control)
+    draft_streamer = DraftStreamer(
+        bot=first_message.bot,
+        chat_id=chat_id,
+        topic_id=telegram_thread_id,
+    )
 
     for iteration in range(max_iterations):
         logger.info("stream.unified.iteration",
@@ -425,17 +434,11 @@ async def _stream_with_unified_events(
                 display_text = format_interleaved_content(display_blocks,
                                                           is_streaming=True)
 
-                # Update Telegram every 400ms if text changed
+                # Update draft if text changed (no flood control with drafts)
                 if (current_time - last_update_time >= STREAM_UPDATE_INTERVAL
                         and display_text != last_sent_text):
-                    current_message, last_sent_text = (
-                        await _update_telegram_message_formatted(
-                            display_text,
-                            current_message,
-                            first_message,
-                            all_sent_messages,
-                            last_sent_text,
-                        ))
+                    await draft_streamer.update(display_text)
+                    last_sent_text = display_text
                     last_update_time = current_time
 
             elif event.type == "text_delta":
@@ -448,17 +451,11 @@ async def _stream_with_unified_events(
                 display_text = format_interleaved_content(display_blocks,
                                                           is_streaming=True)
 
-                # Update Telegram every 400ms if text changed
+                # Update draft if text changed (no flood control with drafts)
                 if (current_time - last_update_time >= STREAM_UPDATE_INTERVAL
                         and display_text != last_sent_text):
-                    current_message, last_sent_text = (
-                        await _update_telegram_message_formatted(
-                            display_text,
-                            current_message,
-                            first_message,
-                            all_sent_messages,
-                            last_sent_text,
-                        ))
+                    await draft_streamer.update(display_text)
+                    last_sent_text = display_text
                     last_update_time = current_time
 
             elif event.type == "tool_use":
@@ -485,14 +482,8 @@ async def _stream_with_unified_events(
                 # Format and force update to show tool marker
                 display_text = format_interleaved_content(display_blocks,
                                                           is_streaming=True)
-                current_message, last_sent_text = (
-                    await _update_telegram_message_formatted(
-                        display_text,
-                        current_message,
-                        first_message,
-                        all_sent_messages,
-                        last_sent_text,
-                    ))
+                await draft_streamer.update(display_text)
+                last_sent_text = display_text
                 last_update_time = time.time()
 
                 logger.info("stream.unified.tool_detected",
@@ -556,14 +547,8 @@ async def _stream_with_unified_events(
         display_text = format_interleaved_content(display_blocks,
                                                   is_streaming=True)
         if display_text and display_text != last_sent_text:
-            current_message, last_sent_text = (
-                await _update_telegram_message_formatted(
-                    display_text,
-                    current_message,
-                    first_message,
-                    all_sent_messages,
-                    last_sent_text,
-                ))
+            await draft_streamer.update(display_text)
+            last_sent_text = display_text
 
         # Calculate lengths for logging
         total_thinking = sum(
@@ -591,11 +576,19 @@ async def _stream_with_unified_events(
                         thread_id=thread_id,
                         total_iterations=iteration + 1,
                         final_answer_length=len(final_answer),
-                        messages_to_cleanup=len(all_sent_messages) - 1,
                         stop_reason=stop_reason,
                         had_thinking=total_thinking > 0)
 
-            return final_answer, all_sent_messages
+            # Finalize draft to permanent message
+            try:
+                final_message = await draft_streamer.finalize()
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                logger.error("stream.draft_finalize_failed",
+                             thread_id=thread_id,
+                             error=str(e))
+                final_message = None
+
+            return final_answer, final_message
 
         if stop_reason == "tool_use" and pending_tools:
             # Execute tools and continue
@@ -659,14 +652,8 @@ async def _stream_with_unified_events(
                     display_text = format_interleaved_content(display_blocks,
                                                               is_streaming=True)
                     if display_text != last_sent_text:
-                        current_message, last_sent_text = (
-                            await _update_telegram_message_formatted(
-                                display_text,
-                                current_message,
-                                first_message,
-                                all_sent_messages,
-                                last_sent_text,
-                            ))
+                        await draft_streamer.update(display_text)
+                        last_sent_text = display_text
                         last_update_time = time.time()
 
                 except Exception as e:  # pylint: disable=broad-exception-caught
@@ -716,20 +703,15 @@ async def _stream_with_unified_events(
                 logger.error("stream.unified.no_assistant_message",
                              thread_id=thread_id,
                              tool_count=len(pending_tools))
-                return "⚠️ Tool execution error: missing assistant context", all_sent_messages
+                await draft_streamer.clear()
+                return "⚠️ Tool execution error: missing assistant context", None
 
             # Update message to show system messages after tool execution
             display_text = format_interleaved_content(display_blocks,
                                                       is_streaming=True)
             if display_text != last_sent_text:
-                current_message, last_sent_text = (
-                    await _update_telegram_message_formatted(
-                        display_text,
-                        current_message,
-                        first_message,
-                        all_sent_messages,
-                        last_sent_text,
-                    ))
+                await draft_streamer.update(display_text)
+                last_sent_text = display_text
                 last_update_time = time.time()
 
             logger.info("stream.unified.tool_results_added",
@@ -748,7 +730,13 @@ async def _stream_with_unified_events(
             if not final_answer:
                 final_answer = f"⚠️ Unexpected stop reason: {stop_reason}"
 
-            return final_answer, all_sent_messages
+            # Finalize draft with whatever we have
+            try:
+                final_message = await draft_streamer.finalize()
+            except Exception:  # pylint: disable=broad-exception-caught
+                final_message = None
+
+            return final_answer, final_message
 
     # Max iterations exceeded
     logger.error("stream.unified.max_iterations",
@@ -758,7 +746,15 @@ async def _stream_with_unified_events(
     error_msg = (
         f"⚠️ Tool loop exceeded maximum iterations ({max_iterations}). "
         "The task might be too complex.")
-    return error_msg, all_sent_messages
+
+    # Finalize draft with error message
+    try:
+        await draft_streamer.update(error_msg)
+        final_message = await draft_streamer.finalize()
+    except Exception:  # pylint: disable=broad-exception-caught
+        final_message = None
+
+    return error_msg, final_message
 
 
 async def _update_telegram_message_formatted(
@@ -1739,7 +1735,7 @@ async def _process_message_batch(
                         tool_count=len(request.tools) if request.tools else 0)
 
             try:
-                response_text, all_messages = await _stream_with_unified_events(
+                response_text, bot_message = await _stream_with_unified_events(
                     request=request,
                     first_message=first_message,
                     thread_id=thread_id,
@@ -1750,41 +1746,28 @@ async def _process_message_batch(
                     telegram_thread_id=thread.thread_id,
                 )
 
-                # Cleanup: delete ALL thinking/tool messages, send fresh final answer
-                if all_messages:
-                    for msg in all_messages:
-                        try:
-                            await msg.delete()
-                        except Exception as del_err:  # pylint: disable=broad-exception-caught
-                            logger.warning(
-                                "claude_handler.cleanup_delete_failed",
-                                message_id=msg.message_id,
-                                error=str(del_err))
+                # With sendMessageDraft, final message is already sent via finalize()
+                # No cleanup needed - drafts don't create intermediate messages
 
-                    logger.info("claude_handler.cleanup_complete",
-                                thread_id=thread_id,
-                                deleted_count=len(all_messages))
-
-                # Send final answer as new message(s)
-                # Strip tool markers (shown during streaming, not in final answer)
-                bot_message = None
+                # Strip tool markers for database storage
                 clean_response = strip_tool_markers(
                     response_text) if response_text else ""
 
-                if clean_response:
-                    safe_final = safe_html(clean_response)
-
-                    # Split using smart boundaries (paragraph > newline > hard split)
-                    chunks = split_text_smart(safe_final)
-                    for chunk in chunks:
+                # If finalize failed, send fallback message
+                if not bot_message:
+                    if clean_response:
+                        safe_final = safe_html(clean_response)
+                        chunks = split_text_smart(safe_final)
+                        for chunk in chunks:
+                            bot_message = await _send_with_retry(
+                                first_message, chunk)
+                    else:
+                        logger.warning("claude_handler.empty_response",
+                                       thread_id=thread_id)
                         bot_message = await _send_with_retry(
-                            first_message, chunk)
-                else:
-                    logger.warning("claude_handler.empty_response",
-                                   thread_id=thread_id)
-                    bot_message = await _send_with_retry(
-                        first_message, "⚠️ Claude returned an empty response. "
-                        "Please try rephrasing your message.")
+                            first_message,
+                            "⚠️ Claude returned an empty response. "
+                            "Please try rephrasing your message.")
 
             except Exception as e:  # pylint: disable=broad-exception-caught
                 logger.error("claude_handler.streaming_failed",

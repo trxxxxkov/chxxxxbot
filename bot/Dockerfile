@@ -15,7 +15,7 @@ COPY pyproject.toml .
 
 # Install dependencies
 RUN pip install --no-cache-dir \
-    aiogram==3.15.0 \
+    aiogram>=3.24.0 \
     structlog>=24.1.0 \
     pydantic>=2.0.0 \
     sqlalchemy[asyncio]>=2.0.0 \
