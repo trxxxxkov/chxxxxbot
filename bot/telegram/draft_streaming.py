@@ -1,27 +1,36 @@
 """Draft-based streaming for Telegram Bot API 9.3.
 
 This module provides DraftStreamer class for streaming responses using
-sendMessageDraft method, which doesn't trigger flood control limits.
+sendMessageDraft method with proper rate limiting.
 
 NO __init__.py - use direct import: from telegram.draft_streaming import DraftStreamer
 """
 
+import asyncio
 import random
+import time
 from typing import Optional
 
 from aiogram import Bot
 from aiogram import types
+from aiogram.exceptions import TelegramRetryAfter
 from aiogram.methods import SendMessageDraft
 from utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
 
+# Minimum interval between draft updates (seconds)
+# sendMessageDraft still has rate limits, just more relaxed than edit_message
+MIN_UPDATE_INTERVAL = 0.15
 
-class DraftStreamer:
-    """Manages draft-based message streaming.
 
-    Uses sendMessageDraft for smooth animated updates without flood control.
+class DraftStreamer:  # pylint: disable=too-many-instance-attributes
+    """Manages draft-based message streaming with rate limiting.
+
+    Uses sendMessageDraft for smooth animated updates.
     Bot API 9.3 feature - requires forum topic mode enabled.
+
+    Includes built-in throttling to avoid flood control.
 
     Attributes:
         bot: Telegram Bot instance.
@@ -55,23 +64,28 @@ class DraftStreamer:
         self.draft_id = random.randint(1, 2**31 - 1)
         self.last_text = ""
         self._update_count = 0
+        self._last_update_time = 0.0
+        self._pending_text: Optional[str] = None  # Text waiting to be sent
 
         logger.debug("draft_streamer.initialized",
                      chat_id=chat_id,
                      topic_id=topic_id,
                      draft_id=self.draft_id)
 
-    async def update(self,
-                     text: str,
-                     parse_mode: Optional[str] = "HTML") -> bool:
-        """Update draft with new text (animated).
+    async def update(  # pylint: disable=too-many-return-statements
+            self,
+            text: str,
+            parse_mode: Optional[str] = "HTML",
+            force: bool = False) -> bool:
+        """Update draft with new text (with throttling).
 
-        Skips update if text hasn't changed.
-        No flood control - can call frequently.
+        Skips update if text hasn't changed or if called too frequently.
+        Handles TelegramRetryAfter by waiting and retrying.
 
         Args:
             text: New text content (1-4096 chars).
             parse_mode: Parse mode for formatting (HTML, Markdown, etc).
+            force: If True, ignore throttling (for final updates).
 
         Returns:
             True on success, False on failure.
@@ -83,30 +97,66 @@ class DraftStreamer:
         if text == self.last_text:
             return True
 
+        # Throttle updates (unless forced)
+        current_time = time.time()
+        time_since_last = current_time - self._last_update_time
+
+        if not force and time_since_last < MIN_UPDATE_INTERVAL:
+            # Store pending text, will be sent on next allowed update
+            self._pending_text = text
+            return True
+
+        # Use pending text if we have it (ensures we send latest)
+        text_to_send = self._pending_text or text
+        self._pending_text = None
+
         # Truncate if too long (Telegram limit)
-        if len(text) > 4096:
-            text = text[:4093] + "..."
+        if len(text_to_send) > 4096:
+            text_to_send = text_to_send[:4093] + "..."
 
         try:
-            result = await self.bot(
+            await self.bot(
                 SendMessageDraft(
                     chat_id=self.chat_id,
                     draft_id=self.draft_id,
-                    text=text,
+                    text=text_to_send,
                     message_thread_id=self.topic_id,
                     parse_mode=parse_mode,
                 ))
 
-            self.last_text = text
+            self.last_text = text_to_send
             self._update_count += 1
+            self._last_update_time = time.time()
 
             if self._update_count % 50 == 0:  # Log every 50 updates
                 logger.debug("draft_streamer.update_milestone",
                              chat_id=self.chat_id,
                              update_count=self._update_count,
-                             text_length=len(text))
+                             text_length=len(text_to_send))
 
-            return result
+            return True
+
+        except TelegramRetryAfter as e:
+            # Flood control - wait and retry once
+            logger.warning("draft_streamer.flood_control",
+                           chat_id=self.chat_id,
+                           retry_after=e.retry_after)
+            await asyncio.sleep(e.retry_after)
+            try:
+                await self.bot(
+                    SendMessageDraft(
+                        chat_id=self.chat_id,
+                        draft_id=self.draft_id,
+                        text=text_to_send,
+                        message_thread_id=self.topic_id,
+                        parse_mode=parse_mode,
+                    ))
+                self.last_text = text_to_send
+                self._update_count += 1
+                self._last_update_time = time.time()
+                return True
+            except Exception:  # pylint: disable=broad-exception-caught
+                return False
 
         except Exception as e:  # pylint: disable=broad-exception-caught
             logger.warning("draft_streamer.update_failed",
@@ -115,14 +165,30 @@ class DraftStreamer:
                            error=str(e))
             # Try without parse_mode as fallback
             if parse_mode:
-                return await self.update(text, parse_mode=None)
+                return await self.update(text_to_send, parse_mode=None)
             return False
+
+    async def flush_pending(self, parse_mode: Optional[str] = "HTML") -> bool:
+        """Send any pending text that was throttled.
+
+        Call this before finalize() to ensure all text is sent.
+
+        Args:
+            parse_mode: Parse mode for formatting.
+
+        Returns:
+            True on success.
+        """
+        if self._pending_text and self._pending_text != self.last_text:
+            return await self.update(self._pending_text, parse_mode, force=True)
+        return True
 
     async def finalize(self,
                        parse_mode: Optional[str] = "HTML") -> types.Message:
         """Convert draft to permanent message.
 
-        Draft disappears automatically, sends final message via send_message.
+        Flushes any pending text, then sends final message.
+        Draft disappears automatically.
 
         Args:
             parse_mode: Parse mode for final message.
@@ -133,6 +199,9 @@ class DraftStreamer:
         Raises:
             Exception: If send_message fails.
         """
+        # Ensure any pending text is sent first
+        await self.flush_pending(parse_mode)
+
         logger.info("draft_streamer.finalizing",
                     chat_id=self.chat_id,
                     topic_id=self.topic_id,
