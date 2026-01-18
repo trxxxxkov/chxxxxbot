@@ -351,6 +351,11 @@ def format_transcribe_audio_result(
     Returns:
         Formatted system message string.
     """
+    if "error" in result:
+        error = result.get("error", "unknown error")
+        preview = error[:80] + "..." if len(error) > 80 else error
+        return f"\n[❌ Ошибка транскрипции: {preview}]\n"
+
     duration = result.get("duration", 0)
     language = result.get("language", "")
     lang_info = f", {language}" if language else ""

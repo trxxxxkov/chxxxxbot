@@ -239,6 +239,11 @@ def format_generate_image_result(
     Returns:
         Formatted system message string.
     """
+    if "error" in result:
+        error = result.get("error", "unknown error")
+        preview = error[:80] + "..." if len(error) > 80 else error
+        return f"\n[❌ Ошибка генерации: {preview}]\n"
+
     params = result.get("parameters_used", {})
     resolution = params.get("image_size", "2K")
     aspect = params.get("aspect_ratio", "")
