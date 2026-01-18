@@ -5,14 +5,18 @@ Tests PDF analysis tool functionality, including:
 - Page range support
 - Prompt caching
 - Error handling
+- Retry logic for transient errors
 """
 
 from unittest.mock import Mock
 from unittest.mock import patch
 
+from anthropic import APIStatusError
 # Import the module to test
 from core.tools.analyze_pdf import analyze_pdf
 from core.tools.analyze_pdf import ANALYZE_PDF_TOOL
+from core.tools.analyze_pdf import MAX_RETRIES
+from core.tools.analyze_pdf import RETRYABLE_STATUS_CODES
 import pytest
 
 
@@ -199,3 +203,84 @@ class TestAnalyzePdfToolDefinition:
 
         # Should mention cost
         assert "cost" in description.lower() or "token" in description.lower()
+
+
+class TestAnalyzePdfRetry:
+    """Tests for retry logic in analyze_pdf."""
+
+    @pytest.mark.asyncio
+    @patch('core.tools.analyze_pdf.asyncio.sleep')
+    @patch('core.tools.analyze_pdf.get_anthropic_client')
+    async def test_retry_on_503_then_success(self, mock_get_client, mock_sleep):
+        """Test that 503 error triggers retry and eventually succeeds."""
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_response.content = [Mock(text="Success after retry")]
+        mock_response.usage = Mock(input_tokens=100,
+                                   output_tokens=50,
+                                   cache_creation_input_tokens=0,
+                                   cache_read_input_tokens=0)
+
+        # First call fails with 503, second succeeds
+        error_response = Mock()
+        error_response.status_code = 503
+        error = APIStatusError(message="Service unavailable",
+                               response=error_response,
+                               body={"error": "overloaded"})
+        mock_client.messages.create.side_effect = [error, mock_response]
+        mock_get_client.return_value = mock_client
+
+        result = await analyze_pdf(claude_file_id="file_test", question="Test?")
+
+        assert result["analysis"] == "Success after retry"
+        assert mock_client.messages.create.call_count == 2
+        mock_sleep.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch('core.tools.analyze_pdf.asyncio.sleep')
+    @patch('core.tools.analyze_pdf.get_anthropic_client')
+    async def test_max_retries_exceeded(self, mock_get_client, mock_sleep):
+        """Test that max retries exceeded raises error."""
+        mock_client = Mock()
+        error_response = Mock()
+        error_response.status_code = 500
+
+        error = APIStatusError(message="Internal server error",
+                               response=error_response,
+                               body={"error": "internal"})
+        mock_client.messages.create.side_effect = error
+        mock_get_client.return_value = mock_client
+
+        with pytest.raises(APIStatusError):
+            await analyze_pdf(claude_file_id="file_test", question="Test?")
+
+        assert mock_client.messages.create.call_count == MAX_RETRIES
+
+    @pytest.mark.asyncio
+    @patch('core.tools.analyze_pdf.get_anthropic_client')
+    async def test_non_retryable_error_not_retried(self, mock_get_client):
+        """Test that 400 error is not retried."""
+        mock_client = Mock()
+        error_response = Mock()
+        error_response.status_code = 400
+
+        error = APIStatusError(message="Bad request",
+                               response=error_response,
+                               body={"error": "invalid"})
+        mock_client.messages.create.side_effect = error
+        mock_get_client.return_value = mock_client
+
+        with pytest.raises(APIStatusError):
+            await analyze_pdf(claude_file_id="file_test", question="Test?")
+
+        # Should only be called once (no retries for 400)
+        assert mock_client.messages.create.call_count == 1
+
+    def test_retryable_status_codes(self):
+        """Test that correct status codes are marked as retryable."""
+        expected = {500, 502, 503, 504, 529}
+        assert RETRYABLE_STATUS_CODES == expected
+
+    def test_max_retries_constant(self):
+        """Test that MAX_RETRIES is set correctly."""
+        assert MAX_RETRIES == 3
