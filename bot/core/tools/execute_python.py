@@ -291,7 +291,7 @@ async def execute_python(code: str,
                          session: 'AsyncSession',
                          file_inputs: Optional[List[Dict[str, str]]] = None,
                          requirements: Optional[str] = None,
-                         timeout: Optional[float] = 180.0) -> Dict[str, Any]:
+                         timeout: Optional[float] = 3600.0) -> Dict[str, Any]:
     """Execute Python code in E2B sandbox with file support.
 
     Runs Python code in secure E2B sandbox (Linux, Python 3.11+, headless).
@@ -314,8 +314,8 @@ async def execute_python(code: str,
             Files will be available at /tmp/inputs/{name}.
         requirements: Optional space-separated list of pip packages
             (e.g., "numpy pandas matplotlib requests").
-        timeout: Maximum execution time in seconds. Default: 180 seconds
-            (3 minutes). Can be increased up to 3600 seconds (1 hour).
+        timeout: Maximum execution time in seconds. Default: 3600 seconds
+            (1 hour). Can be reduced for faster feedback on simple tasks.
 
     Returns:
         Dictionary with execution results:
@@ -390,7 +390,7 @@ async def execute_python(code: str,
             code,
             downloaded_files,
             requirements,
-            timeout or 180.0,
+            timeout or 3600.0,
         )
 
         # Step 3: Add cost to result
@@ -531,7 +531,7 @@ execution, or when user explicitly asks NOT to run code.
 </when_not_to_use>
 
 <limitations>
-- 180 second default timeout (3 minutes, configurable up to 1 hour)
+- 1 hour default timeout (3600 seconds, can be reduced for simple tasks)
 - No persistence between calls (fresh sandbox each time)
 - Limited CPU/RAM (1 vCPU, reasonable memory)
 - Headless (no GUI/display output, but can save to files)
@@ -592,8 +592,8 @@ Free tier: $100 credit (~2000 hours).""",
                 "type":
                     "number",
                 "description": (
-                    "Maximum execution time in seconds. Default: 180 (3 minutes). "
-                    "Can be increased up to 3600 (1 hour) for long tasks. Optional."
+                    "Maximum execution time in seconds. Default: 3600 (1 hour). "
+                    "Can be reduced for faster feedback on simple tasks. Optional."
                 )
             }
         },

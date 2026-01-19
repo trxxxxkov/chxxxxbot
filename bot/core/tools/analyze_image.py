@@ -56,7 +56,7 @@ async def analyze_image(claude_file_id: str, question: str) -> Dict[str, str]:
 
     # Use centralized client factory with Files API beta header
     client = get_anthropic_client(use_files_api=True)
-    model_id = "claude-sonnet-4-5-20250929"
+    model_id = "claude-opus-4-5-20251101"
 
     last_error = None
     for attempt in range(MAX_RETRIES):
@@ -67,7 +67,7 @@ async def analyze_image(claude_file_id: str, question: str) -> Dict[str, str]:
             def _sync_call() -> Any:
                 return client.messages.create(
                     model=model_id,
-                    max_tokens=2048,
+                    max_tokens=8192,
                     messages=[{
                         "role":
                             "user",

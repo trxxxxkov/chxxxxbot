@@ -56,8 +56,8 @@ class TestAnalyzeImage:
         # Verify API call
         mock_client.messages.create.assert_called_once()
         call_args = mock_client.messages.create.call_args[1]
-        assert call_args["model"] == "claude-sonnet-4-5-20250929"
-        assert call_args["max_tokens"] == 2048
+        assert call_args["model"] == "claude-opus-4-5-20251101"
+        assert call_args["max_tokens"] == 8192
 
         # Check message structure
         messages = call_args["messages"]

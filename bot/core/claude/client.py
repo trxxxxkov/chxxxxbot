@@ -162,7 +162,7 @@ class ClaudeProvider(LLMProvider):
 
         # Phase 1.4.3: Extended Thinking (for tool loop)
         # NOW ENABLED: thinking blocks are saved to DB and properly handled
-        api_params["thinking"] = {"type": "enabled", "budget_tokens": 10000}
+        api_params["thinking"] = {"type": "enabled", "budget_tokens": 16000}
 
         try:
             # Non-streaming API call
@@ -364,7 +364,7 @@ class ClaudeProvider(LLMProvider):
 
         # Phase 1.4.3: Extended Thinking
         # NOW ENABLED: thinking blocks are saved to DB and properly handled
-        api_params["thinking"] = {"type": "enabled", "budget_tokens": 10000}
+        api_params["thinking"] = {"type": "enabled", "budget_tokens": 16000}
 
         # Note: context_management not supported in current SDK version
         # Will be added in Phase 1.5 when SDK supports it
@@ -763,7 +763,7 @@ class ClaudeProvider(LLMProvider):
         # Only works with non-streaming messages.create()
 
         # Extended Thinking
-        api_params["thinking"] = {"type": "enabled", "budget_tokens": 10000}
+        api_params["thinking"] = {"type": "enabled", "budget_tokens": 16000}
 
         # Track current block type and accumulated data
         current_block_type: Optional[str] = None

@@ -43,7 +43,8 @@ WEB_SEARCH_CONFIG = ToolConfig(
     name="web_search",
     definition={
         "type": "web_search_20250305",
-        "name": "web_search"
+        "name": "web_search",
+        "max_uses": 100,  # Max searches per request
     },
     executor=None,
     emoji="🔍",
@@ -54,7 +55,12 @@ WEB_FETCH_CONFIG = ToolConfig(
     name="web_fetch",
     definition={
         "type": "web_fetch_20250910",
-        "name": "web_fetch"
+        "name": "web_fetch",
+        "max_uses": 100,  # Max fetches per request
+        "citations": {
+            "enabled": True
+        },
+        "max_content_tokens": 100000,  # Protect against huge pages
     },
     executor=None,
     emoji="🌐",

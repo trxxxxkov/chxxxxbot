@@ -67,6 +67,8 @@ class TestExecutePython:
         mock_execution.logs = mock_logs
 
         mock_sandbox.run_code.return_value = mock_execution
+        # Mock files.list() to return empty list (no output files)
+        mock_sandbox.files.list.return_value = []
         mock_sandbox.__enter__ = Mock(return_value=mock_sandbox)
         mock_sandbox.__exit__ = Mock(return_value=None)
         mock_sandbox_class.create.return_value = mock_sandbox
@@ -92,7 +94,7 @@ class TestExecutePython:
         mock_sandbox.run_code.assert_called_once()
         call_kwargs = mock_sandbox.run_code.call_args[1]
         assert call_kwargs["code"] == "print('Hello, world!')"
-        assert call_kwargs["timeout"] == 180.0
+        assert call_kwargs["timeout"] == 3600.0
 
     @pytest.mark.asyncio
     @patch('core.tools.execute_python.Sandbox')
