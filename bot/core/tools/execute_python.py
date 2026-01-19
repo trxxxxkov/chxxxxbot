@@ -10,10 +10,10 @@ NO __init__.py - use direct import:
 
 import asyncio
 import json
-import mimetypes
 from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 
 from core.clients import get_e2b_api_key
+from core.mime_types import detect_mime_type
 from core.pricing import calculate_e2b_cost
 from core.pricing import cost_to_float
 from e2b_code_interpreter import Sandbox
@@ -229,9 +229,11 @@ def _run_sandbox_sync(  # pylint: disable=too-many-locals,too-many-statements
                                  error=str(read_error))
                     continue
 
-                mime_type, _ = mimetypes.guess_type(entry.name)
-                if not mime_type:
-                    mime_type = "application/octet-stream"
+                # Detect MIME from magic bytes and extension (not just extension)
+                mime_type = detect_mime_type(
+                    filename=entry.name,
+                    file_bytes=file_bytes,
+                )
 
                 generated_files.append({
                     "filename": entry.name,
