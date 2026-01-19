@@ -614,7 +614,8 @@ async def _stream_with_unified_events(
                 tool_name = tool["name"]
                 tool_input = tool["input"]
                 tool_duration = result.get("_duration", 0)
-                is_error = "error" in result
+                # Check if there's an actual error (not just empty string)
+                is_error = bool(result.get("error"))
 
                 # Clean up metadata keys before adding to results
                 clean_result = {
