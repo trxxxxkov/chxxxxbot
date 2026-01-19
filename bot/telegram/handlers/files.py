@@ -30,6 +30,9 @@ from aiogram import Router
 from aiogram import types
 from config import FILES_API_TTL_HOURS
 from core.claude.files_api import upload_to_files_api
+from core.mime_types import detect_mime_type
+from core.mime_types import is_image_mime
+from core.mime_types import is_pdf_mime
 from db.models.user_file import FileSource
 from db.models.user_file import FileType
 from db.repositories.chat_repository import ChatRepository
@@ -121,31 +124,22 @@ async def process_file_upload(message: types.Message,
     user_id = message.from_user.id
     chat_id = message.chat.id
 
-    # Determine file type
+    # Get file info from Telegram
     if message.photo:
         photo = message.photo[-1]
         file_id = photo.file_id
         file_unique_id = photo.file_unique_id
         file_size = photo.file_size
-        file_type = FileType.IMAGE
-        mime_type = "image/jpeg"
         filename = f"photo_{photo.file_id[:8]}.jpg"
+        telegram_mime = "image/jpeg"
         file_metadata = {"width": photo.width, "height": photo.height}
     elif message.document:
         document = message.document
         file_id = document.file_id
         file_unique_id = document.file_unique_id
         file_size = document.file_size
-        mime_type = document.mime_type  # Let Files API detect if None
         filename = document.file_name
-
-        # Determine file type
-        if mime_type == "application/pdf":
-            file_type = FileType.PDF
-        elif mime_type and mime_type.startswith("image/"):
-            file_type = FileType.IMAGE
-        else:
-            file_type = FileType.DOCUMENT
+        telegram_mime = document.mime_type
         file_metadata = {}
     else:
         raise ValueError("Message has no photo or document")
@@ -166,10 +160,27 @@ async def process_file_upload(message: types.Message,
 
     file_bytes = file_bytes_io.read()
 
+    # Detect MIME from magic bytes (more reliable than Telegram's MIME)
+    mime_type = detect_mime_type(
+        filename=filename,
+        file_bytes=file_bytes,
+        declared_mime=telegram_mime,
+    )
+
+    # Determine file type based on detected MIME
+    if is_pdf_mime(mime_type):
+        file_type = FileType.PDF
+    elif is_image_mime(mime_type):
+        file_type = FileType.IMAGE
+    else:
+        file_type = FileType.DOCUMENT
+
     logger.info("file_upload.download_complete",
                 user_id=user_id,
                 filename=filename,
-                size_bytes=len(file_bytes))
+                size_bytes=len(file_bytes),
+                mime_type=mime_type,
+                file_type=file_type.value)
 
     # Upload to Files API
     claude_file_id = await upload_to_files_api(file_bytes=file_bytes,
@@ -511,17 +522,6 @@ async def handle_document(message: types.Message,
                        is_premium=message.from_user.is_premium)
         return
 
-    # Determine file type
-    if document.mime_type == "application/pdf":
-        file_type = FileType.PDF
-        file_emoji = "📄"
-    elif document.mime_type and document.mime_type.startswith("image/"):
-        file_type = FileType.IMAGE
-        file_emoji = "🖼️"
-    else:
-        file_type = FileType.DOCUMENT
-        file_emoji = "📎"
-
     try:
         # 1. Download from Telegram
         file_info = await message.bot.get_file(document.file_id)
@@ -537,16 +537,35 @@ async def handle_document(message: types.Message,
         # Read bytes
         doc_bytes = file_bytes.read()
 
+        # Detect MIME from magic bytes (more reliable than Telegram's MIME)
+        mime_type = detect_mime_type(
+            filename=document.file_name,
+            file_bytes=doc_bytes,
+            declared_mime=document.mime_type,
+        )
+
+        # Determine file type and emoji based on detected MIME
+        if is_pdf_mime(mime_type):
+            file_type = FileType.PDF
+            file_emoji = "📄"
+        elif is_image_mime(mime_type):
+            file_type = FileType.IMAGE
+            file_emoji = "🖼️"
+        else:
+            file_type = FileType.DOCUMENT
+            file_emoji = "📎"
+
         logger.info("document_handler.download_complete",
                     user_id=user_id,
                     filename=document.file_name,
-                    size_bytes=len(doc_bytes))
+                    size_bytes=len(doc_bytes),
+                    mime_type=mime_type,
+                    file_type=file_type.value)
 
-        # 2. Upload to Files API (MIME auto-detected from magic bytes/extension)
-        claude_file_id = await upload_to_files_api(
-            file_bytes=doc_bytes,
-            filename=document.file_name,
-            mime_type=document.mime_type)  # Let Files API detect if None
+        # 2. Upload to Files API
+        claude_file_id = await upload_to_files_api(file_bytes=doc_bytes,
+                                                   filename=document.file_name,
+                                                   mime_type=mime_type)
 
         logger.info("document_handler.files_api_upload_complete",
                     user_id=user_id,
@@ -615,7 +634,7 @@ async def handle_document(message: types.Message,
             claude_file_id=claude_file_id,
             filename=document.file_name,
             file_type=file_type,
-            mime_type=document.mime_type,
+            mime_type=mime_type,  # Use detected MIME, not Telegram's
             file_size=document.file_size or len(doc_bytes),
             source=FileSource.USER,
             expires_at=datetime.now(timezone.utc) +
@@ -632,10 +651,9 @@ async def handle_document(message: types.Message,
                         caption_length=len(message.caption))
         else:
             # No caption - just file mention
-            text_content = (
-                f"{file_emoji} User uploaded: {document.file_name} "
-                f"({document.mime_type}, {format_size(len(doc_bytes))}) "
-                f"[Files API ID: {claude_file_id}]")
+            text_content = (f"{file_emoji} User uploaded: {document.file_name} "
+                            f"({mime_type}, {format_size(len(doc_bytes))}) "
+                            f"[Files API ID: {claude_file_id}]")
 
         await message_repo.create_message(
             chat_id=chat_id,

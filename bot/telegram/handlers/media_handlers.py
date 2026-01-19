@@ -17,6 +17,7 @@ Two handling strategies based on media type:
 from aiogram import F
 from aiogram import Router
 from aiogram import types
+from core.mime_types import detect_mime_type
 import openai
 from sqlalchemy.ext.asyncio import AsyncSession
 from telegram.media_processor import download_media
@@ -226,7 +227,6 @@ async def handle_audio(message: types.Message, session: AsyncSession) -> None:
     user_id = message.from_user.id
     audio = message.audio
     filename = audio.file_name or f"audio_{audio.file_id[:8]}.mp3"
-    mime_type = audio.mime_type or "audio/mpeg"
 
     logger.info("audio_handler.received",
                 user_id=user_id,
@@ -234,7 +234,7 @@ async def handle_audio(message: types.Message, session: AsyncSession) -> None:
                 filename=filename,
                 duration=audio.duration,
                 file_size=audio.file_size,
-                mime_type=mime_type)
+                telegram_mime_type=audio.mime_type)
 
     # Record metrics
     record_message_received(chat_type=message.chat.type, content_type="audio")
@@ -243,9 +243,17 @@ async def handle_audio(message: types.Message, session: AsyncSession) -> None:
         # 1. Download audio from Telegram
         audio_bytes = await download_media(message, MediaType.AUDIO)
 
+        # Detect MIME from magic bytes (more reliable than Telegram's MIME)
+        mime_type = detect_mime_type(
+            filename=filename,
+            file_bytes=audio_bytes,
+            declared_mime=audio.mime_type,
+        )
+
         logger.info("audio_handler.download_complete",
                     user_id=user_id,
-                    size_bytes=len(audio_bytes))
+                    size_bytes=len(audio_bytes),
+                    mime_type=mime_type)
 
         # 2. Upload to Files API (so Claude can process it)
         claude_file_id = await upload_to_files_api(file_bytes=audio_bytes,
@@ -367,7 +375,6 @@ async def handle_video(message: types.Message, session: AsyncSession) -> None:
     user_id = message.from_user.id
     video = message.video
     filename = video.file_name or f"video_{video.file_id[:8]}.mp4"
-    mime_type = video.mime_type or "video/mp4"
 
     logger.info("video_handler.received",
                 user_id=user_id,
@@ -375,7 +382,7 @@ async def handle_video(message: types.Message, session: AsyncSession) -> None:
                 filename=filename,
                 duration=video.duration,
                 file_size=video.file_size,
-                mime_type=mime_type)
+                telegram_mime_type=video.mime_type)
 
     # Record metrics
     record_message_received(chat_type=message.chat.type, content_type="video")
@@ -384,9 +391,17 @@ async def handle_video(message: types.Message, session: AsyncSession) -> None:
         # 1. Download video from Telegram
         video_bytes = await download_media(message, MediaType.VIDEO)
 
+        # Detect MIME from magic bytes (more reliable than Telegram's MIME)
+        mime_type = detect_mime_type(
+            filename=filename,
+            file_bytes=video_bytes,
+            declared_mime=video.mime_type,
+        )
+
         logger.info("video_handler.download_complete",
                     user_id=user_id,
-                    size_bytes=len(video_bytes))
+                    size_bytes=len(video_bytes),
+                    mime_type=mime_type)
 
         # 2. Upload to Files API (so Claude can process it)
         claude_file_id = await upload_to_files_api(file_bytes=video_bytes,
