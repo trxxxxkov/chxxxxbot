@@ -136,7 +136,7 @@ async def process_file_upload(message: types.Message,
         file_id = document.file_id
         file_unique_id = document.file_unique_id
         file_size = document.file_size
-        mime_type = document.mime_type or "application/octet-stream"
+        mime_type = document.mime_type  # Let Files API detect if None
         filename = document.file_name
 
         # Determine file type
@@ -542,11 +542,11 @@ async def handle_document(message: types.Message,
                     filename=document.file_name,
                     size_bytes=len(doc_bytes))
 
-        # 2. Upload to Files API
+        # 2. Upload to Files API (MIME auto-detected from magic bytes/extension)
         claude_file_id = await upload_to_files_api(
             file_bytes=doc_bytes,
             filename=document.file_name,
-            mime_type=document.mime_type or "application/octet-stream")
+            mime_type=document.mime_type)  # Let Files API detect if None
 
         logger.info("document_handler.files_api_upload_complete",
                     user_id=user_id,
@@ -615,7 +615,7 @@ async def handle_document(message: types.Message,
             claude_file_id=claude_file_id,
             filename=document.file_name,
             file_type=file_type,
-            mime_type=document.mime_type or "application/octet-stream",
+            mime_type=document.mime_type,
             file_size=document.file_size or len(doc_bytes),
             source=FileSource.USER,
             expires_at=datetime.now(timezone.utc) +
