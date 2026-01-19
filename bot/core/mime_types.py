@@ -102,14 +102,49 @@ EXTENSION_MIME_MAP = {
              '.presentationml.presentation',
     '.txt': 'text/plain',
     '.csv': 'text/csv',
+    '.tsv': 'text/tab-separated-values',
     '.json': 'application/json',
+    '.jsonl': 'application/jsonl',
+    '.ndjson': 'application/x-ndjson',
     '.xml': 'application/xml',
     '.html': 'text/html',
     '.htm': 'text/html',
     '.md': 'text/markdown',
+    '.markdown': 'text/markdown',
+    '.rst': 'text/x-rst',
+    '.yaml': 'application/yaml',
+    '.yml': 'application/yaml',
+    '.toml': 'application/toml',
+    '.ini': 'text/plain',
+    '.cfg': 'text/plain',
+    '.conf': 'text/plain',
+    '.log': 'text/plain',
     '.py': 'text/x-python',
     '.js': 'text/javascript',
     '.ts': 'text/typescript',
+    '.jsx': 'text/javascript',
+    '.tsx': 'text/typescript',
+    '.css': 'text/css',
+    '.scss': 'text/x-scss',
+    '.less': 'text/x-less',
+    '.sql': 'application/sql',
+    '.sh': 'application/x-sh',
+    '.bash': 'application/x-sh',
+    '.zsh': 'application/x-sh',
+    '.c': 'text/x-c',
+    '.cpp': 'text/x-c++',
+    '.h': 'text/x-c',
+    '.hpp': 'text/x-c++',
+    '.java': 'text/x-java',
+    '.go': 'text/x-go',
+    '.rs': 'text/x-rust',
+    '.rb': 'text/x-ruby',
+    '.php': 'text/x-php',
+    '.swift': 'text/x-swift',
+    '.kt': 'text/x-kotlin',
+    '.scala': 'text/x-scala',
+    '.r': 'text/x-r',
+    '.R': 'text/x-r',
     '.zip': 'application/zip',
     '.rar': 'application/x-rar-compressed',
     '.7z': 'application/x-7z-compressed',
@@ -142,10 +177,88 @@ def normalize_mime_type(mime_type: str) -> str:
     return MIME_NORMALIZATION.get(normalized, normalized)
 
 
-def detect_mime_from_magic(file_bytes: bytes) -> Optional[str]:
-    """Detect MIME type from file magic bytes.
+def _is_valid_utf8_text(data: bytes) -> bool:
+    """Check if bytes represent valid UTF-8 text.
+
+    Args:
+        data: Bytes to check.
+
+    Returns:
+        True if valid UTF-8 text without binary characters.
+    """
+    try:
+        text = data.decode('utf-8')
+        # Check for binary/control characters (except common whitespace)
+        # Allow: tab, newline, carriage return
+        for char in text:
+            code = ord(char)
+            if code < 32 and code not in (9, 10, 13):  # Control chars
+                return False
+            if code == 127:  # DEL
+                return False
+        return True
+    except UnicodeDecodeError:
+        return False
+
+
+def _detect_text_format(data: bytes) -> Optional[str]:  # pylint: disable=too-many-return-statements
+    """Detect specific text format from content.
+
+    Analyzes text content to determine if it's JSON, JSONL, XML, HTML, etc.
+
+    Args:
+        data: Text content as bytes.
+
+    Returns:
+        Specific MIME type or 'text/plain' for generic text.
+    """
+    try:
+        text = data.decode('utf-8').strip()
+        if not text:
+            return 'text/plain'
+
+        # Check for JSON Lines (multiple JSON objects, one per line)
+        lines = text.split('\n')
+        if len(lines) > 1:
+            # Check if each non-empty line is valid JSON
+            json_lines = 0
+            for line in lines[:10]:  # Check first 10 lines
+                line = line.strip()
+                if not line:
+                    continue
+                if (line.startswith('{') and line.endswith('}')) or \
+                   (line.startswith('[') and line.endswith(']')):
+                    json_lines += 1
+            if json_lines >= 2:
+                return 'application/jsonl'
+
+        # Check for JSON (starts with { or [)
+        if (text.startswith('{') and text.endswith('}')) or \
+           (text.startswith('[') and text.endswith(']')):
+            return 'application/json'
+
+        # Check for XML/HTML
+        if text.startswith('<?xml') or text.startswith('<'):
+            if '<!DOCTYPE html' in text.lower() or '<html' in text.lower():
+                return 'text/html'
+            if text.startswith('<?xml'):
+                return 'application/xml'
+
+        # Check for YAML (starts with --- or has key: value pattern)
+        if text.startswith('---') or (': ' in lines[0] and
+                                      not text.startswith('{')):
+            return 'application/yaml'
+
+        return 'text/plain'
+    except Exception:
+        return 'text/plain'
+
+
+def detect_mime_from_magic(file_bytes: bytes) -> Optional[str]:  # pylint: disable=too-many-return-statements
+    r"""Detect MIME type from binary file magic bytes.
 
     Checks file signature (magic bytes) to determine actual file type.
+    Only detects binary formats (images, PDF, ZIP, etc.), not text.
 
     Args:
         file_bytes: File content bytes.
@@ -154,7 +267,7 @@ def detect_mime_from_magic(file_bytes: bytes) -> Optional[str]:
         Detected MIME type or None if not recognized.
 
     Examples:
-        >>> detect_mime_from_magic(b'\\xff\\xd8\\xff\\xe0...')
+        >>> detect_mime_from_magic(b'\xff\xd8\xff\xe0...')
         'image/jpeg'
     """
     if not file_bytes:
@@ -191,6 +304,33 @@ def detect_mime_from_magic(file_bytes: bytes) -> Optional[str]:
     return None
 
 
+def detect_mime_from_content(file_bytes: bytes) -> Optional[str]:
+    """Detect MIME type from text content analysis.
+
+    Analyzes file content to detect text-based formats (JSON, XML, etc.).
+    Should be called AFTER extension detection as a fallback.
+
+    Args:
+        file_bytes: File content bytes.
+
+    Returns:
+        Detected text MIME type or None if not text.
+
+    Examples:
+        >>> detect_mime_from_content(b'{"key": "value"}')
+        'application/json'
+    """
+    if not file_bytes:
+        return None
+
+    # Use first 8KB for detection to handle large files efficiently
+    sample = file_bytes[:8192]
+    if _is_valid_utf8_text(sample):
+        return _detect_text_format(sample)
+
+    return None
+
+
 def detect_mime_from_extension(filename: str) -> Optional[str]:
     """Detect MIME type from file extension.
 
@@ -221,18 +361,19 @@ def detect_mime_from_extension(filename: str) -> Optional[str]:
     return mime_type
 
 
-def detect_mime_type(
+def detect_mime_type(  # pylint: disable=too-many-return-statements
     filename: str,
     file_bytes: Optional[bytes] = None,
     declared_mime: Optional[str] = None,
 ) -> str:
-    """Detect MIME type using multiple methods.
+    r"""Detect MIME type using multiple methods.
 
     Priority order:
-    1. Magic bytes detection (most reliable for images)
-    2. File extension
-    3. Declared MIME type (normalized)
-    4. Fallback to application/octet-stream
+    1. Binary magic bytes detection (most reliable for images/PDF/ZIP)
+    2. File extension (for known types like .mp4, .py, .jsonl)
+    3. Text content analysis (for text files without known extension)
+    4. Declared MIME type (normalized)
+    5. Fallback to application/octet-stream
 
     Args:
         filename: File name with extension.
@@ -243,14 +384,16 @@ def detect_mime_type(
         Detected MIME type string.
 
     Examples:
-        >>> detect_mime_type('photo.jfif', b'\\xff\\xd8\\xff...')
+        >>> detect_mime_type('photo.jfif', b'\xff\xd8\xff...')
         'image/jpeg'
         >>> detect_mime_type('document.pdf')
         'application/pdf'
+        >>> detect_mime_type('data.jsonl', b'{"id": 1}\n{"id": 2}')
+        'application/jsonl'
     """
     detected = None
 
-    # 1. Try magic bytes first (most reliable)
+    # 1. Try binary magic bytes first (images, PDF, ZIP)
     if file_bytes:
         detected = detect_mime_from_magic(file_bytes)
         if detected:
@@ -259,7 +402,7 @@ def detect_mime_type(
                          mime_type=detected)
             return detected
 
-    # 2. Try extension
+    # 2. Try extension (works for audio/video/code files)
     detected = detect_mime_from_extension(filename)
     if detected:
         logger.debug("mime.detected_from_extension",
@@ -267,7 +410,16 @@ def detect_mime_type(
                      mime_type=detected)
         return detected
 
-    # 3. Normalize declared MIME type
+    # 3. Try text content analysis (for files without known extension)
+    if file_bytes:
+        detected = detect_mime_from_content(file_bytes)
+        if detected:
+            logger.debug("mime.detected_from_content",
+                         filename=filename,
+                         mime_type=detected)
+            return detected
+
+    # 4. Normalize declared MIME type
     if declared_mime:
         normalized = normalize_mime_type(declared_mime)
         logger.debug("mime.using_declared",
