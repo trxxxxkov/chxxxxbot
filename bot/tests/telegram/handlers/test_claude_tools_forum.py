@@ -161,9 +161,11 @@ async def test_generated_file_sent_to_forum_topic():
                 }],
             }
 
-            # Mock Files API upload (patching at the source)
-            with patch(
-                    'core.claude.files_api.upload_to_files_api') as mock_upload:
+            # IMPORTANT: Patch where the name is looked up, not where it's
+            # defined. The handler imports it as:
+            # from core.claude.files_api import upload_to_files_api
+            with patch('telegram.handlers.claude.upload_to_files_api'
+                      ) as mock_upload:
                 mock_upload.return_value = "file_test123"
 
                 # Mock BalanceService to avoid session issues
@@ -283,8 +285,11 @@ async def test_generated_file_sent_to_main_chat_when_no_topic():
                 }],
             }
 
-            with patch(
-                    'core.claude.files_api.upload_to_files_api') as mock_upload:
+            # IMPORTANT: Patch where the name is looked up, not where it's
+            # defined. The handler imports it as:
+            # from core.claude.files_api import upload_to_files_api
+            with patch('telegram.handlers.claude.upload_to_files_api'
+                      ) as mock_upload:
                 mock_upload.return_value = "file_dog123"
 
                 request = LLMRequest(
@@ -321,3 +326,148 @@ async def test_generated_file_sent_to_main_chat_when_no_topic():
                 call_kwargs = mock_bot.send_photo.call_args[1]
                 assert call_kwargs["chat_id"] == chat_id
                 assert call_kwargs["message_thread_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_file_delivery_with_empty_error_key():
+    """Test that files are delivered when error key is present but empty.
+
+    Regression test for bug where execute_python always returns {"error": ""}
+    even on success, and the handler incorrectly treated this as an error.
+
+    Bug: `is_error = "error" in result` was always True because error key exists.
+    Fix: `is_error = bool(result.get("error"))` - empty string is falsy.
+
+    Test scenario:
+    1. execute_python returns successful result with {"error": "", ...}
+    2. Handler should NOT treat this as an error
+    3. Handler should deliver generated files
+    """
+    from core.models import LLMRequest
+    from core.models import Message
+    from telegram.handlers.claude import _handle_with_tools
+
+    # Mock dependencies
+    mock_session = MagicMock()
+    mock_session.commit = AsyncMock()
+    mock_user_file_repo = AsyncMock()
+    mock_user_file_repo.create = AsyncMock()
+
+    mock_first_message = MagicMock(spec=types.Message)
+    mock_first_message.message_id = 123
+    mock_first_message.chat = MagicMock()
+    mock_first_message.chat.id = 789
+    mock_first_message.answer = AsyncMock()
+
+    mock_bot = AsyncMock()
+
+    # Mock sent photo message with photo sizes
+    mock_photo_size = MagicMock()
+    mock_photo_size.file_id = "AgACAgIAAxkBAAI_test_photo"
+    mock_photo_size.file_size = 12345
+    mock_photo_size.file_unique_id = "test_unique"
+
+    mock_sent_msg = MagicMock()
+    mock_sent_msg.photo = [mock_photo_size]
+
+    mock_bot.send_photo = AsyncMock(return_value=mock_sent_msg)
+    mock_first_message.bot = mock_bot
+
+    with patch('telegram.handlers.claude.claude_provider') as mock_provider:
+        # First call: Claude uses execute_python tool
+        tool_use_block = MagicMock(spec=ToolUseBlock)
+        tool_use_block.type = "tool_use"
+        tool_use_block.id = "toolu_exec_123"
+        tool_use_block.name = "execute_python"
+        tool_use_block.input = {"code": "import matplotlib; ..."}
+
+        mock_response_1 = create_mock_message(content_blocks=[tool_use_block],
+                                              stop_reason="tool_use")
+
+        # Second call: Claude sends final response
+        final_text_block = MagicMock(spec=TextBlock)
+        final_text_block.type = "text"
+        final_text_block.text = "Here's your chart!"
+
+        mock_response_2 = create_mock_message(content_blocks=[final_text_block],
+                                              stop_reason="end_turn")
+
+        mock_provider.get_message = AsyncMock(
+            side_effect=[mock_response_1, mock_response_2])
+        mock_provider.get_thinking.return_value = None
+        mock_provider.get_stop_reason.return_value = "end_turn"
+
+        with patch(
+                'telegram.handlers.claude.execute_tool') as mock_execute_tool:
+            # CRITICAL: execute_python returns error="" (empty string, not None)
+            # This is the actual format returned by execute_python
+            mock_execute_tool.return_value = {
+                "stdout":
+                    "Plot saved",
+                "stderr":
+                    "",
+                "results":
+                    "[]",
+                "error":
+                    "",  # Empty string, NOT absence of key!
+                "success":
+                    "true",
+                "generated_files":
+                    '[{"filename": "chart.png"}]',
+                "cost_usd":
+                    "0.0001",
+                "_file_contents": [{
+                    "filename": "chart.png",
+                    "content": b"png_bytes_here",
+                    "mime_type": "image/png",
+                }],
+            }
+
+            # IMPORTANT: Patch where the name is looked up, not where it's
+            # defined. The handler imports it as:
+            # from core.claude.files_api import upload_to_files_api
+            with patch('telegram.handlers.claude.upload_to_files_api'
+                      ) as mock_upload:
+                mock_upload.return_value = "file_chart123"
+
+                with patch('services.balance_service.BalanceService'
+                          ) as mock_balance_service:
+                    mock_balance_service.return_value.charge_usage = AsyncMock()
+
+                    request = LLMRequest(
+                        messages=[
+                            Message(role="user", content="Create a chart")
+                        ],
+                        system_prompt="You are a helpful assistant.",
+                        model="claude:sonnet",
+                        max_tokens=4096,
+                        temperature=1.0,
+                        tools=[{
+                            "name": "execute_python"
+                        }])
+
+                    result = await _handle_with_tools(
+                        request=request,
+                        first_message=mock_first_message,
+                        thread_id=999,
+                        session=mock_session,
+                        user_file_repo=mock_user_file_repo,
+                        chat_id=789,
+                        user_id=456,
+                        telegram_thread_id=None)
+
+                    # Verify response
+                    assert "chart" in result.lower() or "Here" in result
+
+                    # CRITICAL: Verify send_photo WAS called
+                    # Bug was: send_photo was NOT called because handler
+                    # treated error="" as an error
+                    assert mock_bot.send_photo.called, (
+                        "BUG REGRESSION: File not delivered! "
+                        "Handler incorrectly treated error='' as an error.")
+
+                    # Verify upload to Files API was called
+                    mock_upload.assert_called_once()
+
+                    # Verify file was saved to DB
+                    mock_user_file_repo.create.assert_called_once()
