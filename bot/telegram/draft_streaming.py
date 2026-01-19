@@ -21,7 +21,7 @@ logger = get_logger(__name__)
 
 # Minimum interval between draft updates (seconds)
 # sendMessageDraft still has rate limits, just more relaxed than edit_message
-MIN_UPDATE_INTERVAL = 0.20
+MIN_UPDATE_INTERVAL = 0.25
 
 
 class DraftStreamer:  # pylint: disable=too-many-instance-attributes
