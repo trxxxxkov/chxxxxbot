@@ -16,6 +16,7 @@ NO __init__.py - use direct import:
     from core.files_api import upload_to_files_api, delete_from_files_api
 """
 
+import asyncio
 from io import BytesIO
 from typing import Optional
 
@@ -91,9 +92,12 @@ async def upload_to_files_api(
         client = get_anthropic_client(use_files_api=True)
 
         # FileTypes accepts tuple: (filename, file_content, mime_type)
-        file_response = client.beta.files.upload(file=(filename,
-                                                       BytesIO(file_bytes),
-                                                       detected_mime))
+        # Run in thread pool to avoid blocking event loop
+        def _sync_upload():
+            return client.beta.files.upload(file=(filename, BytesIO(file_bytes),
+                                                  detected_mime))
+
+        file_response = await asyncio.to_thread(_sync_upload)
 
         logger.info("files_api.upload_success",
                     filename=filename,
@@ -137,7 +141,11 @@ async def download_from_files_api(claude_file_id: str) -> bytes:
         client = get_anthropic_client(use_files_api=True)
 
         # Files API method: download() (official SDK method)
-        content = client.beta.files.download(file_id=claude_file_id)
+        # Run in thread pool to avoid blocking event loop
+        def _sync_download():
+            return client.beta.files.download(file_id=claude_file_id)
+
+        content = await asyncio.to_thread(_sync_download)
 
         logger.info("files_api.download_success",
                     claude_file_id=claude_file_id,
@@ -166,7 +174,12 @@ async def delete_from_files_api(claude_file_id: str) -> None:
 
         # Use centralized client factory
         client = get_anthropic_client(use_files_api=True)
-        client.beta.files.delete(file_id=claude_file_id)
+
+        # Run in thread pool to avoid blocking event loop
+        def _sync_delete():
+            return client.beta.files.delete(file_id=claude_file_id)
+
+        await asyncio.to_thread(_sync_delete)
 
         logger.info("files_api.delete_success", claude_file_id=claude_file_id)
 

@@ -568,47 +568,69 @@ async def _stream_with_unified_events(
             return final_answer, final_message
 
         if stop_reason == "tool_use" and pending_tools:
-            # Execute tools and continue
+            # Execute all tools in PARALLEL for better performance
+            tool_names = [t["name"] for t in pending_tools]
+            logger.info("stream.unified.executing_tools_parallel",
+                        thread_id=thread_id,
+                        tool_count=len(pending_tools),
+                        tool_names=tool_names)
+
+            # Start single keepalive task for all tools
+            async def keepalive_loop() -> None:
+                """Send periodic updates to keep draft visible."""
+                while True:
+                    await asyncio.sleep(DRAFT_KEEPALIVE_INTERVAL)
+                    await draft_streamer.keepalive()
+
+            keepalive_task = asyncio.create_task(keepalive_loop())
+
+            try:
+                # Create tasks for parallel execution
+                tool_tasks = [
+                    _execute_single_tool_safe(
+                        tool_name=tool["name"],
+                        tool_input=tool["input"],
+                        bot=first_message.bot,
+                        session=session,
+                        thread_id=thread_id,
+                    ) for tool in pending_tools
+                ]
+
+                # Execute all tools in parallel
+                raw_results = await asyncio.gather(*tool_tasks)
+
+            finally:
+                # Stop keepalive
+                keepalive_task.cancel()
+                try:
+                    await keepalive_task
+                except asyncio.CancelledError:
+                    pass
+
+            # Process results sequentially (UI updates, files, charging)
             results = []
-            for tool in pending_tools:
+            for idx, result in enumerate(raw_results):
+                tool = pending_tools[idx]
                 tool_name = tool["name"]
                 tool_input = tool["input"]
+                tool_duration = result.get("_duration", 0)
+                is_error = "error" in result
 
-                logger.info("stream.unified.executing_tool",
-                            thread_id=thread_id,
-                            tool_name=tool_name)
+                # Clean up metadata keys before adding to results
+                clean_result = {
+                    k: v for k, v in result.items() if not k.startswith("_")
+                }
+                if is_error:
+                    clean_result["error"] = result["error"]
 
-                tool_start_time = time.time()
-                try:
-                    # Run tool execution with keep-alive to prevent draft
-                    # from disappearing during long operations
-                    async def keepalive_loop() -> None:
-                        """Send periodic updates to keep draft visible."""
-                        while True:
-                            await asyncio.sleep(DRAFT_KEEPALIVE_INTERVAL)
-                            # Re-send current text to keep draft alive
-                            await draft_streamer.keepalive()
-
-                    keepalive_task = asyncio.create_task(keepalive_loop())
-                    try:
-                        result = await execute_tool(tool_name, tool_input,
-                                                    first_message.bot, session)
-                    finally:
-                        keepalive_task.cancel()
-                        try:
-                            await keepalive_task
-                        except asyncio.CancelledError:
-                            pass
-                    tool_duration = time.time() - tool_start_time
-
-                    # Add system messages for completed tools FIRST
-                    # (e.g., "🎨 Изображение сгенерировано" before "📤 Отправлен")
+                # Add system messages for completed tools
+                if not is_error:
                     tool_system_msg = get_tool_system_message(
-                        tool_name, tool_input, result)
+                        tool_name, tool_input, clean_result)
                     if tool_system_msg:
                         append_to_display("text", tool_system_msg)
 
-                    # Process generated files (upload to Files API, send to user)
+                    # Process generated files
                     if "_file_contents" in result:
                         await _process_generated_files(result, first_message,
                                                        thread_id, session,
@@ -616,47 +638,32 @@ async def _stream_with_unified_events(
                                                        user_id,
                                                        telegram_thread_id)
 
-                    results.append(result)
-
                     # Charge user for tool cost
-                    if "cost_usd" in result:
+                    if "cost_usd" in clean_result:
                         await _charge_for_tool(session, user_id, tool_name,
-                                               result, first_message.message_id)
-
-                    logger.info("stream.unified.tool_success",
-                                thread_id=thread_id,
-                                tool_name=tool_name,
-                                duration_ms=round(tool_duration * 1000))
+                                               clean_result,
+                                               first_message.message_id)
 
                     record_tool_call(tool_name=tool_name,
                                      success=True,
                                      duration=tool_duration)
-                    if "cost_usd" in result:
+                    if "cost_usd" in clean_result:
                         record_cost(service=tool_name,
-                                    amount_usd=float(result["cost_usd"]))
-
-                    # Update display immediately after each tool completes
-                    display_text = format_interleaved_content(display_blocks,
-                                                              is_streaming=True)
-                    if display_text != last_sent_text:
-                        await draft_streamer.update(display_text)
-                        last_sent_text = display_text
-
-                except Exception as e:  # pylint: disable=broad-exception-caught
-                    tool_duration = time.time() - tool_start_time
-                    error_msg = f"Tool execution failed: {str(e)}"
-                    results.append({"error": error_msg})
-
-                    logger.error("stream.unified.tool_failed",
-                                 thread_id=thread_id,
-                                 tool_name=tool_name,
-                                 error=str(e),
-                                 exc_info=True)
-
+                                    amount_usd=float(clean_result["cost_usd"]))
+                else:
                     record_tool_call(tool_name=tool_name,
                                      success=False,
                                      duration=tool_duration)
                     record_error(error_type="tool_execution", handler=tool_name)
+
+                results.append(clean_result)
+
+            # Update display after all tools processed
+            display_text = format_interleaved_content(display_blocks,
+                                                      is_streaming=True)
+            if display_text != last_sent_text:
+                await draft_streamer.update(display_text)
+                last_sent_text = display_text
 
             # Format tool results
             tool_uses = [{
@@ -936,6 +943,73 @@ async def _charge_for_tool(
                      exc_info=True)
 
 
+async def _execute_single_tool_safe(
+    tool_name: str,
+    tool_input: dict,
+    bot: types.Message,
+    session: AsyncSession,
+    thread_id: int,
+) -> dict:
+    """Execute a single tool with error handling for parallel execution.
+
+    This function wraps execute_tool() with try/except to allow safe use
+    with asyncio.gather(). Each tool execution is independent and errors
+    are captured in the result dict.
+
+    Args:
+        tool_name: Name of the tool to execute.
+        tool_input: Tool input parameters.
+        bot: Telegram Bot instance.
+        session: Database session.
+        thread_id: Thread ID for logging.
+
+    Returns:
+        Dict with result or error. Always includes:
+        - _tool_name: Name of the tool
+        - _start_time: Execution start time
+        - _duration: Execution duration in seconds
+        - Either tool result keys or "error" key on failure
+    """
+    start_time = time.time()
+
+    logger.info("tools.parallel.executing",
+                thread_id=thread_id,
+                tool_name=tool_name)
+
+    try:
+        result = await execute_tool(tool_name, tool_input, bot, session)
+        duration = time.time() - start_time
+
+        # Add metadata for post-processing
+        result["_tool_name"] = tool_name
+        result["_start_time"] = start_time
+        result["_duration"] = duration
+
+        logger.info("tools.parallel.success",
+                    thread_id=thread_id,
+                    tool_name=tool_name,
+                    duration_ms=round(duration * 1000))
+
+        return result
+
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        duration = time.time() - start_time
+
+        logger.error("tools.parallel.failed",
+                     thread_id=thread_id,
+                     tool_name=tool_name,
+                     error=str(e),
+                     duration_ms=round(duration * 1000),
+                     exc_info=True)
+
+        return {
+            "error": f"Tool execution failed: {str(e)}",
+            "_tool_name": tool_name,
+            "_start_time": start_time,
+            "_duration": duration,
+        }
+
+
 # pylint: disable=too-many-locals,too-many-branches,too-many-statements
 # pylint: disable=too-many-nested-blocks,unused-argument
 async def _handle_with_tools(request: LLMRequest, first_message: types.Message,
@@ -1052,7 +1126,11 @@ async def _handle_with_tools(request: LLMRequest, first_message: types.Message,
                         iteration=iteration + 1,
                         tool_count=len(tool_uses))
 
-            # Execute each tool
+            # NOTE: This path executes tools sequentially. Refactoring to
+            # parallel execution (like streaming path with asyncio.gather)
+            # requires extracting inline file processing to _process_generated_files.
+
+            # Execute each tool (currently sequential)
             results = []
             for idx, tool_use in enumerate(tool_uses):
                 tool_name = tool_use["name"]
