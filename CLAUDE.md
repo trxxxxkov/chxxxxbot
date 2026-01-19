@@ -175,7 +175,7 @@ chxxxxbot/
 - ✅ `thinking_delta` streaming support
 - ✅ Thinking token tracking
 - ✅ Time-based message batching (200ms window)
-- ✅ Extended Thinking ENABLED (budget_tokens: 10000)
+- ✅ Extended Thinking ENABLED (budget_tokens: 16000)
 
 **Phase 1.4.4 - Best Practices & Optimization:**
 - ✅ System prompt rewritten for Claude 4 style
@@ -764,7 +764,7 @@ This script:
   - Interleaved thinking beta header
   - `thinking_delta` streaming support
   - Time-based message batching (200ms window for split messages)
-  - Extended Thinking ENABLED (budget_tokens: 10000)
+  - Extended Thinking ENABLED (budget_tokens: 16000)
 - **Phase 1.4.4 - Best Practices & Optimization**:
   - System prompt rewritten for Claude 4 style (explicit, concise)
   - Effort parameter for Opus 4.5 (`effort: "high"`)

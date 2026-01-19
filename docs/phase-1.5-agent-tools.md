@@ -493,10 +493,10 @@ def analyze_image(claude_file_id: str, question: str) -> str:
             question=question
         )
 
-        # Call Claude Vision API
+        # Call Claude Vision API (Opus for best quality)
         response = client.messages.create(
-            model="claude-sonnet-4-5",
-            max_tokens=2048,
+            model="claude-opus-4-5-20251101",
+            max_tokens=8192,
             messages=[{
                 "role": "user",
                 "content": [
@@ -608,10 +608,10 @@ def analyze_pdf(claude_file_id: str, question: str, pages: str = "all") -> str:
             pages=pages
         )
 
-        # Call Claude PDF API with prompt caching
+        # Call Claude PDF API with prompt caching (Opus for best quality)
         response = client.messages.create(
-            model="claude-sonnet-4-5",
-            max_tokens=4096,
+            model="claude-opus-4-5-20251101",
+            max_tokens=16384,
             messages=[{
                 "role": "user",
                 "content": [

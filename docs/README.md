@@ -122,7 +122,7 @@ Documents are organized by development phase for easy navigation.
 ### Phase 1.4: Advanced API Features ✅
 - Model registry (Haiku, Sonnet, Opus)
 - Prompt caching (5-minute ephemeral cache)
-- Extended thinking (budget_tokens: 10000)
+- Extended thinking (budget_tokens: 16000)
 - Effort parameter for Opus
 - Token Counting API
 

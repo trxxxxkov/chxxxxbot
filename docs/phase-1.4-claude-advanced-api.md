@@ -243,8 +243,8 @@ For each reviewed page, we'll add:
 **Date reviewed:** 2026-01-08
 
 **Our decisions:**
-- **Always enable**: `thinking: {"type": "enabled", "budget_tokens": 10000}` for all requests
-  - Start with 10K budget, adjust based on task complexity
+- **Always enable**: `thinking: {"type": "enabled", "budget_tokens": 16000}` for all requests
+  - 16K budget provides good balance for complex reasoning tasks
   - Models: Sonnet 4.5, Haiku 4.5, Opus 4.5 all support
 - **Interleaved thinking**: Enable with beta header `interleaved-thinking-2025-05-14` (already decided)
 - **Streaming**: Handle `thinking_delta` events when streaming responses
