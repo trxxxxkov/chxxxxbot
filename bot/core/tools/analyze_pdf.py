@@ -182,8 +182,7 @@ This tool accepts files where mime_type is "application/pdf" (check the
 "Available files" section). Each page is rendered as both text and image
 for comprehensive multimodal analysis.
 
-For files with other mime_types (application/json, text/*, application/x-ndjson),
-use execute_python which can read and parse the actual file content.
+For files with other mime_types, use execute_python to read and parse content.
 
 <capabilities>
 - Extract and summarize text content from documents
