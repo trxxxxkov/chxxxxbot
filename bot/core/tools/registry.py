@@ -193,12 +193,12 @@ async def _validate_file_type(
         error_msg = (f"File type '{mime_type}' not supported by {tool.name}. "
                      f"Expected types starting with: {allowed_str}. "
                      f"File: {user_file.filename}")
-        logger.warning("tools.file_validation.wrong_type",
-                       tool_name=tool.name,
-                       claude_file_id=file_id,
-                       mime_type=mime_type,
-                       filename=user_file.filename,
-                       allowed_prefixes=tool.allowed_mime_prefixes)
+        logger.info("tools.file_validation.wrong_type",
+                    tool_name=tool.name,
+                    claude_file_id=file_id,
+                    mime_type=mime_type,
+                    filename=user_file.filename,
+                    allowed_prefixes=tool.allowed_mime_prefixes)
         raise ToolValidationError(error_msg, tool_name=tool.name)
 
     logger.debug("tools.file_validation.passed",

@@ -241,10 +241,10 @@ def format_tool_results(tool_uses: List[Dict[str, Any]],
                 "is_error": True,
                 "content": error_msg
             })
-            logger.warning("tools.helpers.format_tool_results.error",
-                           tool_use_id=tool_use["id"],
-                           tool_name=tool_use["name"],
-                           error=error_msg)
+            logger.info("tools.helpers.format_tool_results.error",
+                        tool_use_id=tool_use["id"],
+                        tool_name=tool_use["name"],
+                        error=error_msg)
         else:
             # Success result - serialize to JSON
             formatted.append({

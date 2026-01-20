@@ -364,8 +364,8 @@ async def execute_python(code: str,
         # Early validation: detect missing file_inputs when code expects files
         # This provides a clear error message instead of FileNotFoundError
         if '/tmp/inputs/' in code and not file_inputs:
-            logger.warning("tools.execute_python.missing_file_inputs",
-                           code_preview=code[:200])
+            logger.info("tools.execute_python.missing_file_inputs",
+                        code_preview=code[:200])
             return {
                 "stdout": "",
                 "stderr": "",
