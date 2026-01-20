@@ -91,11 +91,23 @@ class TestDetectMimeFromMagic:
         assert detect_mime_from_magic(b'') is None
         assert detect_mime_from_magic(None) is None
 
-    def test_non_bytes_input_returns_none(self):
-        """Test that non-bytes input returns None gracefully.
+    def test_bytearray_input_works(self):
+        """Test that bytearray input is converted to bytes and works.
 
-        Regression test: E2B sandbox may return str instead of bytes,
-        which previously caused TypeError in libmagic.
+        Regression test: E2B sandbox returns bytearray instead of bytes,
+        which libmagic doesn't accept directly. We convert it.
+        """
+        # bytearray should work the same as bytes
+        png_bytearray = bytearray(PNG_BYTES)
+        assert detect_mime_from_magic(png_bytearray) == 'image/png'
+
+        jpeg_bytearray = bytearray(JPEG_BYTES)
+        assert detect_mime_from_magic(jpeg_bytearray) == 'image/jpeg'
+
+    def test_non_bytes_input_returns_none(self):
+        """Test that non-binary input returns None gracefully.
+
+        Regression test: reject types that can't represent binary data.
         """
         # String instead of bytes
         assert detect_mime_from_magic("hello world") is None

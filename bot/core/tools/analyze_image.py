@@ -231,4 +231,6 @@ TOOL_CONFIG = ToolConfig(
     emoji="🖼️",
     needs_bot_session=False,
     format_result=None,  # No system message for analysis tools
+    file_id_param="claude_file_id",
+    allowed_mime_prefixes=["image/"],  # Only image/* MIME types
 )

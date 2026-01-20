@@ -5,14 +5,18 @@ Tests registry module functionality:
 - Server-side tools configuration
 - Client-side tools registration
 - execute_tool dispatcher
+- File type validation
 """
 
+from unittest.mock import AsyncMock
 from unittest.mock import Mock
 from unittest.mock import patch
 
+from core.tools.registry import _validate_file_type
 from core.tools.registry import execute_tool
 from core.tools.registry import TOOL_DEFINITIONS
 from core.tools.registry import TOOL_EXECUTORS
+from core.tools.registry import TOOLS
 from core.tools.registry import WEB_FETCH_TOOL
 from core.tools.registry import WEB_SEARCH_TOOL
 import pytest
@@ -135,8 +139,10 @@ class TestExecuteTool:
     """Tests for execute_tool() dispatcher function."""
 
     @pytest.mark.asyncio
+    @patch('core.tools.registry._validate_file_type', new_callable=AsyncMock)
     @patch('core.tools.analyze_image.get_anthropic_client')
-    async def test_execute_client_tool_success(self, mock_get_client, mock_bot,
+    async def test_execute_client_tool_success(self, mock_get_client,
+                                               mock_validate, mock_bot,
                                                mock_session):
         """Test executing client-side tool successfully."""
         # Setup mock client
@@ -186,9 +192,10 @@ class TestExecuteTool:
                                session=mock_session)
 
     @pytest.mark.asyncio
+    @patch('core.tools.registry._validate_file_type', new_callable=AsyncMock)
     @patch('core.tools.analyze_pdf.get_anthropic_client')
-    async def test_execute_tool_with_error(self, mock_get_client, mock_bot,
-                                           mock_session):
+    async def test_execute_tool_with_error(self, mock_get_client, mock_validate,
+                                           mock_bot, mock_session):
         """Test that tool execution errors are propagated."""
         # Setup mock to raise error
         mock_client = Mock()
@@ -206,9 +213,11 @@ class TestExecuteTool:
                                session=mock_session)
 
     @pytest.mark.asyncio
+    @patch('core.tools.registry._validate_file_type', new_callable=AsyncMock)
     @patch('core.tools.analyze_image.get_anthropic_client')
     async def test_execute_tool_passes_all_parameters(self, mock_get_client,
-                                                      mock_bot, mock_session):
+                                                      mock_validate, mock_bot,
+                                                      mock_session):
         """Test that all input parameters are passed to tool."""
         # Setup mock
         mock_client = Mock()
@@ -425,3 +434,93 @@ class TestGetToolSystemMessage:
         )
         # May return formatted message or empty string
         assert isinstance(message, str)
+
+
+class TestFileTypeValidation:
+    """Tests for file type validation in execute_tool."""
+
+    def test_analyze_image_has_file_validation_config(self):
+        """Test that analyze_image has file validation configured."""
+        config = TOOLS["analyze_image"]
+        assert config.file_id_param == "claude_file_id"
+        assert config.allowed_mime_prefixes == ["image/"]
+
+    def test_analyze_pdf_has_file_validation_config(self):
+        """Test that analyze_pdf has file validation configured."""
+        config = TOOLS["analyze_pdf"]
+        assert config.file_id_param == "claude_file_id"
+        assert config.allowed_mime_prefixes == ["application/pdf"]
+
+    def test_execute_python_has_no_file_validation(self):
+        """Test that execute_python has no file validation."""
+        config = TOOLS["execute_python"]
+        assert config.file_id_param is None
+        assert config.allowed_mime_prefixes == []
+
+    @pytest.mark.asyncio
+    async def test_validate_file_type_passes_for_image(self):
+        """Test validation passes for image MIME type."""
+        from db.models.user_file import UserFile
+
+        # Create mock session and user file
+        mock_user_file = Mock(spec=UserFile)
+        mock_user_file.mime_type = "image/png"
+        mock_user_file.filename = "test.png"
+
+        mock_session = AsyncMock()
+        mock_repo = AsyncMock()
+        mock_repo.get_by_claude_file_id.return_value = mock_user_file
+
+        tool = TOOLS["analyze_image"]
+
+        with patch('db.repositories.user_file_repository.UserFileRepository',
+                   return_value=mock_repo):
+            # Should not raise
+            await _validate_file_type(tool, {"claude_file_id": "file_123"},
+                                      mock_session)
+
+    @pytest.mark.asyncio
+    async def test_validate_file_type_rejects_wrong_type(self):
+        """Test validation rejects wrong MIME type."""
+        from db.models.user_file import UserFile
+
+        # Create mock user file with wrong MIME type
+        mock_user_file = Mock(spec=UserFile)
+        mock_user_file.mime_type = "application/x-ndjson"
+        mock_user_file.filename = "data.jsonl"
+
+        mock_session = AsyncMock()
+        mock_repo = AsyncMock()
+        mock_repo.get_by_claude_file_id.return_value = mock_user_file
+
+        tool = TOOLS["analyze_image"]
+
+        with patch('db.repositories.user_file_repository.UserFileRepository',
+                   return_value=mock_repo):
+            with pytest.raises(ValueError, match="not supported"):
+                await _validate_file_type(tool, {"claude_file_id": "file_123"},
+                                          mock_session)
+
+    @pytest.mark.asyncio
+    async def test_validate_file_type_skips_when_no_config(self):
+        """Test validation skips when tool has no file_id_param."""
+        mock_session = AsyncMock()
+        tool = TOOLS["execute_python"]
+
+        # Should not raise and should not query database
+        await _validate_file_type(tool, {"code": "print('hi')"}, mock_session)
+
+    @pytest.mark.asyncio
+    async def test_validate_file_type_skips_when_file_not_found(self):
+        """Test validation skips when file not in database."""
+        mock_session = AsyncMock()
+        mock_repo = AsyncMock()
+        mock_repo.get_by_claude_file_id.return_value = None
+
+        tool = TOOLS["analyze_image"]
+
+        with patch('db.repositories.user_file_repository.UserFileRepository',
+                   return_value=mock_repo):
+            # Should not raise - let the tool handle missing file
+            await _validate_file_type(tool, {"claude_file_id": "file_123"},
+                                      mock_session)

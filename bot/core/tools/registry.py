@@ -148,6 +148,64 @@ def is_server_side_tool(tool_name: str) -> bool:
     return tool.is_server_side if tool else False
 
 
+async def _validate_file_type(
+    tool: ToolConfig,
+    tool_input: Dict[str, Any],
+    session: 'AsyncSession',
+) -> None:
+    """Validate file MIME type matches tool requirements.
+
+    Args:
+        tool: Tool configuration with allowed_mime_prefixes.
+        tool_input: Tool input parameters containing file ID.
+        session: Database session for querying file metadata.
+
+    Raises:
+        ValueError: If file type doesn't match tool requirements.
+    """
+    if not tool.file_id_param or not tool.allowed_mime_prefixes:
+        return  # No validation needed
+
+    file_id = tool_input.get(tool.file_id_param)
+    if not file_id:
+        return  # Let the tool handle missing file ID
+
+    # Import here to avoid circular imports
+    from db.repositories.user_file_repository import UserFileRepository
+
+    repo = UserFileRepository(session)
+    user_file = await repo.get_by_claude_file_id(file_id)
+
+    if not user_file:
+        logger.warning("tools.file_validation.not_found",
+                       tool_name=tool.name,
+                       claude_file_id=file_id)
+        return  # Let the tool handle missing file
+
+    # Check MIME type against allowed prefixes
+    mime_type = user_file.mime_type or ""
+    is_allowed = any(
+        mime_type.startswith(prefix) for prefix in tool.allowed_mime_prefixes)
+
+    if not is_allowed:
+        allowed_str = ", ".join(tool.allowed_mime_prefixes)
+        error_msg = (f"File type '{mime_type}' not supported by {tool.name}. "
+                     f"Expected types starting with: {allowed_str}. "
+                     f"File: {user_file.filename}")
+        logger.warning("tools.file_validation.wrong_type",
+                       tool_name=tool.name,
+                       claude_file_id=file_id,
+                       mime_type=mime_type,
+                       filename=user_file.filename,
+                       allowed_prefixes=tool.allowed_mime_prefixes)
+        raise ValueError(error_msg)
+
+    logger.debug("tools.file_validation.passed",
+                 tool_name=tool.name,
+                 mime_type=mime_type,
+                 filename=user_file.filename)
+
+
 async def execute_tool(
     tool_name: str,
     tool_input: Dict[str, Any],
@@ -169,7 +227,8 @@ async def execute_tool(
         Tool execution result as dictionary.
 
     Raises:
-        ValueError: If tool_name not found or is server-side tool.
+        ValueError: If tool_name not found, is server-side tool,
+            or file type validation fails.
         Exception: If tool execution fails (re-raised from tool function).
     """
     logger.info("tools.execute_tool.called",
@@ -191,6 +250,9 @@ async def execute_tool(
         error_msg = f"Tool '{tool_name}' is server-side (managed by Anthropic)"
         logger.error("tools.execute_tool.server_side", tool_name=tool_name)
         raise ValueError(error_msg)
+
+    # Validate file type if tool has requirements
+    await _validate_file_type(tool, tool_input, session)
 
     # Get executor
     executor = tool.executor

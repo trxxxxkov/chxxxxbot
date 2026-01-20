@@ -39,7 +39,7 @@ class ToolResultFormatter(Protocol):
 
 
 @dataclass
-class ToolConfig:
+class ToolConfig:  # pylint: disable=too-many-instance-attributes
     """Unified configuration for a tool.
 
     This dataclass consolidates all tool-related configuration in one place:
@@ -48,6 +48,7 @@ class ToolConfig:
     - Display properties (emoji)
     - Runtime requirements (needs_bot_session)
     - Result formatting
+    - File type validation
 
     When adding a new tool, create a ToolConfig instance in the tool module
     and import it into the registry. This eliminates the need to update
@@ -61,6 +62,8 @@ class ToolConfig:
         needs_bot_session: Whether executor needs bot and session parameters.
         format_result: Optional function to format result for user display.
         is_server_side: Whether this is a server-side tool (managed by Anthropic).
+        file_id_param: Parameter name containing claude_file_id (for validation).
+        allowed_mime_prefixes: List of allowed MIME type prefixes (e.g., ["image/"]).
 
     Examples:
         >>> config = ToolConfig(
@@ -71,6 +74,13 @@ class ToolConfig:
         ...     needs_bot_session=True,
         ...     format_result=format_python_result,
         ... )
+        >>> config = ToolConfig(
+        ...     name="analyze_image",
+        ...     definition=ANALYZE_IMAGE_TOOL,
+        ...     executor=analyze_image,
+        ...     file_id_param="claude_file_id",
+        ...     allowed_mime_prefixes=["image/"],
+        ... )
     """
 
     name: str
@@ -80,6 +90,8 @@ class ToolConfig:
     needs_bot_session: bool = False
     format_result: Optional[ToolResultFormatter] = None
     is_server_side: bool = False
+    file_id_param: Optional[str] = None  # Parameter with claude_file_id
+    allowed_mime_prefixes: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         """Validate configuration after initialization."""
