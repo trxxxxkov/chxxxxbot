@@ -165,6 +165,12 @@ def detect_mime_from_magic(file_bytes: bytes) -> Optional[str]:
     if not file_bytes:
         return None
 
+    # Ensure we have bytes, not str or other types
+    if not isinstance(file_bytes, bytes):
+        logger.warning("mime.magic_expected_bytes",
+                       got_type=type(file_bytes).__name__)
+        return None
+
     try:
         mime_type = magic.from_buffer(file_bytes, mime=True)
         if mime_type:

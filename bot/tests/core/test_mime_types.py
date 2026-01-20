@@ -91,6 +91,19 @@ class TestDetectMimeFromMagic:
         assert detect_mime_from_magic(b'') is None
         assert detect_mime_from_magic(None) is None
 
+    def test_non_bytes_input_returns_none(self):
+        """Test that non-bytes input returns None gracefully.
+
+        Regression test: E2B sandbox may return str instead of bytes,
+        which previously caused TypeError in libmagic.
+        """
+        # String instead of bytes
+        assert detect_mime_from_magic("hello world") is None
+        # List instead of bytes
+        assert detect_mime_from_magic([1, 2, 3]) is None
+        # Dict instead of bytes
+        assert detect_mime_from_magic({"data": "test"}) is None
+
 
 class TestDetectMimeFromExtension:
     """Tests for extension-based MIME detection."""
