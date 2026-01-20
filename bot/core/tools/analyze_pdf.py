@@ -178,86 +178,55 @@ ANALYZE_PDF_TOOL = {
     "description":
         """Analyze a PDF document using Claude's vision and text extraction.
 
-Use this when the user asks about PDF content, wants to extract information,
-or needs to understand document structure. The tool uses Claude Sonnet 4.5's
-multimodal capabilities to process both text and visual elements (charts, diagrams,
-tables). Each page is converted to both text and image for comprehensive analysis.
+This tool accepts files where mime_type is "application/pdf" (check the
+"Available files" section). Each page is rendered as both text and image
+for comprehensive multimodal analysis.
 
-<verification_use_case>
-CRITICAL: This tool is essential for verifying PDF outputs from execute_python.
-When you generate PDFs (reports, converted documents, data exports), you MUST use
-this tool to verify the output is correct before considering the task complete. This
-catches issues like corrupted files, encoding problems (Cyrillic/UTF-8), missing
-content, wrong formatting, or incomplete conversions that file size checks cannot detect.
+For files with other mime_types (application/json, text/*, application/x-ndjson),
+use execute_python which can read and parse the actual file content.
 
-Example: After converting presentation.pptx to PDF, call analyze_pdf to verify all
-slides are present, text is readable (not garbled), images are included, and formatting
-is preserved. A file size check alone would miss these quality issues.
-</verification_use_case>
+<capabilities>
+- Extract and summarize text content from documents
+- Analyze charts, tables, diagrams, and visual elements
+- Answer questions about document structure and content
+- Verify generated PDFs for quality (encoding, formatting, completeness)
+</capabilities>
 
-<page_ranges_optimization>
-Accepts page ranges to analyze specific sections for cost optimization. For large
-documents, analyzing specific pages is much cheaper than processing the entire document.
-This is important because it allows you to focus on relevant sections and reduce token costs.
-
-Syntax: "1-5" (pages 1 through 5), "1,3,5" (specific pages), "all" (entire document)
-</page_ranges_optimization>
-
-<when_to_use>
-Use when:
-- User asks about PDF content or document structure
-- Summarizing documents or extracting specific information
-- Analyzing charts, tables, or diagrams within PDFs
-- Verifying generated PDFs from execute_python (quality check)
-- Understanding PDF content before processing
-- Answering questions about uploaded PDFs
-
-Note: This tool uses prompt caching for PDF content, making repeated analysis
-of the same document very cost-effective (90% cheaper on cache hits).
-</when_to_use>
-
-<when_not_to_use>
-Do NOT use for:
-- Image files (use analyze_image instead for photos, screenshots)
-- Very large PDFs without page range (suggest user specify pages first)
-- Password-protected or encrypted PDFs (not supported, inform user)
-- When user explicitly asks not to analyze document
-</when_not_to_use>
+<page_ranges>
+Use the pages parameter to analyze specific sections and reduce token cost.
+Syntax: "1-5" (range), "1,3,5" (specific pages), "all" (entire document).
+</page_ranges>
 
 <limitations>
-- Does NOT support password-protected or encrypted PDFs
-- Best for documents under 100 pages (larger may hit 200K context limits)
-- No editing capabilities (analysis only)
+- Password-protected PDFs are not supported
+- Best for documents under 100 pages
+- Prompt caching makes repeated analysis 90% cheaper
 </limitations>
 
-Token cost: ~3,000-5,000 tokens per page depending on content density.
-A 10-page PDF costs ~40,000 tokens. Use page ranges to reduce cost.
-Prompt caching reduces repeated analysis cost by 90%.""",
+Token cost: ~3,000-5,000 tokens per page.""",
     "input_schema": {
         "type": "object",
         "properties": {
             "claude_file_id": {
                 "type":
                     "string",
-                "description": ("File ID from Files API (claude_file_id from "
-                                "available files list in conversation)")
+                "description": ("File ID where mime_type is 'application/pdf'. "
+                                "Check 'Available files' for each file's "
+                                "mime_type before selecting.")
             },
             "question": {
                 "type":
                     "string",
-                "description": ("What to analyze or extract from the PDF. "
-                                "Be specific about what information is needed "
-                                "(e.g., 'Summarize this document', "
-                                "'Extract all tables from this PDF', "
-                                "'What are the main conclusions?')")
+                "description":
+                    ("What to analyze or extract from the PDF. "
+                     "Be specific: 'Summarize this document', "
+                     "'Extract all tables', 'What are the conclusions?'")
             },
             "pages": {
                 "type":
                     "string",
-                "description": (
-                    "Page range to analyze. Format: '1-5' for pages 1 through 5, "
-                    "'3' for page 3 only, 'all' for entire document. "
-                    "Default: 'all'. Using specific pages reduces token cost.")
+                "description": ("Page range: '1-5' (range), '3' (single), "
+                                "'all' (default). Specific pages reduce cost.")
             }
         },
         "required": ["claude_file_id", "question"]
