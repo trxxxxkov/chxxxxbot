@@ -23,22 +23,19 @@ def reset_routers():
     This prevents "Router is already attached" errors when
     create_dispatcher() is called multiple times in different tests.
 
-    Phase 1.4+: Includes all routers (start, model, personality, files,
-    media_handlers, claude).
+    Unified Pipeline: Only includes active routers (no files, media, claude).
     """
     yield
     # After each test, detach routers from their parent
     from telegram.handlers import (
         admin,
-        claude,
         edited_message,
-        files,
-        media_handlers,
         model,
         payment,
         personality,
         start,
     )
+    from telegram.pipeline import handler as unified_handler
 
     routers = [
         start.router,
@@ -46,10 +43,8 @@ def reset_routers():
         personality.router,
         payment.router,
         admin.router,
-        files.router,
-        media_handlers.router,
         edited_message.router,
-        claude.router,
+        unified_handler.router,
     ]
 
     for router in routers:
@@ -179,7 +174,8 @@ def test_create_dispatcher_middleware_order():
 def test_create_dispatcher_router_order():
     """Test create_dispatcher registers routers in correct order.
 
-    Phase 2.1+: Verifies all routers registered with claude as catch-all last.
+    Unified Pipeline: 7 routers (start, model, personality, payment, admin,
+    edited_message, unified_pipeline).
     """
     with patch('telegram.loader.logger'):
         dispatcher = create_dispatcher()
@@ -187,14 +183,14 @@ def test_create_dispatcher_router_order():
         # Check routers registered
         routers = list(dispatcher.sub_routers)
 
-        # Should have 9 routers (added edited_message)
-        assert len(routers) == 9
+        # Should have 7 routers (unified pipeline)
+        assert len(routers) == 7
 
-        # Check router names (order matters - claude must be last)
+        # Check router names (order matters - unified_pipeline is catch-all)
         router_names = [r.name for r in routers]
         expected = [
-            "start", "model", "personality", "payment", "admin", "files",
-            "media", "edited_message", "claude"
+            "start", "model", "personality", "payment", "admin",
+            "edited_message", "unified_pipeline"
         ]
         assert router_names == expected, \
             f"Routers should be in order: {expected}"
@@ -203,7 +199,7 @@ def test_create_dispatcher_router_order():
 def test_create_dispatcher_router_names():
     """Test that routers have correct names.
 
-    Phase 2.1+: Verifies all routers present.
+    Unified Pipeline: Verifies all 7 routers present.
     """
     with patch('telegram.loader.logger'):
         dispatcher = create_dispatcher()
@@ -211,10 +207,10 @@ def test_create_dispatcher_router_names():
         routers = list(dispatcher.sub_routers)
         router_names = [r.name for r in routers]
 
-        # Check all routers present (added edited_message)
+        # Check all routers present (unified pipeline)
         expected_routers = [
-            "start", "model", "personality", "payment", "admin", "files",
-            "media", "edited_message", "claude"
+            "start", "model", "personality", "payment", "admin",
+            "edited_message", "unified_pipeline"
         ]
         for router_name in expected_routers:
             assert router_name in router_names, \
@@ -224,18 +220,20 @@ def test_create_dispatcher_router_names():
 def test_create_dispatcher_logging():
     """Test that create_dispatcher logs dispatcher creation.
 
-    Phase 2.1+: Verifies logging with all router names.
+    Unified Pipeline: Verifies logging with all router names.
     """
     with patch('telegram.loader.logger') as mock_logger:
         create_dispatcher()
 
-        # Verify logging (9 routers with edited_message)
+        # Verify logging (7 routers, unified pipeline)
         expected_routers = [
-            "start", "model", "personality", "payment", "admin", "files",
-            "media", "edited_message", "claude"
+            "start", "model", "personality", "payment", "admin",
+            "edited_message", "unified_pipeline"
         ]
-        mock_logger.info.assert_called_once_with("dispatcher_created",
-                                                 routers=expected_routers)
+        mock_logger.info.assert_called_once_with(
+            "dispatcher_created",
+            routers=expected_routers,
+        )
 
 
 def test_create_dispatcher_returns_type():

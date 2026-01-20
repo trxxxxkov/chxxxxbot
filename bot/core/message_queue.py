@@ -1,18 +1,21 @@
 """Per-thread message queue manager for batch processing.
 
 Phase 1.6: Universal media architecture with MediaContent.
+Phase 2: Upload-aware queue - waits for pending file uploads.
 
 This module manages message queues per thread to handle:
 1. Split messages (>4096 chars automatically split by Telegram)
 2. Parallel messages sent while processing
 3. Per-thread independent processing
 4. Media messages with pre-processed content (transcripts/file_ids)
+5. File upload synchronization (waits for uploads before processing)
 
 Architecture:
 - Each thread has its own queue (thread_id → queue state)
 - Text messages: 200ms batching window (for split detection)
 - Media messages: immediate processing (no batching delay)
 - During processing, new messages accumulate and process after completion
+- Before processing, wait for any pending file uploads
 
 NO __init__.py - use direct import: from core.message_queue import MessageQueueManager
 """
@@ -24,6 +27,7 @@ from typing import Callable, Dict, List, Optional, Tuple, TYPE_CHECKING
 
 from aiogram import types
 from config import MESSAGE_BATCH_DELAY_MS
+from core.upload_tracker import get_upload_tracker
 from utils.structured_logging import get_logger
 
 if TYPE_CHECKING:
@@ -220,6 +224,7 @@ class MessageQueueManager:
         """Process batch of messages.
 
         Phase 1.6: Universal media architecture.
+        Phase 2: Wait for pending file uploads before processing.
 
         Args:
             thread_id: Database thread ID.
@@ -228,6 +233,22 @@ class MessageQueueManager:
         if not messages:
             logger.warning("message_queue.empty_batch", thread_id=thread_id)
             return
+
+        # Phase 2: Wait for any pending file uploads to complete
+        # This prevents race conditions where text messages process before
+        # their accompanying file (photo/pdf) has been uploaded
+        # Uses chat_id for tracking (available before upload starts)
+        tracker = get_upload_tracker()
+        first_message = messages[0][0]  # First (Message, MediaContent) tuple
+        chat_id = first_message.chat.id
+
+        if tracker.has_pending_uploads(chat_id):
+            logger.info("message_queue.waiting_for_uploads",
+                        thread_id=thread_id,
+                        chat_id=chat_id,
+                        pending_count=tracker.get_pending_count(chat_id))
+
+            await tracker.wait_for_uploads(chat_id, timeout=10.0)
 
         queue = self.queues[thread_id]
         queue.processing = True

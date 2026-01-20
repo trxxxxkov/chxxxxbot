@@ -3,16 +3,26 @@
 Formats database messages into LLM-ready messages with contextual
 information (sender, replies, quotes, forwards) in Markdown format.
 
+Supports multimodal content:
+- Images are included directly in message content using Anthropic's format
+- PDFs can also be included for Claude's document understanding
+
 NO __init__.py - use direct import:
     from telegram.context.formatter import ContextFormatter
 """
 
 import json
-from typing import Any, Optional, Union
+from typing import Any, Optional, TYPE_CHECKING, Union
 
 from core.models import Message as LLMMessage
 from db.models.message import Message as DBMessage
 from db.models.message import MessageRole
+from db.models.user_file import FileType
+
+if TYPE_CHECKING:
+    from db.models.user_file import UserFile
+    from db.repositories.user_file_repository import UserFileRepository
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class ContextFormatter:
@@ -163,6 +173,136 @@ class ContextFormatter:
             List of LLM Message objects with formatted content.
         """
         return [self.format_message(msg) for msg in messages]
+
+    async def format_conversation_with_files(
+        self,
+        messages: list[DBMessage],
+        session: "AsyncSession",
+    ) -> list[LLMMessage]:
+        """Format messages with multimodal file content.
+
+        For user messages with attached images/PDFs, includes them directly
+        in the message content using Claude's multimodal format.
+
+        Anthropic multimodal format:
+        {
+            "role": "user",
+            "content": [
+                {"type": "image", "source": {"type": "file", "file_id": "..."}},
+                {"type": "text", "text": "What's in this image?"}
+            ]
+        }
+
+        Args:
+            messages: List of database Message objects.
+            session: Database session for querying files.
+
+        Returns:
+            List of LLM Message objects with multimodal content.
+        """
+        from db.repositories.user_file_repository import UserFileRepository
+
+        file_repo = UserFileRepository(session)
+        result = []
+
+        for msg in messages:
+            formatted = await self._format_message_with_files(msg, file_repo)
+            result.append(formatted)
+
+        return result
+
+    async def _format_message_with_files(
+        self,
+        msg: DBMessage,
+        file_repo: "UserFileRepository",
+    ) -> LLMMessage:
+        """Format a single message with any attached files.
+
+        Args:
+            msg: Database Message object.
+            file_repo: UserFileRepository for querying files.
+
+        Returns:
+            LLM Message with multimodal content if files present.
+        """
+        role = "user" if msg.from_user_id else "assistant"
+        text_content = self._format_content(msg)
+
+        # For assistant messages with thinking, handle specially
+        if msg.role == MessageRole.ASSISTANT and msg.thinking_blocks:
+            try:
+                thinking_list = json.loads(msg.thinking_blocks)
+                if thinking_list and "signature" in thinking_list[0]:
+                    content: Union[str, list[dict[str,
+                                                  Any]]] = thinking_list + [{
+                                                      "type": "text",
+                                                      "text": text_content
+                                                  }]
+                    return LLMMessage(role=role, content=content)
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        # For user messages, check for attached images/PDFs
+        if msg.from_user_id:
+            files = await file_repo.get_by_message_id(
+                msg.message_id,
+                file_types=[FileType.IMAGE, FileType.PDF],
+            )
+
+            if files:
+                content_blocks = self._build_multimodal_content(
+                    files, text_content)
+                return LLMMessage(role=role, content=content_blocks)
+
+        # No files - return simple text format
+        return LLMMessage(role=role, content=text_content)
+
+    def _build_multimodal_content(
+        self,
+        files: list["UserFile"],
+        text_content: str,
+    ) -> list[dict[str, Any]]:
+        """Build multimodal content blocks from files and text.
+
+        Args:
+            files: List of UserFile objects with claude_file_id.
+            text_content: Text content to include.
+
+        Returns:
+            List of content blocks in Anthropic format.
+        """
+        content_blocks: list[dict[str, Any]] = []
+
+        # Add file blocks first (images, then PDFs)
+        for file in files:
+            if not file.claude_file_id:
+                continue
+
+            if file.file_type == FileType.IMAGE:
+                content_blocks.append({
+                    "type": "image",
+                    "source": {
+                        "type": "file",
+                        "file_id": file.claude_file_id,
+                    }
+                })
+            elif file.file_type == FileType.PDF:
+                content_blocks.append({
+                    "type": "document",
+                    "source": {
+                        "type": "file",
+                        "file_id": file.claude_file_id,
+                    }
+                })
+
+        # Add text block
+        if text_content:
+            content_blocks.append({
+                "type": "text",
+                "text": text_content,
+            })
+
+        return content_blocks
 
 
 def format_for_llm(

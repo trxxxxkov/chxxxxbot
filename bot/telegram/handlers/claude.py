@@ -73,7 +73,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from telegram.context.extractors import extract_message_context
 from telegram.context.formatter import ContextFormatter
 from telegram.draft_streaming import DraftManager
-from telegram.handlers.files import process_file_upload
 from telegram.streaming import escape_html
 from telegram.streaming import StreamingSession
 from telegram.streaming import strip_tool_markers as _strip_tool_markers
@@ -1475,8 +1474,10 @@ async def _process_message_batch(
 
             # Convert DB messages to LLM messages with context formatting
             # Uses ContextFormatter to include reply/quote/forward context
+            # Phase 2: Uses async format to include multimodal content (images, PDFs)
             formatter = ContextFormatter(chat_type=first_message.chat.type)
-            llm_messages = formatter.format_conversation(history)
+            llm_messages = await formatter.format_conversation_with_files(
+                history, session)
 
             context = await context_mgr.build_context(
                 messages=llm_messages,
@@ -1873,26 +1874,6 @@ async def handle_claude_message(message: types.Message,
         await message.answer(
             "Bot is not properly configured. Please contact administrator.")
         return
-
-    # Phase 1.5: If photo/document with caption, upload file first
-    if message.photo or message.document:
-        logger.info("claude_handler.file_with_caption_received",
-                    chat_id=message.chat.id,
-                    user_id=message.from_user.id if message.from_user else None,
-                    has_photo=bool(message.photo),
-                    has_document=bool(message.document),
-                    caption_length=len(message.caption or ""))
-
-        try:
-            # Upload file to Files API and save to database
-            await process_file_upload(message, session)
-            # Continue processing caption as text below
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            logger.error("claude_handler.file_upload_failed",
-                         error=str(e),
-                         exc_info=True)
-            await message.answer("❌ Failed to upload file. Please try again.")
-            return
 
     # Record metrics
     content_type = "text"

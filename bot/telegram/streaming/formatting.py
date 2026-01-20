@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from telegram.streaming.display_manager import DisplayManager
 
+from telegram.streaming.truncation import TruncationManager
 from telegram.streaming.types import BlockType
 from telegram.streaming.types import DisplayBlock
 
@@ -67,6 +68,11 @@ def format_blocks(blocks: list[DisplayBlock], is_streaming: bool = True) -> str:
 
     Final display: only text (thinking filtered out before calling).
 
+    During streaming, applies smart truncation to fit Telegram's 4096 char limit:
+    - Text content is NEVER truncated (users see it immediately)
+    - Thinking content is truncated from beginning (keeps recent parts)
+    - If not enough space for thinking, it's hidden entirely
+
     Args:
         blocks: List of DisplayBlock objects.
         is_streaming: Whether we're still streaming.
@@ -94,17 +100,29 @@ def format_blocks(blocks: list[DisplayBlock], is_streaming: bool = True) -> str:
         else:  # TEXT block
             text_parts.append(escaped)
 
-    # Build result: thinking block at top (if streaming), then text
-    result_parts: list[str] = []
-
+    # Build HTML for each section
+    thinking_html = ""
     if thinking_parts:
-        # All thinking in one expandable blockquote at the top
         thinking_content = "\n\n".join(thinking_parts)
-        result_parts.append(
-            f"<blockquote expandable>{thinking_content}</blockquote>")
+        thinking_html = f"<blockquote expandable>{thinking_content}</blockquote>"
 
+    text_html = ""
     if text_parts:
-        result_parts.append("\n\n".join(text_parts))
+        text_html = "\n\n".join(text_parts)
+
+    # Apply smart truncation during streaming to fit Telegram's 4096 char limit
+    # Prioritizes text over thinking (text visible, thinking collapsed)
+    if is_streaming and (thinking_html or text_html):
+        truncator = TruncationManager()
+        thinking_html, text_html = truncator.truncate_for_display(
+            thinking_html, text_html)
+
+    # Combine sections
+    result_parts: list[str] = []
+    if thinking_html:
+        result_parts.append(thinking_html)
+    if text_html:
+        result_parts.append(text_html)
 
     result = "\n\n".join(result_parts) if result_parts else ""
     return re.sub(r'\n{3,}', '\n\n', result)

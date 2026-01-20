@@ -10,11 +10,8 @@ from aiogram import Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from telegram.handlers import admin  # Phase 2.1: Admin commands
-from telegram.handlers import claude
 from telegram.handlers import \
     edited_message  # Telegram features: edit tracking
-from telegram.handlers import files
-from telegram.handlers import media_handlers
 from telegram.handlers import model
 from telegram.handlers import payment  # Phase 2.1: Payment handlers
 from telegram.handlers import personality
@@ -23,6 +20,7 @@ from telegram.middlewares.balance_middleware import \
     BalanceMiddleware  # Phase 2.1: Balance check
 from telegram.middlewares.database_middleware import DatabaseMiddleware
 from telegram.middlewares.logging_middleware import LoggingMiddleware
+from telegram.pipeline import handler as unified_handler
 from utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
@@ -70,11 +68,11 @@ def create_dispatcher() -> Dispatcher:
     dispatcher.include_router(personality.router)
     dispatcher.include_router(payment.router)  # Phase 2.1: Payment commands
     dispatcher.include_router(admin.router)  # Phase 2.1: Admin commands
-    dispatcher.include_router(files.router)  # Phase 1.5: Photo/document uploads
-    dispatcher.include_router(
-        media_handlers.router)  # Phase 1.6: Voice/audio/video
+
+    # Unified pipeline: Single handler for all message types
+    # Handles: text, photo, document, voice, audio, video, video_note
     dispatcher.include_router(edited_message.router)  # Edit tracking
-    dispatcher.include_router(claude.router)  # Catch-all should be last
+    dispatcher.include_router(unified_handler.router)  # Unified handler
 
     logger.info(
         "dispatcher_created",
@@ -84,10 +82,9 @@ def create_dispatcher() -> Dispatcher:
             "personality",
             "payment",
             "admin",
-            "files",
-            "media",
             "edited_message",
-            "claude",
+            "unified_pipeline",
         ],
     )
+
     return dispatcher

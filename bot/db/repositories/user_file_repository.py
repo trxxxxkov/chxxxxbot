@@ -119,11 +119,16 @@ class UserFileRepository(BaseRepository[UserFile]):
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def get_by_message_id(self, message_id: int) -> list[UserFile]:
-        """Get all files for a message.
+    async def get_by_message_id(
+        self,
+        message_id: int,
+        file_types: Optional[list[FileType]] = None,
+    ) -> list[UserFile]:
+        """Get all files for a message, optionally filtered by type.
 
         Args:
             message_id: Message ID.
+            file_types: Optional list of file types to filter by.
 
         Returns:
             List of UserFile instances (may be empty).
@@ -132,10 +137,16 @@ class UserFileRepository(BaseRepository[UserFile]):
             >>> files = await user_file_repo.get_by_message_id(123456)
             >>> for file in files:
             ...     print(f"File: {file.filename}")
+
+            >>> images = await user_file_repo.get_by_message_id(
+            ...     123456, file_types=[FileType.IMAGE])
         """
-        stmt = select(UserFile).where(
-            UserFile.message_id == message_id).order_by(
-                UserFile.uploaded_at.asc())
+        stmt = select(UserFile).where(UserFile.message_id == message_id)
+
+        if file_types:
+            stmt = stmt.where(UserFile.file_type.in_(file_types))
+
+        stmt = stmt.order_by(UserFile.uploaded_at.asc())
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
