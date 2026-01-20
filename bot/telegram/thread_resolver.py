@@ -3,7 +3,8 @@
 This module provides the get_or_create_thread helper function used by
 the unified pipeline to resolve database threads.
 
-All media processing is now handled by pipeline/normalizer.py.
+NO __init__.py - use direct import:
+    from telegram.thread_resolver import get_or_create_thread
 """
 
 from aiogram import types
@@ -99,7 +100,7 @@ async def get_or_create_thread(message: types.Message,
                 text_length=len(message.text or message.caption or ""),
                 is_new_thread="true" if was_created else "false")
 
-    logger.debug("media_processor.thread_resolved",
+    logger.debug("thread_resolver.thread_resolved",
                  user_id=user_id,
                  chat_id=chat_id,
                  thread_id=thread.id,

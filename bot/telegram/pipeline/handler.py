@@ -16,12 +16,12 @@ from aiogram import F
 from aiogram import Router
 from aiogram import types
 from sqlalchemy.ext.asyncio import AsyncSession
-from telegram.media_processor import get_or_create_thread
 from telegram.pipeline.models import ProcessedMessage
 from telegram.pipeline.models import TranscriptInfo
 from telegram.pipeline.normalizer import get_normalizer
 from telegram.pipeline.queue import ProcessedMessageQueue
 from telegram.pipeline.tracker import get_tracker
+from telegram.thread_resolver import get_or_create_thread
 from utils.metrics import record_message_received
 from utils.structured_logging import get_logger
 
@@ -198,7 +198,7 @@ async def handle_message(message: types.Message, session: AsyncSession) -> None:
         await tracker.finish(chat_id, message.message_id)
 
 
-def _get_content_type(message: types.Message) -> str:
+def _get_content_type(message: types.Message) -> str:  # pylint: disable=too-many-return-statements
     """Determine content type for metrics and logging.
 
     Args:
