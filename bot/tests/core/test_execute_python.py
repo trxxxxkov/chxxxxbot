@@ -329,6 +329,82 @@ class TestExecutePython:
         assert "<matplotlib plot>" in result["results"]
 
 
+class TestExecutePythonValidation:
+    """Tests for execute_python validation."""
+
+    @pytest.mark.asyncio
+    async def test_missing_file_inputs_with_tmp_inputs_path(
+            self, mock_bot, mock_session):
+        """Test that missing file_inputs returns clear error.
+
+        Regression test: When code references /tmp/inputs/ but file_inputs
+        is empty, should return a helpful error message instead of
+        FileNotFoundError from sandbox.
+        """
+        code = """
+import json
+with open('/tmp/inputs/data.csv', 'r') as f:
+    print(f.read())
+"""
+        result = await execute_python(code=code,
+                                      bot=mock_bot,
+                                      session=mock_session,
+                                      file_inputs=None)
+
+        # Verify early validation caught the issue
+        assert result["success"] == "false"
+        assert "file_inputs" in result["error"]
+        assert "/tmp/inputs/" in result["error"]
+        # Should not cost anything (no sandbox created)
+        assert result["cost_usd"] == "0.000000"
+
+    @pytest.mark.asyncio
+    async def test_missing_file_inputs_empty_list(self, mock_bot, mock_session):
+        """Test validation with empty file_inputs list."""
+        code = "open('/tmp/inputs/file.txt', 'r')"
+        result = await execute_python(code=code,
+                                      bot=mock_bot,
+                                      session=mock_session,
+                                      file_inputs=[])
+
+        assert result["success"] == "false"
+        assert "file_inputs" in result["error"]
+
+    @pytest.mark.asyncio
+    @patch('core.tools.execute_python.Sandbox')
+    @patch('core.tools.execute_python.get_e2b_api_key')
+    async def test_no_validation_without_tmp_inputs(self, mock_get_api_key,
+                                                    mock_sandbox_class,
+                                                    mock_bot, mock_session):
+        """Test that code without /tmp/inputs/ doesn't trigger validation."""
+        mock_get_api_key.return_value = "test_api_key"
+
+        mock_sandbox = Mock()
+        mock_logs = Mock()
+        mock_logs.stdout = ["OK\n"]
+        mock_logs.stderr = []
+
+        mock_execution = Mock()
+        mock_execution.error = None
+        mock_execution.results = []
+        mock_execution.logs = mock_logs
+
+        mock_sandbox.run_code.return_value = mock_execution
+        mock_sandbox.files.list.return_value = []
+        mock_sandbox.__enter__ = Mock(return_value=mock_sandbox)
+        mock_sandbox.__exit__ = Mock(return_value=None)
+        mock_sandbox_class.create.return_value = mock_sandbox
+
+        # Code without /tmp/inputs/ should execute normally
+        result = await execute_python(code="print('OK')",
+                                      bot=mock_bot,
+                                      session=mock_session,
+                                      file_inputs=None)
+
+        assert result["success"] == "true"
+        mock_sandbox.run_code.assert_called_once()
+
+
 class TestExecutePythonToolDefinition:
     """Tests for EXECUTE_PYTHON_TOOL definition."""
 

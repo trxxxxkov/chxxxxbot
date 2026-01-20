@@ -361,6 +361,26 @@ async def execute_python(code: str,
                     requirements=requirements,
                     timeout=timeout)
 
+        # Early validation: detect missing file_inputs when code expects files
+        # This provides a clear error message instead of FileNotFoundError
+        if '/tmp/inputs/' in code and not file_inputs:
+            logger.warning("tools.execute_python.missing_file_inputs",
+                           code_preview=code[:200])
+            return {
+                "stdout": "",
+                "stderr": "",
+                "results": "[]",
+                "error": (
+                    "Code references '/tmp/inputs/' but no file_inputs provided. "
+                    "You must pass file_inputs parameter with file_id and name "
+                    "from 'Available files' section to upload files to sandbox. "
+                    "Example: file_inputs=[{\"file_id\": \"file_abc...\", "
+                    "\"name\": \"data.csv\"}]"),
+                "success": "false",
+                "generated_files": "[]",
+                "cost_usd": "0.000000",
+            }
+
         # Step 1: Download all input files ASYNCHRONOUSLY before sandbox
         # This allows event loop to handle keepalive during downloads
         downloaded_files: Dict[str, bytes] = {}
