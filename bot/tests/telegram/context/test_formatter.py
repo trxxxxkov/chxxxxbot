@@ -544,16 +544,24 @@ class TestContextFormatterEdgeCases:
 class TestContextFormatterThinkingBlocks:
     """Tests for Extended Thinking support."""
 
-    def test_assistant_with_thinking_blocks(self):
-        """Test assistant message with thinking blocks returns list content."""
+    def test_assistant_with_thinking_blocks_json(self):
+        """Test assistant message with JSON thinking blocks (with signature)."""
+        import json
+
         from db.models.message import MessageRole
 
         formatter = ContextFormatter(chat_type="private")
+        # New format: JSON string with full blocks including signature
+        thinking_json = json.dumps([{
+            "type": "thinking",
+            "thinking": "Let me think about this...",
+            "signature": "abc123signature"
+        }])
         msg = create_mock_db_message(
-            from_user_id=None,  # Assistant message
+            from_user_id=None,
             text_content="The answer is 42.",
             role=MessageRole.ASSISTANT,
-            thinking_blocks="Let me think about this... The user asked...",
+            thinking_blocks=thinking_json,
         )
 
         result = formatter.format_message(msg)
@@ -562,10 +570,60 @@ class TestContextFormatterThinkingBlocks:
         assert isinstance(result.content, list)
         assert len(result.content) == 2
         assert result.content[0]["type"] == "thinking"
-        assert result.content[0][
-            "thinking"] == "Let me think about this... The user asked..."
+        assert result.content[0]["thinking"] == "Let me think about this..."
+        assert result.content[0]["signature"] == "abc123signature"
         assert result.content[1]["type"] == "text"
         assert result.content[1]["text"] == "The answer is 42."
+
+    def test_assistant_with_thinking_blocks_legacy_text(self):
+        """Test fallback for old format (plain text without signature).
+
+        Legacy messages without signatures should return text-only content
+        to avoid API errors (signature is required).
+        """
+        from db.models.message import MessageRole
+
+        formatter = ContextFormatter(chat_type="private")
+        # Old format: plain text (not JSON)
+        msg = create_mock_db_message(
+            from_user_id=None,
+            text_content="The answer is 42.",
+            role=MessageRole.ASSISTANT,
+            thinking_blocks="Let me think about this... The user asked...",
+        )
+
+        result = formatter.format_message(msg)
+
+        # Legacy format without signature should skip thinking
+        # (API requires signature for thinking blocks)
+        assert isinstance(result.content, str)
+        assert result.content == "The answer is 42."
+
+    def test_assistant_with_thinking_blocks_json_no_signature(self):
+        """Test JSON thinking blocks without signature are skipped."""
+        import json
+
+        from db.models.message import MessageRole
+
+        formatter = ContextFormatter(chat_type="private")
+        # JSON but missing signature
+        thinking_json = json.dumps([{
+            "type": "thinking",
+            "thinking": "Let me think..."
+            # No signature field
+        }])
+        msg = create_mock_db_message(
+            from_user_id=None,
+            text_content="The answer is 42.",
+            role=MessageRole.ASSISTANT,
+            thinking_blocks=thinking_json,
+        )
+
+        result = formatter.format_message(msg)
+
+        # Missing signature - should return text only
+        assert isinstance(result.content, str)
+        assert result.content == "The answer is 42."
 
     def test_assistant_without_thinking_blocks(self):
         """Test assistant message without thinking returns string content."""

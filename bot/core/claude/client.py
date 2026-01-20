@@ -7,6 +7,7 @@ and comprehensive logging.
 NO __init__.py - use direct import: from core.claude.client import ClaudeProvider
 """
 
+import json
 import time
 from typing import AsyncIterator, Optional
 
@@ -660,7 +661,7 @@ class ClaudeProvider(LLMProvider):
         return self.last_message.stop_reason
 
     def get_thinking(self) -> Optional[str]:
-        """Get thinking text from last API response.
+        """Get thinking text from last API response (for display/logging).
 
         Phase 1.4.3: Extended Thinking support.
 
@@ -670,9 +671,45 @@ class ClaudeProvider(LLMProvider):
         Examples:
             >>> thinking = provider.get_thinking()
             >>> if thinking:
-            >>>     # Save to database
+            >>>     # Display to user or log
         """
         return self.last_thinking
+
+    def get_thinking_blocks_json(self) -> Optional[str]:
+        """Get full thinking blocks with signatures as JSON.
+
+        When Extended Thinking is enabled, subsequent requests must include
+        thinking blocks from previous turns WITH their signatures. This method
+        extracts the full thinking blocks from the last response.
+
+        Returns:
+            JSON string of thinking blocks or None if no thinking was used.
+            Format: [{"type": "thinking", "thinking": "...", "signature": "..."}]
+
+        Examples:
+            >>> blocks_json = provider.get_thinking_blocks_json()
+            >>> if blocks_json:
+            >>>     # Save to database for context reconstruction
+        """
+        if self.last_message is None:
+            return None
+
+        thinking_blocks = []
+        for block in self.last_message.content:
+            if hasattr(block, 'type') and block.type == "thinking":
+                block_dict = {
+                    "type": "thinking",
+                    "thinking": block.thinking,
+                }
+                # Include signature if present (required for context)
+                if hasattr(block, 'signature') and block.signature:
+                    block_dict["signature"] = block.signature
+                thinking_blocks.append(block_dict)
+
+        if not thinking_blocks:
+            return None
+
+        return json.dumps(thinking_blocks)
 
     # pylint: disable=too-many-locals,too-many-branches,too-many-statements
     async def stream_events(self,

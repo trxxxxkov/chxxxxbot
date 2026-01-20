@@ -1811,8 +1811,9 @@ async def _process_message_batch(
             # 9. Get usage stats, stop_reason, thinking, and calculate cost
             usage = await claude_provider.get_usage()
             stop_reason = claude_provider.get_stop_reason()
-            thinking = claude_provider.get_thinking(
-            )  # Phase 1.4.3: Extended Thinking
+            # Phase 1.4.3: Get thinking blocks with signatures for DB storage
+            # (required for Extended Thinking - API needs signatures in context)
+            thinking_blocks_json = claude_provider.get_thinking_blocks_json()
 
             # Calculate Claude API cost
             cost_usd = (
@@ -1928,7 +1929,9 @@ async def _process_message_batch(
                 date=bot_message.date.timestamp(),
                 role=MessageRole.ASSISTANT,
                 text_content=response_text,
-                thinking_blocks=thinking,  # Phase 1.4.3: Extended Thinking
+                # Save full thinking blocks with signatures (JSON string)
+                # Required for Extended Thinking context reconstruction
+                thinking_blocks=thinking_blocks_json,
             )
 
             # 11. Add token usage for billing (Phase 1.4.2 & 1.4.3)

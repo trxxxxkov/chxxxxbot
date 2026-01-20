@@ -96,7 +96,7 @@ class LLMProvider(ABC):
         return None  # Default implementation returns None
 
     def get_thinking(self) -> str | None:
-        """Get thinking text from last API call.
+        """Get thinking text from last API call (for display/logging).
 
         Phase 1.4.3: Extended Thinking support.
         Returns the full thinking content if Extended Thinking was enabled
@@ -106,3 +106,17 @@ class LLMProvider(ABC):
             Thinking text string or None if no thinking or not supported.
         """
         return None  # Default implementation returns None (not all providers support)
+
+    def get_thinking_blocks_json(self) -> str | None:
+        """Get full thinking blocks with signatures as JSON.
+
+        When Extended Thinking is enabled, subsequent requests must include
+        thinking blocks from previous turns WITH their cryptographic signatures.
+        This method returns the full blocks for database storage and context
+        reconstruction.
+
+        Returns:
+            JSON string of thinking blocks with signatures, or None if not supported.
+            Format: [{"type": "thinking", "thinking": "...", "signature": "..."}]
+        """
+        return None  # Default implementation returns None

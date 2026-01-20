@@ -7,6 +7,7 @@ NO __init__.py - use direct import:
     from telegram.context.formatter import ContextFormatter
 """
 
+import json
 from typing import Any, Optional, Union
 
 from core.models import Message as LLMMessage
@@ -56,13 +57,24 @@ class ContextFormatter:
         # For assistant messages with thinking, format as content blocks
         # (required by Claude API when extended thinking is enabled)
         if msg.role == MessageRole.ASSISTANT and msg.thinking_blocks:
-            content: Union[str, list[dict[str, Any]]] = [{
-                "type": "thinking",
-                "thinking": msg.thinking_blocks
-            }, {
-                "type": "text",
-                "text": text_content
-            }]
+            # thinking_blocks is stored as JSON string with full blocks + signatures
+            try:
+                thinking_list = json.loads(msg.thinking_blocks)
+                # Verify blocks have signatures (required by API)
+                if thinking_list and "signature" in thinking_list[0]:
+                    # Build content: thinking blocks first, then text
+                    content: Union[str, list[dict[str,
+                                                  Any]]] = thinking_list + [{
+                                                      "type": "text",
+                                                      "text": text_content
+                                                  }]
+                else:
+                    # JSON but no signature - skip thinking (legacy or invalid)
+                    content = text_content
+            except (json.JSONDecodeError, TypeError):
+                # Not valid JSON (legacy plain text format) - skip thinking
+                # Old messages without signatures will cause API errors
+                content = text_content
         else:
             content = text_content
 
