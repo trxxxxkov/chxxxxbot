@@ -519,9 +519,12 @@ async def _stream_with_unified_events(
                     current_response_text = ""
                 current_block_type = ""
 
-                # Show simple tool marker (arguments come later in block_end)
+                # Show tool marker (generate_image will be updated with prompt later)
                 emoji = get_tool_emoji(event.tool_name)
-                tool_marker = f"[{emoji} {event.tool_name}…]"
+                if event.tool_name == "generate_image":
+                    tool_marker = f"[{emoji} {event.tool_name}…]"
+                else:
+                    tool_marker = f"[{emoji} {event.tool_name}]"
                 append_to_display("thinking", tool_marker)
 
                 # Format and force update to show tool marker immediately
@@ -560,35 +563,31 @@ async def _stream_with_unified_events(
                         "input": event.tool_input or {}
                     })
 
-                    # Update tool marker with arguments (now available)
+                    # Update tool marker for generate_image (show prompt in quotes)
                     if event.tool_input:
-                        emoji = get_tool_emoji(event.tool_name)
-                        # Format arguments: tab indent, comma separated, each on new line
-                        args_lines = []
-                        items = list(event.tool_input.items())
-                        for i, (key, value) in enumerate(items):
-                            comma = "," if i < len(items) - 1 else ""
-                            args_lines.append(f"\t{key}={value}{comma}")
-                        args_str = "\n".join(args_lines)
+                        # Only generate_image shows the prompt argument
+                        if event.tool_name == "generate_image":
+                            emoji = get_tool_emoji(event.tool_name)
+                            prompt = event.tool_input.get("prompt", "")
 
-                        # Replace the "…" marker with full arguments
-                        old_marker = f"[{emoji} {event.tool_name}…]"
-                        new_marker = f"[{emoji} {event.tool_name}]\n{args_str}"
+                            # Replace the "…" marker with prompt in quotes
+                            old_marker = f"[{emoji} {event.tool_name}…]"
+                            new_marker = f"[{emoji} {event.tool_name}: \"{prompt}\"]"
 
-                        # Find and update the marker in display_blocks
-                        for block in display_blocks:
-                            if (block["type"] == "thinking" and
-                                    old_marker in block["content"]):
-                                block["content"] = block["content"].replace(
-                                    old_marker, new_marker)
-                                break
+                            # Find and update the marker in display_blocks
+                            for block in display_blocks:
+                                if (block["type"] == "thinking" and
+                                        old_marker in block["content"]):
+                                    block["content"] = block["content"].replace(
+                                        old_marker, new_marker)
+                                    break
 
-                        # Update display with full arguments
-                        display_text = format_interleaved_content(
-                            display_blocks, is_streaming=True)
-                        if display_text != last_sent_text:
-                            await draft_streamer.update(display_text)
-                            last_sent_text = display_text
+                            # Update display with prompt
+                            display_text = format_interleaved_content(
+                                display_blocks, is_streaming=True)
+                            if display_text != last_sent_text:
+                                await draft_streamer.update(display_text)
+                                last_sent_text = display_text
 
                         # Add to pending tools for execution
                         pending_tools.append({
