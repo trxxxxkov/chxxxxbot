@@ -100,9 +100,9 @@ def setup_logging(level: str = "INFO") -> None:
     root_logger.addHandler(handler)
     root_logger.setLevel(getattr(logging, level.upper()))
 
-    # Aiogram dispatcher: downgrade routine events (network errors, signals) to INFO
+    # Aiogram dispatcher: only show actual errors, not routine retries
     dispatcher_logger = logging.getLogger("aiogram.dispatcher")
-    dispatcher_logger.setLevel(logging.INFO)
+    dispatcher_logger.setLevel(logging.ERROR)
     dispatcher_logger.addFilter(AiogramLogFilter())
 
     # Suppress verbose debug logs from HTTP libraries (contain full request bodies)
