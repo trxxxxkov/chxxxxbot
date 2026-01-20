@@ -5,6 +5,7 @@ performance, usage, and costs. Metrics are exposed via HTTP endpoint.
 """
 
 import asyncio
+import json
 
 from aiohttp import web
 from prometheus_client import CONTENT_TYPE_LATEST

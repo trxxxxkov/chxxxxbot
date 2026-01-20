@@ -66,6 +66,7 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
         self._update_count = 0
         self._last_update_time = 0.0
         self._pending_text: Optional[str] = None  # Text waiting to be sent
+        self._finalized = False  # Prevents keepalive on finalized drafts
 
         logger.debug("draft_streamer.initialized",
                      chat_id=chat_id,
@@ -91,6 +92,10 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
             True on success, False on failure.
         """
         if not text:
+            return True
+
+        # Skip if already finalized
+        if self._finalized:
             return True
 
         # Skip if text unchanged
@@ -200,6 +205,15 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
         Returns:
             True on success, False on failure.
         """
+        # Skip if already finalized (prevents race condition with
+        # commit_draft_before_file creating new DraftStreamer)
+        if self._finalized:
+            logger.debug("draft_streamer.keepalive_skipped",
+                         chat_id=self.chat_id,
+                         draft_id=self.draft_id,
+                         reason="finalized")
+            return True
+
         if not self.last_text:
             logger.debug("draft_streamer.keepalive_skipped",
                          chat_id=self.chat_id,
@@ -262,6 +276,11 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
         else:
             # No final_text or same text - just flush pending
             await self.flush_pending(parse_mode)
+
+        # Mark as finalized BEFORE send_message to prevent keepalive race condition
+        # (keepalive might read draft_streamer after finalize starts but before
+        # commit_draft_before_file creates new DraftStreamer)
+        self._finalized = True
 
         # Determine what text to send (after any updates)
         text_to_send = final_text if final_text else self.last_text
