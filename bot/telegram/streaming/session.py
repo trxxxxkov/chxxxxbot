@@ -12,6 +12,7 @@ from telegram.streaming.display_manager import DisplayManager
 from telegram.streaming.formatting import format_display
 from telegram.streaming.formatting import format_final_text
 from telegram.streaming.formatting import strip_tool_markers
+from telegram.streaming.truncation import TruncationManager
 from telegram.streaming.types import BlockType
 from telegram.streaming.types import ToolCall
 from utils.structured_logging import get_logger
@@ -55,8 +56,10 @@ class StreamingSession:  # pylint: disable=too-many-instance-attributes
         self._dm = draft_manager
         self._thread_id = thread_id
         self._display = DisplayManager()
+        self._truncator = TruncationManager()
         self._last_sent_text = ""
         self._pending_tools: list[ToolCall] = []
+        self._message_part = 1  # Track message parts for splitting
 
         # Per-iteration state (reset each iteration)
         self._content_blocks: list[dict] = []
@@ -367,10 +370,57 @@ class StreamingSession:  # pylint: disable=too-many-instance-attributes
     async def _update_draft(self, force: bool = False) -> None:
         """Update draft if display has changed.
 
+        Checks if message should be split when text exceeds threshold
+        and thinking is already fully truncated.
+
         Args:
             force: If True, bypass throttling.
         """
         display_text = format_display(self._display, is_streaming=True)
+
+        # Check if we need to split (text too long, thinking gone)
+        text_length = self._display.total_text_length()
+        # After formatting, thinking might be truncated to empty
+        # Check the formatted result for blockquote presence
+        has_thinking = "<blockquote" in display_text
+
+        if self._truncator.should_split("x" if has_thinking else "",
+                                        text_length):
+            await self._split_message()
+            # Re-format after split
+            display_text = format_display(self._display, is_streaming=True)
+
         if display_text != self._last_sent_text:
             await self._dm.current.update(display_text, force=force)
             self._last_sent_text = display_text
+
+    async def _split_message(self) -> None:
+        """Split message when text exceeds limit.
+
+        Finalizes current text as a message part and clears display
+        for continuation. Thinking blocks are discarded (already truncated).
+        """
+        text_blocks = self._display.get_text_blocks()
+        if not text_blocks:
+            return
+
+        # Format text only (no thinking)
+        from telegram.streaming.formatting import format_blocks
+        final_text = format_blocks(text_blocks, is_streaming=False)
+        final_text = strip_tool_markers(final_text)
+
+        if not final_text.strip():
+            return
+
+        logger.info("stream.session.splitting_message",
+                    thread_id=self._thread_id,
+                    part=self._message_part,
+                    text_length=len(final_text))
+
+        # Commit current part and create new draft
+        await self._dm.commit_and_create_new(final_text=final_text.strip())
+        self._message_part += 1
+
+        # Clear display for continuation (thinking already gone)
+        self._display.clear()
+        self._last_sent_text = ""

@@ -22,10 +22,14 @@ logger = get_logger(__name__)
 
 # Minimum interval between draft updates (seconds)
 # sendMessageDraft still has rate limits, just more relaxed than edit_message
-MIN_UPDATE_INTERVAL = 0.3
+MIN_UPDATE_INTERVAL = 0.5
 
 # Default keepalive interval (seconds)
-DEFAULT_KEEPALIVE_INTERVAL = 5.0
+DEFAULT_KEEPALIVE_INTERVAL = 6.0
+
+# Minimum time since last update before sending keepalive (seconds)
+# If we recently sent an update, skip keepalive to avoid flood control
+MIN_TIME_BEFORE_KEEPALIVE = 3.0
 
 
 class DraftManager:
@@ -397,6 +401,9 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
         Unlike update(), this always sends even if text unchanged.
         Use during long operations like image generation.
 
+        Skips if we recently sent an update (within MIN_TIME_BEFORE_KEEPALIVE)
+        to avoid flood control.
+
         Args:
             parse_mode: Parse mode for formatting.
 
@@ -417,6 +424,16 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
                          chat_id=self.chat_id,
                          draft_id=self.draft_id,
                          reason="no_last_text")
+            return True
+
+        # Skip if we recently sent an update (avoids redundant keepalive)
+        time_since_update = time.time() - self._last_update_time
+        if time_since_update < MIN_TIME_BEFORE_KEEPALIVE:
+            logger.debug("draft_streamer.keepalive_skipped",
+                         chat_id=self.chat_id,
+                         draft_id=self.draft_id,
+                         reason="recent_update",
+                         seconds_ago=round(time_since_update, 1))
             return True
 
         try:
