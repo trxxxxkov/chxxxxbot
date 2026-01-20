@@ -241,14 +241,12 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
         Flushes any pending text, then sends final message.
         Draft disappears automatically.
 
-        If final_text differs from current draft content, the message will be
-        sent with current content first (for smooth visual transition), then
-        immediately edited to final_text. This creates a seamless transition
-        without the "blinking" effect.
+        If final_text is provided, updates draft to final_text first for smooth
+        transition, then sends final_text directly (no edit needed).
 
         Args:
-            final_text: Optional final text to show. If provided and different
-                from last_text, message will be edited after sending.
+            final_text: Optional final text to show. If provided, this text
+                will be sent directly (draft updated first for smooth visual).
             parse_mode: Parse mode for final message.
 
         Returns:
@@ -257,44 +255,30 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
         Raises:
             Exception: If send_message fails.
         """
-        # Ensure any pending text is sent first
-        await self.flush_pending(parse_mode)
+        # If final_text is provided and differs, update draft first for smooth
+        # visual transition. Otherwise, flush any pending text.
+        if final_text and final_text.strip() != self.last_text.strip():
+            await self.update(final_text, parse_mode, force=True)
+        else:
+            # No final_text or same text - just flush pending
+            await self.flush_pending(parse_mode)
+
+        # Determine what text to send (after any updates)
+        text_to_send = final_text if final_text else self.last_text
 
         logger.info("draft_streamer.finalizing",
                     chat_id=self.chat_id,
                     topic_id=self.topic_id,
                     total_updates=self._update_count,
-                    final_length=len(self.last_text))
+                    final_length=len(text_to_send))
 
-        # Send message with current draft content (draft disappears smoothly)
+        # Send final message directly with correct text (no edit needed)
         message = await self.bot.send_message(
             chat_id=self.chat_id,
-            text=self.last_text,
+            text=text_to_send,
             message_thread_id=self.topic_id,
             parse_mode=parse_mode,
         )
-
-        # If final_text is different, edit message to show clean version
-        # This creates smooth transition: thinking visible → thinking removed
-        if final_text and final_text.strip() != self.last_text.strip():
-            try:
-                await self.bot.edit_message_text(
-                    chat_id=self.chat_id,
-                    message_id=message.message_id,
-                    text=final_text,
-                    parse_mode=parse_mode,
-                )
-                logger.debug("draft_streamer.edited_final",
-                             chat_id=self.chat_id,
-                             message_id=message.message_id,
-                             old_length=len(self.last_text),
-                             new_length=len(final_text))
-            except Exception as e:  # pylint: disable=broad-exception-caught
-                logger.warning("draft_streamer.edit_failed",
-                               chat_id=self.chat_id,
-                               message_id=message.message_id,
-                               error=str(e))
-                # Message was sent, just couldn't edit - still return it
 
         return message
 

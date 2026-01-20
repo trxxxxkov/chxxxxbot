@@ -104,23 +104,25 @@ class TestDraftStreamerFinalize:
     """Tests for finalize() method."""
 
     @pytest.mark.asyncio
-    async def test_finalize_with_different_text_calls_edit(
+    async def test_finalize_with_different_text_updates_draft_first(
             self, streamer, mock_bot):
-        """finalize() should edit message when final_text differs."""
+        """finalize() should update draft before sending when text differs."""
         # Set up streamer with some text
         streamer.last_text = "text with thinking"
 
         # Finalize with different text
         await streamer.finalize(final_text="clean text")
 
-        # Should have called send_message and edit_message_text
-        mock_bot.send_message.assert_called_once()
-        mock_bot.edit_message_text.assert_called_once_with(
+        # Should have called SendMessageDraft (update) and send_message
+        # No edit needed - final text sent directly
+        assert mock_bot.call_count >= 1  # SendMessageDraft update
+        mock_bot.send_message.assert_called_once_with(
             chat_id=100,
-            message_id=123,
             text="clean text",
+            message_thread_id=200,
             parse_mode="HTML",
         )
+        mock_bot.edit_message_text.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_finalize_with_same_text_no_edit(self, streamer, mock_bot):
@@ -143,16 +145,21 @@ class TestDraftStreamerFinalize:
         mock_bot.edit_message_text.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_finalize_edit_failure_still_returns_message(
+    async def test_finalize_returns_message_with_final_text(
             self, streamer, mock_bot):
-        """finalize() should return message even if edit fails."""
+        """finalize() should return message with final text directly."""
         streamer.last_text = "text with thinking"
-        mock_bot.edit_message_text.side_effect = Exception("Edit failed")
 
         message = await streamer.finalize(final_text="clean text")
 
-        # Should still return the message
+        # Should return the message with final text (no edit needed)
         assert message.message_id == 123
+        mock_bot.send_message.assert_called_once_with(
+            chat_id=100,
+            text="clean text",
+            message_thread_id=200,
+            parse_mode="HTML",
+        )
 
     @pytest.mark.asyncio
     async def test_finalize_flushes_pending_first(self, streamer, mock_bot):

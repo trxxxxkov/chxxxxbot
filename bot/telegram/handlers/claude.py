@@ -356,6 +356,24 @@ async def _stream_with_unified_events(
         topic_id=telegram_thread_id,
     )
 
+    # Global keepalive task - keeps draft visible during entire streaming session
+    # (including gaps between tool execution and Claude thinking)
+    async def global_keepalive_loop() -> None:
+        """Send periodic updates to keep draft visible throughout streaming."""
+        while True:
+            await asyncio.sleep(DRAFT_KEEPALIVE_INTERVAL)
+            await draft_streamer.keepalive()
+
+    global_keepalive_task = asyncio.create_task(global_keepalive_loop())
+
+    async def stop_global_keepalive() -> None:
+        """Stop global keepalive task before returning."""
+        global_keepalive_task.cancel()
+        try:
+            await global_keepalive_task
+        except asyncio.CancelledError:
+            pass
+
     for iteration in range(max_iterations):
         logger.info("stream.unified.iteration",
                     thread_id=thread_id,
@@ -557,8 +575,9 @@ async def _stream_with_unified_events(
             final_display = strip_tool_markers(final_display)
 
             # Finalize draft to permanent message
-            # Pass final_display so finalize() can edit out thinking smoothly
-            # (send_message with current text, then edit_message_text to final)
+            # Stop global keepalive before finalizing
+            await stop_global_keepalive()
+
             try:
                 final_message = await draft_streamer.finalize(
                     final_text=final_display)
@@ -572,43 +591,26 @@ async def _stream_with_unified_events(
 
         if stop_reason == "tool_use" and pending_tools:
             # Execute all tools in PARALLEL for better performance
+            # (global keepalive continues running during tool execution)
             tool_names = [t["name"] for t in pending_tools]
             logger.info("stream.unified.executing_tools_parallel",
                         thread_id=thread_id,
                         tool_count=len(pending_tools),
                         tool_names=tool_names)
 
-            # Start single keepalive task for all tools
-            async def keepalive_loop() -> None:
-                """Send periodic updates to keep draft visible."""
-                while True:
-                    await asyncio.sleep(DRAFT_KEEPALIVE_INTERVAL)
-                    await draft_streamer.keepalive()
+            # Create tasks for parallel execution
+            tool_tasks = [
+                _execute_single_tool_safe(
+                    tool_name=tool["name"],
+                    tool_input=tool["input"],
+                    bot=first_message.bot,
+                    session=session,
+                    thread_id=thread_id,
+                ) for tool in pending_tools
+            ]
 
-            keepalive_task = asyncio.create_task(keepalive_loop())
-
-            try:
-                # Create tasks for parallel execution
-                tool_tasks = [
-                    _execute_single_tool_safe(
-                        tool_name=tool["name"],
-                        tool_input=tool["input"],
-                        bot=first_message.bot,
-                        session=session,
-                        thread_id=thread_id,
-                    ) for tool in pending_tools
-                ]
-
-                # Execute all tools in parallel
-                raw_results = await asyncio.gather(*tool_tasks)
-
-            finally:
-                # Stop keepalive
-                keepalive_task.cancel()
-                try:
-                    await keepalive_task
-                except asyncio.CancelledError:
-                    pass
+            # Execute all tools in parallel
+            raw_results = await asyncio.gather(*tool_tasks)
 
             # Process results sequentially (UI updates, files, charging)
             results = []
@@ -740,7 +742,9 @@ async def _stream_with_unified_events(
                     safe_html(f"⚠️ Unexpected stop reason: {stop_reason}"),
                     force=True)
 
-            # Finalize draft
+            # Finalize draft - stop global keepalive first
+            await stop_global_keepalive()
+
             try:
                 final_message = await draft_streamer.finalize()
             except Exception:  # pylint: disable=broad-exception-caught
@@ -748,7 +752,9 @@ async def _stream_with_unified_events(
 
             return final_answer, final_message
 
-    # Max iterations exceeded
+    # Max iterations exceeded - stop global keepalive
+    await stop_global_keepalive()
+
     logger.error("stream.unified.max_iterations",
                  thread_id=thread_id,
                  max_iterations=max_iterations)
