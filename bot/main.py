@@ -13,11 +13,10 @@ from db.engine import dispose_db
 from db.engine import get_pool_stats
 from db.engine import get_session
 from db.engine import init_db
-from telegram.handlers.claude import get_queue_manager
 from telegram.handlers.claude import init_claude_provider
-from telegram.handlers.claude import init_message_queue_manager
 from telegram.loader import create_bot
 from telegram.loader import create_dispatcher
+from telegram.pipeline.handler import get_queue
 from utils.metrics import set_active_files
 from utils.metrics import set_active_users
 from utils.metrics import set_db_pool_stats
@@ -162,9 +161,9 @@ async def collect_metrics_task(logger) -> None:
                 )
 
             # Collect queue stats (every 10s)
-            queue_manager = get_queue_manager()
-            if queue_manager:
-                queue_stats = queue_manager.get_stats()
+            pipeline_queue = get_queue()
+            if pipeline_queue:
+                queue_stats = pipeline_queue.get_stats()
                 set_queue_stats(
                     total=queue_stats.get("total_threads", 0),
                     processing=queue_stats.get("processing_threads", 0),
@@ -291,10 +290,6 @@ async def main() -> None:
         # Initialize Claude provider
         init_claude_provider(anthropic_api_key)
         logger.info("claude_provider_initialized")
-
-        # Initialize message queue manager (Phase 1.4.3: message batching)
-        init_message_queue_manager()
-        logger.info("message_queue_initialized")
 
         # Load privileged users (Phase 2.1: admin commands)
         import config as bot_config

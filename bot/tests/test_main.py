@@ -94,7 +94,6 @@ async def test_main_startup_success():
          patch('main.start_metrics_server', new_callable=AsyncMock), \
          patch('main.collect_metrics_task', new_callable=AsyncMock), \
          patch('main.init_claude_provider'), \
-         patch('main.init_message_queue_manager'), \
          patch('main.load_privileged_users', return_value=set()):
 
         # Setup mocks
@@ -233,7 +232,6 @@ async def test_main_invalid_bot_token():
          patch('main.create_bot') as mock_create_bot, \
          patch('main.dispose_db', new_callable=AsyncMock) as mock_dispose_db, \
          patch('main.init_claude_provider'), \
-         patch('main.init_message_queue_manager'), \
          patch('main.load_privileged_users', return_value=set()):
 
         mock_logger = MagicMock()
@@ -297,7 +295,6 @@ async def test_main_finally_block_always_runs():
          patch('main.start_metrics_server', new_callable=AsyncMock), \
          patch('main.collect_metrics_task', new_callable=AsyncMock), \
          patch('main.init_claude_provider'), \
-         patch('main.init_message_queue_manager'), \
          patch('main.load_privileged_users', return_value=set()):
 
         mock_bot = MagicMock()
@@ -345,7 +342,6 @@ async def test_main_logging_setup():
          patch('main.start_metrics_server', new_callable=AsyncMock), \
          patch('main.collect_metrics_task', new_callable=AsyncMock), \
          patch('main.init_claude_provider'), \
-         patch('main.init_message_queue_manager'), \
          patch('main.load_privileged_users', return_value=set()):
 
         mock_get_logger.return_value = MagicMock()
@@ -381,7 +377,6 @@ async def test_main_logging_sequence():
          patch('main.start_metrics_server', new_callable=AsyncMock), \
          patch('main.collect_metrics_task', new_callable=AsyncMock), \
          patch('main.init_claude_provider'), \
-         patch('main.init_message_queue_manager'), \
          patch('main.load_privileged_users', return_value=set()):
 
         mock_logger = MagicMock()
@@ -433,7 +428,6 @@ async def test_main_dispatcher_start_polling():
          patch('main.start_metrics_server', new_callable=AsyncMock), \
          patch('main.collect_metrics_task', new_callable=AsyncMock), \
          patch('main.init_claude_provider'), \
-         patch('main.init_message_queue_manager'), \
          patch('main.load_privileged_users', return_value=set()):
 
         mock_bot = MagicMock()
@@ -467,7 +461,6 @@ async def test_main_database_echo_disabled():
          patch('main.start_metrics_server', new_callable=AsyncMock), \
          patch('main.collect_metrics_task', new_callable=AsyncMock), \
          patch('main.init_claude_provider'), \
-         patch('main.init_message_queue_manager'), \
          patch('main.load_privileged_users', return_value=set()):
 
         mock_bot = MagicMock()

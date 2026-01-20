@@ -29,7 +29,7 @@ from aiogram import types
 from aiogram.exceptions import TelegramRetryAfter
 
 if TYPE_CHECKING:
-    from telegram.media_processor import MediaContent
+    from telegram.pipeline.models import ProcessedMessage
 
 import config
 from config import CLAUDE_TOKEN_BUFFER_PERCENT
@@ -50,7 +50,6 @@ from core.exceptions import ContextWindowExceededError
 from core.exceptions import LLMError
 from core.exceptions import RateLimitError
 from core.exceptions import ToolValidationError
-from core.message_queue import MessageQueueManager
 from core.models import LLMRequest
 from core.models import Message
 from core.tools.helpers import extract_tool_uses
@@ -144,10 +143,6 @@ def split_text_smart(text: str,
 # Global Claude provider instance (initialized in main.py)
 claude_provider: ClaudeProvider = None
 
-# Global message queue manager (initialized in main.py)
-# Phase 1.4.3: Per-thread message batching
-message_queue_manager: MessageQueueManager = None
-
 
 def compose_system_prompt(global_prompt: str, custom_prompt: str | None,
                           files_context: str | None) -> str:
@@ -188,31 +183,6 @@ def init_claude_provider(api_key: str) -> None:
     global claude_provider  # pylint: disable=global-statement
     claude_provider = ClaudeProvider(api_key=api_key)
     logger.info("claude_handler.provider_initialized")
-
-
-def init_message_queue_manager() -> None:
-    """Initialize global message queue manager.
-
-    Must be called once during application startup, after init_claude_provider.
-
-    Phase 1.4.3: Per-thread message batching with smart accumulation.
-    """
-    global message_queue_manager  # pylint: disable=global-statement
-
-    # Create queue manager with processing callback
-    message_queue_manager = MessageQueueManager(
-        process_callback=_process_message_batch)
-
-    logger.info("claude_handler.message_queue_initialized")
-
-
-def get_queue_manager() -> MessageQueueManager | None:
-    """Get the global message queue manager.
-
-    Returns:
-        MessageQueueManager instance or None if not initialized.
-    """
-    return message_queue_manager
 
 
 # pylint: disable=too-many-locals,too-many-branches,too-many-statements
@@ -1206,21 +1176,17 @@ async def _handle_with_tools(request: LLMRequest, first_message: types.Message,
 
 
 # pylint: disable=too-many-locals,too-many-branches,too-many-statements
-async def _process_message_batch(
-        thread_id: int,
-        messages: list[tuple[types.Message, Optional['MediaContent']]]) -> None:
+async def _process_message_batch(thread_id: int,
+                                 messages: list['ProcessedMessage']) -> None:
     """Process batch of messages for a thread.
 
-    This function is called by MessageQueueManager when it's time to process
-    accumulated messages. Creates its own database session and handles the
-    complete flow from saving messages to streaming Claude response.
-
-    Phase 1.4.3: Batch processing with smart accumulation.
-    Phase 1.6: Universal media architecture with MediaContent.
+    This function is called by the unified pipeline when a batch is ready.
+    Creates its own database session and handles the complete flow from
+    saving messages to streaming Claude response.
 
     Args:
         thread_id: Database thread ID.
-        messages: List of (Message, Optional[MediaContent]) tuples.
+        messages: List of ProcessedMessage objects (all I/O complete).
     """
     if not messages:
         logger.warning("claude_handler.empty_batch", thread_id=thread_id)
@@ -1229,20 +1195,20 @@ async def _process_message_batch(
     if claude_provider is None:
         logger.error("claude_handler.provider_not_initialized")
         # Send error to first message
-        await messages[0][0].answer(
+        await messages[0].original_message.answer(
             "Bot is not properly configured. Please contact administrator.")
         return
 
     # Use first message for bot/chat context
-    first_message = messages[0][0]
+    first_message = messages[0].original_message
 
     # Calculate content lengths for logging
     content_lengths = []
-    for msg, media in messages:
-        if media and media.text_content:
-            content_lengths.append(len(media.text_content))
-        elif msg.text:
-            content_lengths.append(len(msg.text))
+    for processed in messages:
+        if processed.transcript:
+            content_lengths.append(len(processed.transcript.text))
+        elif processed.text:
+            content_lengths.append(len(processed.text))
         else:
             content_lengths.append(0)
 
@@ -1250,7 +1216,7 @@ async def _process_message_batch(
                 thread_id=thread_id,
                 batch_size=len(messages),
                 content_lengths=content_lengths,
-                has_media=[m is not None for _, m in messages],
+                has_media=[p.has_media for p in messages],
                 telegram_thread_id=first_message.message_thread_id)
 
     # Record batch metrics (Phase 3.1: Prometheus)
@@ -1273,33 +1239,27 @@ async def _process_message_batch(
 
             # 2. Save all messages to database
             msg_repo = MessageRepository(session)
-            for message, media_content in messages:
-                # Phase 1.6: Universal media architecture
-                # Determine text_content based on media type
-                if media_content and media_content.text_content:
-                    # Voice/Audio/Video: use transcript with prefix
-                    media_type = media_content.type.value
-                    duration = media_content.metadata.get("duration", 0)
-                    text_content = (
-                        f"[{media_type.upper()} MESSAGE - {duration}s]: "
-                        f"{media_content.text_content}")
-                elif media_content and media_content.file_id:
-                    # Image/PDF/Document: use caption or file mention
-                    if message.caption:
-                        text_content = message.caption
+            for processed in messages:
+                message = processed.original_message
+
+                # Determine text_content based on ProcessedMessage type
+                if processed.transcript:
+                    # Voice/Video note: use transcript with prefix
+                    text_content = processed.get_text_for_db()
+                elif processed.files:
+                    # File: use caption or generate file mention
+                    if processed.text:
+                        text_content = processed.text
                     else:
                         # Generate file mention
-                        media_type = media_content.type.value
-                        filename = media_content.metadata.get(
-                            "filename", "file")
-                        size = media_content.metadata.get("size_bytes", 0)
+                        file = processed.files[0]
                         text_content = (
-                            f"📎 User uploaded {media_type}: {filename} "
-                            f"({size} bytes) [file_id: {media_content.file_id}]"
-                        )
+                            f"📎 User uploaded {file.file_type.value}: "
+                            f"{file.filename} ({file.size_bytes} bytes) "
+                            f"[file_id: {file.claude_file_id}]")
                 else:
-                    # Regular text message or captioned media
-                    text_content = message.text or message.caption
+                    # Regular text message
+                    text_content = processed.text or ""
 
                 # Extract context from Telegram message (replies, quotes, forwards)
                 msg_context = extract_message_context(message)
