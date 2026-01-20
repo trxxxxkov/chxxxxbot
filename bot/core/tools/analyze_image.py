@@ -151,82 +151,50 @@ ANALYZE_IMAGE_TOOL = {
     "description":
         """Analyze an image using Claude's vision capabilities.
 
-IMPORTANT: This tool ONLY works with IMAGE files (JPEG, PNG, GIF, WebP).
-Check the file's mime_type in "Available files" - it MUST start with "image/".
-For data files (.json, .jsonl, .csv, .txt), use execute_python to read them directly.
+This tool accepts files where mime_type starts with "image/" (check the
+"Available files" section). The vision API processes the image pixels to
+understand visual content - it cannot parse structured data formats.
 
-Use this tool for photos, screenshots, diagrams, charts when you need
-visual understanding. The tool uses Claude Sonnet 4.5's vision API to analyze
-images and answer questions about content. It can identify objects, read text (OCR),
-describe scenes, analyze visual data, understand charts and diagrams, and extract
-information from screenshots.
+For files with other mime_types (application/json, text/*, etc.), use
+execute_python which can read and parse the actual file content.
 
-<supported_formats>
-ONLY these MIME types are supported:
-- image/jpeg, image/png, image/gif, image/webp
-Check mime_type in "Available files" section before calling this tool.
-</supported_formats>
+<capabilities>
+- Identify objects, scenes, and visual elements in photos
+- Extract text from images (OCR) including screenshots
+- Analyze charts, diagrams, and data visualizations
+- Describe image content and answer questions about it
+- Verify generated images for quality (colors, layout, text rendering)
+</capabilities>
 
-<verification_use_case>
-CRITICAL: This tool is essential for verifying image outputs from execute_python.
-When you generate images (charts, diagrams, processed photos), you MUST use this
-tool to verify the output is correct before considering the task complete. This
-catches issues like wrong colors, missing elements, incorrect text rendering,
-or visual artifacts that code-level checks cannot detect.
-
-Example: After generating chart.png, call analyze_image to verify axes labels,
-data points, legend, and overall visual quality match expectations.
-</verification_use_case>
-
-<when_to_use>
-Use when:
-- User asks about image content or visual elements
-- Extracting text from images (OCR)
-- Analyzing charts, diagrams, or data visualizations
-- Verifying generated images from execute_python (quality check)
-- Understanding file content before processing (e.g., analyzing PPTX screenshot)
-- Answering questions about uploaded photos
-
-Note: You can call this tool in PARALLEL with execute_python when analyzing
-input files before processing them (e.g., understand image content while
-preparing processing code).
-</when_to_use>
-
-<when_not_to_use>
-Do NOT use for:
-- NON-IMAGE files (.json, .jsonl, .csv, .txt, .pdf) - use execute_python instead
-- PDF files (use analyze_pdf instead for better text extraction)
-- Text-only questions where image is not relevant
-- When user explicitly asks not to analyze images
-</when_not_to_use>
+<parallel_execution>
+This tool works well in parallel with execute_python. For example, analyze
+an input image while simultaneously preparing processing code.
+</parallel_execution>
 
 <limitations>
-- Cannot identify people by name (AUP violation)
+- Cannot identify people by name
+- Approximate counting only for many small objects
 - Limited spatial reasoning (analog clocks, chess positions)
-- Approximate counting only (not precise for many small objects)
-- Cannot detect AI-generated images
-- No healthcare diagnostics (CTs, MRIs, X-rays)
 </limitations>
 
-Token cost: ~1600 tokens per 1092x1092px image. Larger images consume proportionally more.""",
+Token cost: ~1600 tokens per 1092x1092px image.""",
     "input_schema": {
         "type": "object",
         "properties": {
             "claude_file_id": {
                 "type":
                     "string",
-                "description": ("File ID from Files API. MUST be an image file "
-                                "(mime_type starting with 'image/'). Check "
-                                "'Available files' section for file details.")
+                "description": ("File ID where mime_type starts with 'image/'. "
+                                "Check 'Available files' for each file's "
+                                "mime_type before selecting.")
             },
             "question": {
                 "type":
                     "string",
-                "description": ("What to analyze or extract from the image. "
-                                "Be specific about what information is needed "
-                                "(e.g., 'What objects are visible?', "
-                                "'Extract all text from this screenshot', "
-                                "'What does this chart show?')")
+                "description":
+                    ("What to analyze or extract from the image. "
+                     "Be specific: 'What objects are visible?', "
+                     "'Extract all text', 'What does this chart show?'")
             }
         },
         "required": ["claude_file_id", "question"]
