@@ -1,7 +1,7 @@
 """MIME type detection and normalization utilities.
 
 Centralized MIME type handling for all file operations.
-Supports detection from file extension, magic bytes, and normalization.
+Uses python-magic (libmagic) for reliable detection from file content.
 
 NO __init__.py - use direct import:
     from core.mime_types import detect_mime_type, normalize_mime_type
@@ -10,20 +10,10 @@ NO __init__.py - use direct import:
 import mimetypes
 from typing import Optional
 
+import magic
 from utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
-
-# Magic byte signatures for common image formats
-IMAGE_SIGNATURES = {
-    b'\xff\xd8\xff': 'image/jpeg',  # JPEG/JFIF
-    b'\x89PNG\r\n\x1a\n': 'image/png',  # PNG
-    b'GIF87a': 'image/gif',  # GIF87a
-    b'GIF89a': 'image/gif',  # GIF89a
-    b'RIFF': 'image/webp',  # WebP (needs additional check)
-    b'\x00\x00\x00': 'image/avif',  # AVIF (needs additional check)
-    b'BM': 'image/bmp',  # BMP
-}
 
 # MIME type normalization map (non-standard -> standard)
 MIME_NORMALIZATION = {
@@ -52,9 +42,15 @@ MIME_NORMALIZATION = {
     'video/x-m4v': 'video/mp4',
     # Document variants
     'application/x-pdf': 'application/pdf',
+    # Text variants from libmagic
+    'text/x-python': 'text/x-python',
+    'text/x-c': 'text/x-c',
+    'text/x-c++': 'text/x-c++',
+    'text/x-java': 'text/x-java',
+    'text/x-script.python': 'text/x-python',
 }
 
-# Extension to MIME type mapping (fallback)
+# Extension to MIME type mapping (fallback when libmagic returns generic types)
 EXTENSION_MIME_MAP = {
     # Images
     '.jpg': 'image/jpeg',
@@ -65,6 +61,8 @@ EXTENSION_MIME_MAP = {
     '.gif': 'image/gif',
     '.webp': 'image/webp',
     '.avif': 'image/avif',
+    '.heic': 'image/heic',
+    '.heif': 'image/heif',
     '.bmp': 'image/bmp',
     '.svg': 'image/svg+xml',
     '.ico': 'image/x-icon',
@@ -100,56 +98,27 @@ EXTENSION_MIME_MAP = {
     '.ppt': 'application/vnd.ms-powerpoint',
     '.pptx': 'application/vnd.openxmlformats-officedocument'
              '.presentationml.presentation',
-    '.txt': 'text/plain',
-    '.csv': 'text/csv',
-    '.tsv': 'text/tab-separated-values',
+    # Text/Data - specific types that libmagic might miss
     '.json': 'application/json',
     '.jsonl': 'application/jsonl',
     '.ndjson': 'application/x-ndjson',
-    '.xml': 'application/xml',
-    '.html': 'text/html',
-    '.htm': 'text/html',
-    '.md': 'text/markdown',
-    '.markdown': 'text/markdown',
-    '.rst': 'text/x-rst',
     '.yaml': 'application/yaml',
     '.yml': 'application/yaml',
     '.toml': 'application/toml',
-    '.ini': 'text/plain',
-    '.cfg': 'text/plain',
-    '.conf': 'text/plain',
-    '.log': 'text/plain',
-    '.py': 'text/x-python',
-    '.js': 'text/javascript',
-    '.ts': 'text/typescript',
-    '.jsx': 'text/javascript',
-    '.tsx': 'text/typescript',
-    '.css': 'text/css',
-    '.scss': 'text/x-scss',
-    '.less': 'text/x-less',
-    '.sql': 'application/sql',
-    '.sh': 'application/x-sh',
-    '.bash': 'application/x-sh',
-    '.zsh': 'application/x-sh',
-    '.c': 'text/x-c',
-    '.cpp': 'text/x-c++',
-    '.h': 'text/x-c',
-    '.hpp': 'text/x-c++',
-    '.java': 'text/x-java',
-    '.go': 'text/x-go',
-    '.rs': 'text/x-rust',
-    '.rb': 'text/x-ruby',
-    '.php': 'text/x-php',
-    '.swift': 'text/x-swift',
-    '.kt': 'text/x-kotlin',
-    '.scala': 'text/x-scala',
-    '.r': 'text/x-r',
-    '.R': 'text/x-r',
+    '.xml': 'application/xml',
+    '.csv': 'text/csv',
+    '.tsv': 'text/tab-separated-values',
+    '.md': 'text/markdown',
+    '.markdown': 'text/markdown',
+    '.rst': 'text/x-rst',
+    # Archives
     '.zip': 'application/zip',
     '.rar': 'application/x-rar-compressed',
     '.7z': 'application/x-7z-compressed',
     '.tar': 'application/x-tar',
     '.gz': 'application/gzip',
+    '.bz2': 'application/x-bzip2',
+    '.xz': 'application/x-xz',
 }
 
 
@@ -177,158 +146,33 @@ def normalize_mime_type(mime_type: str) -> str:
     return MIME_NORMALIZATION.get(normalized, normalized)
 
 
-def _is_valid_utf8_text(data: bytes) -> bool:
-    """Check if bytes represent valid UTF-8 text.
+def detect_mime_from_magic(file_bytes: bytes) -> Optional[str]:
+    """Detect MIME type using libmagic.
 
-    Args:
-        data: Bytes to check.
-
-    Returns:
-        True if valid UTF-8 text without binary characters.
-    """
-    try:
-        text = data.decode('utf-8')
-        # Check for binary/control characters (except common whitespace)
-        # Allow: tab, newline, carriage return
-        for char in text:
-            code = ord(char)
-            if code < 32 and code not in (9, 10, 13):  # Control chars
-                return False
-            if code == 127:  # DEL
-                return False
-        return True
-    except UnicodeDecodeError:
-        return False
-
-
-def _detect_text_format(data: bytes) -> Optional[str]:  # pylint: disable=too-many-return-statements
-    """Detect specific text format from content.
-
-    Analyzes text content to determine if it's JSON, JSONL, XML, HTML, etc.
-
-    Args:
-        data: Text content as bytes.
-
-    Returns:
-        Specific MIME type or 'text/plain' for generic text.
-    """
-    try:
-        text = data.decode('utf-8').strip()
-        if not text:
-            return 'text/plain'
-
-        # Check for JSON Lines (multiple JSON objects, one per line)
-        lines = text.split('\n')
-        if len(lines) > 1:
-            # Check if each non-empty line is valid JSON
-            json_lines = 0
-            for line in lines[:10]:  # Check first 10 lines
-                line = line.strip()
-                if not line:
-                    continue
-                if (line.startswith('{') and line.endswith('}')) or \
-                   (line.startswith('[') and line.endswith(']')):
-                    json_lines += 1
-            if json_lines >= 2:
-                return 'application/jsonl'
-
-        # Check for JSON (starts with { or [)
-        if (text.startswith('{') and text.endswith('}')) or \
-           (text.startswith('[') and text.endswith(']')):
-            return 'application/json'
-
-        # Check for XML/HTML
-        if text.startswith('<?xml') or text.startswith('<'):
-            if '<!DOCTYPE html' in text.lower() or '<html' in text.lower():
-                return 'text/html'
-            if text.startswith('<?xml'):
-                return 'application/xml'
-
-        # Check for YAML (starts with --- or has key: value pattern)
-        if text.startswith('---') or (': ' in lines[0] and
-                                      not text.startswith('{')):
-            return 'application/yaml'
-
-        return 'text/plain'
-    except Exception:
-        return 'text/plain'
-
-
-def detect_mime_from_magic(file_bytes: bytes) -> Optional[str]:  # pylint: disable=too-many-return-statements
-    r"""Detect MIME type from binary file magic bytes.
-
-    Checks file signature (magic bytes) to determine actual file type.
-    Only detects binary formats (images, PDF, ZIP, etc.), not text.
+    Uses python-magic (libmagic) to detect file type from content.
+    This is the most reliable method for binary files.
 
     Args:
         file_bytes: File content bytes.
 
     Returns:
-        Detected MIME type or None if not recognized.
+        Detected MIME type or None if detection fails.
 
     Examples:
-        >>> detect_mime_from_magic(b'\xff\xd8\xff\xe0...')
+        >>> detect_mime_from_magic(open('photo.jpg', 'rb').read())
         'image/jpeg'
     """
     if not file_bytes:
         return None
 
-    # Check JPEG (multiple variants)
-    if file_bytes[:3] == b'\xff\xd8\xff':
-        return 'image/jpeg'
-
-    # Check PNG
-    if file_bytes[:8] == b'\x89PNG\r\n\x1a\n':
-        return 'image/png'
-
-    # Check GIF
-    if file_bytes[:6] in (b'GIF87a', b'GIF89a'):
-        return 'image/gif'
-
-    # Check WebP (RIFF....WEBP)
-    if file_bytes[:4] == b'RIFF' and file_bytes[8:12] == b'WEBP':
-        return 'image/webp'
-
-    # Check BMP
-    if file_bytes[:2] == b'BM':
-        return 'image/bmp'
-
-    # Check PDF
-    if file_bytes[:4] == b'%PDF':
-        return 'application/pdf'
-
-    # Check ZIP (and Office documents)
-    if file_bytes[:4] == b'PK\x03\x04':
-        return 'application/zip'
-
-    return None
-
-
-def detect_mime_from_content(file_bytes: bytes) -> Optional[str]:
-    """Detect MIME type from text content analysis.
-
-    Analyzes file content to detect text-based formats (JSON, XML, etc.).
-    Should be called AFTER extension detection as a fallback.
-
-    Args:
-        file_bytes: File content bytes.
-
-    Returns:
-        Detected text MIME type or None if not text.
-
-    Examples:
-        >>> detect_mime_from_content(b'{"key": "value"}')
-        'application/json'
-    """
-    if not file_bytes:
+    try:
+        mime_type = magic.from_buffer(file_bytes, mime=True)
+        if mime_type:
+            return normalize_mime_type(mime_type)
         return None
-
-    # Use first 8KB for detection to handle large files efficiently
-    sample = file_bytes[:8192]
-    if _is_valid_utf8_text(sample):
-        return _detect_text_format(sample)
-
-    return None
+    except Exception as e:
+        logger.warning("mime.magic_detection_failed", error=str(e))
+        return None
 
 
 def detect_mime_from_extension(filename: str) -> Optional[str]:
@@ -341,8 +185,8 @@ def detect_mime_from_extension(filename: str) -> Optional[str]:
         MIME type or None if extension not recognized.
 
     Examples:
-        >>> detect_mime_from_extension('photo.jfif')
-        'image/jpeg'
+        >>> detect_mime_from_extension('data.jsonl')
+        'application/jsonl'
     """
     if not filename:
         return None
@@ -352,7 +196,7 @@ def detect_mime_from_extension(filename: str) -> Optional[str]:
     if '.' in filename:
         ext = '.' + filename.rsplit('.', 1)[-1].lower()
 
-    # Check our map first (includes JFIF and other special cases)
+    # Check our map first (includes special cases like .jsonl)
     if ext in EXTENSION_MIME_MAP:
         return EXTENSION_MIME_MAP[ext]
 
@@ -361,65 +205,69 @@ def detect_mime_from_extension(filename: str) -> Optional[str]:
     return mime_type
 
 
-def detect_mime_type(  # pylint: disable=too-many-return-statements
+def detect_mime_type(
     filename: str,
     file_bytes: Optional[bytes] = None,
     declared_mime: Optional[str] = None,
 ) -> str:
-    r"""Detect MIME type using multiple methods.
+    """Detect MIME type using multiple methods.
 
     Priority order:
-    1. Binary magic bytes detection (most reliable for images/PDF/ZIP)
-    2. File extension (for known types like .mp4, .py, .jsonl)
-    3. Text content analysis (for text files without known extension)
-    4. Declared MIME type (normalized)
-    5. Fallback to application/octet-stream
+    1. libmagic detection from content (most reliable)
+    2. File extension (for specific types like .jsonl)
+    3. Declared MIME type (normalized)
+    4. Fallback to application/octet-stream
+
+    Special handling:
+    - If libmagic returns generic 'text/plain' but we have a specific
+      extension like .jsonl, use the extension-based type instead.
 
     Args:
         filename: File name with extension.
-        file_bytes: Optional file content for magic byte detection.
+        file_bytes: Optional file content for magic detection.
         declared_mime: Optional declared/provided MIME type.
 
     Returns:
         Detected MIME type string.
 
     Examples:
-        >>> detect_mime_type('photo.jfif', b'\xff\xd8\xff...')
+        >>> detect_mime_type('photo.jpg', jpeg_bytes)
         'image/jpeg'
-        >>> detect_mime_type('document.pdf')
-        'application/pdf'
-        >>> detect_mime_type('data.jsonl', b'{"id": 1}\n{"id": 2}')
+        >>> detect_mime_type('data.jsonl', jsonl_bytes)
         'application/jsonl'
     """
-    detected = None
-
-    # 1. Try binary magic bytes first (images, PDF, ZIP)
+    # 1. Try libmagic first (most reliable for binary files)
     if file_bytes:
-        detected = detect_mime_from_magic(file_bytes)
-        if detected:
+        magic_mime = detect_mime_from_magic(file_bytes)
+        if magic_mime:
+            # If libmagic returns generic type, check extension for more
+            # specific type. This handles:
+            # - text/plain for .jsonl, .yaml files
+            # - application/octet-stream for ZIP (libmagic buffer limitation)
+            if magic_mime in ('text/plain', 'application/octet-stream'):
+                ext_mime = detect_mime_from_extension(filename)
+                if ext_mime and ext_mime not in ('text/plain',
+                                                 'application/octet-stream'):
+                    logger.debug("mime.extension_override",
+                                 filename=filename,
+                                 magic_mime=magic_mime,
+                                 ext_mime=ext_mime)
+                    return ext_mime
+
             logger.debug("mime.detected_from_magic",
                          filename=filename,
-                         mime_type=detected)
-            return detected
+                         mime_type=magic_mime)
+            return magic_mime
 
-    # 2. Try extension (works for audio/video/code files)
-    detected = detect_mime_from_extension(filename)
-    if detected:
+    # 2. Try extension
+    ext_mime = detect_mime_from_extension(filename)
+    if ext_mime:
         logger.debug("mime.detected_from_extension",
                      filename=filename,
-                     mime_type=detected)
-        return detected
+                     mime_type=ext_mime)
+        return ext_mime
 
-    # 3. Try text content analysis (for files without known extension)
-    if file_bytes:
-        detected = detect_mime_from_content(file_bytes)
-        if detected:
-            logger.debug("mime.detected_from_content",
-                         filename=filename,
-                         mime_type=detected)
-            return detected
-
-    # 4. Normalize declared MIME type
+    # 3. Normalize declared MIME type
     if declared_mime:
         normalized = normalize_mime_type(declared_mime)
         logger.debug("mime.using_declared",
@@ -483,3 +331,18 @@ def is_pdf_mime(mime_type: str) -> bool:
     """
     normalized = normalize_mime_type(mime_type)
     return normalized == 'application/pdf'
+
+
+def is_text_mime(mime_type: str) -> bool:
+    """Check if MIME type represents text content.
+
+    Args:
+        mime_type: MIME type string.
+
+    Returns:
+        True if text MIME type.
+    """
+    normalized = normalize_mime_type(mime_type)
+    return (normalized.startswith('text/') or normalized
+            in ('application/json', 'application/jsonl', 'application/x-ndjson',
+                'application/xml', 'application/yaml', 'application/toml'))

@@ -3,11 +3,13 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install system dependencies for asyncpg and PostgreSQL client
+# Install system dependencies for asyncpg, PostgreSQL client, and libmagic
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libpq-dev \
     postgresql-client \
+    libmagic1 \
+    file \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching
@@ -31,7 +33,8 @@ RUN pip install --no-cache-dir \
     pytest-cov>=4.1.0 \
     aiosqlite>=0.19.0 \
     prometheus-client>=0.20.0 \
-    aiohttp>=3.9.0
+    aiohttp>=3.9.0 \
+    python-magic>=0.4.27
 
 # Copy application code
 COPY . .
