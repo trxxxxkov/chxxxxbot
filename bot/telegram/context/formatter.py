@@ -7,10 +7,11 @@ NO __init__.py - use direct import:
     from telegram.context.formatter import ContextFormatter
 """
 
-from typing import Optional
+from typing import Any, Optional, Union
 
 from core.models import Message as LLMMessage
 from db.models.message import Message as DBMessage
+from db.models.message import MessageRole
 
 
 class ContextFormatter:
@@ -39,6 +40,10 @@ class ContextFormatter:
     def format_message(self, msg: DBMessage) -> LLMMessage:
         """Format a single database message for LLM.
 
+        For assistant messages with thinking_blocks, formats content as
+        a list with thinking block first (required when Extended Thinking
+        is enabled).
+
         Args:
             msg: Database Message object with context fields.
 
@@ -46,7 +51,20 @@ class ContextFormatter:
             LLM Message with formatted content.
         """
         role = "user" if msg.from_user_id else "assistant"
-        content = self._format_content(msg)
+        text_content = self._format_content(msg)
+
+        # For assistant messages with thinking, format as content blocks
+        # (required by Claude API when extended thinking is enabled)
+        if msg.role == MessageRole.ASSISTANT and msg.thinking_blocks:
+            content: Union[str, list[dict[str, Any]]] = [{
+                "type": "thinking",
+                "thinking": msg.thinking_blocks
+            }, {
+                "type": "text",
+                "text": text_content
+            }]
+        else:
+            content = text_content
 
         return LLMMessage(role=role, content=content)
 

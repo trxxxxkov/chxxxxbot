@@ -21,8 +21,12 @@ def create_mock_db_message(
     reply_sender_display=None,
     quote_data=None,
     edit_count=0,
+    role=None,
+    thinking_blocks=None,
 ):
     """Create a mock database Message object."""
+    # Import here to avoid circular imports in test
+    from db.models.message import MessageRole
     msg = MagicMock()
     msg.from_user_id = from_user_id
     msg.text_content = text_content
@@ -33,6 +37,14 @@ def create_mock_db_message(
     msg.reply_sender_display = reply_sender_display
     msg.quote_data = quote_data
     msg.edit_count = edit_count
+    msg.thinking_blocks = thinking_blocks
+    # Set role based on from_user_id if not explicitly provided
+    if role is not None:
+        msg.role = role
+    elif from_user_id:
+        msg.role = MessageRole.USER
+    else:
+        msg.role = MessageRole.ASSISTANT
     return msg
 
 
@@ -527,3 +539,66 @@ class TestContextFormatterEdgeCases:
 
         # Should still work, just no header
         assert result.content == "No sender"
+
+
+class TestContextFormatterThinkingBlocks:
+    """Tests for Extended Thinking support."""
+
+    def test_assistant_with_thinking_blocks(self):
+        """Test assistant message with thinking blocks returns list content."""
+        from db.models.message import MessageRole
+
+        formatter = ContextFormatter(chat_type="private")
+        msg = create_mock_db_message(
+            from_user_id=None,  # Assistant message
+            text_content="The answer is 42.",
+            role=MessageRole.ASSISTANT,
+            thinking_blocks="Let me think about this... The user asked...",
+        )
+
+        result = formatter.format_message(msg)
+
+        # Content should be a list with thinking and text blocks
+        assert isinstance(result.content, list)
+        assert len(result.content) == 2
+        assert result.content[0]["type"] == "thinking"
+        assert result.content[0][
+            "thinking"] == "Let me think about this... The user asked..."
+        assert result.content[1]["type"] == "text"
+        assert result.content[1]["text"] == "The answer is 42."
+
+    def test_assistant_without_thinking_blocks(self):
+        """Test assistant message without thinking returns string content."""
+        from db.models.message import MessageRole
+
+        formatter = ContextFormatter(chat_type="private")
+        msg = create_mock_db_message(
+            from_user_id=None,
+            text_content="Simple response",
+            role=MessageRole.ASSISTANT,
+            thinking_blocks=None,
+        )
+
+        result = formatter.format_message(msg)
+
+        # Content should be a string
+        assert isinstance(result.content, str)
+        assert result.content == "Simple response"
+
+    def test_user_message_ignores_thinking_blocks(self):
+        """Test user message never has thinking blocks."""
+        from db.models.message import MessageRole
+
+        formatter = ContextFormatter(chat_type="private")
+        msg = create_mock_db_message(
+            from_user_id=123,
+            text_content="User question",
+            role=MessageRole.USER,
+            thinking_blocks="This should be ignored",
+        )
+
+        result = formatter.format_message(msg)
+
+        # User messages always return string content
+        assert isinstance(result.content, str)
+        assert result.content == "User question"
