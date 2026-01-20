@@ -72,8 +72,12 @@ from services.balance_service import BalanceService
 from sqlalchemy.ext.asyncio import AsyncSession
 from telegram.context.extractors import extract_message_context
 from telegram.context.formatter import ContextFormatter
-from telegram.draft_streaming import DraftStreamer
+from telegram.draft_streaming import DraftManager
 from telegram.handlers.files import process_file_upload
+from telegram.streaming import escape_html
+from telegram.streaming import StreamingSession
+from telegram.streaming import strip_tool_markers as _strip_tool_markers
+from telegram.streaming import ToolCall
 from utils.metrics import record_cache_hit
 from utils.metrics import record_cache_miss
 from utils.metrics import record_claude_request
@@ -96,8 +100,8 @@ router = Router(name="claude")
 def safe_html(text: str) -> str:
     """Escape HTML special characters for Telegram parse_mode=HTML.
 
-    Prevents "can't parse entities" errors when Claude response contains
-    <, >, & symbols (e.g., in code, math, comparisons).
+    Deprecated: Use telegram.streaming.escape_html instead.
+    Kept for backward compatibility.
 
     Args:
         text: Raw text from Claude.
@@ -105,18 +109,14 @@ def safe_html(text: str) -> str:
     Returns:
         HTML-escaped text safe for Telegram.
     """
-    return html_lib.escape(text)
+    return escape_html(text)
 
 
 def strip_tool_markers(text: str) -> str:
     """Remove tool markers and system messages from final response.
 
-    During streaming, markers like [📄 analyze_pdf] are shown in thinking.
-    The final answer should be clean text without these markers.
-
-    Patterns removed:
-    - Tool markers: [📄 analyze_pdf], [🐍 execute_python], etc.
-    - System messages: [✅ ...], [❌ ...], [🎨 ...], [📤 ...]
+    Delegates to telegram.streaming.strip_tool_markers.
+    Kept as local function for backward compatibility.
 
     Args:
         text: Response text with possible markers.
@@ -124,16 +124,7 @@ def strip_tool_markers(text: str) -> str:
     Returns:
         Clean text without tool markers.
     """
-    # Pattern matches: newline + [emoji + text] + newline
-    # Also handles markers at start/end of text
-    # Emojis: 📄 analyze_pdf, 🐍 execute_python, 🎨 generate_image,
-    #         🔍 web_search, 🌐 web_fetch, 🖼️ analyze_image, 🎤 transcribe_audio
-    #         📤 file sent, ✅/❌ status, 📎 document
-    pattern = r'\n?\[(?:📄|🐍|🎨|🔍|📤|✅|❌|🌐|📎|🖼️|🎤)[^\]]*\]\n?'
-    cleaned = re.sub(pattern, '\n', text)
-    # Clean up multiple newlines
-    cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
-    return cleaned.strip()
+    return _strip_tool_markers(text)
 
 
 def format_interleaved_content(blocks: list[dict],
@@ -358,515 +349,285 @@ async def _stream_with_unified_events(
                 max_iterations=max_iterations,
                 streaming_method="sendMessageDraft")
 
-    # Streaming state - PERSIST ACROSS ITERATIONS
-    # Track blocks in order for proper interleaving of thinking and text
-    display_blocks: list[dict] = [
-    ]  # [{"type": "thinking"|"text", "content": str}]
-    current_block_type_global = ""  # Track current block type across stream
-    last_sent_text = ""  # Track what we've already sent (formatted)
-
-    # Initialize draft streamer for smooth animated updates (no flood control)
-    draft_streamer = DraftStreamer(
+    # Initialize draft manager for smooth animated updates with automatic cleanup
+    # DraftManager handles keepalive, cleanup on errors, and multiple drafts
+    async with DraftManager(
         bot=first_message.bot,
         chat_id=chat_id,
         topic_id=telegram_thread_id,
-    )
+        keepalive_interval=DRAFT_KEEPALIVE_INTERVAL,
+    ) as dm:
+        # StreamingSession encapsulates all streaming state
+        # - Display blocks (thinking, text)
+        # - Pending tools
+        # - Last sent text for deduplication
+        stream = StreamingSession(dm, thread_id)
 
-    # Global keepalive task - keeps draft visible during entire streaming session
-    # (including gaps between tool execution and Claude thinking)
-    async def global_keepalive_loop() -> None:
-        """Send periodic updates to keep draft visible throughout streaming."""
-        while True:
-            await asyncio.sleep(DRAFT_KEEPALIVE_INTERVAL)
-            await draft_streamer.keepalive()
+        for iteration in range(max_iterations):
+            logger.info("stream.unified.iteration",
+                        thread_id=thread_id,
+                        iteration=iteration + 1)
 
-    global_keepalive_task = asyncio.create_task(global_keepalive_loop())
+            # Reset per-iteration state (display persists across iterations)
+            stream.reset_iteration()
 
-    async def stop_global_keepalive() -> None:
-        """Stop global keepalive task before returning."""
-        global_keepalive_task.cancel()
-        try:
-            await global_keepalive_task
-        except asyncio.CancelledError:
-            pass
-
-    for iteration in range(max_iterations):
-        logger.info("stream.unified.iteration",
-                    thread_id=thread_id,
-                    iteration=iteration + 1)
-
-        # Create request for this iteration
-        iter_request = LLMRequest(
-            messages=[
-                Message(role=msg["role"], content=msg["content"])
-                for msg in conversation
-            ],
-            system_prompt=request.system_prompt,
-            model=request.model,
-            max_tokens=request.max_tokens,
-            temperature=request.temperature,
-            tools=request.tools,
-        )
-
-        # Per-iteration state (reset each iteration)
-        pending_tools: list[dict] = []  # Tools to execute after stream ends
-        stop_reason = ""
-        # Capture final message from stream_complete to avoid race condition
-        # (other requests can reset claude_provider.last_message during tool exec)
-        captured_final_message = None
-
-        # Collect content blocks directly from stream (avoid race condition)
-        content_blocks: list[dict] = []
-        current_thinking_text = ""
-        current_response_text = ""
-        current_block_type = ""  # "thinking" | "text" | ""
-
-        # Helper to append content to display_blocks with proper ordering
-        def append_to_display(block_type: str, content: str) -> None:
-            """Append content to display_blocks, merging with last block if same type."""
-            nonlocal current_block_type_global
-            if not display_blocks or display_blocks[-1]["type"] != block_type:
-                # Start new block
-                display_blocks.append({"type": block_type, "content": content})
-                current_block_type_global = block_type
-            else:
-                # Append to existing block
-                display_blocks[-1]["content"] += content
-
-        # Helper to commit current draft before sending any file
-        async def commit_draft_before_file() -> None:
-            """Finalize draft as permanent message, create new draft.
-
-            Called before sending ANY file (image, document, etc.) to ensure
-            proper message ordering: text → file → text.
-
-            Thinking is removed from final message (was shown during streaming).
-            """
-            nonlocal draft_streamer, last_sent_text
-
-            # Get only text blocks (remove thinking)
-            text_blocks = [b for b in display_blocks if b["type"] == "text"]
-            if not text_blocks:
-                # No text content, just clear draft
-                await draft_streamer.clear()
-                draft_streamer = DraftStreamer(
-                    bot=first_message.bot,
-                    chat_id=chat_id,
-                    topic_id=telegram_thread_id,
-                )
-                last_sent_text = ""
-                display_blocks.clear()
-                return
-
-            # Format text only (no thinking in final)
-            final_text = format_interleaved_content(text_blocks)
-            final_text = strip_tool_markers(final_text)
-
-            if final_text.strip():
-                try:
-                    await draft_streamer.finalize(final_text=final_text)
-                except Exception:  # pylint: disable=broad-exception-caught
-                    pass
-
-            # Create fresh draft for content after file
-            draft_streamer = DraftStreamer(
-                bot=first_message.bot,
-                chat_id=chat_id,
-                topic_id=telegram_thread_id,
+            # Create request for this iteration
+            iter_request = LLMRequest(
+                messages=[
+                    Message(role=msg["role"], content=msg["content"])
+                    for msg in conversation
+                ],
+                system_prompt=request.system_prompt,
+                model=request.model,
+                max_tokens=request.max_tokens,
+                temperature=request.temperature,
+                tools=request.tools,
             )
-            last_sent_text = ""
-            display_blocks.clear()
 
-        # Stream events
-        async for event in claude_provider.stream_events(iter_request):
-            if event.type == "thinking_delta":
-                append_to_display("thinking", event.content)
-                current_thinking_text += event.content
-                current_block_type = "thinking"
+            # Stream events (DraftManager handles cleanup via context manager)
+            async for event in claude_provider.stream_events(iter_request):
+                if event.type == "thinking_delta":
+                    await stream.handle_thinking_delta(event.content)
 
-                # Format and update immediately (no interval with drafts)
-                display_text = format_interleaved_content(display_blocks,
-                                                          is_streaming=True)
-                if display_text != last_sent_text:
-                    await draft_streamer.update(display_text)
-                    last_sent_text = display_text
+                elif event.type == "text_delta":
+                    await stream.handle_text_delta(event.content)
 
-            elif event.type == "text_delta":
-                append_to_display("text", event.content)
-                current_response_text += event.content
-                current_block_type = "text"
+                elif event.type == "tool_use":
+                    await stream.handle_tool_use_start(event.tool_id,
+                                                       event.tool_name)
 
-                # Format and update immediately (no interval with drafts)
-                display_text = format_interleaved_content(display_blocks,
-                                                          is_streaming=True)
-                if display_text != last_sent_text:
-                    await draft_streamer.update(display_text)
-                    last_sent_text = display_text
-
-            elif event.type == "tool_use":
-                # Finalize any pending text block before tool
-                if current_block_type == "thinking" and current_thinking_text:
-                    content_blocks.append({
-                        "type": "thinking",
-                        "thinking": current_thinking_text
-                    })
-                    current_thinking_text = ""
-                elif current_block_type == "text" and current_response_text:
-                    content_blocks.append({
-                        "type": "text",
-                        "text": current_response_text
-                    })
-                    current_response_text = ""
-                current_block_type = ""
-
-                # Show tool marker (generate_image will be updated with prompt later)
-                emoji = get_tool_emoji(event.tool_name)
-                if event.tool_name == "generate_image":
-                    tool_marker = f"[{emoji} {event.tool_name}…]"
-                else:
-                    tool_marker = f"[{emoji} {event.tool_name}]"
-                append_to_display("thinking", tool_marker)
-
-                # Format and force update to show tool marker immediately
-                display_text = format_interleaved_content(display_blocks,
-                                                          is_streaming=True)
-                await draft_streamer.update(display_text, force=True)
-                last_sent_text = display_text
-
-                logger.info("stream.unified.tool_detected",
-                            thread_id=thread_id,
-                            tool_name=event.tool_name,
-                            tool_id=event.tool_id)
-
-            elif event.type == "block_end":
-                # Finalize current block
-                if current_block_type == "thinking" and current_thinking_text:
-                    content_blocks.append({
-                        "type": "thinking",
-                        "thinking": current_thinking_text
-                    })
-                    current_thinking_text = ""
-                elif current_block_type == "text" and current_response_text:
-                    content_blocks.append({
-                        "type": "text",
-                        "text": current_response_text
-                    })
-                    current_response_text = ""
-                current_block_type = ""
-
-                # Add tool_use block to content_blocks
-                if event.tool_name and event.tool_id:
-                    content_blocks.append({
-                        "type": "tool_use",
-                        "id": event.tool_id,
-                        "name": event.tool_name,
-                        "input": event.tool_input or {}
-                    })
-
-                    # Update tool marker for generate_image (show prompt in quotes)
-                    if event.tool_input:
-                        # Only generate_image shows the prompt argument
-                        if event.tool_name == "generate_image":
-                            emoji = get_tool_emoji(event.tool_name)
-                            prompt = event.tool_input.get("prompt", "")
-
-                            # Replace the "…" marker with prompt in quotes
-                            old_marker = f"[{emoji} {event.tool_name}…]"
-                            new_marker = f"[{emoji} {event.tool_name}: \"{prompt}\"]"
-
-                            # Find and update the marker in display_blocks
-                            for block in display_blocks:
-                                if (block["type"] == "thinking" and
-                                        old_marker in block["content"]):
-                                    block["content"] = block["content"].replace(
-                                        old_marker, new_marker)
-                                    break
-
-                            # Update display with prompt
-                            display_text = format_interleaved_content(
-                                display_blocks, is_streaming=True)
-                            if display_text != last_sent_text:
-                                await draft_streamer.update(display_text)
-                                last_sent_text = display_text
-
-                        # Add to pending tools for execution
-                        pending_tools.append({
-                            "id": event.tool_id,
-                            "name": event.tool_name,
-                            "input": event.tool_input,
-                        })
-
-            elif event.type == "message_end":
-                stop_reason = event.stop_reason
-                # Finalize any remaining text block
-                if current_thinking_text:
-                    content_blocks.append({
-                        "type": "thinking",
-                        "thinking": current_thinking_text
-                    })
-                if current_response_text:
-                    content_blocks.append({
-                        "type": "text",
-                        "text": current_response_text
-                    })
-
-            elif event.type == "stream_complete":
-                # Capture final message immediately to avoid race condition
-                # (another request could reset claude_provider state during tools)
-                captured_final_message = event.final_message
-
-        # Final update for any remaining text (with formatting)
-        display_text = format_interleaved_content(display_blocks,
-                                                  is_streaming=True)
-        if display_text and display_text != last_sent_text:
-            await draft_streamer.update(display_text)
-            last_sent_text = display_text
-
-        # Calculate lengths for logging
-        total_thinking = sum(
-            len(b["content"])
-            for b in display_blocks
-            if b["type"] == "thinking")
-        total_response = sum(
-            len(b["content"]) for b in display_blocks if b["type"] == "text")
-
-        logger.info("stream.unified.iteration_complete",
-                    thread_id=thread_id,
-                    iteration=iteration + 1,
-                    stop_reason=stop_reason,
-                    pending_tools=len(pending_tools),
-                    thinking_length=total_thinking,
-                    response_length=total_response)
-
-        if stop_reason in ("end_turn", "pause_turn"):
-            # Final answer: join all text blocks (strip tool markers later)
-            final_answer = "\n\n".join(b["content"]
-                                       for b in display_blocks
-                                       if b["type"] == "text").strip()
-
-            logger.info("stream.unified.complete",
-                        thread_id=thread_id,
-                        total_iterations=iteration + 1,
-                        final_answer_length=len(final_answer),
-                        stop_reason=stop_reason,
-                        had_thinking=total_thinking > 0)
-
-            # Format final message: text only (thinking removed)
-            # display_blocks is cleared after each file, so these are post-file
-            text_blocks = [b for b in display_blocks if b["type"] == "text"]
-            final_display = format_interleaved_content(text_blocks,
-                                                       is_streaming=False)
-            # Strip tool markers from final display
-            final_display = strip_tool_markers(final_display)
-
-            # Finalize draft to permanent message
-            # Stop global keepalive before finalizing
-            await stop_global_keepalive()
-
-            final_message = None
-            if final_display.strip():
-                try:
-                    final_message = await draft_streamer.finalize(
-                        final_text=final_display)
-                except Exception as e:  # pylint: disable=broad-exception-caught
-                    logger.error("stream.draft_finalize_failed",
-                                 thread_id=thread_id,
-                                 error=str(e))
-            else:
-                # No uncommitted content - just clear the draft
-                await draft_streamer.clear()
-
-            return final_answer, final_message
-
-        if stop_reason == "tool_use" and pending_tools:
-            # Execute all tools in PARALLEL for better performance
-            # (global keepalive continues running during tool execution)
-            tool_names = [t["name"] for t in pending_tools]
-            logger.info("stream.unified.executing_tools_parallel",
-                        thread_id=thread_id,
-                        tool_count=len(pending_tools),
-                        tool_names=tool_names)
-
-            # Create tasks for parallel execution
-            tool_tasks = [
-                _execute_single_tool_safe(
-                    tool_name=tool["name"],
-                    tool_input=tool["input"],
-                    bot=first_message.bot,
-                    session=session,
-                    thread_id=thread_id,
-                ) for tool in pending_tools
-            ]
-
-            # Execute all tools in parallel
-            raw_results = await asyncio.gather(*tool_tasks)
-
-            # Process results sequentially (UI updates, files, charging)
-            results = []
-            for idx, result in enumerate(raw_results):
-                tool = pending_tools[idx]
-                tool_name = tool["name"]
-                tool_input = tool["input"]
-                tool_duration = result.get("_duration", 0)
-                # Check if there's an actual error (not just empty string)
-                is_error = bool(result.get("error"))
-
-                # Clean up metadata keys before adding to results
-                clean_result = {
-                    k: v for k, v in result.items() if not k.startswith("_")
-                }
-                if is_error:
-                    clean_result["error"] = result["error"]
-
-                # Add system messages for completed tools
-                if not is_error:
-                    # Process generated files FIRST (commit draft before file)
-                    if "_file_contents" in result:
-                        # Commit current draft before sending file
-                        # This creates proper message ordering:
-                        # 1. Committed message (thinking/text before file)
-                        # 2. File (image/document)
-                        # 3. New draft (system message + follow-up)
-                        await commit_draft_before_file()
-
-                        await _process_generated_files(result, first_message,
-                                                       thread_id, session,
-                                                       user_file_repo, chat_id,
-                                                       user_id,
-                                                       telegram_thread_id)
-
-                    # Add system message to thinking block
-                    tool_system_msg = get_tool_system_message(
-                        tool_name, tool_input, clean_result)
-                    if tool_system_msg:
-                        append_to_display("thinking", tool_system_msg)
-
-                    # Charge user for tool cost
-                    if "cost_usd" in clean_result:
-                        await _charge_for_tool(session, user_id, tool_name,
-                                               clean_result,
-                                               first_message.message_id)
-
-                    record_tool_call(tool_name=tool_name,
-                                     success=True,
-                                     duration=tool_duration)
-                    if "cost_usd" in clean_result:
-                        record_cost(service=tool_name,
-                                    amount_usd=float(clean_result["cost_usd"]))
-                else:
-                    record_tool_call(tool_name=tool_name,
-                                     success=False,
-                                     duration=tool_duration)
-                    record_error(error_type="tool_execution", handler=tool_name)
-
-                results.append(clean_result)
-
-            # Update display after all tools processed
-            display_text = format_interleaved_content(display_blocks,
-                                                      is_streaming=True)
-            if display_text != last_sent_text:
-                await draft_streamer.update(display_text)
-                last_sent_text = display_text
-
-            # Format tool results
-            tool_uses = [{
-                "id": t["id"],
-                "name": t["name"]
-            } for t in pending_tools]
-            tool_results = format_tool_results(tool_uses, results)
-
-            # Add to conversation using captured_final_message (NOT provider state)
-            # CRITICAL: Use captured message which has thinking blocks with
-            # signatures (required by API). Provider state may be reset by other
-            # concurrent requests during tool execution.
-            final_message = captured_final_message
-            if final_message and final_message.content:
-                serialized_content = []
-                for block in final_message.content:
-                    if hasattr(block, 'model_dump'):
-                        serialized_content.append(block.model_dump())
+                elif event.type == "block_end":
+                    if event.tool_name and event.tool_id:
+                        # Tool input complete
+                        stream.handle_tool_input_complete(
+                            event.tool_id, event.tool_name, event.tool_input or
+                            {})
+                        # Update display with tool marker
+                        await stream.update_display()
                     else:
-                        serialized_content.append(block)
-                conversation.append({
-                    "role": "assistant",
-                    "content": serialized_content
-                })
-                # Only add tool_results if we have the assistant message
-                # (tool_results reference tool_use blocks in assistant message)
-                conversation.append({"role": "user", "content": tool_results})
-            else:
-                # No assistant message - can't continue tool loop safely
-                logger.error("stream.unified.no_assistant_message",
-                             thread_id=thread_id,
-                             tool_count=len(pending_tools))
-                await draft_streamer.clear()
-                await stop_global_keepalive()
-                return "⚠️ Tool execution error: missing assistant context", None
+                        await stream.handle_block_end()
 
-            # Update message to show system messages after tool execution
-            display_text = format_interleaved_content(display_blocks,
-                                                      is_streaming=True)
-            if display_text != last_sent_text:
-                await draft_streamer.update(display_text)
-                last_sent_text = display_text
+                elif event.type == "message_end":
+                    stream.handle_message_end(event.stop_reason)
 
-            logger.info("stream.unified.tool_results_added",
-                        thread_id=thread_id,
-                        tool_count=len(pending_tools))
+                elif event.type == "stream_complete":
+                    stream.handle_stream_complete(event.final_message)
 
-        else:
-            # Unexpected stop reason
-            logger.warning("stream.unified.unexpected_stop",
-                           thread_id=thread_id,
-                           stop_reason=stop_reason)
+            # Final update for any remaining text
+            await stream.update_display()
 
-            final_answer = "\n\n".join(b["content"]
-                                       for b in display_blocks
-                                       if b["type"] == "text").strip()
-            if not final_answer:
-                final_answer = f"⚠️ Unexpected stop reason: {stop_reason}"
+            # Log iteration stats
+            stream.log_iteration_complete(iteration + 1)
 
-            # Format final message: text only (thinking removed)
-            text_blocks = [b for b in display_blocks if b["type"] == "text"]
-            final_display = format_interleaved_content(text_blocks,
-                                                       is_streaming=False)
-            final_display = strip_tool_markers(final_display)
-            if final_display:
-                await draft_streamer.update(final_display, force=True)
-            else:
-                await draft_streamer.update(
-                    safe_html(f"⚠️ Unexpected stop reason: {stop_reason}"),
-                    force=True)
+            if stream.stop_reason in ("end_turn", "pause_turn"):
+                # Final answer
+                final_answer = stream.get_final_text()
+                final_display = stream.get_final_display()
 
-            # Finalize draft - stop global keepalive first
-            await stop_global_keepalive()
+                logger.info("stream.unified.complete",
+                            thread_id=thread_id,
+                            total_iterations=iteration + 1,
+                            final_answer_length=len(final_answer),
+                            stop_reason=stream.stop_reason,
+                            had_thinking=stream.display.total_thinking_length()
+                            > 0)
 
-            try:
-                final_message = await draft_streamer.finalize()
-            except Exception:  # pylint: disable=broad-exception-caught
+                # Finalize draft to permanent message
                 final_message = None
+                if final_display.strip():
+                    try:
+                        final_message = await dm.current.finalize(
+                            final_text=final_display)
+                    except Exception as e:  # pylint: disable=broad-exception-caught
+                        logger.error("stream.draft_finalize_failed",
+                                     thread_id=thread_id,
+                                     error=str(e))
+                else:
+                    await dm.current.clear()
 
-            return final_answer, final_message
+                return final_answer, final_message
 
-    # Max iterations exceeded - stop global keepalive
-    await stop_global_keepalive()
+            if stream.stop_reason == "tool_use" and stream.pending_tools:
+                # Execute all tools in PARALLEL, process results AS COMPLETED
+                pending_tools = stream.pending_tools
+                tool_names = [t.name for t in pending_tools]
+                logger.info("stream.unified.executing_tools_parallel",
+                            thread_id=thread_id,
+                            tool_count=len(pending_tools),
+                            tool_names=tool_names)
 
-    logger.error("stream.unified.max_iterations",
-                 thread_id=thread_id,
-                 max_iterations=max_iterations)
+                # Create indexed tasks for as_completed processing
+                async def _indexed_tool_task(idx: int, tool: ToolCall) -> tuple:
+                    """Execute tool and return (index, result) for ordering."""
+                    result = await _execute_single_tool_safe(
+                        tool_name=tool.name,
+                        tool_input=tool.input,
+                        bot=first_message.bot,
+                        session=session,
+                        thread_id=thread_id,
+                    )
+                    return (idx, result)
 
-    error_msg = (
-        f"⚠️ Tool loop exceeded maximum iterations ({max_iterations}). "
-        "The task might be too complex.")
+                tool_tasks = [
+                    _indexed_tool_task(idx, tool)
+                    for idx, tool in enumerate(pending_tools)
+                ]
 
-    # Finalize draft with error message
-    try:
-        await draft_streamer.update(error_msg)
-        final_message = await draft_streamer.finalize()
-    except Exception:  # pylint: disable=broad-exception-caught
-        final_message = None
+                # Process results as they complete (not waiting for all)
+                results = [None] * len(pending_tools)  # Preserve order
+                first_file_committed = False
 
-    return error_msg, final_message
+                for coro in asyncio.as_completed(tool_tasks):
+                    idx, result = await coro
+                    tool = pending_tools[idx]
+                    tool_duration = result.get("_duration", 0)
+                    is_error = bool(result.get("error"))
+
+                    # Clean up metadata keys
+                    clean_result = {
+                        k: v for k, v in result.items() if not k.startswith("_")
+                    }
+                    if is_error:
+                        clean_result["error"] = result["error"]
+
+                    if not is_error:
+                        # Send file immediately when ready
+                        if result.get("_file_contents"):
+                            if not first_file_committed:
+                                # Commit text BEFORE first file
+                                await stream.commit_for_files()
+                                first_file_committed = True
+                            # Send file immediately
+                            await _process_generated_files(
+                                result, first_message, thread_id, session,
+                                user_file_repo, chat_id, user_id,
+                                telegram_thread_id)
+
+                        # Charge user for tool cost
+                        if "cost_usd" in clean_result:
+                            await _charge_for_tool(session, user_id, tool.name,
+                                                   clean_result,
+                                                   first_message.message_id)
+
+                        record_tool_call(tool_name=tool.name,
+                                         success=True,
+                                         duration=tool_duration)
+                        if "cost_usd" in clean_result:
+                            record_cost(service=tool.name,
+                                        amount_usd=float(
+                                            clean_result["cost_usd"]))
+                    else:
+                        record_tool_call(tool_name=tool.name,
+                                         success=False,
+                                         duration=tool_duration)
+                        record_error(error_type="tool_execution",
+                                     handler=tool.name)
+
+                    results[idx] = clean_result
+
+                # Convert results list (filled via as_completed)
+                raw_results = results
+
+                # Add system messages AFTER files (so they appear after photos)
+                for idx, result in enumerate(raw_results):
+                    tool = pending_tools[idx]
+                    is_error = bool(result.get("error"))
+
+                    if not is_error:
+                        clean_result = {
+                            k: v
+                            for k, v in result.items()
+                            if not k.startswith("_")
+                        }
+                        tool_system_msg = get_tool_system_message(
+                            tool.name, tool.input, clean_result)
+                        if tool_system_msg:
+                            stream.add_system_message(tool_system_msg)
+
+                # Update display after all tools processed
+                await stream.update_display()
+
+                # Format tool results
+                tool_uses = [{
+                    "id": t.tool_id,
+                    "name": t.name
+                } for t in pending_tools]
+                tool_results = format_tool_results(tool_uses, results)
+
+                # Add to conversation using captured message from session
+                captured_msg = stream.captured_message
+                if captured_msg and captured_msg.content:
+                    serialized_content = []
+                    for block in captured_msg.content:
+                        if hasattr(block, 'model_dump'):
+                            serialized_content.append(block.model_dump())
+                        else:
+                            serialized_content.append(block)
+                    conversation.append({
+                        "role": "assistant",
+                        "content": serialized_content
+                    })
+                    conversation.append({
+                        "role": "user",
+                        "content": tool_results
+                    })
+                else:
+                    logger.error("stream.unified.no_assistant_message",
+                                 thread_id=thread_id,
+                                 tool_count=len(pending_tools))
+                    await dm.current.clear()
+                    return "⚠️ Tool execution error: missing assistant context", None
+
+                # Update display with system messages
+                await stream.update_display()
+
+                logger.info("stream.unified.tool_results_added",
+                            thread_id=thread_id,
+                            tool_count=len(pending_tools))
+
+            else:
+                # Unexpected stop reason
+                logger.warning("stream.unified.unexpected_stop",
+                               thread_id=thread_id,
+                               stop_reason=stream.stop_reason)
+
+                final_answer = stream.get_final_text()
+                if not final_answer:
+                    final_answer = f"⚠️ Unexpected stop: {stream.stop_reason}"
+
+                final_display = stream.get_final_display()
+                if final_display:
+                    await dm.current.update(final_display, force=True)
+                else:
+                    await dm.current.update(escape_html(
+                        f"⚠️ Unexpected stop: {stream.stop_reason}"),
+                                            force=True)
+
+                # Finalize draft
+                try:
+                    final_message = await dm.current.finalize()
+                except Exception:  # pylint: disable=broad-exception-caught
+                    final_message = None
+
+                return final_answer, final_message
+
+        # Max iterations exceeded (DraftManager will cleanup on exit)
+        logger.error("stream.unified.max_iterations",
+                     thread_id=thread_id,
+                     max_iterations=max_iterations)
+
+        error_msg = (
+            f"⚠️ Tool loop exceeded maximum iterations ({max_iterations}). "
+            "The task might be too complex.")
+
+        # Finalize draft with error message
+        try:
+            await dm.current.update(error_msg)
+            final_message = await dm.current.finalize()
+        except Exception:  # pylint: disable=broad-exception-caught
+            final_message = None
+
+        return error_msg, final_message
 
 
 async def _send_with_retry(
@@ -1286,7 +1047,8 @@ async def _handle_with_tools(request: LLMRequest, first_message: types.Message,
                     tool_duration = time.time() - tool_start_time
 
                     # Phase 1.5 Stage 6: Process generated files (if any)
-                    if "_file_contents" in result:
+                    # Check for non-empty _file_contents (truthy check)
+                    if result.get("_file_contents"):
                         file_contents = result.pop("_file_contents")
 
                         logger.info("tools.loop.processing_generated_files",

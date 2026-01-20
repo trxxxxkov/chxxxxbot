@@ -96,15 +96,11 @@ async def test_generate_image_success():
             session=MagicMock(),
         )
 
-        # Verify result structure
+        # Verify result structure (minimal - Claude doesn't need details)
         assert result["success"] == "true"
         assert "cost_usd" in result
         assert result["cost_usd"] == "0.134"  # Default 2K cost
-        assert "parameters_used" in result
-        assert result["parameters_used"]["aspect_ratio"] == "1:1"
-        assert result["parameters_used"]["image_size"] == "2K"
-        assert result["parameters_used"][
-            "model"] == "gemini-3-pro-image-preview"
+        # parameters_used removed to prevent Claude from including in response
 
         # Check _file_contents
         assert "_file_contents" in result
@@ -137,11 +133,10 @@ async def test_generate_image_custom_parameters():
             image_size="4K",
         )
 
-        # Verify custom parameters
+        # Verify result (4K costs more)
         assert result["success"] == "true"
         assert result["cost_usd"] == "0.240"  # 4K cost
-        assert result["parameters_used"]["aspect_ratio"] == "16:9"
-        assert result["parameters_used"]["image_size"] == "4K"
+        # parameters_used removed to prevent Claude from including in response
 
 
 @pytest.mark.asyncio
@@ -205,6 +200,35 @@ async def test_generate_image_no_image_in_response():
         assert result["success"] == "false"
         assert "error" in result
         assert "No image generated" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_generate_image_response_parts_none():
+    """Test handling when API returns response.parts = None.
+
+    Regression test for production bug where Google API returned
+    a response with parts=None, causing TypeError: 'NoneType' object
+    is not iterable.
+    """
+    mock_response = MagicMock()
+    mock_response.parts = None  # API sometimes returns None
+
+    mock_client = MagicMock()
+    mock_client.models.generate_content = MagicMock(return_value=mock_response)
+
+    with patch('core.tools.generate_image.get_google_client',
+               return_value=mock_client):
+
+        result = await generate_image(
+            prompt="Test prompt",
+            bot=MagicMock(),
+            session=MagicMock(),
+        )
+
+        # Should return error, not raise exception
+        assert result["success"] == "false"
+        assert "error" in result
+        assert "empty response" in result["error"].lower()
 
 
 @pytest.mark.asyncio

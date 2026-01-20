@@ -153,6 +153,17 @@ async def generate_image(  # pylint: disable=unused-argument,too-many-locals
         image_bytes = None
         generated_text = None
 
+        # Check if response has parts
+        if not response.parts:
+            logger.error("tools.generate_image.no_parts",
+                         response=str(response)[:500])
+            return {
+                "success": "false",
+                "error":
+                    "API returned empty response. The prompt may have "
+                    "been blocked by content filters. Try a different prompt.",
+            }
+
         for part in response.parts:
             if part.text is not None:
                 generated_text = part.text
@@ -192,16 +203,13 @@ async def generate_image(  # pylint: disable=unused-argument,too-many-locals
 
         # Return result with _file_contents for automatic delivery
         # Handler will: upload to Files API, save to DB, send to user
+        # Note: Keep result minimal - image is auto-delivered to user,
+        # Claude doesn't need to include image links in response
         result = {
             "success":
                 "true",
             "cost_usd":
                 f"{cost_to_float(cost_usd):.3f}",
-            "parameters_used": {
-                "aspect_ratio": aspect_ratio,
-                "image_size": image_size,
-                "model": "gemini-3-pro-image-preview",
-            },
             "_file_contents": [{
                 "filename": filename,
                 "content": image_bytes,
@@ -209,7 +217,7 @@ async def generate_image(  # pylint: disable=unused-argument,too-many-locals
             }],
         }
 
-        # Add generated text if present
+        # Add generated text if present (for text-to-image responses)
         if generated_text:
             result["generated_text"] = generated_text
 
@@ -241,21 +249,21 @@ def format_generate_image_result(
 
     Args:
         tool_input: The input parameters (prompt, aspect_ratio, image_size).
-        result: The result dictionary with success, parameters_used, etc.
+        result: The result dictionary with success, cost_usd.
 
     Returns:
-        Formatted system message string.
+        Formatted system message string (without newlines - handled by caller).
     """
     if "error" in result:
         error = result.get("error", "unknown error")
         preview = error[:80] + "..." if len(error) > 80 else error
-        return f"\n[❌ Ошибка генерации: {preview}]\n"
+        return f"[❌ Ошибка генерации: {preview}]"
 
-    params = result.get("parameters_used", {})
-    resolution = params.get("image_size", "2K")
-    aspect = params.get("aspect_ratio", "")
+    # Get params from tool_input since we removed parameters_used from result
+    resolution = tool_input.get("image_size", "2K")
+    aspect = tool_input.get("aspect_ratio", "")
     aspect_info = f", {aspect}" if aspect else ""
-    return f"\n[🎨 Изображение создано ({resolution}{aspect_info})]\n"
+    return f"[🎨 Изображение создано ({resolution}{aspect_info})]"
 
 
 # Unified tool configuration

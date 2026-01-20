@@ -405,6 +405,96 @@ with open('/tmp/inputs/data.csv', 'r') as f:
         mock_sandbox.run_code.assert_called_once()
 
 
+class TestExecutePythonFileContents:
+    """Tests for _file_contents handling.
+
+    Bug fix tests for message splitting issue:
+    - _file_contents should NOT be included when no files are generated
+    - _file_contents should only be included when there are actual files
+    """
+
+    @pytest.mark.asyncio
+    @patch('core.tools.execute_python.Sandbox')
+    @patch('core.tools.execute_python.get_e2b_api_key')
+    async def test_file_contents_not_included_when_no_files(
+            self, mock_get_api_key, mock_sandbox_class, mock_bot, mock_session):
+        """_file_contents should NOT be in result when no files generated.
+
+        Regression test: Previously _file_contents was always included (even as
+        empty list), which caused message splitting on every tool call instead
+        of only when files were actually generated.
+        """
+        mock_get_api_key.return_value = "test_api_key"
+
+        mock_sandbox = Mock()
+        mock_logs = Mock()
+        mock_logs.stdout = ["Hello\n"]
+        mock_logs.stderr = []
+
+        mock_execution = Mock()
+        mock_execution.error = None
+        mock_execution.results = []
+        mock_execution.logs = mock_logs
+
+        mock_sandbox.run_code.return_value = mock_execution
+        # No output files
+        mock_sandbox.files.list.return_value = []
+        mock_sandbox.__enter__ = Mock(return_value=mock_sandbox)
+        mock_sandbox.__exit__ = Mock(return_value=None)
+        mock_sandbox_class.create.return_value = mock_sandbox
+
+        result = await execute_python(code="print('Hello')",
+                                      bot=mock_bot,
+                                      session=mock_session)
+
+        # _file_contents should NOT be in result when no files
+        assert "_file_contents" not in result
+        # generated_files_count should be 0 when no files
+        assert result["generated_files_count"] == 0
+
+    @pytest.mark.asyncio
+    @patch('core.tools.execute_python.Sandbox')
+    @patch('core.tools.execute_python.get_e2b_api_key')
+    async def test_file_contents_included_when_files_generated(
+            self, mock_get_api_key, mock_sandbox_class, mock_bot, mock_session):
+        """_file_contents should be included when files are generated."""
+        mock_get_api_key.return_value = "test_api_key"
+
+        mock_sandbox = Mock()
+        mock_logs = Mock()
+        mock_logs.stdout = ["Saved to /tmp/output.txt\n"]
+        mock_logs.stderr = []
+
+        mock_execution = Mock()
+        mock_execution.error = None
+        mock_execution.results = []
+        mock_execution.logs = mock_logs
+
+        mock_sandbox.run_code.return_value = mock_execution
+
+        # Simulate output file
+        mock_file_entry = Mock()
+        mock_file_entry.name = "output.txt"
+        mock_file_entry.path = "/tmp/output.txt"
+        mock_sandbox.files.list.return_value = [mock_file_entry]
+        mock_sandbox.files.read.return_value = b"Hello, World!"
+
+        mock_sandbox.__enter__ = Mock(return_value=mock_sandbox)
+        mock_sandbox.__exit__ = Mock(return_value=None)
+        mock_sandbox_class.create.return_value = mock_sandbox
+
+        result = await execute_python(
+            code="with open('/tmp/output.txt', 'w') as f: f.write('Hello')",
+            bot=mock_bot,
+            session=mock_session)
+
+        # _file_contents should be present when files exist
+        assert "_file_contents" in result
+        assert len(result["_file_contents"]) == 1
+        assert result["_file_contents"][0]["filename"] == "output.txt"
+        assert result["_file_contents"][0]["content"] == b"Hello, World!"
+
+
 class TestExecutePythonToolDefinition:
     """Tests for EXECUTE_PYTHON_TOOL definition."""
 

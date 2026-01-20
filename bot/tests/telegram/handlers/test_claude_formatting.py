@@ -366,14 +366,12 @@ class TestGetToolSystemMessage:
     def test_generate_image(self):
         """Test generate_image system message."""
         result = get_tool_system_message(tool_name="generate_image",
-                                         tool_input={"prompt": "a cat"},
-                                         result={
-                                             "success": "true",
-                                             "parameters_used": {
-                                                 "image_size": "4K",
-                                                 "aspect_ratio": "16:9"
-                                             }
-                                         })
+                                         tool_input={
+                                             "prompt": "a cat",
+                                             "image_size": "4K",
+                                             "aspect_ratio": "16:9"
+                                         },
+                                         result={"success": "true"})
         assert "🎨" in result
         assert "Изображение создано" in result
         assert "4K" in result
@@ -383,10 +381,7 @@ class TestGetToolSystemMessage:
         """Test generate_image with default parameters."""
         result = get_tool_system_message(tool_name="generate_image",
                                          tool_input={"prompt": "a dog"},
-                                         result={
-                                             "success": "true",
-                                             "parameters_used": {}
-                                         })
+                                         result={"success": "true"})
         assert "🎨" in result
         assert "2K" in result  # Default resolution
 

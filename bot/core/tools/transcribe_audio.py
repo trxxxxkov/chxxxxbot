@@ -349,17 +349,17 @@ def format_transcribe_audio_result(
         result: The result dictionary with transcript, duration, language.
 
     Returns:
-        Formatted system message string.
+        Formatted system message string (without newlines - handled by caller).
     """
     if "error" in result:
         error = result.get("error", "unknown error")
         preview = error[:80] + "..." if len(error) > 80 else error
-        return f"\n[❌ Ошибка транскрипции: {preview}]\n"
+        return f"[❌ Ошибка транскрипции: {preview}]"
 
     duration = result.get("duration", 0)
     language = result.get("language", "")
     lang_info = f", {language}" if language else ""
-    return f"\n[🎤 Транскрибировано: {duration:.0f}s{lang_info}]\n"
+    return f"[🎤 Транскрибировано: {duration:.0f}s{lang_info}]"
 
 
 # Unified tool configuration

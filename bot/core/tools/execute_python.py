@@ -260,29 +260,21 @@ def _run_sandbox_sync(  # pylint: disable=too-many-locals,too-many-statements
         sandbox_duration = sandbox_end_time - sandbox_start_time
 
         # Prepare result dict
-        generated_files_meta = [{
-            "filename": f["filename"],
-            "path": f["path"],
-            "size": f["size"],
-            "mime_type": f["mime_type"]
-        } for f in generated_files]
-
+        # Note: Only include file count, not details - Claude doesn't need
+        # to know paths/filenames as files are auto-delivered to user
         result = {
-            "stdout":
-                stdout_str,
-            "stderr":
-                stderr_str,
-            "results":
-                results_serialized,
-            "error":
-                error_str,
-            "success":
-                str(success).lower(),
-            "generated_files":
-                json.dumps(generated_files_meta, ensure_ascii=False),
-            "_file_contents":
-                generated_files,
+            "stdout": stdout_str,
+            "stderr": stderr_str,
+            "results": results_serialized,
+            "error": error_str,
+            "success": str(success).lower(),
+            "generated_files_count": len(generated_files),
         }
+
+        # Only include _file_contents when there are actual files
+        # (avoids message splitting and leaking empty list to Claude)
+        if generated_files:
+            result["_file_contents"] = generated_files
 
         return result, sandbox_duration
 
@@ -652,13 +644,13 @@ def format_execute_python_result(
         if stdout:
             # Truncate long output
             preview = stdout[:100] + "..." if len(stdout) > 100 else stdout
-            return f"\n[✅ Код выполнен: {preview}]\n"
-        return "\n[✅ Код выполнен успешно]\n"
+            return f"[✅ Код выполнен: {preview}]"
+        return "[✅ Код выполнен успешно]"
     else:
         error = result.get("error", "unknown error")
         # Truncate long error
         preview = error[:80] + "..." if len(error) > 80 else error
-        return f"\n[❌ Ошибка выполнения: {preview}]\n"
+        return f"[❌ Ошибка выполнения: {preview}]"
 
 
 # Unified tool configuration

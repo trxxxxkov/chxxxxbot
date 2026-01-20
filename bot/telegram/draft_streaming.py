@@ -7,6 +7,7 @@ NO __init__.py - use direct import: from telegram.draft_streaming import DraftSt
 """
 
 import asyncio
+from asyncio import Task
 import random
 import time
 from typing import Optional
@@ -23,6 +24,101 @@ logger = get_logger(__name__)
 # sendMessageDraft still has rate limits, just more relaxed than edit_message
 MIN_UPDATE_INTERVAL = 0.3
 
+# Default keepalive interval (seconds)
+DEFAULT_KEEPALIVE_INTERVAL = 5.0
+
+
+class DraftManager:
+    """Manages multiple DraftStreamers with automatic cleanup.
+
+    Handles the common pattern where streaming may create multiple drafts
+    (e.g., when files are sent between text sections).
+
+    Implements async context manager for automatic resource cleanup.
+
+    Example:
+        async with DraftManager(bot, chat_id, topic_id) as dm:
+            await dm.current.update("Processing...")
+            # Send a file - this finalizes current draft
+            await dm.commit_and_create_new()
+            await dm.current.update("Done!")
+            return await dm.current.finalize()
+    """
+
+    def __init__(
+            self,
+            bot: Bot,
+            chat_id: int,
+            topic_id: Optional[int] = None,
+            keepalive_interval: float = DEFAULT_KEEPALIVE_INTERVAL) -> None:
+        """Initialize draft manager.
+
+        Args:
+            bot: Telegram Bot instance.
+            chat_id: Target chat ID.
+            topic_id: Telegram forum topic ID (None for main chat).
+            keepalive_interval: Seconds between keepalive updates.
+        """
+        self.bot = bot
+        self.chat_id = chat_id
+        self.topic_id = topic_id
+        self.keepalive_interval = keepalive_interval
+        self._current: Optional["DraftStreamer"] = None
+
+    @property
+    def current(self) -> "DraftStreamer":
+        """Get current draft streamer (creates one if needed)."""
+        if self._current is None:
+            self._current = DraftStreamer(
+                bot=self.bot,
+                chat_id=self.chat_id,
+                topic_id=self.topic_id,
+            )
+            self._current.start_keepalive(self.keepalive_interval)
+        return self._current
+
+    async def commit_and_create_new(self,
+                                    final_text: Optional[str] = None) -> None:
+        """Finalize current draft and prepare for new one.
+
+        Use this when sending files - commits current content, then
+        prepares for lazy creation of new draft after file is sent.
+
+        The new draft is NOT created immediately - it will be created
+        lazily on first access to `current`. This ensures the draft
+        appears AFTER any files sent between commit and next text.
+
+        Args:
+            final_text: Optional final text for current draft.
+        """
+        if self._current is not None:
+            if final_text:
+                await self._current.finalize(final_text=final_text)
+            else:
+                await self._current.clear()
+
+        # Clear current - new streamer will be created lazily on demand
+        # This ensures new draft appears AFTER files, not before
+        self._current = None
+
+    async def cleanup(self) -> None:
+        """Cleanup current draft streamer."""
+        if self._current is not None:
+            await self._current.clear()
+            self._current = None
+
+    async def __aenter__(self) -> "DraftManager":
+        """Enter async context manager."""
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> bool:
+        """Exit async context manager - ensure cleanup."""
+        await self.cleanup()
+        logger.debug("draft_manager.context_exit",
+                     chat_id=self.chat_id,
+                     had_exception=exc_type is not None)
+        return False
+
 
 class DraftStreamer:  # pylint: disable=too-many-instance-attributes
     """Manages draft-based message streaming with rate limiting.
@@ -31,6 +127,7 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
     Bot API 9.3 feature - requires forum topic mode enabled.
 
     Includes built-in throttling to avoid flood control.
+    Implements async context manager for automatic resource cleanup.
 
     Attributes:
         bot: Telegram Bot instance.
@@ -39,11 +136,22 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
         draft_id: Unique draft identifier for animated updates.
         last_text: Last sent text (to avoid duplicate updates).
 
-    Example:
+    Example (recommended - using context manager):
+        async with DraftStreamer(bot, chat_id=123, topic_id=456) as streamer:
+            await streamer.update("Thinking...")
+            await streamer.update("Done!")
+            return await streamer.finalize()
+        # Automatic cleanup on exit (even on exceptions)
+
+    Example (manual management):
         streamer = DraftStreamer(bot, chat_id=123, topic_id=456)
-        await streamer.update("Thinking...")
-        await streamer.update("Thinking... done!")
-        final_msg = await streamer.finalize()
+        streamer.start_keepalive()
+        try:
+            await streamer.update("Thinking...")
+            return await streamer.finalize()
+        except Exception:
+            await streamer.clear()
+            raise
     """
 
     def __init__(self,
@@ -67,10 +175,100 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
         self._last_update_time = 0.0
         self._pending_text: Optional[str] = None  # Text waiting to be sent
         self._finalized = False  # Prevents keepalive on finalized drafts
+        self._keepalive_task: Optional[Task[None]] = None  # Managed keepalive
+        self._keepalive_interval: float = 5.0  # Default keepalive interval
 
         logger.debug("draft_streamer.initialized",
                      chat_id=chat_id,
                      topic_id=topic_id,
+                     draft_id=self.draft_id)
+
+    async def __aenter__(self) -> "DraftStreamer":
+        """Enter async context manager - start keepalive.
+
+        Returns:
+            Self for use in 'async with' statement.
+        """
+        self.start_keepalive(self._keepalive_interval)
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> bool:
+        """Exit async context manager - ensure cleanup.
+
+        Automatically stops keepalive task and clears draft on any exit,
+        including exceptions. This prevents resource leaks.
+
+        Args:
+            exc_type: Exception type (if any).
+            exc_val: Exception value (if any).
+            exc_tb: Exception traceback (if any).
+
+        Returns:
+            False to propagate exceptions (never suppresses).
+        """
+        # Always cleanup - clear() is idempotent
+        await self.clear()
+        logger.debug("draft_streamer.context_exit",
+                     chat_id=self.chat_id,
+                     draft_id=self.draft_id,
+                     had_exception=exc_type is not None)
+        return False  # Don't suppress exceptions
+
+    def set_keepalive_interval(self, interval: float) -> "DraftStreamer":
+        """Set keepalive interval (for use before entering context).
+
+        Args:
+            interval: Seconds between keepalive updates.
+
+        Returns:
+            Self for method chaining.
+        """
+        self._keepalive_interval = interval
+        return self
+
+    def start_keepalive(self, interval: float = 5.0) -> None:
+        """Start automatic keepalive task.
+
+        Creates a background task that periodically sends keepalive updates
+        to prevent the draft from disappearing during long operations.
+
+        The task is automatically cancelled when finalize() or clear() is called.
+
+        Args:
+            interval: Seconds between keepalive updates (default: 5.0).
+        """
+        if self._keepalive_task is not None:
+            return  # Already running
+
+        async def keepalive_loop() -> None:
+            """Send periodic keepalive updates."""
+            while True:
+                await asyncio.sleep(interval)
+                await self.keepalive()
+
+        self._keepalive_task = asyncio.create_task(keepalive_loop())
+        logger.debug("draft_streamer.keepalive_started",
+                     chat_id=self.chat_id,
+                     draft_id=self.draft_id,
+                     interval=interval)
+
+    async def stop_keepalive(self) -> None:
+        """Stop the automatic keepalive task.
+
+        Called automatically by finalize() and clear().
+        Safe to call multiple times or when no task is running.
+        """
+        if self._keepalive_task is None:
+            return
+
+        self._keepalive_task.cancel()
+        try:
+            await self._keepalive_task
+        except asyncio.CancelledError:
+            pass
+        self._keepalive_task = None
+        logger.debug("draft_streamer.keepalive_stopped",
+                     chat_id=self.chat_id,
                      draft_id=self.draft_id)
 
     async def update(  # pylint: disable=too-many-return-statements
@@ -282,6 +480,9 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
         # commit_draft_before_file creates new DraftStreamer)
         self._finalized = True
 
+        # Stop keepalive task if running (prevents resource leak)
+        await self.stop_keepalive()
+
         # Determine what text to send (after any updates)
         text_to_send = final_text if final_text else self.last_text
 
@@ -306,26 +507,29 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
 
         Useful when streaming is interrupted or cancelled.
 
+        Simply marks the draft as finalized and stops keepalive.
+        The draft will disappear naturally after a few seconds without updates.
+
+        Note: We don't try to send empty/invisible content because Telegram
+        rejects it with "text must be non-empty". The natural timeout approach
+        is cleaner and more reliable.
+
+        Safe to call multiple times or after finalize().
+
         Returns:
             True on success.
         """
-        try:
-            # Send empty draft to clear
-            await self.bot(
-                SendMessageDraft(
-                    chat_id=self.chat_id,
-                    draft_id=self.draft_id,
-                    text=" ",  # Minimal content
-                    message_thread_id=self.topic_id,
-                ))
-
-            logger.debug("draft_streamer.cleared",
-                         chat_id=self.chat_id,
-                         draft_id=self.draft_id)
+        # Skip if already finalized (idempotent - safe to call after finalize)
+        if self._finalized:
+            await self.stop_keepalive()  # Ensure keepalive is stopped
             return True
 
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            logger.warning("draft_streamer.clear_failed",
-                           chat_id=self.chat_id,
-                           error=str(e))
-            return False
+        # Mark as finalized to prevent further updates
+        self._finalized = True
+        await self.stop_keepalive()  # Stop keepalive task if running
+
+        logger.debug("draft_streamer.cleared",
+                     chat_id=self.chat_id,
+                     draft_id=self.draft_id,
+                     had_content=bool(self.last_text))
+        return True
