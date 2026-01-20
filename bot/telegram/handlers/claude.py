@@ -1,11 +1,18 @@
-"""Claude conversation handler.
+"""Claude conversation processing.
 
-This module handles all text messages from users, sends them to Claude API,
-and streams responses back to Telegram in real-time.
+This module provides the core Claude API integration:
+- ClaudeProvider initialization
+- Message batch processing (_process_message_batch)
+- Streaming with tool execution (_stream_with_unified_events)
+- File handling for generated content
+
+The message handling entry point is in telegram.pipeline.handler (unified pipeline).
 
 # pylint: disable=too-many-lines
 
-NO __init__.py - use direct import: from telegram.handlers.claude import router
+NO __init__.py - use direct import:
+    from telegram.handlers.claude import init_claude_provider
+    from telegram.handlers.claude import _process_message_batch
 """
 
 import asyncio
@@ -18,8 +25,6 @@ import re
 import time
 from typing import Optional, TYPE_CHECKING
 
-from aiogram import F
-from aiogram import Router
 from aiogram import types
 from aiogram.exceptions import TelegramRetryAfter
 
@@ -48,14 +53,12 @@ from core.exceptions import ToolValidationError
 from core.message_queue import MessageQueueManager
 from core.models import LLMRequest
 from core.models import Message
-from core.models import StreamEvent
 from core.tools.helpers import extract_tool_uses
 from core.tools.helpers import format_files_section
 from core.tools.helpers import format_tool_results
 from core.tools.helpers import get_available_files
 from core.tools.registry import execute_tool
 from core.tools.registry import get_tool_definitions
-from core.tools.registry import get_tool_emoji
 from core.tools.registry import get_tool_system_message
 from db.engine import get_session
 from db.models.message import MessageRole
@@ -84,100 +87,12 @@ from utils.metrics import record_claude_response_time
 from utils.metrics import record_claude_tokens
 from utils.metrics import record_cost
 from utils.metrics import record_error
-from utils.metrics import record_message_received
 from utils.metrics import record_message_sent
 from utils.metrics import record_messages_batched
 from utils.metrics import record_tool_call
 from utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
-
-# Create router with name
-router = Router(name="claude")
-
-
-def safe_html(text: str) -> str:
-    """Escape HTML special characters for Telegram parse_mode=HTML.
-
-    Deprecated: Use telegram.streaming.escape_html instead.
-    Kept for backward compatibility.
-
-    Args:
-        text: Raw text from Claude.
-
-    Returns:
-        HTML-escaped text safe for Telegram.
-    """
-    return escape_html(text)
-
-
-def strip_tool_markers(text: str) -> str:
-    """Remove tool markers and system messages from final response.
-
-    Delegates to telegram.streaming.strip_tool_markers.
-    Kept as local function for backward compatibility.
-
-    Args:
-        text: Response text with possible markers.
-
-    Returns:
-        Clean text without tool markers.
-    """
-    return _strip_tool_markers(text)
-
-
-def format_interleaved_content(blocks: list[dict],
-                               is_streaming: bool = True) -> str:
-    """Format thinking and text blocks for Telegram display.
-
-    Structure during streaming:
-    - All thinking/tool blocks collected at TOP in one expandable blockquote
-    - All text blocks concatenated below
-
-    Final display: only text (thinking filtered out before calling).
-
-    Args:
-        blocks: List of {"type": "thinking"|"text", "content": str} dicts.
-        is_streaming: Whether we're still streaming.
-
-    Returns:
-        Formatted HTML string for Telegram.
-    """
-    # Separate thinking and text blocks
-    thinking_parts = []
-    text_parts = []
-
-    for block in blocks:
-        content = block.get("content", "")
-        if not content or not content.strip():
-            continue
-
-        escaped = safe_html(content.strip())
-
-        if block.get("type") == "thinking":
-            if is_streaming:
-                # Don't add 🧠 prefix to tool markers (they start with [emoji)
-                if escaped.startswith("["):
-                    thinking_parts.append(escaped)
-                else:
-                    thinking_parts.append(f"🧠 {escaped}")
-        else:  # text block
-            text_parts.append(escaped)
-
-    # Build result: thinking block at top (if streaming), then text
-    result_parts = []
-
-    if thinking_parts:
-        # All thinking in one expandable blockquote at the top
-        thinking_content = "\n\n".join(thinking_parts)
-        result_parts.append(
-            f"<blockquote expandable>{thinking_content}</blockquote>")
-
-    if text_parts:
-        result_parts.append("\n\n".join(text_parts))
-
-    result = "\n\n".join(result_parts) if result_parts else ""
-    return re.sub(r'\n{3,}', '\n\n', result)
 
 
 def split_text_smart(text: str,
@@ -1536,13 +1451,13 @@ async def _process_message_batch(
                 # No cleanup needed - drafts don't create intermediate messages
 
                 # Strip tool markers for database storage
-                clean_response = strip_tool_markers(
+                clean_response = _strip_tool_markers(
                     response_text) if response_text else ""
 
                 # If finalize failed, send fallback message
                 if not bot_message:
                     if clean_response:
-                        safe_final = safe_html(clean_response)
+                        safe_final = escape_html(clean_response)
                         chunks = split_text_smart(safe_final)
                         for chunk in chunks:
                             bot_message = await _send_with_retry(
@@ -1849,139 +1764,3 @@ async def _process_message_batch(
 
         await first_message.answer("⚠️ Unexpected error occurred.\n\n"
                                    "Please try again or contact administrator.")
-
-
-@router.message(F.text | (F.photo & F.caption) | (F.document & F.caption))
-async def handle_claude_message(message: types.Message,
-                                session: AsyncSession) -> None:
-    """Handle text message or file with caption.
-
-    Phase 1.5: Support for photos/documents with caption.
-    Phase 1.4.3: Per-thread message batching with smart accumulation.
-
-    Flow:
-    1. If photo/document with caption → upload to Files API first
-    2. Get or create user, chat, thread
-    3. Add message to thread's queue
-    4. Queue manager decides when to process (immediately or after 300ms)
-
-    Args:
-        message: Incoming Telegram message (text or file with caption).
-        session: Database session (injected by middleware).
-    """
-    if message_queue_manager is None:
-        logger.error("claude_handler.queue_not_initialized")
-        await message.answer(
-            "Bot is not properly configured. Please contact administrator.")
-        return
-
-    # Record metrics
-    content_type = "text"
-    if message.photo:
-        content_type = "photo"
-    elif message.document:
-        content_type = "document"
-    record_message_received(chat_type=message.chat.type,
-                            content_type=content_type)
-
-    try:
-        # 1. Get or create user
-        user_repo = UserRepository(session)
-        if not message.from_user:
-            logger.warning("claude_handler.no_from_user",
-                           chat_id=message.chat.id)
-            await message.answer("Cannot process messages without user info.")
-            return
-
-        user, was_created = await user_repo.get_or_create(
-            telegram_id=message.from_user.id,
-            is_bot=message.from_user.is_bot,
-            username=message.from_user.username,
-            first_name=message.from_user.first_name,
-            last_name=message.from_user.last_name,
-            language_code=message.from_user.language_code,
-            is_premium=message.from_user.is_premium or False,
-            added_to_attachment_menu=(message.from_user.added_to_attachment_menu
-                                      or False),
-        )
-
-        if was_created:
-            logger.info("claude_handler.user_created",
-                        user_id=user.id,
-                        telegram_id=user.id)
-
-        # 2. Get or create chat
-        chat_repo = ChatRepository(session)
-        chat, was_created = await chat_repo.get_or_create(
-            telegram_id=message.chat.id,
-            chat_type=message.chat.type,
-            title=message.chat.title,
-            username=message.chat.username,
-            first_name=message.chat.first_name,
-            last_name=message.chat.last_name,
-            is_forum=message.chat.is_forum or False,
-        )
-
-        if was_created:
-            logger.info("claude_handler.chat_created",
-                        chat_id=chat.id,
-                        telegram_id=chat.id)
-
-        # 3. Get or create thread (Phase 1.4.3: Telegram Topics support)
-        # message.message_thread_id from Bot API 9.3
-        # - None for regular chats (one thread per chat)
-        # - Integer for forum topics (separate context per topic)
-        thread_repo = ThreadRepository(session)
-
-        # Generate thread title from chat/user info
-        thread_title = (
-            message.chat.title  # Groups/supergroups
-            or message.chat.first_name  # Private chats
-            or message.from_user.first_name if message.from_user else None)
-
-        thread, was_created = await thread_repo.get_or_create_thread(
-            chat_id=chat.id,
-            user_id=user.id,
-            thread_id=message.message_thread_id,  # Telegram forum thread ID
-            title=thread_title,
-        )
-
-        if was_created:
-            logger.info("claude_handler.thread_created",
-                        thread_id=thread.id,
-                        user_id=user.id,
-                        telegram_thread_id=message.message_thread_id)
-
-        # Log message received (after thread resolution to know is_new_thread)
-        logger.info("claude_handler.message_received",
-                    chat_id=message.chat.id,
-                    user_id=message.from_user.id if message.from_user else None,
-                    message_id=message.message_id,
-                    message_thread_id=message.message_thread_id,
-                    is_topic_message=message.is_topic_message,
-                    text_length=len(message.text or message.caption or ""),
-                    is_new_thread="true" if was_created else "false")
-
-        # CRITICAL: Commit immediately so queue manager can see the thread
-        # Phase 1.4.3: Avoid race condition between parallel sessions
-        await session.commit()
-
-        # 4. Add message to queue (queue manager handles the rest)
-        # Phase 1.4.3: Smart batching
-        # - Long messages (>4000 chars) → wait 300ms for split parts
-        # - Short messages → process immediately
-        # - During processing → accumulate for next batch
-        await message_queue_manager.add_message(thread.id, message)
-
-        logger.debug("claude_handler.message_queued",
-                     thread_id=thread.id,
-                     message_id=message.message_id)
-
-    except Exception as e:  # pylint: disable=broad-exception-caught
-        logger.error("claude_handler.queue_error",
-                     error=str(e),
-                     error_type=type(e).__name__,
-                     exc_info=True)
-
-        await message.answer("⚠️ Failed to queue message.\n\n"
-                             "Please try again or contact administrator.")
