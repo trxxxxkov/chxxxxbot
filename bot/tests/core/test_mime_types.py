@@ -104,6 +104,24 @@ class TestDetectMimeFromMagic:
         jpeg_bytearray = bytearray(JPEG_BYTES)
         assert detect_mime_from_magic(jpeg_bytearray) == 'image/jpeg'
 
+    def test_memoryview_input_works(self):
+        """Test that memoryview input is converted to bytes and works.
+
+        Regression test: Some libraries return memoryview objects,
+        which libmagic ctypes bindings don't accept directly.
+        """
+        # memoryview should work the same as bytes
+        png_memoryview = memoryview(PNG_BYTES)
+        assert detect_mime_from_magic(png_memoryview) == 'image/png'
+
+        jpeg_memoryview = memoryview(JPEG_BYTES)
+        assert detect_mime_from_magic(jpeg_memoryview) == 'image/jpeg'
+
+        # memoryview of bytearray should also work
+        ba = bytearray(PDF_BYTES)
+        pdf_memoryview = memoryview(ba)
+        assert detect_mime_from_magic(pdf_memoryview) == 'application/pdf'
+
     def test_non_bytes_input_returns_none(self):
         """Test that non-binary input returns None gracefully.
 

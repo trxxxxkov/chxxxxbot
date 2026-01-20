@@ -146,14 +146,18 @@ def normalize_mime_type(mime_type: str) -> str:
     return MIME_NORMALIZATION.get(normalized, normalized)
 
 
-def detect_mime_from_magic(file_bytes: bytes | bytearray) -> Optional[str]:
+def detect_mime_from_magic(
+        file_bytes: bytes | bytearray | memoryview) -> Optional[str]:
     """Detect MIME type using libmagic.
 
     Uses python-magic (libmagic) to detect file type from content.
     This is the most reliable method for binary files.
 
+    Note: libmagic's ctypes bindings only accept bytes, not bytearray
+    or memoryview. This function handles the conversion automatically.
+
     Args:
-        file_bytes: File content as bytes or bytearray.
+        file_bytes: File content as bytes, bytearray, or memoryview.
 
     Returns:
         Detected MIME type or None if detection fails.
@@ -165,9 +169,10 @@ def detect_mime_from_magic(file_bytes: bytes | bytearray) -> Optional[str]:
     if not file_bytes:
         return None
 
-    # Convert bytearray to bytes (libmagic requires bytes, not bytearray)
-    # Also reject non-binary types like str, list, etc.
-    if isinstance(file_bytes, bytearray):
+    # libmagic ctypes bindings only accept bytes, not bytearray/memoryview
+    # Convert any buffer-like object to bytes
+    # See: https://github.com/ahupp/python-magic (uses ctypes)
+    if isinstance(file_bytes, (bytearray, memoryview)):
         file_bytes = bytes(file_bytes)
     elif not isinstance(file_bytes, bytes):
         logger.warning("mime.magic_expected_bytes",
