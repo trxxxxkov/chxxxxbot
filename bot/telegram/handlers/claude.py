@@ -995,15 +995,15 @@ async def _execute_single_tool_safe(
         return result
 
     except ToolValidationError as e:
-        # Validation errors are expected (wrong file type, missing params)
-        # Log as warning, not error - this is normal operation
+        # Validation worked correctly - LLM just passed wrong params
+        # Log as info since system behaved as expected
         duration = time.time() - start_time
 
-        logger.warning("tools.parallel.validation_failed",
-                       thread_id=thread_id,
-                       tool_name=tool_name,
-                       error=str(e),
-                       duration_ms=round(duration * 1000))
+        logger.info("tools.parallel.validation_rejected",
+                    thread_id=thread_id,
+                    tool_name=tool_name,
+                    reason=str(e),
+                    duration_ms=round(duration * 1000))
 
         return {
             "error": str(e),
