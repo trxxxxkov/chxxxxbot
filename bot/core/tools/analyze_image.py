@@ -151,11 +151,21 @@ ANALYZE_IMAGE_TOOL = {
     "description":
         """Analyze an image using Claude's vision capabilities.
 
+IMPORTANT: This tool ONLY works with IMAGE files (JPEG, PNG, GIF, WebP).
+Check the file's mime_type in "Available files" - it MUST start with "image/".
+For data files (.json, .jsonl, .csv, .txt), use execute_python to read them directly.
+
 Use this tool for photos, screenshots, diagrams, charts when you need
 visual understanding. The tool uses Claude Sonnet 4.5's vision API to analyze
 images and answer questions about content. It can identify objects, read text (OCR),
 describe scenes, analyze visual data, understand charts and diagrams, and extract
 information from screenshots.
+
+<supported_formats>
+ONLY these MIME types are supported:
+- image/jpeg, image/png, image/gif, image/webp
+Check mime_type in "Available files" section before calling this tool.
+</supported_formats>
 
 <verification_use_case>
 CRITICAL: This tool is essential for verifying image outputs from execute_python.
@@ -184,8 +194,9 @@ preparing processing code).
 
 <when_not_to_use>
 Do NOT use for:
-- Text-only questions where image is not relevant
+- NON-IMAGE files (.json, .jsonl, .csv, .txt, .pdf) - use execute_python instead
 - PDF files (use analyze_pdf instead for better text extraction)
+- Text-only questions where image is not relevant
 - When user explicitly asks not to analyze images
 </when_not_to_use>
 
@@ -204,8 +215,9 @@ Token cost: ~1600 tokens per 1092x1092px image. Larger images consume proportion
             "claude_file_id": {
                 "type":
                     "string",
-                "description": ("File ID from Files API (claude_file_id from "
-                                "available files list in conversation)")
+                "description": ("File ID from Files API. MUST be an image file "
+                                "(mime_type starting with 'image/'). Check "
+                                "'Available files' section for file details.")
             },
             "question": {
                 "type":
