@@ -195,11 +195,13 @@ class TestAnalyzePdfToolDefinition:
         assert "PDF" in description or "pdf" in description
         assert "page" in description.lower()
         assert "token" in description.lower()
-        assert "chart" in description.lower() or "visual" in description.lower()
 
-        # Should mention when to use (XML format)
-        assert "<when_to_use>" in description
-        assert "<when_not_to_use>" in description
+        # Should mention mime_type requirement (Claude 4 best practices)
+        assert "mime_type" in description
+
+        # Should have structured sections
+        assert "<capabilities>" in description
+        assert "<limitations>" in description
 
         # Should mention cost
         assert "cost" in description.lower() or "token" in description.lower()

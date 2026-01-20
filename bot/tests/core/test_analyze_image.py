@@ -177,11 +177,11 @@ class TestAnalyzeImageToolDefinition:
         assert "vision" in description.lower(
         ) or "analyze" in description.lower()
 
-        # Should mention when to use (XML format)
-        assert "<when_to_use>" in description
-        assert "<when_not_to_use>" in description
+        # Should mention mime_type requirement (Claude 4 best practices)
+        assert "mime_type" in description
 
-        # Should mention limitations (XML format)
+        # Should have structured sections
+        assert "<capabilities>" in description
         assert "<limitations>" in description
         assert "token" in description.lower()
 

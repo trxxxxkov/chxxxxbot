@@ -44,6 +44,7 @@ from core.exceptions import APITimeoutError
 from core.exceptions import ContextWindowExceededError
 from core.exceptions import LLMError
 from core.exceptions import RateLimitError
+from core.exceptions import ToolValidationError
 from core.message_queue import MessageQueueManager
 from core.models import LLMRequest
 from core.models import Message
@@ -993,7 +994,26 @@ async def _execute_single_tool_safe(
 
         return result
 
+    except ToolValidationError as e:
+        # Validation errors are expected (wrong file type, missing params)
+        # Log as warning, not error - this is normal operation
+        duration = time.time() - start_time
+
+        logger.warning("tools.parallel.validation_failed",
+                       thread_id=thread_id,
+                       tool_name=tool_name,
+                       error=str(e),
+                       duration_ms=round(duration * 1000))
+
+        return {
+            "error": str(e),
+            "_tool_name": tool_name,
+            "_start_time": start_time,
+            "_duration": duration,
+        }
+
     except Exception as e:  # pylint: disable=broad-exception-caught
+        # Unexpected errors (network, API, bugs) - log as error
         duration = time.time() - start_time
 
         logger.error("tools.parallel.failed",

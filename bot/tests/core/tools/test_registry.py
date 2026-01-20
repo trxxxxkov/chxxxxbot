@@ -481,7 +481,12 @@ class TestFileTypeValidation:
 
     @pytest.mark.asyncio
     async def test_validate_file_type_rejects_wrong_type(self):
-        """Test validation rejects wrong MIME type."""
+        """Test validation rejects wrong MIME type with ToolValidationError.
+
+        Regression test: Wrong file type raises ToolValidationError (not
+        ValueError) so it can be logged as warning instead of error.
+        """
+        from core.exceptions import ToolValidationError
         from db.models.user_file import UserFile
 
         # Create mock user file with wrong MIME type
@@ -497,7 +502,7 @@ class TestFileTypeValidation:
 
         with patch('db.repositories.user_file_repository.UserFileRepository',
                    return_value=mock_repo):
-            with pytest.raises(ValueError, match="not supported"):
+            with pytest.raises(ToolValidationError, match="not supported"):
                 await _validate_file_type(tool, {"claude_file_id": "file_123"},
                                           mock_session)
 

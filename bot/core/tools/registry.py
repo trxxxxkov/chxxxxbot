@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from aiogram import Bot
     from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.exceptions import ToolValidationError
 from core.tools.analyze_image import TOOL_CONFIG as ANALYZE_IMAGE_CONFIG
 from core.tools.analyze_pdf import TOOL_CONFIG as ANALYZE_PDF_CONFIG
 from core.tools.base import ToolConfig
@@ -198,7 +199,7 @@ async def _validate_file_type(
                        mime_type=mime_type,
                        filename=user_file.filename,
                        allowed_prefixes=tool.allowed_mime_prefixes)
-        raise ValueError(error_msg)
+        raise ToolValidationError(error_msg, tool_name=tool.name)
 
     logger.debug("tools.file_validation.passed",
                  tool_name=tool.name,

@@ -117,3 +117,26 @@ class InvalidModelError(LLMError):
     """
 
     pass  # pylint: disable=unnecessary-pass
+
+
+class ToolValidationError(Exception):
+    """Tool input validation failed.
+
+    Raised when tool inputs fail validation (wrong file type, missing params).
+    This is an expected condition, not a system error - should be logged as
+    warning, not error. The error message is returned to Claude for correction.
+
+    Attributes:
+        message: User-friendly error message for Claude.
+        tool_name: Name of the tool that failed validation.
+    """
+
+    def __init__(self, message: str, tool_name: str):
+        """Initialize ToolValidationError.
+
+        Args:
+            message: Error message describing the validation failure.
+            tool_name: Name of the tool that failed validation.
+        """
+        super().__init__(message)
+        self.tool_name = tool_name
