@@ -31,6 +31,7 @@ def reset_routers():
     from telegram.handlers import (
         admin,
         claude,
+        edited_message,
         files,
         media_handlers,
         model,
@@ -47,6 +48,7 @@ def reset_routers():
         admin.router,
         files.router,
         media_handlers.router,
+        edited_message.router,
         claude.router,
     ]
 
@@ -185,14 +187,14 @@ def test_create_dispatcher_router_order():
         # Check routers registered
         routers = list(dispatcher.sub_routers)
 
-        # Phase 2.1+: Should have 8 routers (added payment and admin)
-        assert len(routers) == 8
+        # Should have 9 routers (added edited_message)
+        assert len(routers) == 9
 
         # Check router names (order matters - claude must be last)
         router_names = [r.name for r in routers]
         expected = [
             "start", "model", "personality", "payment", "admin", "files",
-            "media", "claude"
+            "media", "edited_message", "claude"
         ]
         assert router_names == expected, \
             f"Routers should be in order: {expected}"
@@ -209,10 +211,10 @@ def test_create_dispatcher_router_names():
         routers = list(dispatcher.sub_routers)
         router_names = [r.name for r in routers]
 
-        # Phase 2.1+: Check all routers present (added payment and admin)
+        # Check all routers present (added edited_message)
         expected_routers = [
             "start", "model", "personality", "payment", "admin", "files",
-            "media", "claude"
+            "media", "edited_message", "claude"
         ]
         for router_name in expected_routers:
             assert router_name in router_names, \
@@ -227,10 +229,10 @@ def test_create_dispatcher_logging():
     with patch('telegram.loader.logger') as mock_logger:
         create_dispatcher()
 
-        # Verify logging (Phase 2.1+: 8 routers with payment and admin)
+        # Verify logging (9 routers with edited_message)
         expected_routers = [
             "start", "model", "personality", "payment", "admin", "files",
-            "media", "claude"
+            "media", "edited_message", "claude"
         ]
         mock_logger.info.assert_called_once_with("dispatcher_created",
                                                  routers=expected_routers)

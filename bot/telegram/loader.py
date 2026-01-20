@@ -11,6 +11,8 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from telegram.handlers import admin  # Phase 2.1: Admin commands
 from telegram.handlers import claude
+from telegram.handlers import \
+    edited_message  # Telegram features: edit tracking
 from telegram.handlers import files
 from telegram.handlers import media_handlers
 from telegram.handlers import model
@@ -71,6 +73,7 @@ def create_dispatcher() -> Dispatcher:
     dispatcher.include_router(files.router)  # Phase 1.5: Photo/document uploads
     dispatcher.include_router(
         media_handlers.router)  # Phase 1.6: Voice/audio/video
+    dispatcher.include_router(edited_message.router)  # Edit tracking
     dispatcher.include_router(claude.router)  # Catch-all should be last
 
     logger.info(
@@ -83,6 +86,7 @@ def create_dispatcher() -> Dispatcher:
             "admin",
             "files",
             "media",
+            "edited_message",
             "claude",
         ],
     )

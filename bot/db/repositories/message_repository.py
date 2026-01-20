@@ -51,7 +51,7 @@ class MessageRepository(BaseRepository[Message]):
         """
         return await self.session.get(Message, (chat_id, message_id))
 
-    # pylint: disable=too-many-locals
+    # pylint: disable=too-many-locals,too-many-arguments
     async def create_message(
         self,
         chat_id: int,
@@ -67,6 +67,12 @@ class MessageRepository(BaseRepository[Message]):
         attachments: Optional[list[dict]] = None,
         edit_date: Optional[int] = None,
         thinking_blocks: Optional[str] = None,
+        # Context fields (Phase 2.x: Telegram features)
+        sender_display: Optional[str] = None,
+        forward_origin: Optional[dict] = None,
+        reply_snippet: Optional[str] = None,
+        reply_sender_display: Optional[str] = None,
+        quote_data: Optional[dict] = None,
     ) -> Message:
         """Create new message with attachments.
 
@@ -87,6 +93,11 @@ class MessageRepository(BaseRepository[Message]):
             attachments: List of attachment dicts. Defaults to None.
             edit_date: Unix timestamp of last edit. Defaults to None.
             thinking_blocks: Extended thinking content (Phase 1.4.3). Defaults to None.
+            sender_display: @username or "First Last" of sender. Defaults to None.
+            forward_origin: Forward origin dict. Defaults to None.
+            reply_snippet: First 200 chars of replied message. Defaults to None.
+            reply_sender_display: Sender display of replied message. Defaults to None.
+            quote_data: Quote dict {text, position, is_manual}. Defaults to None.
 
         Returns:
             Created Message instance.
@@ -126,6 +137,14 @@ class MessageRepository(BaseRepository[Message]):
             text_content=text_content,
             caption=caption,
             reply_to_message_id=reply_to_message_id,
+            # Context fields (Phase 2.x: Telegram features)
+            reply_snippet=reply_snippet,
+            reply_sender_display=reply_sender_display,
+            quote_data=quote_data,
+            forward_origin=forward_origin,
+            sender_display=sender_display,
+            edit_count=0,  # New messages have no edits
+            original_content=None,  # Set on first edit
             media_group_id=media_group_id,
             has_photos=has_photos,
             has_documents=has_documents,
@@ -150,6 +169,8 @@ class MessageRepository(BaseRepository[Message]):
     ) -> None:
         """Update message text/caption (for edited messages).
 
+        Tracks edit count and saves original content on first edit.
+
         Args:
             chat_id: Telegram chat ID.
             message_id: Telegram message ID.
@@ -164,6 +185,13 @@ class MessageRepository(BaseRepository[Message]):
         if not message:
             raise ValueError(f"Message ({chat_id}, {message_id}) not found")
 
+        # Save original content on first edit
+        if message.edit_count == 0 and message.original_content is None:
+            message.original_content = message.text_content or message.caption
+
+        # Increment edit count
+        message.edit_count = (message.edit_count or 0) + 1
+
         if text_content is not None:
             message.text_content = text_content
         if caption is not None:
@@ -172,6 +200,52 @@ class MessageRepository(BaseRepository[Message]):
             message.edit_date = edit_date
 
         await self.session.flush()
+
+    async def update_message_edit(
+        self,
+        chat_id: int,
+        message_id: int,
+        text_content: Optional[str] = None,
+        caption: Optional[str] = None,
+        edit_date: Optional[int] = None,
+    ) -> Optional[Message]:
+        """Update message for an edit event with tracking.
+
+        This method tracks edit history by:
+        - Saving original_content on first edit
+        - Incrementing edit_count
+        - Updating text/caption and edit_date
+
+        Args:
+            chat_id: Telegram chat ID.
+            message_id: Telegram message ID.
+            text_content: New text content. Defaults to None.
+            caption: New caption. Defaults to None.
+            edit_date: Unix timestamp of edit. Defaults to None.
+
+        Returns:
+            Updated Message instance or None if message not found.
+        """
+        message = await self.get_message(chat_id, message_id)
+        if not message:
+            return None
+
+        # Save original content on first edit
+        if message.edit_count == 0 and message.original_content is None:
+            message.original_content = message.text_content or message.caption
+
+        # Increment edit count
+        message.edit_count = (message.edit_count or 0) + 1
+
+        if text_content is not None:
+            message.text_content = text_content
+        if caption is not None:
+            message.caption = caption
+        if edit_date is not None:
+            message.edit_date = edit_date
+
+        await self.session.flush()
+        return message
 
     async def get_thread_messages(
         self,

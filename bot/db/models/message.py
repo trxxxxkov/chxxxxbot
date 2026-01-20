@@ -60,6 +60,13 @@ class Message(Base):
         text_content: Text content.
         caption: Media caption.
         reply_to_message_id: Replied message ID.
+        reply_snippet: First 200 chars of replied message.
+        reply_sender_display: @username or "First Last" of replied sender.
+        quote_data: Quote info {text, position, is_manual}.
+        forward_origin: Forward origin {type, display, date, chat_id?, message_id?}.
+        sender_display: Cached @username or "First Last" for sender.
+        edit_count: Number of times message was edited.
+        original_content: First version of text before any edits.
         media_group_id: Groups related media messages.
         has_photos: Denormalized flag for photo attachments.
         has_documents: Denormalized flag for document attachments.
@@ -141,6 +148,54 @@ class Message(Base):
         Integer,
         nullable=True,
         doc="Replied message ID (within same chat)",
+    )
+
+    # Reply context (denormalized for performance)
+    reply_snippet: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        doc="First 200 chars of replied message",
+    )
+
+    reply_sender_display: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        doc="@username or 'First Last' of replied message sender",
+    )
+
+    # Quote data (quoted text in reply)
+    quote_data: Mapped[Optional[dict]] = mapped_column(
+        JSON().with_variant(JSONB, "postgresql"),
+        nullable=True,
+        doc="Quote: {text, position, is_manual}",
+    )
+
+    # Forward origin
+    forward_origin: Mapped[Optional[dict]] = mapped_column(
+        JSON().with_variant(JSONB, "postgresql"),
+        nullable=True,
+        doc="Forward origin: {type, display, date, chat_id?, message_id?}",
+    )
+
+    # Sender display (cached for context formatting)
+    sender_display: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        doc="@username or 'First Last' for message sender",
+    )
+
+    # Edit tracking
+    edit_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        doc="Number of times message was edited",
+    )
+
+    original_content: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        doc="First version of text before any edits",
     )
 
     media_group_id: Mapped[Optional[str]] = mapped_column(

@@ -70,6 +70,8 @@ from db.repositories.user_file_repository import UserFileRepository
 from db.repositories.user_repository import UserRepository
 from services.balance_service import BalanceService
 from sqlalchemy.ext.asyncio import AsyncSession
+from telegram.context.extractors import extract_message_context
+from telegram.context.formatter import ContextFormatter
 from telegram.draft_streaming import DraftStreamer
 from telegram.handlers.files import process_file_upload
 from utils.metrics import record_cache_hit
@@ -1521,6 +1523,9 @@ async def _process_message_batch(
                     # Regular text message or captioned media
                     text_content = message.text or message.caption
 
+                # Extract context from Telegram message (replies, quotes, forwards)
+                msg_context = extract_message_context(message)
+
                 await msg_repo.create_message(
                     chat_id=thread.chat_id,
                     message_id=message.message_id,
@@ -1529,6 +1534,14 @@ async def _process_message_batch(
                     date=message.date.timestamp(),
                     role=MessageRole.USER,
                     text_content=text_content,
+                    reply_to_message_id=message.reply_to_message.message_id
+                    if message.reply_to_message else None,
+                    # Context fields (Telegram features)
+                    sender_display=msg_context.sender_display,
+                    forward_origin=msg_context.forward_origin,
+                    reply_snippet=msg_context.reply_snippet,
+                    reply_sender_display=msg_context.reply_sender_display,
+                    quote_data=msg_context.quote_data,
                 )
 
             await session.commit()
@@ -1596,11 +1609,10 @@ async def _process_message_batch(
                         has_files_context=files_section is not None,
                         total_length=len(composed_prompt))
 
-            # Convert DB messages to LLM messages
-            llm_messages = [
-                Message(role="user" if msg.from_user_id else "assistant",
-                        content=msg.text_content) for msg in history
-            ]
+            # Convert DB messages to LLM messages with context formatting
+            # Uses ContextFormatter to include reply/quote/forward context
+            formatter = ContextFormatter(chat_type=first_message.chat.type)
+            llm_messages = formatter.format_conversation(history)
 
             context = await context_mgr.build_context(
                 messages=llm_messages,

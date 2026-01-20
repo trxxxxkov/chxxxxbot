@@ -792,3 +792,355 @@ async def test_media_group(
     assert msg1.media_group_id == media_group_id
     assert msg2.media_group_id == media_group_id
     assert msg1.media_group_id == msg2.media_group_id
+
+
+# Context fields tests (Telegram features)
+
+
+@pytest.mark.asyncio
+async def test_create_message_with_sender_display(
+    test_session,
+    sample_thread,
+    sample_user,
+    sample_chat,
+):
+    """Test creating message with sender display.
+
+    Args:
+        test_session: Async session fixture.
+        sample_thread: Sample thread fixture.
+        sample_user: Sample user fixture.
+        sample_chat: Sample chat fixture.
+    """
+    repo = MessageRepository(test_session)
+
+    message = await repo.create_message(
+        chat_id=sample_chat.id,
+        message_id=901,
+        thread_id=sample_thread.id,
+        from_user_id=sample_user.id,
+        date=1234569001,
+        role=MessageRole.USER,
+        text_content="Hello from @john_doe",
+        sender_display="@john_doe",
+    )
+
+    assert message.sender_display == "@john_doe"
+
+
+@pytest.mark.asyncio
+async def test_create_message_with_reply_context(
+    test_session,
+    sample_thread,
+    sample_user,
+    sample_chat,
+):
+    """Test creating message with reply context.
+
+    Args:
+        test_session: Async session fixture.
+        sample_thread: Sample thread fixture.
+        sample_user: Sample user fixture.
+        sample_chat: Sample chat fixture.
+    """
+    repo = MessageRepository(test_session)
+
+    message = await repo.create_message(
+        chat_id=sample_chat.id,
+        message_id=902,
+        thread_id=sample_thread.id,
+        from_user_id=sample_user.id,
+        date=1234569002,
+        role=MessageRole.USER,
+        text_content="This is my reply",
+        reply_to_message_id=901,
+        reply_snippet="Original message here",
+        reply_sender_display="@original_user",
+    )
+
+    assert message.reply_to_message_id == 901
+    assert message.reply_snippet == "Original message here"
+    assert message.reply_sender_display == "@original_user"
+
+
+@pytest.mark.asyncio
+async def test_create_message_with_quote_data(
+    test_session,
+    sample_thread,
+    sample_user,
+    sample_chat,
+):
+    """Test creating message with quote data.
+
+    Args:
+        test_session: Async session fixture.
+        sample_thread: Sample thread fixture.
+        sample_user: Sample user fixture.
+        sample_chat: Sample chat fixture.
+    """
+    repo = MessageRepository(test_session)
+
+    quote_data = {
+        "text": "This is the quoted text",
+        "position": 10,
+        "is_manual": True,
+    }
+
+    message = await repo.create_message(
+        chat_id=sample_chat.id,
+        message_id=903,
+        thread_id=sample_thread.id,
+        from_user_id=sample_user.id,
+        date=1234569003,
+        role=MessageRole.USER,
+        text_content="My response to the quote",
+        quote_data=quote_data,
+    )
+
+    assert message.quote_data is not None
+    assert message.quote_data["text"] == "This is the quoted text"
+    assert message.quote_data["position"] == 10
+    assert message.quote_data["is_manual"] is True
+
+
+@pytest.mark.asyncio
+async def test_create_message_with_forward_origin(
+    test_session,
+    sample_thread,
+    sample_user,
+    sample_chat,
+):
+    """Test creating message with forward origin.
+
+    Args:
+        test_session: Async session fixture.
+        sample_thread: Sample thread fixture.
+        sample_user: Sample user fixture.
+        sample_chat: Sample chat fixture.
+    """
+    repo = MessageRepository(test_session)
+
+    forward_origin = {
+        "type": "channel",
+        "display": "@news_channel",
+        "date": 1234560000,
+        "chat_id": -1001234567890,
+        "message_id": 12345,
+    }
+
+    message = await repo.create_message(
+        chat_id=sample_chat.id,
+        message_id=904,
+        thread_id=sample_thread.id,
+        from_user_id=sample_user.id,
+        date=1234569004,
+        role=MessageRole.USER,
+        text_content="Forwarded news",
+        forward_origin=forward_origin,
+    )
+
+    assert message.forward_origin is not None
+    assert message.forward_origin["type"] == "channel"
+    assert message.forward_origin["display"] == "@news_channel"
+    assert message.forward_origin["chat_id"] == -1001234567890
+
+
+@pytest.mark.asyncio
+async def test_create_message_edit_count_default(
+    test_session,
+    sample_thread,
+    sample_user,
+    sample_chat,
+):
+    """Test that new messages have edit_count=0.
+
+    Args:
+        test_session: Async session fixture.
+        sample_thread: Sample thread fixture.
+        sample_user: Sample user fixture.
+        sample_chat: Sample chat fixture.
+    """
+    repo = MessageRepository(test_session)
+
+    message = await repo.create_message(
+        chat_id=sample_chat.id,
+        message_id=905,
+        thread_id=sample_thread.id,
+        from_user_id=sample_user.id,
+        date=1234569005,
+        role=MessageRole.USER,
+        text_content="New message",
+    )
+
+    assert message.edit_count == 0
+    assert message.original_content is None
+
+
+@pytest.mark.asyncio
+async def test_update_message_tracks_edit_count(
+    test_session,
+    sample_thread,
+    sample_user,
+    sample_chat,
+):
+    """Test that update_message increments edit_count and saves original.
+
+    Args:
+        test_session: Async session fixture.
+        sample_thread: Sample thread fixture.
+        sample_user: Sample user fixture.
+        sample_chat: Sample chat fixture.
+    """
+    repo = MessageRepository(test_session)
+
+    # Create message
+    message = await repo.create_message(
+        chat_id=sample_chat.id,
+        message_id=906,
+        thread_id=sample_thread.id,
+        from_user_id=sample_user.id,
+        date=1234569006,
+        role=MessageRole.USER,
+        text_content="Original text",
+    )
+
+    # First edit
+    await repo.update_message(
+        chat_id=sample_chat.id,
+        message_id=906,
+        text_content="First edit",
+        edit_date=1234569106,
+    )
+
+    updated = await repo.get_message(sample_chat.id, 906)
+    assert updated.edit_count == 1
+    assert updated.original_content == "Original text"
+    assert updated.text_content == "First edit"
+
+    # Second edit
+    await repo.update_message(
+        chat_id=sample_chat.id,
+        message_id=906,
+        text_content="Second edit",
+        edit_date=1234569206,
+    )
+
+    updated2 = await repo.get_message(sample_chat.id, 906)
+    assert updated2.edit_count == 2
+    assert updated2.original_content == "Original text"  # Still original
+    assert updated2.text_content == "Second edit"
+
+
+@pytest.mark.asyncio
+async def test_update_message_edit_returns_message(
+    test_session,
+    sample_thread,
+    sample_user,
+    sample_chat,
+):
+    """Test that update_message_edit returns the updated message.
+
+    Args:
+        test_session: Async session fixture.
+        sample_thread: Sample thread fixture.
+        sample_user: Sample user fixture.
+        sample_chat: Sample chat fixture.
+    """
+    repo = MessageRepository(test_session)
+
+    # Create message
+    await repo.create_message(
+        chat_id=sample_chat.id,
+        message_id=907,
+        thread_id=sample_thread.id,
+        from_user_id=sample_user.id,
+        date=1234569007,
+        role=MessageRole.USER,
+        text_content="Original",
+    )
+
+    # Edit and get returned message
+    result = await repo.update_message_edit(
+        chat_id=sample_chat.id,
+        message_id=907,
+        text_content="Edited",
+        edit_date=1234569107,
+    )
+
+    assert result is not None
+    assert result.text_content == "Edited"
+    assert result.edit_count == 1
+    assert result.original_content == "Original"
+
+
+@pytest.mark.asyncio
+async def test_update_message_edit_not_found(test_session,):
+    """Test that update_message_edit returns None for missing message.
+
+    Args:
+        test_session: Async session fixture.
+    """
+    repo = MessageRepository(test_session)
+
+    result = await repo.update_message_edit(
+        chat_id=99999,
+        message_id=99999,
+        text_content="Won't be saved",
+        edit_date=1234569999,
+    )
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_create_message_with_all_context_fields(
+    test_session,
+    sample_thread,
+    sample_user,
+    sample_chat,
+):
+    """Test creating message with all context fields.
+
+    Args:
+        test_session: Async session fixture.
+        sample_thread: Sample thread fixture.
+        sample_user: Sample user fixture.
+        sample_chat: Sample chat fixture.
+    """
+    repo = MessageRepository(test_session)
+
+    forward_origin = {
+        "type": "user",
+        "display": "@forwarded_from",
+        "date": 1234560000,
+    }
+
+    quote_data = {
+        "text": "quoted",
+        "position": 0,
+        "is_manual": False,
+    }
+
+    message = await repo.create_message(
+        chat_id=sample_chat.id,
+        message_id=908,
+        thread_id=sample_thread.id,
+        from_user_id=sample_user.id,
+        date=1234569008,
+        role=MessageRole.USER,
+        text_content="Full context message",
+        sender_display="@full_user",
+        forward_origin=forward_origin,
+        reply_to_message_id=100,
+        reply_snippet="Reply snippet here",
+        reply_sender_display="@reply_target",
+        quote_data=quote_data,
+    )
+
+    assert message.sender_display == "@full_user"
+    assert message.forward_origin["type"] == "user"
+    assert message.reply_to_message_id == 100
+    assert message.reply_snippet == "Reply snippet here"
+    assert message.reply_sender_display == "@reply_target"
+    assert message.quote_data["text"] == "quoted"
+    assert message.edit_count == 0
