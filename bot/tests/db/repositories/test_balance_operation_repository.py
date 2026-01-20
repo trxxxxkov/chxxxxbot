@@ -323,11 +323,13 @@ class TestBalanceOperationRepository:
         # Create charges at different times
         now = datetime.now(timezone.utc)
 
+        # Use 1 minute ago instead of 1 hour ago to avoid timezone edge cases
+        # (e.g., at 00:30 UTC, 1 hour ago would be "yesterday")
         charges_data = [
             (now - timedelta(days=40), "40d_ago"),  # 40 days ago
             (now - timedelta(days=20), "20d_ago"),  # 20 days ago
             (now - timedelta(days=5), "5d_ago"),  # 5 days ago
-            (now - timedelta(hours=1), "1h_ago"),  # 1 hour ago
+            (now - timedelta(minutes=1), "1m_ago"),  # 1 minute ago (today)
         ]
 
         for created_at, desc in charges_data:
@@ -352,12 +354,12 @@ class TestBalanceOperationRepository:
 
         charges_month = await operation_repo.get_user_charges(
             pg_sample_user.id, "month")
-        assert len(charges_month) == 3  # 20d, 5d, 1h ago
+        assert len(charges_month) == 3  # 20d, 5d, 1m ago
 
         charges_week = await operation_repo.get_user_charges(
             pg_sample_user.id, "week")
-        assert len(charges_week) == 2  # 5d, 1h ago
+        assert len(charges_week) == 2  # 5d, 1m ago
 
         charges_today = await operation_repo.get_user_charges(
             pg_sample_user.id, "today")
-        assert len(charges_today) == 1  # 1h ago
+        assert len(charges_today) == 1  # 1m ago
