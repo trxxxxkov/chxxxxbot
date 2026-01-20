@@ -138,39 +138,55 @@ def strip_tool_markers(text: str) -> str:
 
 def format_interleaved_content(blocks: list[dict],
                                is_streaming: bool = True) -> str:
-    """Format interleaved thinking and text blocks for Telegram display.
+    """Format thinking and text blocks for Telegram display.
 
-    Preserves the original order of blocks as output by Claude.
-    During streaming: Show thinking in italics with 🧠 prefix
-    Final display: Show thinking in expandable blockquote
+    Structure during streaming:
+    - All thinking/tool blocks collected at TOP in one expandable blockquote
+    - All text blocks concatenated below
+
+    Final display: only text (thinking filtered out before calling).
 
     Args:
         blocks: List of {"type": "thinking"|"text", "content": str} dicts.
-        is_streaming: Whether we're still streaming (affects formatting).
+        is_streaming: Whether we're still streaming.
 
     Returns:
         Formatted HTML string for Telegram.
     """
-    parts = []
+    # Separate thinking and text blocks
+    thinking_parts = []
+    text_parts = []
 
     for block in blocks:
         content = block.get("content", "")
         if not content or not content.strip():
             continue
 
-        # Strip whitespace to avoid double newlines between blocks
         escaped = safe_html(content.strip())
 
         if block.get("type") == "thinking":
             if is_streaming:
-                parts.append(f"<i>🧠 {escaped}</i>")
-            else:
-                parts.append(f"<blockquote expandable>🧠 {escaped}</blockquote>")
+                # Don't add 🧠 prefix to tool markers (they start with [emoji)
+                if escaped.startswith("["):
+                    thinking_parts.append(escaped)
+                else:
+                    thinking_parts.append(f"🧠 {escaped}")
         else:  # text block
-            parts.append(escaped)
+            text_parts.append(escaped)
 
-    result = "\n\n".join(parts) if parts else ""
-    # Clean up any triple+ newlines that might still occur
+    # Build result: thinking block at top (if streaming), then text
+    result_parts = []
+
+    if thinking_parts:
+        # All thinking in one expandable blockquote at the top
+        thinking_content = "\n\n".join(thinking_parts)
+        result_parts.append(
+            f"<blockquote expandable>{thinking_content}</blockquote>")
+
+    if text_parts:
+        result_parts.append("\n\n".join(text_parts))
+
+    result = "\n\n".join(result_parts) if result_parts else ""
     return re.sub(r'\n{3,}', '\n\n', result)
 
 
@@ -417,6 +433,50 @@ async def _stream_with_unified_events(
                 # Append to existing block
                 display_blocks[-1]["content"] += content
 
+        # Helper to commit current draft before sending any file
+        async def commit_draft_before_file() -> None:
+            """Finalize draft as permanent message, create new draft.
+
+            Called before sending ANY file (image, document, etc.) to ensure
+            proper message ordering: text → file → text.
+
+            Thinking is removed from final message (was shown during streaming).
+            """
+            nonlocal draft_streamer, last_sent_text
+
+            # Get only text blocks (remove thinking)
+            text_blocks = [b for b in display_blocks if b["type"] == "text"]
+            if not text_blocks:
+                # No text content, just clear draft
+                await draft_streamer.clear()
+                draft_streamer = DraftStreamer(
+                    bot=first_message.bot,
+                    chat_id=chat_id,
+                    topic_id=telegram_thread_id,
+                )
+                last_sent_text = ""
+                display_blocks.clear()
+                return
+
+            # Format text only (no thinking in final)
+            final_text = format_interleaved_content(text_blocks)
+            final_text = strip_tool_markers(final_text)
+
+            if final_text.strip():
+                try:
+                    await draft_streamer.finalize(final_text=final_text)
+                except Exception:  # pylint: disable=broad-exception-caught
+                    pass
+
+            # Create fresh draft for content after file
+            draft_streamer = DraftStreamer(
+                bot=first_message.bot,
+                chat_id=chat_id,
+                topic_id=telegram_thread_id,
+            )
+            last_sent_text = ""
+            display_blocks.clear()
+
         # Stream events
         async for event in claude_provider.stream_events(iter_request):
             if event.type == "thinking_delta":
@@ -459,13 +519,12 @@ async def _stream_with_unified_events(
                     current_response_text = ""
                 current_block_type = ""
 
-                # Add tool marker as text block (shown during streaming)
+                # Show simple tool marker (arguments come later in block_end)
                 emoji = get_tool_emoji(event.tool_name)
-                tool_marker = f"[{emoji} {event.tool_name}]"
-                append_to_display("text", f"\n\n{tool_marker}\n\n")
+                tool_marker = f"[{emoji} {event.tool_name}…]"
+                append_to_display("thinking", tool_marker)
 
                 # Format and force update to show tool marker immediately
-                # (force=True ensures marker appears before tool execution)
                 display_text = format_interleaved_content(display_blocks,
                                                           is_streaming=True)
                 await draft_streamer.update(display_text, force=True)
@@ -501,8 +560,37 @@ async def _stream_with_unified_events(
                         "input": event.tool_input or {}
                     })
 
-                    # Only client-side tools need execution (have tool_input)
+                    # Update tool marker with arguments (now available)
                     if event.tool_input:
+                        emoji = get_tool_emoji(event.tool_name)
+                        # Format arguments: tab indent, comma separated, each on new line
+                        args_lines = []
+                        items = list(event.tool_input.items())
+                        for i, (key, value) in enumerate(items):
+                            comma = "," if i < len(items) - 1 else ""
+                            args_lines.append(f"\t{key}={value}{comma}")
+                        args_str = "\n".join(args_lines)
+
+                        # Replace the "…" marker with full arguments
+                        old_marker = f"[{emoji} {event.tool_name}…]"
+                        new_marker = f"[{emoji} {event.tool_name}]\n{args_str}"
+
+                        # Find and update the marker in display_blocks
+                        for block in display_blocks:
+                            if (block["type"] == "thinking" and
+                                    old_marker in block["content"]):
+                                block["content"] = block["content"].replace(
+                                    old_marker, new_marker)
+                                break
+
+                        # Update display with full arguments
+                        display_text = format_interleaved_content(
+                            display_blocks, is_streaming=True)
+                        if display_text != last_sent_text:
+                            await draft_streamer.update(display_text)
+                            last_sent_text = display_text
+
+                        # Add to pending tools for execution
                         pending_tools.append({
                             "id": event.tool_id,
                             "name": event.tool_name,
@@ -564,12 +652,10 @@ async def _stream_with_unified_events(
                         stop_reason=stop_reason,
                         had_thinking=total_thinking > 0)
 
-            # Format final message: text only (no thinking, no tool markers)
-            # Thinking and markers were shown during streaming, final is clean
-            text_only_blocks = [
-                b for b in display_blocks if b["type"] == "text"
-            ]
-            final_display = format_interleaved_content(text_only_blocks,
+            # Format final message: text only (thinking removed)
+            # display_blocks is cleared after each file, so these are post-file
+            text_blocks = [b for b in display_blocks if b["type"] == "text"]
+            final_display = format_interleaved_content(text_blocks,
                                                        is_streaming=False)
             # Strip tool markers from final display
             final_display = strip_tool_markers(final_display)
@@ -578,14 +664,18 @@ async def _stream_with_unified_events(
             # Stop global keepalive before finalizing
             await stop_global_keepalive()
 
-            try:
-                final_message = await draft_streamer.finalize(
-                    final_text=final_display)
-            except Exception as e:  # pylint: disable=broad-exception-caught
-                logger.error("stream.draft_finalize_failed",
-                             thread_id=thread_id,
-                             error=str(e))
-                final_message = None
+            final_message = None
+            if final_display.strip():
+                try:
+                    final_message = await draft_streamer.finalize(
+                        final_text=final_display)
+                except Exception as e:  # pylint: disable=broad-exception-caught
+                    logger.error("stream.draft_finalize_failed",
+                                 thread_id=thread_id,
+                                 error=str(e))
+            else:
+                # No uncommitted content - just clear the draft
+                await draft_streamer.clear()
 
             return final_answer, final_message
 
@@ -631,18 +721,26 @@ async def _stream_with_unified_events(
 
                 # Add system messages for completed tools
                 if not is_error:
-                    tool_system_msg = get_tool_system_message(
-                        tool_name, tool_input, clean_result)
-                    if tool_system_msg:
-                        append_to_display("text", tool_system_msg)
-
-                    # Process generated files
+                    # Process generated files FIRST (commit draft before file)
                     if "_file_contents" in result:
+                        # Commit current draft before sending file
+                        # This creates proper message ordering:
+                        # 1. Committed message (thinking/text before file)
+                        # 2. File (image/document)
+                        # 3. New draft (system message + follow-up)
+                        await commit_draft_before_file()
+
                         await _process_generated_files(result, first_message,
                                                        thread_id, session,
                                                        user_file_repo, chat_id,
                                                        user_id,
                                                        telegram_thread_id)
+
+                    # Add system message to thinking block
+                    tool_system_msg = get_tool_system_message(
+                        tool_name, tool_input, clean_result)
+                    if tool_system_msg:
+                        append_to_display("thinking", tool_system_msg)
 
                     # Charge user for tool cost
                     if "cost_usd" in clean_result:
@@ -703,6 +801,7 @@ async def _stream_with_unified_events(
                              thread_id=thread_id,
                              tool_count=len(pending_tools))
                 await draft_streamer.clear()
+                await stop_global_keepalive()
                 return "⚠️ Tool execution error: missing assistant context", None
 
             # Update message to show system messages after tool execution
@@ -728,11 +827,9 @@ async def _stream_with_unified_events(
             if not final_answer:
                 final_answer = f"⚠️ Unexpected stop reason: {stop_reason}"
 
-            # Format final message: text only (no thinking, no tool markers)
-            text_only_blocks = [
-                b for b in display_blocks if b["type"] == "text"
-            ]
-            final_display = format_interleaved_content(text_only_blocks,
+            # Format final message: text only (thinking removed)
+            text_blocks = [b for b in display_blocks if b["type"] == "text"]
+            final_display = format_interleaved_content(text_blocks,
                                                        is_streaming=False)
             final_display = strip_tool_markers(final_display)
             if final_display:

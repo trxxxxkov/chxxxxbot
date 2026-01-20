@@ -11,6 +11,41 @@ import sys
 import structlog
 
 
+class AiogramLogFilter(logging.Filter):
+    """Filter to downgrade routine aiogram events to INFO level.
+
+    Certain aiogram messages are logged at WARNING/ERROR but are actually
+    normal operational events:
+    - Network errors during polling (reconnection events)
+    - SIGTERM/SIGINT signals (normal container shutdown)
+
+    This filter changes their level to INFO.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        """Check and optionally modify log record level.
+
+        Args:
+            record: The log record to filter.
+
+        Returns:
+            True to emit the record (always returns True, just modifies level).
+        """
+        msg = str(record.msg)
+
+        # Network errors during polling - normal reconnection
+        if record.levelno == logging.ERROR and "Failed to fetch updates" in msg:
+            record.levelno = logging.INFO
+            record.levelname = "INFO"
+
+        # SIGTERM/SIGINT - normal container shutdown
+        if record.levelno == logging.WARNING and "signal" in msg.lower():
+            record.levelno = logging.INFO
+            record.levelname = "INFO"
+
+        return True
+
+
 def setup_logging(level: str = "INFO") -> None:
     """Configures structlog for JSON logging.
 
@@ -64,8 +99,10 @@ def setup_logging(level: str = "INFO") -> None:
     root_logger.addHandler(handler)
     root_logger.setLevel(getattr(logging, level.upper()))
 
-    # Suppress aiogram dispatcher warnings (SIGTERM logged as warning)
-    logging.getLogger("aiogram.dispatcher").setLevel(logging.ERROR)
+    # Aiogram dispatcher: downgrade routine events (network errors, signals) to INFO
+    dispatcher_logger = logging.getLogger("aiogram.dispatcher")
+    dispatcher_logger.setLevel(logging.INFO)
+    dispatcher_logger.addFilter(AiogramLogFilter())
 
     # Suppress verbose debug logs from HTTP libraries (contain full request bodies)
     logging.getLogger("httpx").setLevel(logging.WARNING)

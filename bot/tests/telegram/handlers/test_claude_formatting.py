@@ -31,8 +31,8 @@ class TestFormatInterleavedContent:
         answer_pos = result.find("Here is my answer")
         assert thinking_pos < answer_pos
 
-    def test_text_then_thinking_then_text(self):
-        """Test interleaved blocks preserve order."""
+    def test_thinking_always_at_top(self):
+        """Test thinking is always at the top, text below."""
         blocks = [
             {
                 "type": "text",
@@ -48,26 +48,26 @@ class TestFormatInterleavedContent:
             },
         ]
         result = format_interleaved_content(blocks, is_streaming=True)
-        first_pos = result.find("First text")
         thinking_pos = result.find("🧠")
+        first_pos = result.find("First text")
         second_pos = result.find("Second text")
-        assert first_pos < thinking_pos < second_pos
+        # Thinking should be at top, before all text
+        assert thinking_pos < first_pos < second_pos
 
-    def test_streaming_uses_italics(self):
-        """Test streaming mode uses italics for thinking."""
+    def test_streaming_uses_blockquote(self):
+        """Test streaming mode uses expandable blockquote for thinking."""
         blocks = [{"type": "thinking", "content": "Thinking..."}]
         result = format_interleaved_content(blocks, is_streaming=True)
-        assert "<i>" in result
-        assert "</i>" in result
-        assert "blockquote" not in result
+        assert "<blockquote expandable>" in result
+        assert "</blockquote>" in result
 
-    def test_final_uses_blockquote(self):
-        """Test final mode uses blockquote for thinking."""
+    def test_final_skips_thinking(self):
+        """Test final mode skips thinking blocks (they're filtered before)."""
         blocks = [{"type": "thinking", "content": "Thinking..."}]
         result = format_interleaved_content(blocks, is_streaming=False)
-        assert "<blockquote" in result
-        assert "</blockquote>" in result
-        assert "<i>" not in result
+        # Thinking is skipped in final mode
+        assert "Thinking" not in result
+        assert result == ""
 
     def test_empty_blocks(self):
         """Test empty blocks list returns empty string."""
