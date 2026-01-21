@@ -12,6 +12,8 @@ NO __init__.py - use direct import:
     from telegram.pipeline.handler import router
 """
 
+import time
+
 from aiogram import F
 from aiogram import Router
 from aiogram import types
@@ -119,10 +121,14 @@ async def handle_message(message: types.Message, session: AsyncSession) -> None:
     tracker = get_tracker()
     await tracker.start(chat_id, message.message_id)
 
+    handler_start = time.perf_counter()
+
     try:
         # 1. Normalize message (all I/O happens here)
+        normalize_start = time.perf_counter()
         normalizer = get_normalizer()
         processed = await normalizer.normalize(message)
+        normalize_ms = (time.perf_counter() - normalize_start) * 1000
 
         logger.info(
             "unified_handler.normalized",
@@ -131,6 +137,7 @@ async def handle_message(message: types.Message, session: AsyncSession) -> None:
             has_text=bool(processed.text),
             has_files=processed.has_files,
             has_transcript=processed.has_transcript,
+            normalize_ms=round(normalize_ms, 2),
         )
 
         # 2. Charge for transcription if applicable
@@ -146,24 +153,31 @@ async def handle_message(message: types.Message, session: AsyncSession) -> None:
             object.__setattr__(processed, 'transcription_charged', True)
 
         # 3. Get or create thread
+        thread_start = time.perf_counter()
         thread = await get_or_create_thread(message, session)
         await session.commit()
+        thread_resolve_ms = (time.perf_counter() - thread_start) * 1000
 
         logger.info(
             "unified_handler.thread_resolved",
             user_id=user_id,
             thread_id=thread.id,
+            thread_resolve_ms=round(thread_resolve_ms, 2),
         )
 
         # 4. Add to queue
         queue = get_queue()
         await queue.add(thread_id=thread.id, message=processed)
 
+        handler_ms = (time.perf_counter() - handler_start) * 1000
         logger.info(
             "unified_handler.queued",
             user_id=user_id,
             thread_id=thread.id,
             content_type=content_type,
+            normalize_ms=round(normalize_ms, 2),
+            thread_resolve_ms=round(thread_resolve_ms, 2),
+            total_handler_ms=round(handler_ms, 2),
         )
 
         # Dashboard tracking

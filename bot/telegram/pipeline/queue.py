@@ -15,6 +15,7 @@ NO __init__.py - use direct import:
 import asyncio
 from dataclasses import dataclass
 from dataclasses import field
+import time
 from typing import Awaitable, Callable, Dict, List, Optional, TYPE_CHECKING
 
 from config import MESSAGE_BATCH_DELAY_MS
@@ -261,6 +262,13 @@ class ProcessedMessageQueue:
             return
 
         queue.processing = True
+        processing_start = time.perf_counter()
+
+        # Calculate queue wait times for each message
+        queue_wait_times = []
+        for msg in messages:
+            queue_wait_ms = (processing_start - msg.queued_at) * 1000
+            queue_wait_times.append(round(queue_wait_ms, 2))
 
         logger.info(
             "processed_queue.processing_start",
@@ -269,37 +277,50 @@ class ProcessedMessageQueue:
             message_types=[
                 "media" if m.has_media else "text" for m in messages
             ],
+            queue_wait_ms=queue_wait_times,
+            avg_queue_wait_ms=round(
+                sum(queue_wait_times) /
+                len(queue_wait_times), 2) if queue_wait_times else 0,
         )
 
         try:
             await self._process_callback(thread_id, messages)
 
+            processing_ms = (time.perf_counter() - processing_start) * 1000
             logger.info(
                 "processed_queue.processing_complete",
                 thread_id=thread_id,
                 batch_size=len(messages),
+                processing_ms=round(processing_ms, 2),
             )
 
         except Exception as e:  # pylint: disable=broad-exception-caught
+            processing_ms = (time.perf_counter() - processing_start) * 1000
             logger.error(
                 "processed_queue.processing_failed",
                 thread_id=thread_id,
                 batch_size=len(messages),
+                processing_ms=round(processing_ms, 2),
                 error=str(e),
                 error_type=type(e).__name__,
                 exc_info=True,
             )
 
             # Retry once
+            retry_start = time.perf_counter()
             logger.info("processed_queue.retrying", thread_id=thread_id)
             try:
                 await self._process_callback(thread_id, messages)
+                retry_ms = (time.perf_counter() - retry_start) * 1000
                 logger.info("processed_queue.retry_success",
-                            thread_id=thread_id)
+                            thread_id=thread_id,
+                            retry_ms=round(retry_ms, 2))
             except Exception as retry_error:  # pylint: disable=broad-exception-caught
+                retry_ms = (time.perf_counter() - retry_start) * 1000
                 logger.error(
                     "processed_queue.retry_failed",
                     thread_id=thread_id,
+                    retry_ms=round(retry_ms, 2),
                     error=str(retry_error),
                     exc_info=True,
                 )

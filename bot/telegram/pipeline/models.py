@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from dataclasses import field
 from datetime import datetime
 from enum import Enum
+import time
 from typing import Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -67,7 +68,7 @@ class TranscriptInfo:
 
 
 @dataclass
-class UploadedFile:
+class UploadedFile:  # pylint: disable=too-many-instance-attributes
     """File uploaded to Claude Files API, ready for use.
 
     Key invariant: This represents a file that has ALREADY been uploaded
@@ -119,7 +120,7 @@ class ReplyContext:
 
 
 @dataclass
-class MessageMetadata:
+class MessageMetadata:  # pylint: disable=too-many-instance-attributes
     """Metadata extracted from Telegram message.
 
     Contains all identifying information needed for DB operations
@@ -153,7 +154,7 @@ class MessageMetadata:
 
 
 @dataclass
-class ProcessedMessage:
+class ProcessedMessage:  # pylint: disable=too-many-instance-attributes
     """Universal container for all message types.
 
     This is the core data structure of the unified pipeline.
@@ -183,6 +184,8 @@ class ProcessedMessage:
     transcript: Optional[TranscriptInfo] = None
     reply_context: Optional[ReplyContext] = None
     transcription_charged: bool = False
+    # Timing: when this message was queued (for queue_wait_ms calculation)
+    queued_at: float = field(default_factory=time.perf_counter)
 
     @property
     def has_media(self) -> bool:

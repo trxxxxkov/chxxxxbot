@@ -8,6 +8,7 @@ NO __init__.py - use direct import:
     from telegram.middlewares.database_middleware import DatabaseMiddleware
 """
 
+import time
 from typing import Any, Awaitable, Callable, Dict
 
 from aiogram import BaseMiddleware
@@ -53,28 +54,40 @@ class DatabaseMiddleware(BaseMiddleware):
             Exception: Re-raises any exception from handlers after rollback.
         """
         session_factory = get_session_factory()
+        session_start = time.perf_counter()
 
         async with session_factory() as session:
             # Inject session into handler data
             data['session'] = session
+            session_acquire_ms = (time.perf_counter() - session_start) * 1000
 
             try:
                 result = await handler(event, data)
 
                 # Auto-commit on success
+                commit_start = time.perf_counter()
                 await session.commit()
+                commit_ms = (time.perf_counter() - commit_start) * 1000
+
                 logger.debug("database_session_committed",
-                             update_id=event.update_id)
+                             update_id=event.update_id,
+                             session_acquire_ms=round(session_acquire_ms, 2),
+                             commit_ms=round(commit_ms, 2))
 
                 return result
 
             except Exception as e:
                 # Auto-rollback on error
+                rollback_start = time.perf_counter()
                 await session.rollback()
+                rollback_ms = (time.perf_counter() - rollback_start) * 1000
+
                 logger.error(
                     "database_session_rollback",
                     error=str(e),
                     error_type=type(e).__name__,
                     update_id=event.update_id,
+                    session_acquire_ms=round(session_acquire_ms, 2),
+                    rollback_ms=round(rollback_ms, 2),
                 )
                 raise

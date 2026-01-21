@@ -8,6 +8,7 @@ NO __init__.py - use direct import:
     pytest tests/telegram/middlewares/test_database_middleware.py
 """
 
+from unittest.mock import ANY
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import patch
@@ -363,9 +364,13 @@ async def test_database_middleware_logging(middleware, mock_update,
         data = {}
         await middleware(mock_handler, mock_update, data)
 
-        # Verify commit logged
-        mock_logger.debug.assert_called_once_with("database_session_committed",
-                                                  update_id=123456)
+        # Verify commit logged (with timing parameters)
+        mock_logger.debug.assert_called_once_with(
+            "database_session_committed",
+            update_id=123456,
+            session_acquire_ms=ANY,
+            commit_ms=ANY,
+        )
 
 
 @pytest.mark.asyncio

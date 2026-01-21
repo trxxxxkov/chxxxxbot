@@ -7,6 +7,7 @@ Phase 3.2: Uses Redis cache for fast balance checks.
 """
 
 from decimal import Decimal
+import time
 from typing import Any, Awaitable, Callable
 
 from aiogram import BaseMiddleware
@@ -119,6 +120,7 @@ class BalanceMiddleware(BaseMiddleware):
 
         # Paid request - check balance
         user_id = message.from_user.id
+        balance_check_start = time.perf_counter()
 
         # Phase 3.2: Try cache first for fast balance check
         cached_user = await get_cached_user(user_id)
@@ -128,6 +130,9 @@ class BalanceMiddleware(BaseMiddleware):
             can_request = cached_balance > Decimal(
                 str(MINIMUM_BALANCE_FOR_REQUEST))
 
+            balance_check_ms = (time.perf_counter() -
+                                balance_check_start) * 1000
+
             if can_request:
                 # Pass cached user data to handler for potential reuse
                 data["cached_user"] = cached_user
@@ -135,6 +140,8 @@ class BalanceMiddleware(BaseMiddleware):
                     "balance_middleware.cache_hit_allowed",
                     user_id=user_id,
                     balance=str(cached_balance),
+                    balance_check_ms=round(balance_check_ms, 2),
+                    source="cache",
                 )
                 return await handler(event, data)
             else:
@@ -149,6 +156,8 @@ class BalanceMiddleware(BaseMiddleware):
                     "balance_middleware.cache_hit_blocked",
                     user_id=user_id,
                     balance=float(cached_balance),
+                    balance_check_ms=round(balance_check_ms, 2),
+                    source="cache",
                     msg="Request blocked: insufficient balance (from cache)",
                 )
                 return None
@@ -221,6 +230,9 @@ class BalanceMiddleware(BaseMiddleware):
                         username=user.username,
                     )
 
+            balance_check_ms = (time.perf_counter() -
+                                balance_check_start) * 1000
+
             if not can_request:
                 # Block request - insufficient balance
                 balance = await balance_service.get_balance(user_id)
@@ -235,6 +247,8 @@ class BalanceMiddleware(BaseMiddleware):
                     "balance_middleware.request_blocked",
                     user_id=user_id,
                     balance=float(balance),
+                    balance_check_ms=round(balance_check_ms, 2),
+                    source="database",
                     msg="Request blocked: insufficient balance",
                 )
 
@@ -242,18 +256,24 @@ class BalanceMiddleware(BaseMiddleware):
                 return None
 
         except Exception as e:
+            balance_check_ms = (time.perf_counter() -
+                                balance_check_start) * 1000
             logger.error(
                 "balance_middleware.check_error",
                 user_id=user_id,
                 error=str(e),
+                balance_check_ms=round(balance_check_ms, 2),
                 exc_info=True,
                 msg="Error checking balance, allowing request (fail-open)",
             )
             # Fail-open: allow request if balance check failed
 
         # Balance check passed - proceed to next handler
+        balance_check_ms = (time.perf_counter() - balance_check_start) * 1000
         logger.debug(
             "balance_middleware.request_allowed",
             user_id=user_id,
+            balance_check_ms=round(balance_check_ms, 2),
+            source="database",
         )
         return await handler(event, data)

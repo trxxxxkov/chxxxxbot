@@ -489,6 +489,9 @@ async def _process_message_batch(thread_id: int,
         thread_id: Database thread ID.
         messages: List of ProcessedMessage objects (all I/O complete).
     """
+    # Start timing for total request
+    total_request_start = time.perf_counter()
+
     if not messages:
         logger.warning("claude_handler.empty_batch", thread_id=thread_id)
         return
@@ -779,6 +782,14 @@ async def _process_message_batch(thread_id: int,
                                      duration=0.0)
                 record_cost(service="web_search", amount_usd=web_search_cost)
 
+            # Record response time (Claude API duration)
+            response_duration = time.perf_counter() - request_start_time
+            claude_api_ms = response_duration * 1000
+
+            # Calculate total request time (from handler start to response complete)
+            total_request_ms = (time.perf_counter() -
+                                total_request_start) * 1000
+
             logger.info("claude_handler.response_complete",
                         thread_id=thread_id,
                         model_id=user.model_id,
@@ -788,7 +799,9 @@ async def _process_message_batch(thread_id: int,
                         cache_read_tokens=usage.cache_read_tokens,
                         cost_usd=round(cost_usd, 6),
                         response_length=len(response_text),
-                        stop_reason=stop_reason)
+                        stop_reason=stop_reason,
+                        claude_api_ms=round(claude_api_ms, 2),
+                        total_request_ms=round(total_request_ms, 2))
 
             # Record Prometheus metrics
             record_claude_request(model=user.model_id, success=True)
@@ -802,8 +815,7 @@ async def _process_message_batch(thread_id: int,
             record_cost(service="claude", amount_usd=cost_usd)
             record_message_sent(chat_type=first_message.chat.type)
 
-            # Record response time
-            response_duration = time.perf_counter() - request_start_time
+            # Record response time for Prometheus
             record_claude_response_time(model=user.model_id,
                                         seconds=response_duration)
 
