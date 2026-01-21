@@ -1,0 +1,154 @@
+"""Tool execution utilities for Claude handler.
+
+This module provides safe tool execution and charging functions for the
+Claude conversation handler.
+
+NO __init__.py - use direct import:
+    from telegram.handlers.claude_tools import (
+        execute_single_tool_safe,
+        charge_for_tool
+    )
+"""
+
+from decimal import Decimal
+import time
+
+from aiogram import types
+from core.exceptions import ToolValidationError
+from core.tools.registry import execute_tool
+from db.repositories.balance_operation_repository import \
+    BalanceOperationRepository
+from db.repositories.user_repository import UserRepository
+from services.balance_service import BalanceService
+from sqlalchemy.ext.asyncio import AsyncSession
+from utils.structured_logging import get_logger
+
+logger = get_logger(__name__)
+
+
+async def charge_for_tool(
+    session: AsyncSession,
+    user_id: int,
+    tool_name: str,
+    result: dict,
+    message_id: int,
+) -> None:
+    """Charge user for tool execution cost.
+
+    Args:
+        session: Database session.
+        user_id: User to charge.
+        tool_name: Name of the tool executed.
+        result: Tool result containing cost_usd.
+        message_id: Related message ID.
+    """
+    try:
+        tool_cost_usd = Decimal(str(result["cost_usd"]))
+        user_repo = UserRepository(session)
+        balance_op_repo = BalanceOperationRepository(session)
+        balance_service = BalanceService(session, user_repo, balance_op_repo)
+
+        await balance_service.charge_user(
+            user_id=user_id,
+            amount=tool_cost_usd,
+            description=f"Tool: {tool_name}, cost ${result['cost_usd']}",
+            related_message_id=message_id,
+        )
+        await session.commit()
+
+        logger.info("tools.loop.user_charged_for_tool",
+                    user_id=user_id,
+                    tool_name=tool_name,
+                    cost_usd=float(tool_cost_usd))
+
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        logger.error("stream.tool_charge_failed",
+                     user_id=user_id,
+                     tool_name=tool_name,
+                     error=str(e),
+                     exc_info=True)
+
+
+async def execute_single_tool_safe(
+    tool_name: str,
+    tool_input: dict,
+    bot: types.Message,
+    session: AsyncSession,
+    thread_id: int,
+) -> dict:
+    """Execute a single tool with error handling for parallel execution.
+
+    This function wraps execute_tool() with try/except to allow safe use
+    with asyncio.gather(). Each tool execution is independent and errors
+    are captured in the result dict.
+
+    Args:
+        tool_name: Name of the tool to execute.
+        tool_input: Tool input parameters.
+        bot: Telegram Bot instance.
+        session: Database session.
+        thread_id: Thread ID for logging.
+
+    Returns:
+        Dict with result or error. Always includes:
+        - _tool_name: Name of the tool
+        - _start_time: Execution start time
+        - _duration: Execution duration in seconds
+        - Either tool result keys or "error" key on failure
+    """
+    start_time = time.time()
+
+    logger.info("tools.parallel.executing",
+                thread_id=thread_id,
+                tool_name=tool_name)
+
+    try:
+        result = await execute_tool(tool_name, tool_input, bot, session)
+        duration = time.time() - start_time
+
+        # Add metadata for post-processing
+        result["_tool_name"] = tool_name
+        result["_start_time"] = start_time
+        result["_duration"] = duration
+
+        logger.info("tools.parallel.success",
+                    thread_id=thread_id,
+                    tool_name=tool_name,
+                    duration_ms=round(duration * 1000))
+
+        return result
+
+    except ToolValidationError as e:
+        # Validation worked correctly - LLM just passed wrong params
+        # Log as info since system behaved as expected
+        duration = time.time() - start_time
+
+        logger.info("tools.parallel.validation_rejected",
+                    thread_id=thread_id,
+                    tool_name=tool_name,
+                    reason=str(e),
+                    duration_ms=round(duration * 1000))
+
+        return {
+            "error": str(e),
+            "_tool_name": tool_name,
+            "_start_time": start_time,
+            "_duration": duration,
+        }
+
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        # External API errors handled correctly - log as info
+        duration = time.time() - start_time
+
+        logger.info("tools.parallel.external_error",
+                    thread_id=thread_id,
+                    tool_name=tool_name,
+                    error=str(e),
+                    duration_ms=round(duration * 1000))
+
+        return {
+            "error": f"Tool execution failed: {str(e)}",
+            "_tool_name": tool_name,
+            "_start_time": start_time,
+            "_duration": duration,
+        }

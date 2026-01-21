@@ -573,16 +573,24 @@ async def test_get_thread_messages_limit(
             text_content=f'Message {i}',
         )
 
-    # Test limit
+    # Test limit - should get 3 most recent messages in chronological order
     messages_limit = await repo.get_thread_messages(sample_thread.id, limit=3)
     assert len(messages_limit) == 3
+    # Most recent 3 are [2, 3, 4], returned in chronological order
+    assert messages_limit[0].text_content == 'Message 2'
+    assert messages_limit[1].text_content == 'Message 3'
+    assert messages_limit[2].text_content == 'Message 4'
 
-    # Test offset
+    # Test offset - skips N most recent, then gets limit
+    # With offset=2, limit=3: skip 2 most recent (4, 3), get next 3 (2, 1, 0)
     messages_offset = await repo.get_thread_messages(sample_thread.id,
                                                      limit=3,
                                                      offset=2)
     assert len(messages_offset) == 3
-    assert messages_offset[0].text_content == 'Message 2'
+    # Returns [0, 1, 2] in chronological order
+    assert messages_offset[0].text_content == 'Message 0'
+    assert messages_offset[1].text_content == 'Message 1'
+    assert messages_offset[2].text_content == 'Message 2'
 
     # Test no limit (all messages)
     messages_all = await repo.get_thread_messages(sample_thread.id)

@@ -3,17 +3,15 @@
 Tests Whisper API integration for speech-to-text transcription:
 - Success flow (auto language detection)
 - Language parameter handling
-- File download from Telegram
+- File download via FileManager
 - Error handling (file not found, download failures, API errors)
 - Cost calculation
 """
 
-import io
 from unittest.mock import AsyncMock
 from unittest.mock import Mock
 from unittest.mock import patch
 
-from core.tools.transcribe_audio import download_file_from_telegram
 from core.tools.transcribe_audio import transcribe_audio
 from core.tools.transcribe_audio import TRANSCRIBE_AUDIO_TOOL
 import openai
@@ -32,130 +30,6 @@ def reset_client():
 
 
 # ============================================================================
-# download_file_from_telegram() Tests
-# ============================================================================
-
-
-@pytest.mark.asyncio
-async def test_download_file_from_telegram_success():
-    """Test successful file download from Telegram.
-
-    Flow:
-    1. Query database for file metadata
-    2. Get telegram_file_id
-    3. Call bot.get_file() and bot.download_file()
-    4. Return bytes
-    """
-    file_id = 'file_abc123'
-    bot = AsyncMock()
-    session = AsyncMock()
-
-    # Mock file record from database
-    mock_file_record = Mock()
-    mock_file_record.telegram_file_id = 'telegram_file_456'
-    mock_file_record.filename = 'audio.mp3'
-
-    # Mock repository
-    mock_repo = AsyncMock()
-    mock_repo.get_by_claude_file_id.return_value = mock_file_record
-
-    # Mock Telegram API
-    mock_file_info = Mock()
-    mock_file_info.file_path = '/path/to/audio.mp3'
-    bot.get_file.return_value = mock_file_info
-
-    mock_bytes_io = io.BytesIO(b'audio_file_data')
-    bot.download_file.return_value = mock_bytes_io
-
-    with patch('db.repositories.user_file_repository.UserFileRepository',
-               return_value=mock_repo):
-        # Execute
-        result = await download_file_from_telegram(file_id, bot, session)
-
-        # Verify
-        assert result == b'audio_file_data'
-        mock_repo.get_by_claude_file_id.assert_called_once_with(file_id)
-        bot.get_file.assert_called_once_with('telegram_file_456')
-        bot.download_file.assert_called_once_with('/path/to/audio.mp3')
-
-
-@pytest.mark.asyncio
-async def test_download_file_from_telegram_file_not_found():
-    """Test error when file not found in database."""
-    file_id = 'file_nonexistent'
-    bot = AsyncMock()
-    session = AsyncMock()
-
-    # Mock repository returning None
-    mock_repo = AsyncMock()
-    mock_repo.get_by_claude_file_id.return_value = None
-
-    with patch('db.repositories.user_file_repository.UserFileRepository',
-               return_value=mock_repo):
-        # Execute and verify exception
-        with pytest.raises(ValueError, match='File not found in database'):
-            await download_file_from_telegram(file_id, bot, session)
-
-
-@pytest.mark.asyncio
-async def test_download_file_from_telegram_no_telegram_file_id():
-    """Test error when file has no telegram_file_id."""
-    file_id = 'file_abc123'
-    bot = AsyncMock()
-    session = AsyncMock()
-
-    # Mock file record WITHOUT telegram_file_id (assistant-generated file)
-    mock_file_record = Mock()
-    mock_file_record.telegram_file_id = None
-    mock_file_record.filename = 'generated.png'
-
-    mock_repo = AsyncMock()
-    mock_repo.get_by_claude_file_id.return_value = mock_file_record
-
-    with patch('db.repositories.user_file_repository.UserFileRepository',
-               return_value=mock_repo):
-        # Execute and verify exception
-        with pytest.raises(ValueError, match='No telegram_file_id'):
-            await download_file_from_telegram(file_id, bot, session)
-
-
-@pytest.mark.asyncio
-async def test_download_file_from_telegram_api_error():
-    """Test error handling when Telegram download fails.
-
-    Should convert TelegramAPIError to user-friendly ValueError.
-    """
-    file_id = 'file_abc123'
-    bot = AsyncMock()
-    session = AsyncMock()
-
-    # Mock file record
-    mock_file_record = Mock()
-    mock_file_record.telegram_file_id = 'telegram_file_456'
-    mock_file_record.filename = 'old_audio.mp3'
-
-    mock_repo = AsyncMock()
-    mock_repo.get_by_claude_file_id.return_value = mock_file_record
-
-    # Mock Telegram API error
-    from aiogram.exceptions import TelegramAPIError
-    mock_method = Mock()
-    bot.get_file.side_effect = TelegramAPIError(method=mock_method,
-                                                message='File expired')
-
-    with patch('db.repositories.user_file_repository.UserFileRepository',
-               return_value=mock_repo):
-        # Execute and verify exception
-        with pytest.raises(ValueError,
-                           match='no longer available in Telegram') as exc_info:
-            await download_file_from_telegram(file_id, bot, session)
-
-        # Verify user-friendly message
-        assert 'old_audio.mp3' in str(exc_info.value)
-        assert '6 months' in str(exc_info.value)
-
-
-# ============================================================================
 # transcribe_audio() Tests
 # ============================================================================
 
@@ -166,7 +40,7 @@ async def test_transcribe_audio_success_auto_language():
 
     Flow:
     1. Get file metadata from database
-    2. Download file from Telegram
+    2. Download file via FileManager
     3. Call Whisper API with verbose_json
     4. Calculate cost ($0.006 per minute)
     5. Return transcript + metadata
@@ -183,8 +57,10 @@ async def test_transcribe_audio_success_auto_language():
     mock_repo = AsyncMock()
     mock_repo.get_by_claude_file_id.return_value = mock_file_record
 
-    # Mock file download
+    # Mock file download via FileManager
     mock_audio_bytes = b'fake_audio_data'
+    mock_file_manager = AsyncMock()
+    mock_file_manager.download_by_claude_id.return_value = mock_audio_bytes
 
     # Mock OpenAI client and response
     mock_client = AsyncMock()
@@ -196,8 +72,8 @@ async def test_transcribe_audio_success_auto_language():
 
     with patch('db.repositories.user_file_repository.UserFileRepository',
                return_value=mock_repo), \
-         patch('core.tools.transcribe_audio.download_file_from_telegram',
-               return_value=mock_audio_bytes) as mock_download, \
+         patch('core.file_manager.FileManager',
+               return_value=mock_file_manager), \
          patch('core.tools.transcribe_audio.get_openai_async_client',
                return_value=mock_client):
 
@@ -214,8 +90,12 @@ async def test_transcribe_audio_success_auto_language():
         assert float(result['cost_usd']) == pytest.approx(expected_cost,
                                                           rel=1e-6)
 
-        # Verify API call
-        mock_download.assert_called_once_with(file_id, bot, session)
+        # Verify FileManager was used
+        mock_file_manager.download_by_claude_id.assert_called_once_with(
+            file_id,
+            filename=mock_file_record.filename,
+            use_cache=True,
+        )
         mock_client.audio.transcriptions.create.assert_called_once()
         call_kwargs = \
             mock_client.audio.transcriptions.create.call_args[1]
@@ -241,6 +121,8 @@ async def test_transcribe_audio_with_specific_language():
     mock_repo.get_by_claude_file_id.return_value = mock_file_record
 
     mock_audio_bytes = b'audio_data'
+    mock_file_manager = AsyncMock()
+    mock_file_manager.download_by_claude_id.return_value = mock_audio_bytes
 
     mock_client = AsyncMock()
     mock_response = Mock()
@@ -251,8 +133,8 @@ async def test_transcribe_audio_with_specific_language():
 
     with patch('db.repositories.user_file_repository.UserFileRepository',
                return_value=mock_repo), \
-         patch('core.tools.transcribe_audio.download_file_from_telegram',
-               return_value=mock_audio_bytes), \
+         patch('core.file_manager.FileManager',
+               return_value=mock_file_manager), \
          patch('core.tools.transcribe_audio.get_openai_async_client',
                return_value=mock_client):
 
@@ -301,6 +183,8 @@ async def test_transcribe_audio_whisper_api_error():
     mock_repo.get_by_claude_file_id.return_value = mock_file_record
 
     mock_audio_bytes = b'audio_data'
+    mock_file_manager = AsyncMock()
+    mock_file_manager.download_by_claude_id.return_value = mock_audio_bytes
 
     # Mock Whisper API error
     mock_client = AsyncMock()
@@ -312,8 +196,8 @@ async def test_transcribe_audio_whisper_api_error():
 
     with patch('db.repositories.user_file_repository.UserFileRepository',
                return_value=mock_repo), \
-         patch('core.tools.transcribe_audio.download_file_from_telegram',
-               return_value=mock_audio_bytes), \
+         patch('core.file_manager.FileManager',
+               return_value=mock_file_manager), \
          patch('core.tools.transcribe_audio.get_openai_async_client',
                return_value=mock_client):
 
@@ -359,6 +243,8 @@ async def test_transcribe_audio_long_file_cost():
     mock_repo.get_by_claude_file_id.return_value = mock_file_record
 
     mock_audio_bytes = b'audio_data'
+    mock_file_manager = AsyncMock()
+    mock_file_manager.download_by_claude_id.return_value = mock_audio_bytes
 
     mock_client = AsyncMock()
     mock_response = Mock()
@@ -369,8 +255,8 @@ async def test_transcribe_audio_long_file_cost():
 
     with patch('db.repositories.user_file_repository.UserFileRepository',
                return_value=mock_repo), \
-         patch('core.tools.transcribe_audio.download_file_from_telegram',
-               return_value=mock_audio_bytes), \
+         patch('core.file_manager.FileManager',
+               return_value=mock_file_manager), \
          patch('core.tools.transcribe_audio.get_openai_async_client',
                return_value=mock_client):
 

@@ -3,7 +3,7 @@
 This module implements the transcribe_audio tool for speech-to-text
 transcription of audio and video files using OpenAI's Whisper model.
 
-Phase 3.2: Uses Redis file cache for fast file retrieval.
+Phase 3.2: Uses unified FileManager for downloads with Redis caching.
 
 NO __init__.py - use direct import:
     from core.tools.transcribe_audio import (
@@ -15,8 +15,6 @@ NO __init__.py - use direct import:
 import io
 from typing import Any, Dict, TYPE_CHECKING
 
-from cache.file_cache import cache_file
-from cache.file_cache import get_cached_file
 from core.clients import get_openai_async_client
 from core.pricing import calculate_whisper_cost
 from core.pricing import cost_to_float
@@ -28,102 +26,6 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = get_logger(__name__)
-
-
-async def download_file_from_telegram(file_id: str, bot: 'Bot',
-                                      session: 'AsyncSession') -> bytes:
-    """Download file from Telegram storage.
-
-    Phase 3.2: Checks Redis cache first for fast retrieval.
-
-    Args:
-        file_id: Claude file_id (used to lookup in database).
-        bot: Telegram Bot instance for downloading files.
-        session: Database session for querying file metadata.
-
-    Returns:
-        File content as bytes.
-
-    Raises:
-        ValueError: If file not found or no longer available.
-        TelegramAPIError: If Telegram download fails.
-
-    Note:
-        Telegram stores files for ~6 months of inactivity.
-    """
-    # Import here to avoid circular dependencies
-    from aiogram.exceptions import \
-        TelegramAPIError  # pylint: disable=import-outside-toplevel
-    from db.repositories.user_file_repository import \
-        UserFileRepository  # pylint: disable=import-outside-toplevel
-
-    logger.info("tools.transcribe_audio.downloading_file", file_id=file_id)
-
-    # Get file metadata from database
-    repo = UserFileRepository(session)
-    file_record = await repo.get_by_claude_file_id(file_id)
-
-    if not file_record:
-        raise ValueError(f"File not found in database: {file_id}")
-
-    if not file_record.telegram_file_id:
-        raise ValueError(f"No telegram_file_id for file {file_id}. "
-                         "Cannot download from Telegram.")
-
-    # Phase 3.2: Check cache first
-    cached_bytes = await get_cached_file(file_record.telegram_file_id)
-    if cached_bytes:
-        logger.info(
-            "tools.transcribe_audio.cache_hit",
-            file_id=file_id,
-            telegram_file_id=file_record.telegram_file_id[:20] + "...",
-            filename=file_record.filename,
-            size_bytes=len(cached_bytes),
-        )
-        return cached_bytes
-
-    # Cache miss - download from Telegram
-    try:
-        logger.info("tools.transcribe_audio.telegram_download",
-                    telegram_file_id=file_record.telegram_file_id,
-                    filename=file_record.filename)
-
-        # Get file info from Telegram
-        file_info = await bot.get_file(file_record.telegram_file_id)
-
-        # Download file content
-        file_bytes_io = await bot.download_file(file_info.file_path)
-
-        # Read BytesIO to bytes
-        file_bytes = file_bytes_io.read()
-
-        logger.info("tools.transcribe_audio.telegram_download_success",
-                    file_id=file_id,
-                    filename=file_record.filename,
-                    size_bytes=len(file_bytes))
-
-        # Phase 3.2: Cache for future use
-        await cache_file(
-            file_record.telegram_file_id,
-            file_bytes,
-            filename=file_record.filename,
-        )
-
-        return file_bytes
-
-    except TelegramAPIError as e:
-        logger.error("tools.transcribe_audio.telegram_download_failed",
-                     file_id=file_id,
-                     telegram_file_id=file_record.telegram_file_id,
-                     filename=file_record.filename,
-                     error=str(e),
-                     exc_info=True)
-
-        # User-friendly error message
-        raise ValueError(
-            f"File '{file_record.filename}' is no longer available in "
-            "Telegram. Files are stored for approximately 6 months. "
-            "Please re-upload the file to continue.") from e
 
 
 async def transcribe_audio(file_id: str,
@@ -179,6 +81,8 @@ async def transcribe_audio(file_id: str,
                     language=language)
 
         # Import here to avoid circular dependencies
+        from core.file_manager import \
+            FileManager  # pylint: disable=import-outside-toplevel
         from db.repositories.user_file_repository import \
             UserFileRepository  # pylint: disable=import-outside-toplevel
 
@@ -189,8 +93,13 @@ async def transcribe_audio(file_id: str,
         if not file_record:
             raise ValueError(f"File not found: {file_id}")
 
-        # Download file from Telegram
-        audio_bytes = await download_file_from_telegram(file_id, bot, session)
+        # Download file using unified FileManager (with caching)
+        file_manager = FileManager(bot, session)
+        audio_bytes = await file_manager.download_by_claude_id(
+            file_id,
+            filename=file_record.filename,
+            use_cache=True,
+        )
 
         # Use centralized client factory
         client = get_openai_async_client()

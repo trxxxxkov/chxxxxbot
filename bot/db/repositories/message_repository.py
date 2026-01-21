@@ -9,7 +9,7 @@ NO __init__.py - use direct import:
     from db.repositories.message_repository import MessageRepository
 """
 
-from typing import Optional
+from typing import Optional, Sequence
 
 from cache.thread_cache import cache_messages
 from cache.thread_cache import get_cached_messages
@@ -19,6 +19,9 @@ from db.models.message import MessageRole
 from db.repositories.base import BaseRepository
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from utils.structured_logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class MessageRepository(BaseRepository[Message]):
@@ -268,13 +271,16 @@ class MessageRepository(BaseRepository[Message]):
         Returns messages ordered by date ASC (oldest first) for proper
         LLM context construction.
 
+        When limit is specified, returns the MOST RECENT messages (not oldest),
+        but still in chronological order for proper context.
+
         Phase 3.2: Uses Redis cache for fast retrieval. Note: Cache only
         used when limit=None and offset=0 (full history).
 
         Args:
             thread_id: Internal thread ID.
-            limit: Max number of messages. None = all. Defaults to None.
-            offset: Number of messages to skip. Defaults to 0.
+            limit: Max number of RECENT messages. None = all. Defaults to None.
+            offset: Number of messages to skip from the end. Defaults to 0.
 
         Returns:
             List of Message instances ordered by date ASC.
@@ -320,13 +326,27 @@ class MessageRepository(BaseRepository[Message]):
                 return messages
 
         # Cache miss or paginated query - query database
-        stmt = (select(Message).where(Message.thread_id == thread_id).order_by(
-            Message.date.asc()))
-
         if limit is not None:
-            stmt = stmt.limit(limit)
-        if offset > 0:
-            stmt = stmt.offset(offset)
+            # Get most recent N messages, but return in chronological order
+            # Subquery: get IDs of most recent messages
+            subq = (select(Message.chat_id, Message.message_id).where(
+                Message.thread_id == thread_id).order_by(
+                    Message.date.desc()).limit(limit))
+            if offset > 0:
+                subq = subq.offset(offset)
+            subq = subq.subquery()
+
+            # Main query: get those messages in chronological order
+            stmt = (select(Message).where(
+                Message.chat_id == subq.c.chat_id,
+                Message.message_id == subq.c.message_id,
+            ).order_by(Message.date.asc()))
+        else:
+            # No limit - get all messages in chronological order
+            stmt = (select(Message).where(
+                Message.thread_id == thread_id).order_by(Message.date.asc()))
+            if offset > 0:
+                stmt = stmt.offset(offset)
 
         result = await self.session.execute(stmt)
         messages = list(result.scalars().all())
@@ -464,3 +484,94 @@ class MessageRepository(BaseRepository[Message]):
 
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def create_messages_batch(
+        self,
+        messages_data: Sequence[dict],
+    ) -> list[Message]:
+        """Create multiple messages in a single batch operation.
+
+        Optimized for bulk inserts - uses single flush instead of per-message flush.
+        Ideal for importing conversation history or bulk operations.
+
+        Args:
+            messages_data: List of dicts with message parameters.
+                Required keys: chat_id, message_id, date, role.
+                Optional keys: thread_id, from_user_id, text_content, caption,
+                    reply_to_message_id, media_group_id, attachments, edit_date,
+                    thinking_blocks, sender_display, forward_origin, reply_snippet,
+                    reply_sender_display, quote_data.
+
+        Returns:
+            List of created Message instances.
+
+        Note:
+            Does NOT invalidate cache per-message for performance.
+            Caller should invalidate relevant thread caches after batch insert.
+        """
+        if not messages_data:
+            return []
+
+        messages = []
+        thread_ids_to_invalidate: set[int] = set()
+
+        for msg_data in messages_data:
+            attachments = msg_data.get("attachments", [])
+
+            # Calculate denormalized flags
+            has_photos = any(att.get("type") == "photo" for att in attachments)
+            has_documents = any(
+                att.get("type") == "document" for att in attachments)
+            has_voice = any(att.get("type") == "voice" for att in attachments)
+            has_video = any(att.get("type") == "video" for att in attachments)
+            attachment_count = len(attachments)
+
+            message = Message(
+                chat_id=msg_data["chat_id"],
+                message_id=msg_data["message_id"],
+                thread_id=msg_data.get("thread_id"),
+                from_user_id=msg_data.get("from_user_id"),
+                date=msg_data["date"],
+                edit_date=msg_data.get("edit_date"),
+                role=msg_data["role"],
+                text_content=msg_data.get("text_content"),
+                caption=msg_data.get("caption"),
+                reply_to_message_id=msg_data.get("reply_to_message_id"),
+                reply_snippet=msg_data.get("reply_snippet"),
+                reply_sender_display=msg_data.get("reply_sender_display"),
+                quote_data=msg_data.get("quote_data"),
+                forward_origin=msg_data.get("forward_origin"),
+                sender_display=msg_data.get("sender_display"),
+                edit_count=0,
+                original_content=None,
+                media_group_id=msg_data.get("media_group_id"),
+                has_photos=has_photos,
+                has_documents=has_documents,
+                has_voice=has_voice,
+                has_video=has_video,
+                attachment_count=attachment_count,
+                attachments=attachments,
+                thinking_blocks=msg_data.get("thinking_blocks"),
+                created_at=msg_data["date"],
+            )
+            self.session.add(message)
+            messages.append(message)
+
+            # Track thread IDs for cache invalidation
+            if msg_data.get("thread_id"):
+                thread_ids_to_invalidate.add(msg_data["thread_id"])
+
+        # Single flush for all messages
+        await self.session.flush()
+
+        # Invalidate caches for all affected threads
+        for thread_id in thread_ids_to_invalidate:
+            await invalidate_messages(thread_id)
+
+        logger.info(
+            "messages.batch_created",
+            count=len(messages),
+            threads_invalidated=len(thread_ids_to_invalidate),
+        )
+
+        return messages
