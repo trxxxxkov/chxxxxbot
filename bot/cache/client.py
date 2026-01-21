@@ -29,16 +29,56 @@ _redis_client: Optional[redis.Redis] = None
 _connection_pool: Optional[ConnectionPool] = None
 
 
+def _read_redis_password() -> Optional[str]:
+    """Read Redis password from secrets file.
+
+    Returns:
+        Password string or None if not configured.
+    """
+    secret_path = "/run/secrets/redis_password"
+    try:
+        with open(secret_path, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        logger.debug("redis.no_password_file", path=secret_path)
+        return None
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        logger.warning("redis.password_read_error", error=str(e))
+        return None
+
+
 def get_redis_url() -> str:
     """Get Redis connection URL from environment.
 
     Returns:
-        Redis URL string (e.g., "redis://redis:6379/0").
+        Redis URL string (e.g., "redis://:password@redis:6379/0").
     """
     host = os.environ.get("REDIS_HOST", "redis")
     port = os.environ.get("REDIS_PORT", "6379")
     db = os.environ.get("REDIS_DB", "0")
+    password = _read_redis_password()
+
+    if password:
+        return f"redis://:{password}@{host}:{port}/{db}"
     return f"redis://{host}:{port}/{db}"
+
+
+def _sanitize_url(url: str) -> str:
+    """Remove password from URL for logging.
+
+    Args:
+        url: Redis URL that may contain password.
+
+    Returns:
+        URL with password masked.
+    """
+    # redis://:password@host:port/db -> redis://:***@host:port/db
+    if "@" in url and ":" in url.split("@")[0]:
+        prefix = url.split("@")[0]
+        suffix = url.split("@")[1]
+        if prefix.count(":") >= 2:  # Has password
+            return f"redis://:***@{suffix}"
+    return url
 
 
 async def init_redis() -> redis.Redis:
@@ -59,8 +99,9 @@ async def init_redis() -> redis.Redis:
         return _redis_client
 
     redis_url = get_redis_url()
+    safe_url = _sanitize_url(redis_url)
 
-    logger.info("redis.connecting", url=redis_url)
+    logger.info("redis.connecting", url=safe_url)
 
     # Create connection pool with reasonable defaults
     _connection_pool = ConnectionPool.from_url(
@@ -77,9 +118,9 @@ async def init_redis() -> redis.Redis:
     # Test connection
     try:
         await _redis_client.ping()
-        logger.info("redis.connected", url=redis_url)
+        logger.info("redis.connected", url=safe_url)
     except redis.ConnectionError as e:
-        logger.error("redis.connection_failed", url=redis_url, error=str(e))
+        logger.error("redis.connection_failed", url=safe_url, error=str(e))
         raise
 
     return _redis_client

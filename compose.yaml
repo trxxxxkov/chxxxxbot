@@ -22,22 +22,25 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    secrets:
+      - redis_password
     command:
-      - redis-server
-      - --maxmemory
-      - 512mb
-      - --maxmemory-policy
-      - allkeys-lru
-      - --appendonly
-      - "yes"
-      - --appendfsync
-      - everysec
+      - /bin/sh
+      - -c
+      - |
+        REDIS_PASS=$$(cat /run/secrets/redis_password)
+        exec redis-server \
+          --requirepass "$$REDIS_PASS" \
+          --maxmemory 512mb \
+          --maxmemory-policy allkeys-lru \
+          --appendonly yes \
+          --appendfsync everysec
     volumes:
       - redis_data:/data
     networks:
       - botnet
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a $$(cat /run/secrets/redis_password) ping 2>/dev/null | grep -q PONG"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -58,6 +61,7 @@ services:
       - openai_api_key
       - google_api_key
       - privileged_users
+      - redis_password
     volumes:
       - ./bot:/app
       - ./postgres:/postgres
@@ -166,11 +170,18 @@ services:
     image: rediscommander/redis-commander:latest
     restart: unless-stopped
     secrets:
-      - redis_commander_password
-    environment:
-      - REDIS_HOSTS=local:redis:6379
-      - HTTP_USER=admin
-      - HTTP_PASSWORD_FILE=/run/secrets/redis_commander_password
+      - redis_password
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        REDIS_PASS=$$(cat /run/secrets/redis_password)
+        node /redis-commander/bin/redis-commander \
+          --redis-host redis \
+          --redis-port 6379 \
+          --redis-password "$$REDIS_PASS" \
+          --http-auth-username admin \
+          --http-auth-password "$$REDIS_PASS"
     ports:
       - "8081:8081"
     depends_on:
@@ -208,5 +219,5 @@ secrets:
     file: ./secrets/privileged_users.txt
   grafana_password:
     file: ./secrets/grafana_password.txt
-  redis_commander_password:
-    file: ./secrets/redis_commander_password.txt
+  redis_password:
+    file: ./secrets/redis_password.txt
