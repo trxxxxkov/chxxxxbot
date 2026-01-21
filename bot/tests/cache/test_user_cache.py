@@ -4,6 +4,7 @@ Tests the cache-aside pattern for user data caching.
 """
 
 from decimal import Decimal
+import json
 from unittest.mock import AsyncMock
 from unittest.mock import patch
 
@@ -191,3 +192,75 @@ class TestGetBalanceFromCached:
         result = get_balance_from_cached(cached)
 
         assert result == Decimal("-5.0000")
+
+
+class TestUpdateCachedBalance:
+    """Tests for update_cached_balance function."""
+
+    @pytest.fixture
+    def mock_redis(self):
+        """Create mock Redis client."""
+        return AsyncMock()
+
+    @pytest.mark.asyncio
+    async def test_update_cached_balance_success(self, mock_redis):
+        """Test successful balance update in cache."""
+        user_id = 123456
+        new_balance = Decimal("15.5000")
+
+        # Existing cached data
+        existing_data = json.dumps({
+            "balance": "10.0000",
+            "model_id": "claude-sonnet-4-5-20250929",
+            "first_name": "Test",
+            "username": "testuser",
+            "cached_at": 1234567890.0,
+        })
+        mock_redis.get.return_value = existing_data.encode("utf-8")
+
+        from cache.user_cache import update_cached_balance
+
+        with patch("cache.user_cache.get_redis",
+                   return_value=mock_redis) as mock_get_redis:
+            result = await update_cached_balance(user_id, new_balance)
+
+        assert result is True
+        mock_redis.get.assert_called_once()
+        mock_redis.setex.assert_called_once()
+
+        # Verify the new balance was set
+        call_args = mock_redis.setex.call_args
+        saved_data = json.loads(call_args[0][2])
+        assert saved_data["balance"] == "15.5000"
+        assert saved_data["model_id"] == "claude-sonnet-4-5-20250929"
+
+    @pytest.mark.asyncio
+    async def test_update_cached_balance_not_cached(self, mock_redis):
+        """Test update when user is not in cache."""
+        user_id = 123456
+        new_balance = Decimal("15.5000")
+
+        mock_redis.get.return_value = None
+
+        from cache.user_cache import update_cached_balance
+
+        with patch("cache.user_cache.get_redis",
+                   return_value=mock_redis) as mock_get_redis:
+            result = await update_cached_balance(user_id, new_balance)
+
+        assert result is False
+        mock_redis.setex.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_update_cached_balance_redis_unavailable(self):
+        """Test returns False when Redis is unavailable."""
+        user_id = 123456
+        new_balance = Decimal("15.5000")
+
+        from cache.user_cache import update_cached_balance
+
+        with patch("cache.user_cache.get_redis",
+                   return_value=None) as mock_get_redis:
+            result = await update_cached_balance(user_id, new_balance)
+
+        assert result is False

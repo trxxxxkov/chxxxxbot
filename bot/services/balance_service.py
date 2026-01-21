@@ -13,6 +13,7 @@ from decimal import Decimal
 from decimal import ROUND_HALF_UP
 
 from cache.user_cache import invalidate_user
+from cache.user_cache import update_cached_balance
 from config import MINIMUM_BALANCE_FOR_REQUEST
 from db.models.balance_operation import BalanceOperation
 from db.models.balance_operation import OperationType
@@ -213,8 +214,9 @@ class BalanceService:
             msg="User charged for API usage",
         )
 
-        # Phase 3.2: Invalidate cache after balance change
-        await invalidate_user(user_id)
+        # Phase 3.2: Update cache with new balance (don't invalidate!)
+        # This keeps the cache warm for subsequent requests
+        await update_cached_balance(user_id, balance_after)
 
         # Alert if balance went negative
         if balance_after < 0:
@@ -336,8 +338,8 @@ class BalanceService:
             msg="Admin adjusted user balance",
         )
 
-        # Phase 3.2: Invalidate cache after balance change
-        await invalidate_user(user.id)
+        # Phase 3.2: Update cache with new balance
+        await update_cached_balance(user.id, balance_after)
 
         return balance_before, balance_after
 

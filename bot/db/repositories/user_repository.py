@@ -262,6 +262,28 @@ class UserRepository(BaseRepository[User]):
                      count=count)
         return count
 
+    async def get_active_users(self, hours: int = 24) -> list[User]:
+        """Get users active in the last N hours.
+
+        Used for cache warming at startup.
+
+        Args:
+            hours: Number of hours to look back. Defaults to 24.
+
+        Returns:
+            List of active User objects.
+        """
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+        stmt = select(User).where(User.last_seen_at >= cutoff).order_by(
+            User.last_seen_at.desc())
+        result = await self.session.execute(stmt)
+        users = list(result.scalars().all())
+
+        logger.debug("user_repository.get_active_users",
+                     hours=hours,
+                     count=len(users))
+        return users
+
     async def get_total_balance(self) -> Decimal:
         """Get sum of all user balances.
 

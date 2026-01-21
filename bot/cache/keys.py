@@ -86,15 +86,21 @@ def file_bytes_key(telegram_file_id: str) -> str:
 
 
 # TTL constants (in seconds)
-USER_TTL = 300  # 5 minutes (invalidated on balance change via invalidate_user())
-THREAD_TTL = 600  # 10 minutes
-MESSAGES_TTL = 300  # 5 minutes
-FILES_TTL = 300  # 5 minutes
-FILE_BYTES_TTL = 3600  # 1 hour
+# All TTLs set to 1 hour for optimal cache hit rate
+# Cache is properly invalidated/updated on data changes:
+# - User: balance updated via update_cached_balance() after charge
+# - Messages: invalidated via invalidate_messages() on new message
+# - Thread: rarely changes, 1 hour is safe
+# - Files: invalidated when new files uploaded
+USER_TTL = 3600  # 1 hour (balance updated, not invalidated)
+THREAD_TTL = 3600  # 1 hour (metadata rarely changes)
+MESSAGES_TTL = 3600  # 1 hour (invalidated on new message)
+FILES_TTL = 3600  # 1 hour (invalidated on new file)
+FILE_BYTES_TTL = 3600  # 1 hour (file content immutable)
 FILE_BYTES_MAX_SIZE = 20 * 1024 * 1024  # 20 MB
 
 # Execution output cache (Phase 3.2+)
-EXEC_FILE_TTL = 1800  # 30 minutes
+EXEC_FILE_TTL = 3600  # 1 hour (consumed once, then deleted)
 EXEC_FILE_MAX_SIZE = 100 * 1024 * 1024  # 100 MB
 
 

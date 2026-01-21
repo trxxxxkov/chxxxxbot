@@ -196,3 +196,69 @@ def get_balance_from_cached(cached: CachedUserData) -> Decimal:
         Balance as Decimal.
     """
     return Decimal(cached["balance"])
+
+
+async def update_cached_balance(user_id: int, new_balance: Decimal) -> bool:
+    """Update only the balance in cached user data.
+
+    This is more efficient than invalidate + re-cache because:
+    1. Single Redis operation (GET + SET vs DELETE)
+    2. Preserves other cached data (model_id, etc.)
+    3. Avoids cache miss on next request
+
+    Use this after charge_user() instead of invalidate_user().
+
+    Args:
+        user_id: Telegram user ID.
+        new_balance: New balance value.
+
+    Returns:
+        True if updated successfully, False if not cached or error.
+    """
+    start_time = time.time()
+    redis = await get_redis()
+
+    if redis is None:
+        logger.debug("user_cache.redis_unavailable", user_id=user_id)
+        return False
+
+    try:
+        key = user_key(user_id)
+
+        # Get existing data
+        data = await redis.get(key)
+        if data is None:
+            # Not cached - nothing to update
+            logger.debug("user_cache.update_skipped_not_cached",
+                         user_id=user_id)
+            return False
+
+        # Update balance in existing data
+        cached = json.loads(data.decode("utf-8"))
+        old_balance = cached.get("balance")
+        cached["balance"] = str(new_balance)
+        cached["cached_at"] = time.time()
+
+        # Save with fresh TTL
+        await redis.setex(key, USER_TTL, json.dumps(cached))
+
+        elapsed = time.time() - start_time
+        record_redis_operation_time("update", elapsed)
+
+        logger.debug(
+            "user_cache.balance_updated",
+            user_id=user_id,
+            old_balance=old_balance,
+            new_balance=str(new_balance),
+            elapsed_ms=elapsed * 1000,
+        )
+
+        return True
+
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        logger.warning(
+            "user_cache.update_error",
+            user_id=user_id,
+            error=str(e),
+        )
+        return False

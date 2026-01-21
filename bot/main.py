@@ -155,6 +155,57 @@ def _parse_memory(memory_str: str) -> int:
     return int(value * multipliers.get(unit, 1))
 
 
+async def warm_user_cache(logger) -> int:
+    """Warm user cache with recently active users.
+
+    Loads users who were active in the last 24 hours and caches their
+    balance and model_id. This ensures the first request from these
+    users hits the cache instead of the database.
+
+    Args:
+        logger: Logger instance.
+
+    Returns:
+        Number of users cached.
+    """
+    from cache.user_cache import \
+        cache_user  # pylint: disable=import-outside-toplevel
+    from db.engine import \
+        get_session  # pylint: disable=import-outside-toplevel
+    from db.repositories.user_repository import \
+        UserRepository  # pylint: disable=import-outside-toplevel
+
+    try:
+        async with get_session() as session:
+            user_repo = UserRepository(session)
+
+            # Get users active in last 24 hours
+            active_users = await user_repo.get_active_users(hours=24)
+
+            cached_count = 0
+            for user in active_users:
+                success = await cache_user(
+                    user_id=user.id,
+                    balance=user.balance,
+                    model_id=user.model_id or "claude-sonnet-4-5-20250929",
+                    first_name=user.first_name or "",
+                    username=user.username,
+                )
+                if success:
+                    cached_count += 1
+
+            logger.info(
+                "cache_warming.completed",
+                total_active=len(active_users),
+                cached=cached_count,
+            )
+            return cached_count
+
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        logger.warning("cache_warming.failed", error=str(e))
+        return 0
+
+
 async def collect_metrics_task(logger) -> None:
     """Background task to collect metrics periodically.
 
@@ -327,6 +378,9 @@ async def main() -> None:
         try:
             await init_redis()
             logger.info("redis_initialized")
+
+            # Warm user cache with recently active users
+            await warm_user_cache(logger)
         except Exception as redis_err:  # pylint: disable=broad-exception-caught
             logger.warning("redis_init_failed",
                            error=str(redis_err),

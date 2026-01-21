@@ -18,6 +18,7 @@ from decimal import ROUND_HALF_UP
 from aiogram import Bot
 from aiogram.types import LabeledPrice
 from cache.user_cache import invalidate_user
+from cache.user_cache import update_cached_balance
 from config import DEFAULT_OWNER_MARGIN
 from config import PAYMENT_INVOICE_DESCRIPTION_TEMPLATE
 from config import PAYMENT_INVOICE_TITLE
@@ -348,8 +349,8 @@ class PaymentService:
             msg="Payment processed and balance credited",
         )
 
-        # Phase 3.2: Invalidate cache after balance change
-        await invalidate_user(user_id)
+        # Phase 3.2: Update cache with new balance
+        await update_cached_balance(user_id, balance_after)
 
         return payment
 
@@ -489,7 +490,7 @@ class PaymentService:
             msg="Refund processed and balance deducted",
         )
 
-        # Phase 3.2: Invalidate cache after balance change
-        await invalidate_user(user_id)
+        # Phase 3.2: Update cache with new balance
+        await update_cached_balance(user_id, balance_after)
 
         return payment
