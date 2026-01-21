@@ -224,7 +224,8 @@ async def generate_image(  # pylint: disable=unused-argument,too-many-locals
         return result
 
     except Exception as e:
-        logger.error("tools.generate_image.failed", error=str(e), exc_info=True)
+        # Log as info - external API errors handled correctly by our service
+        logger.info("tools.generate_image.external_error", error=str(e))
 
         # Check for content policy violation
         error_msg = str(e).lower()

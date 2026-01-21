@@ -274,10 +274,10 @@ async def execute_tool(
         return result
 
     except Exception as e:
-        logger.error("tools.execute_tool.failed",
-                     tool_name=tool_name,
-                     error=str(e),
-                     exc_info=True)
+        # Log as info - external API errors handled correctly by our service
+        logger.info("tools.execute_tool.external_error",
+                    tool_name=tool_name,
+                    error=str(e))
         raise
 
 

@@ -686,15 +686,14 @@ async def _execute_single_tool_safe(
         }
 
     except Exception as e:  # pylint: disable=broad-exception-caught
-        # Unexpected errors (network, API, bugs) - log as error
+        # External API errors handled correctly - log as info
         duration = time.time() - start_time
 
-        logger.error("tools.parallel.failed",
-                     thread_id=thread_id,
-                     tool_name=tool_name,
-                     error=str(e),
-                     duration_ms=round(duration * 1000),
-                     exc_info=True)
+        logger.info("tools.parallel.external_error",
+                    thread_id=thread_id,
+                    tool_name=tool_name,
+                    error=str(e),
+                    duration_ms=round(duration * 1000))
 
         return {
             "error": f"Tool execution failed: {str(e)}",
