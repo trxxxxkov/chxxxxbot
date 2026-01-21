@@ -63,7 +63,7 @@ def format_blocks(blocks: list[DisplayBlock], is_streaming: bool = True) -> str:
     """Format display blocks for Telegram display.
 
     Structure during streaming:
-    - All thinking/tool blocks collected at TOP in one expandable blockquote
+    - All thinking/tool blocks collected at TOP in one blockquote
     - All text blocks concatenated below
 
     Final display: only text (thinking filtered out before calling).

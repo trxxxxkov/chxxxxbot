@@ -29,7 +29,7 @@ class TruncationManager:
 
     Prioritizes text content over thinking content since:
     - Text is visible to users immediately
-    - Thinking is collapsed in expandable blockquote
+    - Thinking is shown in blockquote
     - Users see text first, thinking is supplementary
 
     Algorithm:
@@ -63,7 +63,7 @@ class TruncationManager:
         Examples:
             >>> tm = TruncationManager()
             >>> thinking, text = tm.truncate_for_display(
-            ...     "<blockquote expandable>long thinking...</blockquote>",
+            ...     "<blockquote>long thinking...</blockquote>",
             ...     "Short answer"
             ... )
             >>> # thinking content may be truncated, tags preserved
@@ -87,7 +87,7 @@ class TruncationManager:
 
         # Calculate available space for thinking after reserving for text
         # Also reserve space for truncation indicator and blockquote tags
-        blockquote_open = "<blockquote expandable>"
+        blockquote_open = "<blockquote>"
         blockquote_close = "</blockquote>"
         tag_overhead = len(blockquote_open) + len(blockquote_close) + len(
             ellipsis)
@@ -98,7 +98,7 @@ class TruncationManager:
             return "", text_html
 
         # Extract content from blockquote (preserve tags, truncate content)
-        # thinking_html format: "<blockquote expandable>content</blockquote>"
+        # thinking_html format: "<blockquote>content</blockquote>"
         if thinking_html.startswith(blockquote_open) and thinking_html.endswith(
                 blockquote_close):
             content = thinking_html[len(blockquote_open):-len(blockquote_close)]
