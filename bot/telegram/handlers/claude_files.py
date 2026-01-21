@@ -61,11 +61,15 @@ async def _process_single_file(
             mime_type=mime_type,
         )
 
-        # Determine file type
+        # Determine file type from MIME
         if mime_type.startswith("image/"):
             file_type = FileType.IMAGE
         elif mime_type == "application/pdf":
             file_type = FileType.PDF
+        elif mime_type.startswith("audio/"):
+            file_type = FileType.AUDIO
+        elif mime_type.startswith("video/"):
+            file_type = FileType.VIDEO
         else:
             file_type = FileType.DOCUMENT
 
