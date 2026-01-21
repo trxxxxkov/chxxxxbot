@@ -242,19 +242,42 @@ class ContextFormatter:
             except (json.JSONDecodeError, TypeError):
                 pass
 
-        # For user messages, check for attached images/PDFs
+        # For user messages, check for ALL attached files
         if msg.from_user_id:
-            files = await file_repo.get_by_message_id(
-                msg.message_id,
-                file_types=[FileType.IMAGE, FileType.PDF],
-            )
+            # Get all files for this message (no type filter)
+            all_files = await file_repo.get_by_message_id(msg.message_id)
 
-            if files:
-                content_blocks = self._build_multimodal_content(
-                    files, text_content)
-                return LLMMessage(role=role, content=content_blocks)
+            if all_files:
+                # Separate visual files (Claude can see) from other files
+                visual_files = [
+                    f for f in all_files
+                    if f.file_type in (FileType.IMAGE, FileType.PDF)
+                ]
+                other_files = [
+                    f for f in all_files
+                    if f.file_type not in (FileType.IMAGE, FileType.PDF)
+                ]
 
-        # No files - return simple text format
+                # Add text description for non-visual files
+                if other_files:
+                    file_descriptions = []
+                    for f in other_files:
+                        file_descriptions.append(
+                            f"[Attached: {f.filename} - "
+                            f"see Available Files section to analyze]")
+                    files_text = "\n".join(file_descriptions)
+                    if text_content:
+                        text_content = f"{text_content}\n\n{files_text}"
+                    else:
+                        text_content = files_text
+
+                # Build multimodal content if visual files present
+                if visual_files:
+                    content_blocks = self._build_multimodal_content(
+                        visual_files, text_content)
+                    return LLMMessage(role=role, content=content_blocks)
+
+        # No visual files - return simple text format
         return LLMMessage(role=role, content=text_content)
 
     def _build_multimodal_content(
