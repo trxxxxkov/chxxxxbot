@@ -424,15 +424,29 @@ async def main() -> None:
         metrics_task = asyncio.create_task(collect_metrics_task(logger))
         logger.info("metrics_collection_task_started")
 
+        # Start write-behind background task (Phase 3.3: Cache-first)
+        from cache.write_behind import \
+            write_behind_task  # pylint: disable=import-outside-toplevel
+        write_behind_handle = asyncio.create_task(write_behind_task(logger))
+        logger.info("write_behind_task_started")
+
         # Start polling
         logger.info("starting_polling")
         try:
             await dispatcher.start_polling(bot)
         finally:
-            # Cancel metrics collection on shutdown
+            # Cancel background tasks on shutdown
             metrics_task.cancel()
+            write_behind_handle.cancel()
+
+            # Wait for graceful shutdown (write-behind flushes pending writes)
             try:
                 await metrics_task
+            except asyncio.CancelledError:
+                pass
+
+            try:
+                await write_behind_handle
             except asyncio.CancelledError:
                 pass
 

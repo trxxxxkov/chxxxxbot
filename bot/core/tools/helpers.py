@@ -1,7 +1,7 @@
 """Helper functions for tool use integration.
 
 This module provides utility functions for:
-- Retrieving available files for a thread
+- Retrieving available files for a thread (with Redis caching)
 - Formatting files list for system prompt
 - Extracting tool use blocks from Claude responses
 - Formatting tool results for API
@@ -13,19 +13,103 @@ NO __init__.py - use direct import:
 from datetime import datetime
 from datetime import timezone
 import json
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import anthropic
+from db.models.user_file import UserFile
 from db.repositories.user_file_repository import UserFileRepository
 from utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
 
 
+def _user_file_to_dict(uf: UserFile) -> Dict[str, Any]:
+    """Convert UserFile to dict for caching.
+
+    Args:
+        uf: UserFile instance.
+
+    Returns:
+        Dict with serializable file data.
+    """
+    return {
+        "id": uf.id,
+        "filename": uf.filename,
+        "file_type": uf.file_type.value,
+        "mime_type": uf.mime_type,
+        "file_size": uf.file_size,
+        "claude_file_id": uf.claude_file_id,
+        "uploaded_at": uf.uploaded_at.isoformat() if uf.uploaded_at else None,
+        "source": uf.source.value if uf.source else None,
+    }
+
+
+class CachedUserFile:
+    """Wrapper class to provide UserFile-like interface from cached dict."""
+
+    def __init__(self, data: Dict[str, Any]):
+        """Initialize from cached dict.
+
+        Args:
+            data: Dict from cache with file data.
+        """
+        self._data = data
+
+    @property
+    def id(self) -> int:
+        """File ID."""
+        return self._data.get("id", 0)
+
+    @property
+    def filename(self) -> str:
+        """Original filename."""
+        return self._data.get("filename", "")
+
+    @property
+    def file_type(self) -> Any:
+        """File type as object with .value attribute."""
+        from db.models.user_file import \
+            FileType  # pylint: disable=import-outside-toplevel
+        type_val = self._data.get("file_type", "document")
+        return FileType(type_val)
+
+    @property
+    def mime_type(self) -> str:
+        """MIME type."""
+        return self._data.get("mime_type", "")
+
+    @property
+    def file_size(self) -> int:
+        """File size in bytes."""
+        return self._data.get("file_size", 0)
+
+    @property
+    def claude_file_id(self) -> str:
+        """Claude Files API ID."""
+        return self._data.get("claude_file_id", "")
+
+    @property
+    def uploaded_at(self) -> Optional[datetime]:
+        """Upload timestamp."""
+        ts = self._data.get("uploaded_at")
+        if ts:
+            return datetime.fromisoformat(ts)
+        return None
+
+    @property
+    def source(self) -> Any:
+        """Get file source enum value: USER or ASSISTANT."""
+        from db.models.user_file import \
+            FileSource  # pylint: disable=import-outside-toplevel
+        source_val = self._data.get("source", "user")
+        return FileSource(source_val) if source_val else None
+
+
 async def get_available_files(thread_id: int,
                               user_file_repo: UserFileRepository) -> List[Any]:
-    """Get all available files for a thread.
+    """Get all available files for a thread with caching.
 
+    Uses Redis cache with 1 hour TTL. Falls back to database on cache miss.
     Retrieves files from user_files table that belong to messages in
     this thread. Files are used for tool selection and system prompt.
 
@@ -34,13 +118,29 @@ async def get_available_files(thread_id: int,
         user_file_repo: UserFileRepository instance.
 
     Returns:
-        List of UserFile instances (may be empty).
+        List of file objects (UserFile or CachedUserFile, may be empty).
 
     Examples:
         >>> files = await get_available_files(thread_id=42, user_file_repo=repo)
         >>> if files:
         ...     print(f"Found {len(files)} files")
     """
+    # Import cache functions here to avoid circular imports
+    from cache.thread_cache import \
+        cache_files  # pylint: disable=import-outside-toplevel
+    from cache.thread_cache import \
+        get_cached_files  # pylint: disable=import-outside-toplevel
+
+    # Try cache first
+    cached = await get_cached_files(thread_id)
+    if cached is not None:
+        logger.debug("tools.helpers.get_available_files.cache_hit",
+                     thread_id=thread_id,
+                     file_count=len(cached))
+        # Convert cached dicts back to file-like objects
+        return [CachedUserFile(f) for f in cached]
+
+    # Cache miss - query database
     logger.debug("tools.helpers.get_available_files.calling_repo",
                  thread_id=thread_id,
                  repo_type=type(user_file_repo).__name__)
@@ -50,6 +150,11 @@ async def get_available_files(thread_id: int,
     logger.info("tools.helpers.get_available_files",
                 thread_id=thread_id,
                 file_count=len(files))
+
+    # Cache result
+    if files:
+        files_data = [_user_file_to_dict(f) for f in files]
+        await cache_files(thread_id, files_data)
 
     return files
 
@@ -112,9 +217,10 @@ def format_files_section(files: List[Any]) -> str:
 
     Creates a formatted section listing all available files with their
     metadata. Included in system prompt when files are present.
+    Groups files by type for better readability.
 
     Args:
-        files: List of UserFile instances.
+        files: List of UserFile instances (or CachedUserFile).
 
     Returns:
         Formatted string for system prompt (empty if no files).
@@ -123,40 +229,79 @@ def format_files_section(files: List[Any]) -> str:
         >>> section = format_files_section(files)
         >>> print(section)
         Available files in this conversation:
-        - photo.jpg (image, 1.2 MB, uploaded 5 min ago)
-          claude_file_id: file_abc123...
+        IMAGE files:
+          - photo.jpg (1.2 MB, 5 min ago)
+            claude_file_id: file_abc123...
     """
     if not files:
         return ""
 
+    # Group files by type
+    by_type: Dict[str, List[Any]] = {}
+    for file in files:
+        file_type = file.file_type.value
+        if file_type not in by_type:
+            by_type[file_type] = []
+        by_type[file_type].append(file)
+
     lines = ["Available files in this conversation:"]
 
-    for file in files:
-        # Format: filename (type, size, uploaded time)
-        file_info = (f"- {file.filename} ({file.file_type.value}, "
-                     f"{format_size(file.file_size)}, "
-                     f"uploaded {format_time_ago(file.uploaded_at)})")
-        lines.append(file_info)
+    # Order: images first, then PDFs, then others
+    type_order = [
+        "image", "pdf", "document", "audio", "voice", "video", "generated"
+    ]
+    for file_type in type_order:
+        if file_type not in by_type:
+            continue
+        type_files = by_type[file_type]
 
-        # Add claude_file_id on next line (indented)
-        lines.append(f"  claude_file_id: {file.claude_file_id}")
+        lines.append(f"\n{file_type.upper()} files ({len(type_files)}):")
+        for file in type_files:
+            file_info = (f"  - {file.filename} "
+                         f"({format_size(file.file_size)}, "
+                         f"{format_time_ago(file.uploaded_at)})")
+            lines.append(file_info)
+            lines.append(f"    claude_file_id: {file.claude_file_id}")
 
-    # Add usage instructions
+    # Add any types not in order
+    for file_type, type_files in by_type.items():
+        if file_type in type_order:
+            continue
+        lines.append(f"\n{file_type.upper()} files ({len(type_files)}):")
+        for file in type_files:
+            file_info = (f"  - {file.filename} "
+                         f"({format_size(file.file_size)}, "
+                         f"{format_time_ago(file.uploaded_at)})")
+            lines.append(file_info)
+            lines.append(f"    claude_file_id: {file.claude_file_id}")
+
     lines.append("")
     lines.append(f"Total files available: {len(files)}")
     lines.append("")
-    lines.append("To analyze these files, use the appropriate tool "
-                 "(analyze_image for images, analyze_pdf for PDFs).")
+
+    # Tool guidance for ALL file types
+    lines.append("How to work with these files:")
+    lines.append("- IMAGE files: use analyze_image(claude_file_id)")
+    lines.append("- PDF files: use analyze_pdf(claude_file_id)")
+    lines.append("- AUDIO/VOICE/VIDEO files: use transcribe_audio(file_id) "
+                 "to get transcript")
+    lines.append("- DOCUMENT/GENERATED files: use execute_python with "
+                 "file_inputs parameter")
     lines.append("")
     lines.append(
-        "IMPORTANT: If user asks about multiple files (e.g., 'these images', "
-        "'all photos', 'these files'), analyze ALL files from the list above. "
-        "Call the tool once for each file.")
+        "CRITICAL: These files are ALREADY SENT to user and available here. "
+        "Do NOT regenerate or re-create files that are in this list! "
+        "If user asks about files shown above, work with them directly.")
+    lines.append("")
+    lines.append(
+        "If user asks about multiple files (e.g., 'these images', "
+        "'all photos'), analyze ALL relevant files from the list above.")
 
     result = "\n".join(lines)
 
     logger.debug("tools.helpers.format_files_section",
                  file_count=len(files),
+                 types=list(by_type.keys()),
                  section_length=len(result))
 
     return result

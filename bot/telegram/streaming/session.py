@@ -61,6 +61,10 @@ class StreamingSession:  # pylint: disable=too-many-instance-attributes
         self._pending_tools: list[ToolCall] = []
         self._message_part = 1  # Track message parts for splitting
 
+        # TTFT optimization: track if first update was sent
+        # First update is forced (bypasses throttle) for fast time-to-first-token
+        self._first_update_sent = False
+
         # Per-iteration state (reset each iteration)
         self._content_blocks: list[dict] = []
         self._current_thinking = ""
@@ -373,6 +377,9 @@ class StreamingSession:  # pylint: disable=too-many-instance-attributes
         Checks if message should be split when text exceeds threshold
         and thinking is already fully truncated.
 
+        TTFT optimization: First update is always forced (bypasses throttle)
+        for fast time-to-first-token delivery.
+
         Args:
             force: If True, bypass throttling.
         """
@@ -391,8 +398,16 @@ class StreamingSession:  # pylint: disable=too-many-instance-attributes
             display_text = format_display(self._display, is_streaming=True)
 
         if display_text != self._last_sent_text:
-            await self._dm.current.update(display_text, force=force)
+            # TTFT: Force first update to bypass throttle
+            should_force = force or not self._first_update_sent
+            await self._dm.current.update(display_text, force=should_force)
             self._last_sent_text = display_text
+
+            if not self._first_update_sent:
+                self._first_update_sent = True
+                logger.debug("stream.session.first_update_sent",
+                             thread_id=self._thread_id,
+                             text_length=len(display_text))
 
     async def _split_message(self) -> None:
         """Split message when text exceeds limit.

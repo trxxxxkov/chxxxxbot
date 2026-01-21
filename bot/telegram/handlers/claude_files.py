@@ -14,6 +14,7 @@ from datetime import timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from aiogram import types
+from cache.thread_cache import invalidate_files
 from config import FILES_API_TTL_HOURS
 from core.claude.files_api import upload_to_files_api
 from db.models.user_file import FileSource
@@ -206,6 +207,9 @@ async def process_generated_files(
     )
 
     if delivered_files:
+        # Invalidate files cache so next request sees new files
+        await invalidate_files(thread_id)
+
         # Format result with claude_file_id so Claude can reference files
         file_list = "\n".join(f"- {f['filename']} ({f['file_type']}): "
                               f"claude_file_id={f['claude_file_id']}"

@@ -15,6 +15,7 @@ from datetime import datetime
 from datetime import timedelta
 from datetime import timezone
 
+from cache.thread_cache import invalidate_files
 from config import FILES_API_TTL_HOURS
 from db.engine import get_session
 from db.models.user_file import FileSource
@@ -106,6 +107,11 @@ async def process_batch(
                         )
 
             await session.commit()
+
+            # Invalidate files cache if any files were uploaded
+            files_uploaded = any(p.files for p in messages)
+            if files_uploaded:
+                await invalidate_files(thread_id)
 
         # Call Claude handler directly with ProcessedMessage list
         # Import here to avoid circular dependency

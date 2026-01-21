@@ -294,15 +294,11 @@ async def _stream_with_unified_events(
                     tool_duration = result.get("_duration", 0)
                     is_error = bool(result.get("error"))
 
-                    # Clean up metadata keys
-                    clean_result = {
-                        k: v for k, v in result.items() if not k.startswith("_")
-                    }
-                    if is_error:
-                        clean_result["error"] = result["error"]
-
                     if not is_error:
                         # Send file immediately when ready
+                        # IMPORTANT: process_generated_files adds files_delivered
+                        # to result dict, so we must call it BEFORE creating
+                        # clean_result
                         if result.get("_file_contents"):
                             if not first_file_committed:
                                 # Commit text BEFORE first file
@@ -314,6 +310,15 @@ async def _stream_with_unified_events(
                                 user_file_repo, chat_id, user_id,
                                 telegram_thread_id)
 
+                    # Clean up metadata keys AFTER process_generated_files
+                    # so files_delivered is included in tool result
+                    clean_result = {
+                        k: v for k, v in result.items() if not k.startswith("_")
+                    }
+                    if is_error:
+                        clean_result["error"] = result["error"]
+
+                    if not is_error:
                         # Charge user for tool cost
                         if "cost_usd" in clean_result:
                             await charge_for_tool(session, user_id, tool.name,

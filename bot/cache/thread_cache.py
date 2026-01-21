@@ -23,6 +23,8 @@ import time
 from typing import Any, Optional
 
 from cache.client import get_redis
+from cache.keys import files_key
+from cache.keys import FILES_TTL
 from cache.keys import messages_key
 from cache.keys import MESSAGES_TTL
 from cache.keys import thread_key
@@ -348,6 +350,217 @@ async def invalidate_messages(internal_thread_id: int) -> bool:
     except Exception as e:  # pylint: disable=broad-exception-caught
         logger.warning(
             "messages_cache.invalidate_error",
+            thread_id=internal_thread_id,
+            error=str(e),
+        )
+        return False
+
+
+async def update_cached_messages(
+    internal_thread_id: int,
+    new_message: dict[str, Any],
+) -> bool:
+    """Add a message to cached history without full invalidation.
+
+    Useful for cache-first pattern: append message to cache after
+    sending to user, queue write to database.
+
+    Args:
+        internal_thread_id: Internal thread ID (from database).
+        new_message: Message dict to append.
+
+    Returns:
+        True if updated successfully, False if cache miss or error.
+    """
+    start_time = time.time()
+    redis = await get_redis()
+
+    if redis is None:
+        return False
+
+    try:
+        key = messages_key(internal_thread_id)
+        data = await redis.get(key)
+
+        if data is None:
+            # Cache miss - can't update
+            logger.debug(
+                "messages_cache.update_miss",
+                thread_id=internal_thread_id,
+            )
+            return False
+
+        cached = json.loads(data.decode("utf-8"))
+        messages = cached.get("messages", [])
+
+        # Append new message
+        messages.append(new_message)
+
+        # Update cache
+        cached["messages"] = messages
+        cached["cached_at"] = time.time()
+
+        await redis.setex(key, MESSAGES_TTL, json.dumps(cached))
+
+        elapsed = time.time() - start_time
+        record_redis_operation_time("update", elapsed)
+
+        logger.debug(
+            "messages_cache.updated",
+            thread_id=internal_thread_id,
+            new_count=len(messages),
+        )
+
+        return True
+
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        logger.warning(
+            "messages_cache.update_error",
+            thread_id=internal_thread_id,
+            error=str(e),
+        )
+        return False
+
+
+# === Files Cache ===
+
+
+async def get_cached_files(internal_thread_id: int) -> Optional[list[dict]]:
+    """Get cached available files list for a thread.
+
+    Args:
+        internal_thread_id: Internal thread ID (from database).
+
+    Returns:
+        List of file dicts if found, None if not cached.
+    """
+    start_time = time.time()
+    redis = await get_redis()
+
+    if redis is None:
+        return None
+
+    try:
+        key = files_key(internal_thread_id)
+        data = await redis.get(key)
+
+        elapsed = time.time() - start_time
+        record_redis_operation_time("get", elapsed)
+
+        if data is None:
+            record_cache_operation("files", hit=False)
+            logger.debug(
+                "files_cache.miss",
+                thread_id=internal_thread_id,
+            )
+            return None
+
+        record_cache_operation("files", hit=True)
+        cached = json.loads(data.decode("utf-8"))
+        files = cached.get("files", [])
+
+        logger.debug(
+            "files_cache.hit",
+            thread_id=internal_thread_id,
+            file_count=len(files),
+        )
+
+        return files
+
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        logger.warning(
+            "files_cache.get_error",
+            thread_id=internal_thread_id,
+            error=str(e),
+        )
+        return None
+
+
+async def cache_files(
+    internal_thread_id: int,
+    files: list[dict[str, Any]],
+) -> bool:
+    """Cache available files list for a thread.
+
+    Args:
+        internal_thread_id: Internal thread ID (from database).
+        files: List of file dicts with filename, file_type, claude_file_id, etc.
+
+    Returns:
+        True if cached successfully, False otherwise.
+    """
+    start_time = time.time()
+    redis = await get_redis()
+
+    if redis is None:
+        return False
+
+    try:
+        key = files_key(internal_thread_id)
+        data = {
+            "thread_id": internal_thread_id,
+            "files": files,
+            "cached_at": time.time(),
+        }
+
+        await redis.setex(key, FILES_TTL, json.dumps(data))
+
+        elapsed = time.time() - start_time
+        record_redis_operation_time("set", elapsed)
+
+        logger.debug(
+            "files_cache.set",
+            thread_id=internal_thread_id,
+            file_count=len(files),
+            ttl=FILES_TTL,
+        )
+
+        return True
+
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        logger.warning(
+            "files_cache.set_error",
+            thread_id=internal_thread_id,
+            error=str(e),
+        )
+        return False
+
+
+async def invalidate_files(internal_thread_id: int) -> bool:
+    """Invalidate cached files list for a thread.
+
+    Call this after any file is added or deleted from the thread.
+
+    Args:
+        internal_thread_id: Internal thread ID (from database).
+
+    Returns:
+        True if invalidated, False otherwise.
+    """
+    start_time = time.time()
+    redis = await get_redis()
+
+    if redis is None:
+        return False
+
+    try:
+        key = files_key(internal_thread_id)
+        deleted = await redis.delete(key)
+
+        elapsed = time.time() - start_time
+        record_redis_operation_time("delete", elapsed)
+
+        logger.debug(
+            "files_cache.invalidated",
+            thread_id=internal_thread_id,
+            deleted=deleted,
+        )
+
+        return deleted > 0
+
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        logger.warning(
+            "files_cache.invalidate_error",
             thread_id=internal_thread_id,
             error=str(e),
         )
