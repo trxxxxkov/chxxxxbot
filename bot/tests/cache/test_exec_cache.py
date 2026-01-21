@@ -174,6 +174,32 @@ class TestStoreExecFile:
         assert result["execution_id"] == "abc123"
 
     @pytest.mark.asyncio
+    async def test_store_exec_file_bytearray(self, mock_redis):
+        """Test storage works with bytearray content (E2B sandbox returns this).
+
+        Regression test for: Redis DataError with bytearray type.
+        E2B sandbox returns bytearray, but Redis only accepts bytes.
+        """
+        bytearray_content = bytearray(b"content from E2B sandbox")
+
+        with patch("cache.exec_cache.get_redis", return_value=mock_redis):
+            result = await store_exec_file(
+                filename="sandbox_output.png",
+                content=bytearray_content,
+                mime_type="image/png",
+            )
+
+        assert result is not None
+        assert result["filename"] == "sandbox_output.png"
+        assert result["size_bytes"] == len(bytearray_content)
+
+        # Verify Redis was called with bytes, not bytearray
+        file_call = mock_redis.setex.call_args_list[0]
+        stored_content = file_call[0][2]
+        assert isinstance(stored_content,
+                          bytes), "Redis should receive bytes, not bytearray"
+
+    @pytest.mark.asyncio
     async def test_store_exec_file_too_large(self):
         """Test rejects files exceeding size limit."""
         large_content = b"x" * (EXEC_FILE_MAX_SIZE + 1)

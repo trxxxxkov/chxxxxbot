@@ -205,9 +205,11 @@ async def store_exec_file(
             "expires_at": time.time() + EXEC_FILE_TTL,
         }
 
-        # Store file content
+        # Store file content (convert bytearray to bytes for Redis)
         file_key = exec_file_key(temp_id)
-        await redis.setex(file_key, EXEC_FILE_TTL, content)
+        file_content = bytes(content) if isinstance(content,
+                                                    bytearray) else content
+        await redis.setex(file_key, EXEC_FILE_TTL, file_content)
 
         # Store metadata
         meta_key = exec_meta_key(temp_id)
