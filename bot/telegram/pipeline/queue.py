@@ -96,6 +96,43 @@ class ProcessedMessageQueue:
             logger.debug("processed_queue.queue_created", thread_id=thread_id)
         return self._queues[thread_id]
 
+    def _looks_like_split_message(self, text: str | None) -> bool:
+        """Check if message might be part of a split message sequence.
+
+        Split messages happen when user types a long message that Telegram
+        splits into multiple parts. Heuristics:
+        - Ends with "..." or "…" → likely continues
+        - Very short (< 30 chars) → might be split part
+        - Ends mid-sentence (no punctuation) → might continue
+
+        Args:
+            text: Message text to analyze.
+
+        Returns:
+            True if message might be split, False if likely standalone.
+        """
+        if not text:
+            return False
+
+        text = text.strip()
+        if not text:
+            return False
+
+        # Continuation markers → definitely might be split
+        if text.endswith(('...', '…', '-', '—')):
+            return True
+
+        # Very short messages without ending punctuation might be split
+        if len(text) < 30 and not text[-1] in '.!?»"\')}]。！？':
+            return True
+
+        # Messages ending with sentence-ending punctuation are likely complete
+        if text[-1] in '.!?»"\')}]。！？':
+            return False
+
+        # Default: longer messages without special markers → likely standalone
+        return len(text) < 100
+
     async def add(
         self,
         thread_id: int,
@@ -111,15 +148,19 @@ class ProcessedMessageQueue:
         """
         queue = self._get_or_create_queue(thread_id)
 
-        # Determine if this should be immediate based on media
-        # Media messages don't need batching - they're not split
-        should_be_immediate = immediate or message.has_media
+        # Smart immediate detection:
+        # 1. Media messages → immediate (not split)
+        # 2. Messages that look standalone → immediate (skip 200ms delay)
+        # 3. Messages that might be split → wait for batch
+        looks_split = self._looks_like_split_message(message.text)
+        should_be_immediate = immediate or message.has_media or not looks_split
 
         logger.debug(
             "processed_queue.add",
             thread_id=thread_id,
             has_text=bool(message.text),
             has_media=message.has_media,
+            looks_split=looks_split,
             immediate=should_be_immediate,
             processing=queue.processing,
             batch_size=len(queue.messages),
@@ -138,20 +179,26 @@ class ProcessedMessageQueue:
         # Add to queue
         queue.messages.append(message)
 
-        # Immediate processing (media or explicit)
+        # Immediate processing (media, standalone text, or explicit)
         if should_be_immediate:
             if queue.timer_task and not queue.timer_task.done():
                 queue.timer_task.cancel()
 
+            # Determine reason for immediate processing
+            reason = "explicit" if immediate else (
+                "media" if message.has_media else "standalone_text")
+
             logger.info(
                 "processed_queue.immediate",
                 thread_id=thread_id,
+                reason=reason,
                 has_media=message.has_media,
+                text_length=len(message.text) if message.text else 0,
             )
             await self._process_batch(thread_id)
             return
 
-        # Text messages: batch with delay for split detection
+        # Text messages that might be split: batch with delay
         if queue.timer_task and not queue.timer_task.done():
             queue.timer_task.cancel()
             logger.debug(
@@ -168,6 +215,8 @@ class ProcessedMessageQueue:
             thread_id=thread_id,
             batch_size=len(queue.messages),
             delay_ms=MESSAGE_BATCH_DELAY_MS,
+            reason="potential_split_message",
+            text_preview=message.text[:50] if message.text else None,
         )
 
     async def _wait_and_process(self, thread_id: int) -> None:

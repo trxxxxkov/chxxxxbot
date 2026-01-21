@@ -424,6 +424,91 @@ class TestProcessedMessageQueueStats:
         await task
 
 
+class TestSmartQueueDelay:
+    """Tests for smart queue delay (skip delay for standalone messages)."""
+
+    def test_looks_like_split_empty_text(self) -> None:
+        """Empty or None text is not split."""
+        queue = ProcessedMessageQueue(AsyncMock())
+        assert queue._looks_like_split_message(None) is False
+        assert queue._looks_like_split_message("") is False
+        assert queue._looks_like_split_message("   ") is False
+
+    def test_looks_like_split_continuation_markers(self) -> None:
+        """Messages with continuation markers are split."""
+        queue = ProcessedMessageQueue(AsyncMock())
+        assert queue._looks_like_split_message("And then...") is True
+        assert queue._looks_like_split_message("To be continued…") is True
+        assert queue._looks_like_split_message("Word-") is True
+        assert queue._looks_like_split_message("Sentence—") is True
+
+    def test_looks_like_split_short_without_punctuation(self) -> None:
+        """Short messages without punctuation might be split."""
+        queue = ProcessedMessageQueue(AsyncMock())
+        assert queue._looks_like_split_message("Hello") is True
+        assert queue._looks_like_split_message("Yes ok") is True
+        assert queue._looks_like_split_message("I think") is True
+
+    def test_standalone_with_punctuation(self) -> None:
+        """Messages ending with punctuation are standalone."""
+        queue = ProcessedMessageQueue(AsyncMock())
+        assert queue._looks_like_split_message("Hello!") is False
+        assert queue._looks_like_split_message("How are you?") is False
+        assert queue._looks_like_split_message("I agree.") is False
+        assert queue._looks_like_split_message("He said \"yes\"") is False
+        assert queue._looks_like_split_message("Код работает。") is False
+
+    def test_standalone_long_message(self) -> None:
+        """Long messages without special markers are standalone."""
+        queue = ProcessedMessageQueue(AsyncMock())
+        long_msg = ("This is a longer message that should be treated as "
+                    "standalone because it has more than 100 characters total")
+        assert len(long_msg) >= 100
+        assert queue._looks_like_split_message(long_msg) is False
+
+    @pytest.mark.asyncio
+    async def test_standalone_text_immediate_processing(
+        self,
+        sample_metadata: MessageMetadata,
+        mock_message: MagicMock,
+    ) -> None:
+        """Standalone text messages are processed immediately."""
+        callback = AsyncMock()
+        queue = ProcessedMessageQueue(callback)
+
+        # Message with punctuation - standalone
+        msg = create_text_message("Hello, world!", sample_metadata,
+                                  mock_message)
+        await queue.add(thread_id=1, message=msg)
+
+        # Should be called immediately (no delay)
+        callback.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("telegram.pipeline.queue.MESSAGE_BATCH_DELAY_MS", 50)
+    async def test_split_text_batched(
+        self,
+        sample_metadata: MessageMetadata,
+        mock_message: MagicMock,
+    ) -> None:
+        """Messages that look split are batched with delay."""
+        callback = AsyncMock()
+        queue = ProcessedMessageQueue(callback)
+
+        # Short message without punctuation - might be split
+        msg = create_text_message("Hello", sample_metadata, mock_message)
+        await queue.add(thread_id=1, message=msg)
+
+        # Should not be called yet (waiting for more parts)
+        callback.assert_not_called()
+
+        # Wait for batch delay
+        await asyncio.sleep(0.1)
+
+        # Now should be processed
+        callback.assert_called_once()
+
+
 class TestProcessedMessageQueueMultipleThreads:
     """Tests for multiple thread handling."""
 

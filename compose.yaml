@@ -165,8 +165,12 @@ services:
   redis-commander:
     image: rediscommander/redis-commander:latest
     restart: unless-stopped
+    secrets:
+      - redis_commander_password
     environment:
       - REDIS_HOSTS=local:redis:6379
+      - HTTP_USER=admin
+      - HTTP_PASSWORD_FILE=/run/secrets/redis_commander_password
     ports:
       - "8081:8081"
     depends_on:
@@ -204,3 +208,5 @@ secrets:
     file: ./secrets/privileged_users.txt
   grafana_password:
     file: ./secrets/grafana_password.txt
+  redis_commander_password:
+    file: ./secrets/redis_commander_password.txt
