@@ -86,7 +86,7 @@ def file_bytes_key(telegram_file_id: str) -> str:
 
 
 # TTL constants (in seconds)
-USER_TTL = 60  # 1 minute (balance changes frequently)
+USER_TTL = 300  # 5 minutes (invalidated on balance change via invalidate_user())
 THREAD_TTL = 600  # 10 minutes
 MESSAGES_TTL = 300  # 5 minutes
 FILES_TTL = 300  # 5 minutes
