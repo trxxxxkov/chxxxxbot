@@ -7,6 +7,8 @@ message into a ProcessedMessage, performing all necessary I/O operations
 Key design principle:
 All I/O happens in normalize() → ProcessedMessage is ready for immediate use.
 
+Phase 3.2: Caches downloaded files in Redis for fast retrieval during tool execution.
+
 NO __init__.py - use direct import:
     from telegram.pipeline.normalizer import MessageNormalizer
 """
@@ -17,6 +19,7 @@ from decimal import Decimal
 from typing import Optional
 
 from aiogram import types
+from cache.file_cache import cache_file
 from core.claude.files_api import upload_to_files_api
 from core.mime_types import detect_mime_type
 from core.mime_types import is_image_mime
@@ -229,12 +232,17 @@ class MessageNormalizer:
         self,
         message: types.Message,
         file_id: str,
+        filename: Optional[str] = None,
     ) -> bytes:
-        """Download file from Telegram.
+        """Download file from Telegram and cache for tools.
+
+        Phase 3.2: Caches downloaded files in Redis for fast retrieval
+        during tool execution (transcribe_audio, execute_python).
 
         Args:
             message: Telegram message (for bot access).
             file_id: Telegram file ID.
+            filename: Optional filename for cache logging.
 
         Returns:
             File content as bytes.
@@ -248,7 +256,12 @@ class MessageNormalizer:
         if not file_bytes_io:
             raise ValueError(f"Failed to download file: {file_id}")
 
-        return file_bytes_io.read()
+        content = file_bytes_io.read()
+
+        # Phase 3.2: Cache file for potential tool use
+        await cache_file(file_id, content, filename=filename)
+
+        return content
 
     async def _process_voice(
         self,
@@ -280,8 +293,11 @@ class MessageNormalizer:
             file_size=voice.file_size,
         )
 
-        # Download
-        audio_bytes = await self._download_file(message, voice.file_id)
+        # Download and cache
+        voice_filename = f"voice_{voice.file_id[:8]}.ogg"
+        audio_bytes = await self._download_file(message,
+                                                voice.file_id,
+                                                filename=voice_filename)
 
         # Transcribe
         client = await self._get_openai_client()
@@ -351,8 +367,11 @@ class MessageNormalizer:
             file_size=video_note.file_size,
         )
 
-        # Download
-        video_bytes = await self._download_file(message, video_note.file_id)
+        # Download and cache
+        video_note_filename = f"video_note_{video_note.file_id[:8]}.mp4"
+        video_bytes = await self._download_file(message,
+                                                video_note.file_id,
+                                                filename=video_note_filename)
 
         # Transcribe (Whisper accepts video, extracts audio)
         client = await self._get_openai_client()
@@ -417,8 +436,10 @@ class MessageNormalizer:
             file_size=audio.file_size,
         )
 
-        # Download
-        audio_bytes = await self._download_file(message, audio.file_id)
+        # Download and cache
+        audio_bytes = await self._download_file(message,
+                                                audio.file_id,
+                                                filename=filename)
 
         # Detect MIME
         mime_type = detect_mime_type(
@@ -485,8 +506,10 @@ class MessageNormalizer:
             file_size=video.file_size,
         )
 
-        # Download
-        video_bytes = await self._download_file(message, video.file_id)
+        # Download and cache
+        video_bytes = await self._download_file(message,
+                                                video.file_id,
+                                                filename=filename)
 
         # Detect MIME
         mime_type = detect_mime_type(
@@ -551,8 +574,10 @@ class MessageNormalizer:
             file_size=photo.file_size,
         )
 
-        # Download
-        photo_bytes = await self._download_file(message, photo.file_id)
+        # Download and cache
+        photo_bytes = await self._download_file(message,
+                                                photo.file_id,
+                                                filename=filename)
 
         # Detect MIME
         mime_type = detect_mime_type(
@@ -615,8 +640,10 @@ class MessageNormalizer:
             file_size=document.file_size,
         )
 
-        # Download
-        doc_bytes = await self._download_file(message, document.file_id)
+        # Download and cache
+        doc_bytes = await self._download_file(message,
+                                              document.file_id,
+                                              filename=filename)
 
         # Detect MIME
         mime_type = detect_mime_type(

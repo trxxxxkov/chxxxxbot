@@ -3,12 +3,16 @@
 This module provides the ThreadRepository for working with Thread model,
 including conversation thread management with Telegram thread_id support.
 
+Phase 3.2: Uses Redis cache for fast thread lookups.
+
 NO __init__.py - use direct import:
     from db.repositories.thread_repository import ThreadRepository
 """
 
 from typing import Optional
 
+from cache.thread_cache import cache_thread
+from cache.thread_cache import get_cached_thread
 from db.models.thread import Thread
 from db.repositories.base import BaseRepository
 from sqlalchemy import func
@@ -111,6 +115,8 @@ class ThreadRepository(BaseRepository[Thread]):
         Finds thread matching (chat_id, user_id, thread_id) combination.
         Uses COALESCE to handle NULL thread_id correctly.
 
+        Phase 3.2: Checks Redis cache first, falls back to DB on miss.
+
         Args:
             chat_id: Telegram chat ID.
             user_id: Telegram user ID.
@@ -119,6 +125,18 @@ class ThreadRepository(BaseRepository[Thread]):
         Returns:
             Thread instance or None if not found.
         """
+        # Phase 3.2: Check cache first
+        cached = await get_cached_thread(chat_id, user_id, thread_id)
+        if cached:
+            # Cache hit - get thread by internal ID
+            internal_id = cached.get("id")
+            if internal_id:
+                thread = await self.get_by_id(internal_id)
+                if thread:
+                    return thread
+                # Cache stale - thread deleted, continue to DB
+
+        # Cache miss or stale - query database
         # Use COALESCE to match the unique constraint logic
         stmt = select(Thread).where(
             Thread.chat_id == chat_id,
@@ -127,7 +145,20 @@ class ThreadRepository(BaseRepository[Thread]):
                           0) == (thread_id if thread_id else 0),
         )
         result = await self.session.execute(stmt)
-        return result.scalar_one_or_none()
+        thread = result.scalar_one_or_none()
+
+        # Cache the result for future lookups
+        if thread:
+            await cache_thread(
+                chat_id=chat_id,
+                user_id=user_id,
+                thread_id=thread_id,
+                internal_id=thread.id,
+                title=thread.title,
+                files_context=thread.files_context,
+            )
+
+        return thread
 
     async def get_user_threads(
         self,

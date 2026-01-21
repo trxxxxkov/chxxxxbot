@@ -156,6 +156,35 @@ FILES_API_ACTIVE = Gauge(
     'bot_files_api_active',
     'Number of active files in Claude Files API (24h TTL)')
 
+# === Redis Cache Metrics (Phase 3.2) ===
+
+REDIS_CACHE_HITS = Counter(
+    'bot_redis_cache_hits_total',
+    'Total Redis cache hits',
+    ['cache_type']  # user/thread/messages/file
+)
+
+REDIS_CACHE_MISSES = Counter(
+    'bot_redis_cache_misses_total',
+    'Total Redis cache misses',
+    ['cache_type']  # user/thread/messages/file
+)
+
+REDIS_OPERATION_TIME = Histogram(
+    'bot_redis_operation_seconds',
+    'Redis operation time in seconds',
+    ['operation'],  # get/set/delete
+    buckets=[0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5])
+
+REDIS_CONNECTED_CLIENTS = Gauge('bot_redis_connected_clients',
+                                'Number of connected Redis clients')
+
+REDIS_MEMORY_BYTES = Gauge('bot_redis_memory_bytes',
+                           'Redis memory usage in bytes')
+
+REDIS_UPTIME_SECONDS = Gauge('bot_redis_uptime_seconds',
+                             'Redis uptime in seconds')
+
 # === Helper Functions ===
 
 
@@ -303,6 +332,46 @@ def record_file_upload(file_type: str) -> None:
 def set_active_files(count: int) -> None:
     """Set the number of active files in Files API."""
     FILES_API_ACTIVE.set(count)
+
+
+# === Redis Cache Functions (Phase 3.2) ===
+
+
+def record_cache_operation(cache_type: str, hit: bool) -> None:
+    """Record a Redis cache hit or miss.
+
+    Args:
+        cache_type: Type of cache (user, thread, messages, file).
+        hit: True if cache hit, False if cache miss.
+    """
+    if hit:
+        REDIS_CACHE_HITS.labels(cache_type=cache_type).inc()
+    else:
+        REDIS_CACHE_MISSES.labels(cache_type=cache_type).inc()
+
+
+def record_redis_operation_time(operation: str, seconds: float) -> None:
+    """Record Redis operation time.
+
+    Args:
+        operation: Type of operation (get, set, delete).
+        seconds: Time taken in seconds.
+    """
+    REDIS_OPERATION_TIME.labels(operation=operation).observe(seconds)
+
+
+def set_redis_stats(connected_clients: int, used_memory: int,
+                    uptime: int) -> None:
+    """Set Redis server statistics.
+
+    Args:
+        connected_clients: Number of connected clients.
+        used_memory: Memory usage in bytes.
+        uptime: Uptime in seconds.
+    """
+    REDIS_CONNECTED_CLIENTS.set(connected_clients)
+    REDIS_MEMORY_BYTES.set(used_memory)
+    REDIS_UPTIME_SECONDS.set(uptime)
 
 
 # === HTTP Server ===

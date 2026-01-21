@@ -3,6 +3,8 @@
 This module implements the transcribe_audio tool for speech-to-text
 transcription of audio and video files using OpenAI's Whisper model.
 
+Phase 3.2: Uses Redis file cache for fast file retrieval.
+
 NO __init__.py - use direct import:
     from core.tools.transcribe_audio import (
         transcribe_audio,
@@ -13,6 +15,8 @@ NO __init__.py - use direct import:
 import io
 from typing import Any, Dict, TYPE_CHECKING
 
+from cache.file_cache import cache_file
+from cache.file_cache import get_cached_file
 from core.clients import get_openai_async_client
 from core.pricing import calculate_whisper_cost
 from core.pricing import cost_to_float
@@ -29,6 +33,8 @@ logger = get_logger(__name__)
 async def download_file_from_telegram(file_id: str, bot: 'Bot',
                                       session: 'AsyncSession') -> bytes:
     """Download file from Telegram storage.
+
+    Phase 3.2: Checks Redis cache first for fast retrieval.
 
     Args:
         file_id: Claude file_id (used to lookup in database).
@@ -64,6 +70,19 @@ async def download_file_from_telegram(file_id: str, bot: 'Bot',
         raise ValueError(f"No telegram_file_id for file {file_id}. "
                          "Cannot download from Telegram.")
 
+    # Phase 3.2: Check cache first
+    cached_bytes = await get_cached_file(file_record.telegram_file_id)
+    if cached_bytes:
+        logger.info(
+            "tools.transcribe_audio.cache_hit",
+            file_id=file_id,
+            telegram_file_id=file_record.telegram_file_id[:20] + "...",
+            filename=file_record.filename,
+            size_bytes=len(cached_bytes),
+        )
+        return cached_bytes
+
+    # Cache miss - download from Telegram
     try:
         logger.info("tools.transcribe_audio.telegram_download",
                     telegram_file_id=file_record.telegram_file_id,
@@ -82,6 +101,13 @@ async def download_file_from_telegram(file_id: str, bot: 'Bot',
                     file_id=file_id,
                     filename=file_record.filename,
                     size_bytes=len(file_bytes))
+
+        # Phase 3.2: Cache for future use
+        await cache_file(
+            file_record.telegram_file_id,
+            file_bytes,
+            filename=file_record.filename,
+        )
 
         return file_bytes
 

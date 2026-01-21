@@ -8,6 +8,8 @@ instances, and starts polling for updates from Telegram.
 import asyncio
 from pathlib import Path
 
+from cache.client import close_redis
+from cache.client import init_redis
 from config import get_database_url
 from db.engine import dispose_db
 from db.engine import get_pool_stats
@@ -22,6 +24,7 @@ from utils.metrics import set_active_users
 from utils.metrics import set_db_pool_stats
 from utils.metrics import set_disk_usage
 from utils.metrics import set_queue_stats
+from utils.metrics import set_redis_stats
 from utils.metrics import set_top_users
 from utils.metrics import set_total_balance
 from utils.metrics import set_total_threads
@@ -131,12 +134,34 @@ def get_directory_size(path: str) -> int:
     return total
 
 
+def _parse_memory(memory_str: str) -> int:
+    """Parse Redis memory string to bytes.
+
+    Args:
+        memory_str: Memory string like "1.5M", "512K", "100B".
+
+    Returns:
+        Memory size in bytes.
+    """
+    import re
+    match = re.match(r'([\d.]+)([KMGB])?', memory_str.upper())
+    if not match:
+        return 0
+
+    value = float(match.group(1))
+    unit = match.group(2) or 'B'
+
+    multipliers = {'B': 1, 'K': 1024, 'M': 1024**2, 'G': 1024**3}
+    return int(value * multipliers.get(unit, 1))
+
+
 async def collect_metrics_task(logger) -> None:
     """Background task to collect metrics periodically.
 
     Collects every 10 seconds:
         - Database connection pool statistics
         - Message queue statistics
+        - Redis cache statistics
 
     Collects every 60 seconds:
         - Active users count
@@ -169,6 +194,22 @@ async def collect_metrics_task(logger) -> None:
                     processing=queue_stats.get("processing_threads", 0),
                     waiting=queue_stats.get("waiting_threads", 0),
                 )
+
+            # Collect Redis stats (every 10s)
+            try:
+                from cache.client import \
+                    redis_health_check  # pylint: disable=import-outside-toplevel
+                redis_health = await redis_health_check()
+                if redis_health.get("status") == "ok":
+                    info = redis_health.get("info", {})
+                    set_redis_stats(
+                        connected_clients=info.get("connected_clients", 0),
+                        used_memory=_parse_memory(
+                            info.get("used_memory_human", "0B")),
+                        uptime=info.get("uptime_seconds", 0),
+                    )
+            except Exception as redis_err:  # pylint: disable=broad-exception-caught
+                logger.debug("metrics.redis_stats_error", error=str(redis_err))
 
             # Collect user metrics (every 60s = 6 iterations)
             if iteration % 6 == 0:
@@ -282,6 +323,15 @@ async def main() -> None:
         init_db(database_url, echo=False)
         logger.info("database_initialized")
 
+        # Initialize Redis cache (Phase 3.2)
+        try:
+            await init_redis()
+            logger.info("redis_initialized")
+        except Exception as redis_err:  # pylint: disable=broad-exception-caught
+            logger.warning("redis_init_failed",
+                           error=str(redis_err),
+                           msg="Continuing without Redis cache")
+
         # Read secrets
         bot_token = read_secret("telegram_bot_token")
         anthropic_api_key = read_secret("anthropic_api_key")
@@ -339,6 +389,10 @@ async def main() -> None:
         logger.error("startup_error", error=str(error), exc_info=True)
         raise
     finally:
+        # Cleanup Redis connections
+        await close_redis()
+        logger.info("redis_closed")
+
         # Cleanup database connections
         await dispose_db()
         logger.info("bot_stopped")

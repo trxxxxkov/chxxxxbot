@@ -405,25 +405,22 @@ with open('/tmp/inputs/data.csv', 'r') as f:
         mock_sandbox.run_code.assert_called_once()
 
 
-class TestExecutePythonFileContents:
-    """Tests for _file_contents handling.
+class TestExecutePythonOutputFiles:
+    """Tests for output_files handling (Phase 3.2+).
 
-    Bug fix tests for message splitting issue:
-    - _file_contents should NOT be included when no files are generated
-    - _file_contents should only be included when there are actual files
+    Files are cached in Redis and metadata returned to Claude.
+    Tests verify:
+    - output_files is empty list when no files generated
+    - output_files contains metadata when files are cached
     """
 
     @pytest.mark.asyncio
     @patch('core.tools.execute_python.Sandbox')
     @patch('core.tools.execute_python.get_e2b_api_key')
-    async def test_file_contents_not_included_when_no_files(
-            self, mock_get_api_key, mock_sandbox_class, mock_bot, mock_session):
-        """_file_contents should NOT be in result when no files generated.
-
-        Regression test: Previously _file_contents was always included (even as
-        empty list), which caused message splitting on every tool call instead
-        of only when files were actually generated.
-        """
+    async def test_output_files_empty_when_no_files(self, mock_get_api_key,
+                                                    mock_sandbox_class,
+                                                    mock_bot, mock_session):
+        """output_files should be empty list when no files generated."""
         mock_get_api_key.return_value = "test_api_key"
 
         mock_sandbox = Mock()
@@ -447,17 +444,18 @@ class TestExecutePythonFileContents:
                                       bot=mock_bot,
                                       session=mock_session)
 
-        # _file_contents should NOT be in result when no files
-        assert "_file_contents" not in result
-        # generated_files_count should be 0 when no files
-        assert result["generated_files_count"] == 0
+        # output_files should be empty list when no files
+        assert "output_files" in result
+        assert result["output_files"] == []
 
     @pytest.mark.asyncio
+    @patch('core.tools.execute_python.store_exec_file')
     @patch('core.tools.execute_python.Sandbox')
     @patch('core.tools.execute_python.get_e2b_api_key')
-    async def test_file_contents_included_when_files_generated(
-            self, mock_get_api_key, mock_sandbox_class, mock_bot, mock_session):
-        """_file_contents should be included when files are generated."""
+    async def test_output_files_contains_metadata_when_cached(
+            self, mock_get_api_key, mock_sandbox_class, mock_store_exec_file,
+            mock_bot, mock_session):
+        """output_files should contain metadata when files are cached."""
         mock_get_api_key.return_value = "test_api_key"
 
         mock_sandbox = Mock()
@@ -483,16 +481,34 @@ class TestExecutePythonFileContents:
         mock_sandbox.__exit__ = Mock(return_value=None)
         mock_sandbox_class.create.return_value = mock_sandbox
 
+        # Mock Redis cache response
+        mock_store_exec_file.return_value = {
+            "temp_id": "exec_abc12345_output.txt",
+            "filename": "output.txt",
+            "size_bytes": 13,
+            "mime_type": "text/plain",
+            "preview": "Text file, 1 lines, 13 chars: \"Hello, World!\"",
+        }
+
         result = await execute_python(
             code="with open('/tmp/output.txt', 'w') as f: f.write('Hello')",
             bot=mock_bot,
             session=mock_session)
 
-        # _file_contents should be present when files exist
-        assert "_file_contents" in result
-        assert len(result["_file_contents"]) == 1
-        assert result["_file_contents"][0]["filename"] == "output.txt"
-        assert result["_file_contents"][0]["content"] == b"Hello, World!"
+        # output_files should contain cached file metadata
+        assert "output_files" in result
+        assert len(result["output_files"]) == 1
+        assert result["output_files"][0]["filename"] == "output.txt"
+        assert result["output_files"][0][
+            "temp_id"] == "exec_abc12345_output.txt"
+        assert result["output_files"][0]["preview"] is not None
+
+        # Verify store_exec_file was called correctly
+        mock_store_exec_file.assert_called_once()
+        call_kwargs = mock_store_exec_file.call_args[1]
+        assert call_kwargs["filename"] == "output.txt"
+        assert call_kwargs["content"] == b"Hello, World!"
+        assert call_kwargs["mime_type"] == "text/plain"
 
 
 class TestExecutePythonToolDefinition:

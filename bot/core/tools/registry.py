@@ -14,6 +14,7 @@ Currently implements:
 - transcribe_audio: Transcribe audio/video using OpenAI Whisper API
 - generate_image: Generate images using Google Gemini API
 - execute_python: Execute Python code via E2B sandbox
+- deliver_file: Deliver cached execution files to user
 - web_search: Search the web (server-side, managed by Anthropic)
 - web_fetch: Fetch web pages (server-side, managed by Anthropic)
 
@@ -31,6 +32,7 @@ from core.exceptions import ToolValidationError
 from core.tools.analyze_image import TOOL_CONFIG as ANALYZE_IMAGE_CONFIG
 from core.tools.analyze_pdf import TOOL_CONFIG as ANALYZE_PDF_CONFIG
 from core.tools.base import ToolConfig
+from core.tools.deliver_file import TOOL_CONFIG as DELIVER_FILE_CONFIG
 from core.tools.execute_python import TOOL_CONFIG as EXECUTE_PYTHON_CONFIG
 from core.tools.generate_image import TOOL_CONFIG as GENERATE_IMAGE_CONFIG
 from core.tools.transcribe_audio import TOOL_CONFIG as TRANSCRIBE_AUDIO_CONFIG
@@ -84,6 +86,7 @@ TOOLS: Dict[str, ToolConfig] = {
     "transcribe_audio": TRANSCRIBE_AUDIO_CONFIG,
     "generate_image": GENERATE_IMAGE_CONFIG,
     "execute_python": EXECUTE_PYTHON_CONFIG,
+    "deliver_file": DELIVER_FILE_CONFIG,
     "web_search": WEB_SEARCH_CONFIG,
     "web_fetch": WEB_FETCH_CONFIG,
 }
@@ -305,6 +308,7 @@ TOOL_METADATA = {
 # Re-export individual tool definitions for backward compatibility
 from core.tools.analyze_image import ANALYZE_IMAGE_TOOL
 from core.tools.analyze_pdf import ANALYZE_PDF_TOOL
+from core.tools.deliver_file import DELIVER_FILE_TOOL
 from core.tools.execute_python import EXECUTE_PYTHON_TOOL
 from core.tools.generate_image import GENERATE_IMAGE_TOOL
 from core.tools.transcribe_audio import TRANSCRIBE_AUDIO_TOOL

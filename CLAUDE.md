@@ -64,16 +64,25 @@ chxxxxbot/
 │   │   │   ├── payment.py      # Stars payments
 │   │   │   └── balance_operation.py  # Balance audit
 │   │   └── repositories/       # CRUD operations
+│   ├── cache/                  # Redis caching (Phase 3.2)
+│   │   ├── client.py           # Redis client singleton
+│   │   ├── keys.py             # Key generation, TTL constants
+│   │   ├── user_cache.py       # User data caching
+│   │   ├── thread_cache.py     # Thread/messages caching
+│   │   └── file_cache.py       # Binary file caching
 │   ├── utils/                  # Helper utilities
 │   │   ├── structured_logging.py  # structlog configuration
 │   │   └── metrics.py          # Prometheus metrics
-│   ├── tests/                  # Test suite (566 tests)
+│   ├── tests/                  # Test suite (580+ tests)
 │   ├── Dockerfile
 │   └── pyproject.toml
 │
 ├── postgres/                   # Container: PostgreSQL
 │   ├── alembic/                # Migrations
 │   └── init.sql                # Initial schema
+│
+├── redis/                      # Container: Redis (Phase 3.2)
+│                               # (data in redis_data volume)
 │
 ├── grafana/                    # Container: Grafana
 │   └── provisioning/           # Dashboards, datasources
@@ -442,11 +451,40 @@ See [docs/phase-2.2-devops-agent.md](docs/phase-2.2-devops-agent.md) for full ar
 
 **See:** [docs/phase-3-infrastructure.md](docs/phase-3-infrastructure.md)
 
-#### 3.2 Cache 📋 Planned
+#### 3.2 Redis Cache ✅ Complete
+**Status:** Complete (2026-01-21)
+
 | Component | Technology |
 |-----------|------------|
-| Cache | Redis 7 |
-| Async client | redis-py (async) |
+| Cache | Redis 7 (alpine) |
+| Async client | redis-py 5.0+ with hiredis |
+| Memory limit | 512MB |
+| Eviction | allkeys-lru |
+| Persistence | AOF (appendonly) |
+
+**Cache Types:**
+- ✅ User cache (balance, model_id) - TTL 60s
+- ✅ Thread cache - TTL 600s (10 min)
+- ✅ Messages cache - TTL 300s (5 min)
+- ✅ File bytes cache - TTL 3600s (1 hour), max 20MB
+
+**Cache Pattern:** Cache-aside with graceful degradation (falls back to DB if Redis unavailable)
+
+**Metrics:**
+- `bot_redis_cache_hits_total{cache_type}` - Cache hits
+- `bot_redis_cache_misses_total{cache_type}` - Cache misses
+- `bot_redis_operation_seconds{operation}` - Operation latency
+- `bot_redis_connected_clients` - Connected clients
+- `bot_redis_memory_bytes` - Memory usage
+
+**Files:**
+- cache/client.py - Redis client singleton
+- cache/keys.py - Key generation and TTL constants
+- cache/user_cache.py - User data caching
+- cache/thread_cache.py - Thread and messages caching
+- cache/file_cache.py - Binary file caching
+
+**See:** [docs/phase-3.2-redis-cache.md](docs/phase-3.2-redis-cache.md)
 
 #### 3.3 Other LLM Providers 📋 Planned
 - OpenAI (latest models)

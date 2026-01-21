@@ -2,14 +2,21 @@
 
 This middleware blocks requests to paid features (Claude API, tools) if user's
 balance is insufficient (balance <= 0). All payment-related commands remain free.
+
+Phase 3.2: Uses Redis cache for fast balance checks.
 """
 
+from decimal import Decimal
 from typing import Any, Awaitable, Callable
 
 from aiogram import BaseMiddleware
 from aiogram.types import CallbackQuery
 from aiogram.types import Message
 from aiogram.types import Update
+from cache.user_cache import cache_user
+from cache.user_cache import get_balance_from_cached
+from cache.user_cache import get_cached_user
+from config import MINIMUM_BALANCE_FOR_REQUEST
 from db.repositories.balance_operation_repository import \
     BalanceOperationRepository
 from db.repositories.user_repository import UserRepository
@@ -112,6 +119,41 @@ class BalanceMiddleware(BaseMiddleware):
 
         # Paid request - check balance
         user_id = message.from_user.id
+
+        # Phase 3.2: Try cache first for fast balance check
+        cached_user = await get_cached_user(user_id)
+        if cached_user:
+            # Cache hit - check balance from cache
+            cached_balance = get_balance_from_cached(cached_user)
+            can_request = cached_balance > Decimal(
+                str(MINIMUM_BALANCE_FOR_REQUEST))
+
+            if can_request:
+                # Pass cached user data to handler for potential reuse
+                data["cached_user"] = cached_user
+                logger.debug(
+                    "balance_middleware.cache_hit_allowed",
+                    user_id=user_id,
+                    balance=str(cached_balance),
+                )
+                return await handler(event, data)
+            else:
+                # Cached balance insufficient - block immediately
+                await message.answer(
+                    f"❌ <b>Insufficient balance</b>\n\n"
+                    f"Current balance: <b>${cached_balance}</b>\n\n"
+                    f"To use paid features, please top up your balance.\n"
+                    f"Use /pay to purchase balance with Telegram Stars.")
+
+                logger.warning(
+                    "balance_middleware.cache_hit_blocked",
+                    user_id=user_id,
+                    balance=float(cached_balance),
+                    msg="Request blocked: insufficient balance (from cache)",
+                )
+                return None
+
+        # Cache miss - fall back to database
         session = data.get("session")
 
         if not session:
@@ -128,7 +170,7 @@ class BalanceMiddleware(BaseMiddleware):
         balance_op_repo = BalanceOperationRepository(session)
         balance_service = BalanceService(session, user_repo, balance_op_repo)
 
-        # Check balance
+        # Check balance from database
         try:
             can_request, user_exists = await balance_service.can_make_request(
                 user_id)
@@ -136,7 +178,7 @@ class BalanceMiddleware(BaseMiddleware):
             if not user_exists:
                 # Auto-register user (like /start does)
                 from_user = message.from_user
-                _, was_created = await user_repo.get_or_create(
+                user, was_created = await user_repo.get_or_create(
                     telegram_id=from_user.id,
                     is_bot=from_user.is_bot,
                     first_name=from_user.first_name,
@@ -155,9 +197,29 @@ class BalanceMiddleware(BaseMiddleware):
                     msg="User auto-registered on first message",
                 )
 
+                # Cache the new user
+                await cache_user(
+                    user_id=user.id,
+                    balance=user.balance,
+                    model_id=user.model_id,
+                    first_name=user.first_name,
+                    username=user.username,
+                )
+
                 # Re-check balance after registration
                 can_request, user_exists = \
                     await balance_service.can_make_request(user_id)
+            else:
+                # User exists, cache their data for future requests
+                user = await user_repo.get_by_id(user_id)
+                if user:
+                    await cache_user(
+                        user_id=user.id,
+                        balance=user.balance,
+                        model_id=user.model_id,
+                        first_name=user.first_name,
+                        username=user.username,
+                    )
 
             if not can_request:
                 # Block request - insufficient balance

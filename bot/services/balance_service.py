@@ -5,11 +5,14 @@ This module handles all balance-related operations:
 - Charging for API usage (LLM, tools, etc.)
 - Admin balance adjustments
 - Balance history retrieval
+
+Phase 3.2: Invalidates Redis cache on balance changes.
 """
 
 from decimal import Decimal
 from decimal import ROUND_HALF_UP
 
+from cache.user_cache import invalidate_user
 from config import MINIMUM_BALANCE_FOR_REQUEST
 from db.models.balance_operation import BalanceOperation
 from db.models.balance_operation import OperationType
@@ -210,6 +213,9 @@ class BalanceService:
             msg="User charged for API usage",
         )
 
+        # Phase 3.2: Invalidate cache after balance change
+        await invalidate_user(user_id)
+
         # Alert if balance went negative
         if balance_after < 0:
             logger.warning(
@@ -329,6 +335,9 @@ class BalanceService:
             description=description,
             msg="Admin adjusted user balance",
         )
+
+        # Phase 3.2: Invalidate cache after balance change
+        await invalidate_user(user.id)
 
         return balance_before, balance_after
 

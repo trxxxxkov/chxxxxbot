@@ -18,11 +18,37 @@ services:
       timeout: 5s
       retries: 5
 
+  # === Cache (Phase 3.2) ===
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --maxmemory
+      - 512mb
+      - --maxmemory-policy
+      - allkeys-lru
+      - --appendonly
+      - "yes"
+      - --appendfsync
+      - everysec
+    volumes:
+      - redis_data:/data
+    networks:
+      - botnet
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   bot:
     build: ./bot
     restart: unless-stopped
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     secrets:
       - telegram_bot_token
@@ -46,6 +72,8 @@ services:
       - DATABASE_PORT=5432
       - DATABASE_USER=postgres
       - DATABASE_NAME=postgres
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
     networks:
       - botnet
 
@@ -139,6 +167,7 @@ networks:
 
 volumes:
   postgres_data:
+  redis_data:
   loki_data:
   prometheus_data:
   grafana_data:

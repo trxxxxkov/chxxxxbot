@@ -3,12 +3,17 @@
 This module provides the MessageRepository for working with Message model,
 including conversation history management and attachment handling.
 
+Phase 3.2: Uses Redis cache for fast message history retrieval.
+
 NO __init__.py - use direct import:
     from db.repositories.message_repository import MessageRepository
 """
 
 from typing import Optional
 
+from cache.thread_cache import cache_messages
+from cache.thread_cache import get_cached_messages
+from cache.thread_cache import invalidate_messages
 from db.models.message import Message
 from db.models.message import MessageRole
 from db.repositories.base import BaseRepository
@@ -157,6 +162,11 @@ class MessageRepository(BaseRepository[Message]):
         )
         self.session.add(message)
         await self.session.flush()
+
+        # Phase 3.2: Invalidate messages cache after new message
+        if thread_id:
+            await invalidate_messages(thread_id)
+
         return message
 
     async def update_message(
@@ -258,6 +268,9 @@ class MessageRepository(BaseRepository[Message]):
         Returns messages ordered by date ASC (oldest first) for proper
         LLM context construction.
 
+        Phase 3.2: Uses Redis cache for fast retrieval. Note: Cache only
+        used when limit=None and offset=0 (full history).
+
         Args:
             thread_id: Internal thread ID.
             limit: Max number of messages. None = all. Defaults to None.
@@ -266,6 +279,47 @@ class MessageRepository(BaseRepository[Message]):
         Returns:
             List of Message instances ordered by date ASC.
         """
+        # Phase 3.2: Check cache for full message history (no limit/offset)
+        # Only cache full history to avoid complexity
+        if limit is None and offset == 0:
+            cached = await get_cached_messages(thread_id)
+            if cached:
+                # Reconstruct Message objects from cached data
+                # Note: These are not attached to session, read-only
+                messages = []
+                for msg_data in cached:
+                    # Create detached Message objects for LLM context
+                    # Only essential fields needed for context
+                    msg = Message(
+                        chat_id=msg_data["chat_id"],
+                        message_id=msg_data["message_id"],
+                        thread_id=msg_data.get("thread_id"),
+                        from_user_id=msg_data.get("from_user_id"),
+                        date=msg_data["date"],
+                        role=MessageRole(msg_data["role"]),
+                        text_content=msg_data.get("text_content"),
+                        caption=msg_data.get("caption"),
+                        thinking_blocks=msg_data.get("thinking_blocks"),
+                        attachments=msg_data.get("attachments", []),
+                        has_photos=msg_data.get("has_photos", False),
+                        has_documents=msg_data.get("has_documents", False),
+                        has_voice=msg_data.get("has_voice", False),
+                        has_video=msg_data.get("has_video", False),
+                        attachment_count=msg_data.get("attachment_count", 0),
+                        reply_to_message_id=msg_data.get("reply_to_message_id"),
+                        reply_snippet=msg_data.get("reply_snippet"),
+                        reply_sender_display=msg_data.get(
+                            "reply_sender_display"),
+                        sender_display=msg_data.get("sender_display"),
+                        forward_origin=msg_data.get("forward_origin"),
+                        quote_data=msg_data.get("quote_data"),
+                        edit_count=msg_data.get("edit_count", 0),
+                        created_at=msg_data["date"],
+                    )
+                    messages.append(msg)
+                return messages
+
+        # Cache miss or paginated query - query database
         stmt = (select(Message).where(Message.thread_id == thread_id).order_by(
             Message.date.asc()))
 
@@ -275,7 +329,41 @@ class MessageRepository(BaseRepository[Message]):
             stmt = stmt.offset(offset)
 
         result = await self.session.execute(stmt)
-        return list(result.scalars().all())
+        messages = list(result.scalars().all())
+
+        # Cache full history for future requests
+        if limit is None and offset == 0 and messages:
+            # Serialize messages for cache
+            messages_data = []
+            for msg in messages:
+                msg_dict = {
+                    "chat_id": msg.chat_id,
+                    "message_id": msg.message_id,
+                    "thread_id": msg.thread_id,
+                    "from_user_id": msg.from_user_id,
+                    "date": msg.date,
+                    "role": msg.role.value,
+                    "text_content": msg.text_content,
+                    "caption": msg.caption,
+                    "thinking_blocks": msg.thinking_blocks,
+                    "attachments": msg.attachments,
+                    "has_photos": msg.has_photos,
+                    "has_documents": msg.has_documents,
+                    "has_voice": msg.has_voice,
+                    "has_video": msg.has_video,
+                    "attachment_count": msg.attachment_count,
+                    "reply_to_message_id": msg.reply_to_message_id,
+                    "reply_snippet": msg.reply_snippet,
+                    "reply_sender_display": msg.reply_sender_display,
+                    "sender_display": msg.sender_display,
+                    "forward_origin": msg.forward_origin,
+                    "quote_data": msg.quote_data,
+                    "edit_count": msg.edit_count,
+                }
+                messages_data.append(msg_dict)
+            await cache_messages(thread_id, messages_data)
+
+        return messages
 
     async def get_recent_messages(
         self,

@@ -34,7 +34,8 @@ RUN pip install --no-cache-dir \
     aiosqlite>=0.19.0 \
     prometheus-client>=0.20.0 \
     aiohttp>=3.9.0 \
-    python-magic>=0.4.27
+    python-magic>=0.4.27 \
+    "redis[hiredis]>=5.0.0"
 
 # Copy application code
 COPY . .
