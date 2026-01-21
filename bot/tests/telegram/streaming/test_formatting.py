@@ -91,7 +91,7 @@ class TestFormatBlocks:
         blocks = [DisplayBlock(block_type=BlockType.THINKING, content="test")]
         result = format_blocks(blocks, is_streaming=True)
         assert "🧠" in result
-        assert "<blockquote expandable>" in result
+        assert "<blockquote>" in result
 
     def test_no_emoji_for_tool_markers(self):
         """Should not add emoji to tool markers (they start with [)."""

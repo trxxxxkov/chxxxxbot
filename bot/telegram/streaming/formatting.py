@@ -104,7 +104,7 @@ def format_blocks(blocks: list[DisplayBlock], is_streaming: bool = True) -> str:
     thinking_html = ""
     if thinking_parts:
         thinking_content = "\n\n".join(thinking_parts)
-        thinking_html = f"<blockquote expandable>{thinking_content}</blockquote>"
+        thinking_html = f"<blockquote>{thinking_content}</blockquote>"
 
     text_html = ""
     if text_parts:
