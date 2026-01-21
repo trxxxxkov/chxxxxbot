@@ -30,12 +30,78 @@ logger = get_logger(__name__)
 
 # Tool definition for Claude API
 GENERATE_IMAGE_TOOL = {
-    "name": "generate_image",
+    "name":
+        "generate_image",
     "description":
-        ("Generate high-quality images up to 4K resolution using Google's "
-         "Nano Banana Pro (Gemini 3 Pro Image) model. Supports advanced "
-         "features like Google Search grounding for reference images. "
-         "Always generates ONE image per call. English prompts only."),
+        """Generate artistic images using Google Nano Banana Pro (Gemini 3 Pro Image).
+
+<purpose>
+Create high-quality photos, artwork, illustrations, portraits, and creative visuals.
+Model excels at photorealistic images, artistic styles, and creative compositions.
+Always generates ONE image per call. Image is auto-delivered to user.
+</purpose>
+
+<when_to_use>
+USE this tool for:
+- Photos, portraits, scenes (photorealistic or artistic)
+- Artwork, illustrations, paintings
+- Logos, icons, memes, creative graphics
+- Abstract art, patterns, textures
+- Product mockups, concept art
+
+DO NOT USE for:
+- Charts, graphs, plots → use execute_python with matplotlib/plotly
+- Data visualizations, statistics → use execute_python
+- Diagrams, flowcharts, technical drawings → use execute_python
+- Screenshots, UI mockups → use execute_python
+
+Rule: DATA or PRECISION → execute_python. ARTISTIC or CREATIVE → generate_image.
+</when_to_use>
+
+<prompt_guidelines>
+Write detailed prompts in ENGLISH (max 480 tokens). Include:
+- Subject: What is the main focus? Be specific.
+- Style: Photorealistic, oil painting, watercolor, anime, minimalist, etc.
+- Composition: Close-up, wide shot, birds-eye view, symmetrical, etc.
+- Lighting: Natural, dramatic, soft, golden hour, neon, etc.
+- Colors: Dominant palette, contrast, saturation level.
+- Mood: Serene, dramatic, playful, mysterious, etc.
+
+Example prompt:
+"A serene Japanese garden at sunset, photorealistic style. Cherry blossom
+trees in full bloom, koi pond reflecting golden light, traditional wooden
+bridge. Soft warm lighting, pastel pink and orange color palette, peaceful
+and contemplative mood. High detail, 4K quality."
+</prompt_guidelines>
+
+<parameters>
+aspect_ratio options:
+- 1:1 (square) - avatars, icons, social media
+- 3:4 (portrait) - portraits, mobile wallpapers
+- 4:3 (landscape) - scenes, presentations
+- 9:16 (vertical) - stories, phone backgrounds
+- 16:9 (widescreen) - desktop wallpapers, banners
+
+image_size options:
+- 1K (~1024px) - quick previews, thumbnails
+- 2K (~2048px) - standard quality, most uses (default)
+- 4K (~4096px) - high detail, print quality
+</parameters>
+
+<cost>
+Pricing per image:
+- 1K/2K resolution: $0.134
+- 4K resolution: $0.240
+
+Cost is automatically tracked and charged to user.
+</cost>
+
+<limitations>
+- English prompts only (translate if user writes in other language)
+- Cannot generate text reliably (logos with text may have errors)
+- Content policy: No violence, explicit content, real people
+- One image per call (call multiple times for variations)
+</limitations>""",
     "input_schema": {
         "type": "object",
         "properties": {
@@ -44,25 +110,24 @@ GENERATE_IMAGE_TOOL = {
                     "string",
                 "description":
                     ("Detailed image description in English (max 480 tokens). "
-                     "Be specific about style, composition, lighting, colors, "
-                     "mood, and any other visual details."),
+                     "Include subject, style, composition, lighting, colors, "
+                     "and mood for best results.")
             },
             "aspect_ratio": {
                 "type":
                     "string",
                 "enum": ["1:1", "3:4", "4:3", "9:16", "16:9"],
                 "description":
-                    ("Image aspect ratio. Options: "
-                     "1:1 (square), 3:4 (portrait), 4:3 (landscape), "
-                     "9:16 (vertical), 16:9 (widescreen). Default: 1:1"),
+                    ("1:1 (square), 3:4 (portrait), 4:3 (landscape), "
+                     "9:16 (vertical), 16:9 (widescreen). Default: 1:1")
             },
             "image_size": {
                 "type":
                     "string",
                 "enum": ["1K", "2K", "4K"],
                 "description":
-                    ("Image resolution. 1K: ~1024px, 2K: ~2048px, 4K: ~4096px. "
-                     "Higher resolution costs more. Default: 2K"),
+                    ("1K (~1024px), 2K (~2048px, default), 4K (~4096px). "
+                     "Higher resolution costs more.")
             },
         },
         "required": ["prompt"],
