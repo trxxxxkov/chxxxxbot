@@ -189,17 +189,18 @@ async def redis_health_check() -> dict:
         return {"status": "error", "info": "Client not initialized"}
 
     try:
-        info = await client.info("server")
-        memory = await client.info("memory")
+        server_info = await client.info("server")
+        memory_info = await client.info("memory")
+        clients_info = await client.info("clients")
 
         return {
             "status": "ok",
             "info": {
-                "redis_version": info.get("redis_version"),
-                "uptime_seconds": info.get("uptime_in_seconds"),
-                "connected_clients": info.get("connected_clients"),
-                "used_memory_human": memory.get("used_memory_human"),
-                "maxmemory_human": memory.get("maxmemory_human"),
+                "redis_version": server_info.get("redis_version"),
+                "uptime_seconds": server_info.get("uptime_in_seconds", 0),
+                "connected_clients": clients_info.get("connected_clients", 0),
+                "used_memory_human": memory_info.get("used_memory_human", "0B"),
+                "maxmemory_human": memory_info.get("maxmemory_human", "0B"),
             }
         }
     except Exception as e:  # pylint: disable=broad-exception-caught
