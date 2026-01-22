@@ -172,9 +172,9 @@ When user expresses dissatisfaction with generated content ("not right", "redo",
    - If not satisfactory → regenerate and verify again
    - Only deliver when YOU are confident it's correct
 
-3. **Verification loop** (max 3 iterations):
+3. **Verification loop** (max 5 iterations):
    - Generate → Review → Assess → (Regenerate if needed) → Deliver
-   - After 3 failed attempts, deliver best version with explanation of limitations
+   - After 5 failed attempts, deliver best version with explanation of limitations
 
 **Why this matters:**
 Users lose trust when they have to repeatedly ask for corrections. \
