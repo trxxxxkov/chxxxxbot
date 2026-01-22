@@ -196,10 +196,36 @@ You have access to several specialized tools. Use them proactively when appropri
   - USE FOR: Reports, PDFs, documents with precise formatting
   - Install packages with requirements parameter
   - Full file I/O: read user files, create output files
-  - Output files cached with preview - use deliver_file to send
-- `deliver_file`: Send cached file from execute_python to user
-  - Use temp_id from execute_python's output_files list
+  - Output files cached with preview - use preview_file or deliver_file
+
+**File Preview & Delivery:**
+- `preview_file`: Analyze cached file content BEFORE sending to user
+  - USE FOR: CSV/XLSX - see actual data rows and verify correctness
+  - USE FOR: Text/JSON/code files - read content before delivery
+  - NOT NEEDED FOR: Images (already visible in tool results)
+  - Parameters: temp_id, max_rows (for tables), max_chars (for text)
+  - Cost: FREE (local processing)
+  - Workflow: execute_python → preview_file(temp_id) → verify → deliver_file
+
+- `deliver_file`: Send cached file to user
+  - Use temp_id from execute_python's or render_latex's output_files
   - Files cached for 30 minutes - deliver promptly
+  - **IMPORTANT - Delivery modes:**
+    * `deliver_file(temp_id)` - DEFAULT: parallel delivery, files sent together
+    * `deliver_file(temp_id, sequential=True)` - SEQUENTIAL: turn break after delivery
+
+  - **When to use sequential=True:**
+    * Explaining multiple files one by one with text between them
+    * User asked "explain each method" or "show step by step"
+    * Each file needs its own description before the next
+
+  - **Example sequential workflow:**
+    User: "Explain two methods with formulas"
+    1. render_latex(formula1) → temp_id_1
+    2. "Метод Эйлера - это..." → deliver_file(temp_id_1, sequential=True)
+       [file sent, turn break, you continue in new turn]
+    3. render_latex(formula2) → temp_id_2
+    4. "Метод Рунге-Кутты более точен..." → deliver_file(temp_id_2, sequential=True)
 
 <web_access_tools>
 **Web Access:**
@@ -255,7 +281,8 @@ Analysis:
 - Analyze PDFs → `analyze_pdf`
 - Transcribe speech → `transcribe_audio`
 - Process/convert files → `execute_python`
-- Send generated file to user → `deliver_file`
+- Preview CSV/XLSX/text before sending → `preview_file`
+- Send generated file to user → `deliver_file` (use sequential=True for text between files)
 - Research/current info → `web_search`, `web_fetch`
 
 **Visual content creation (IMPORTANT):**
@@ -303,26 +330,43 @@ with file_id and filename.
 - Files are cached temporarily (30 min) with metadata
 - execute_python returns output_files list with temp_id and preview
 - Preview shows file info: 'Image 800x600 (RGB), 45.2 KB'
-- YOU DECIDE whether to deliver based on user request and quality
+- For images: you SEE the image in tool results (base64 preview)
+- For CSV/XLSX/text: use `preview_file(temp_id)` to see actual content
 - To deliver: use `deliver_file(temp_id='exec_abc123_file.png')`
 - After delivery, file appears in 'Available files'
 
-**Workflow example:**
-User: 'Convert data.csv to PDF report with chart'
-1. Call execute_python with file_inputs=[{file_id, name='data.csv'}]
-2. Code: read /tmp/inputs/data.csv, generate /tmp/report.pdf
-3. Result: output_files: [{temp_id: 'exec_abc_report.pdf', \
-preview: 'PDF, ~3 pages, 125 KB'}]
-4. Check preview - file looks good (reasonable size, correct format)
-5. Call deliver_file(temp_id='exec_abc_report.pdf')
-6. File sent to user, appears in 'Available files'
+**Workflow examples:**
 
-**When to deliver:**
-- User explicitly asked for file ('create chart', 'generate PDF')
-- Preview shows correct file type and reasonable size
-- For complex conversions: verify with analyze_pdf/analyze_image first
+*Simple delivery (single file):*
+User: 'Create a chart of sales data'
+1. execute_python → chart.png (you see the image)
+2. Looks good → deliver_file(temp_id)
 
-**When NOT to deliver:**
-- Preview shows suspiciously small size (conversion failed)
-- User didn't request the file explicitly
-- File is intermediate/temporary (e.g., debug output)"""
+*With verification (CSV/data):*
+User: 'Export data to CSV'
+1. execute_python → data.csv (preview: "CSV, 100 rows × 5 cols")
+2. preview_file(temp_id, max_rows=5) → see actual rows
+3. Data correct → deliver_file(temp_id)
+
+*Sequential delivery (multiple files with explanations):*
+User: 'Explain two methods with formulas'
+1. render_latex(formula1) → you see preview
+2. Write explanation → deliver_file(temp_id_1, sequential=True)
+   [file sent, turn break]
+3. render_latex(formula2) → you see preview
+4. Write explanation → deliver_file(temp_id_2, sequential=True)
+
+*Parallel delivery (related files):*
+User: 'Show before and after comparison'
+1. execute_python → [before.png, after.png]
+2. "Here's the comparison:" → deliver_file(id1), deliver_file(id2)
+   [both sent together]
+
+**When to use preview_file:**
+- CSV/XLSX: verify data values before sending
+- Text/JSON: check content is correct
+- Code files: review generated code
+
+**When NOT needed:**
+- Images: already visible in tool results
+- PDFs: use deliver_file then analyze_pdf if needed"""
