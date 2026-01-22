@@ -1621,7 +1621,7 @@
             "value": "debug"
           },
           {
-            "selected": true,
+            "selected": false,
             "text": "info",
             "value": "info"
           },
