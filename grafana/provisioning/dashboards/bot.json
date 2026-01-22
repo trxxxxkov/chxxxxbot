@@ -668,7 +668,7 @@
               },
               {
                 "id": "custom.fillOpacity",
-                "value": 30
+                "value": 70
               },
               {
                 "id": "custom.axisPlacement",
@@ -695,7 +695,7 @@
               },
               {
                 "id": "custom.fillOpacity",
-                "value": 80
+                "value": 90
               },
               {
                 "id": "custom.axisPlacement",
@@ -748,6 +748,10 @@
                 }
               },
               {
+                "id": "custom.fillOpacity",
+                "value": 15
+              },
+              {
                 "id": "custom.axisPlacement",
                 "value": "hidden"
               },
@@ -772,7 +776,7 @@
               },
               {
                 "id": "custom.fillOpacity",
-                "value": 10
+                "value": 5
               },
               {
                 "id": "custom.axisPlacement",
