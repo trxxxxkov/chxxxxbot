@@ -24,6 +24,48 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
+
+def _sanitize_latex(latex: str) -> str:
+    """Sanitize LaTeX input by removing delimiters and fixing unsupported commands.
+
+    Claude sometimes passes LaTeX with delimiters despite instructions.
+    This function cleans the input to ensure successful rendering.
+
+    Args:
+        latex: Raw LaTeX input that may contain delimiters.
+
+    Returns:
+        Cleaned LaTeX without delimiters and with fixed commands.
+    """
+    result = latex.strip()
+
+    # Remove leading/trailing whitespace and newlines
+    result = result.strip()
+
+    # Remove display math delimiters: \[...\] or $$...$$
+    if result.startswith(r'\[') and result.endswith(r'\]'):
+        result = result[2:-2].strip()
+    elif result.startswith('$$') and result.endswith('$$'):
+        result = result[2:-2].strip()
+
+    # Remove inline math delimiters: \(...\) or $...$
+    if result.startswith(r'\(') and result.endswith(r'\)'):
+        result = result[2:-2].strip()
+    elif result.startswith('$') and result.endswith(
+            '$') and not result.startswith('$$'):
+        result = result[1:-1].strip()
+
+    # Fix unsupported mathtext commands
+    # \ldots -> \cdots (mathtext supports \cdots but not \ldots)
+    result = result.replace(r'\ldots', r'\cdots')
+
+    # \text{} is not supported - remove it and keep content
+    import re
+    result = re.sub(r'\\text\{([^}]*)\}', r'\1', result)
+
+    return result
+
+
 # Tool definition for Claude API
 RENDER_LATEX_TOOL = {
     "name":
@@ -263,9 +305,17 @@ async def render_latex(
     if display_mode == "display" and font_size == 20:
         font_size = 28
 
+    # Sanitize input (remove delimiters, fix unsupported commands)
+    clean_latex = _sanitize_latex(latex)
+
+    logger.debug("tools.render_latex.sanitized",
+                 original_length=len(latex),
+                 clean_length=len(clean_latex),
+                 clean_preview=clean_latex[:50] if clean_latex else "")
+
     try:
         # Render in thread pool to avoid blocking
-        image_bytes = await asyncio.to_thread(_render_sync, latex.strip(),
+        image_bytes = await asyncio.to_thread(_render_sync, clean_latex,
                                               display_mode, font_size)
 
         filename = f"formula_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}.png"

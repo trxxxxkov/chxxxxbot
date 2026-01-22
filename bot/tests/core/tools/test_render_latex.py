@@ -9,11 +9,76 @@ Tests LaTeX to PNG rendering:
 
 from unittest.mock import MagicMock
 
+from core.tools.render_latex import _sanitize_latex
 from core.tools.render_latex import format_render_latex_result
 from core.tools.render_latex import render_latex
 from core.tools.render_latex import RENDER_LATEX_TOOL
 from core.tools.render_latex import TOOL_CONFIG
 import pytest
+
+# ============================================================================
+# _sanitize_latex() Tests
+# ============================================================================
+
+
+class TestSanitizeLatex:
+    """Tests for _sanitize_latex function."""
+
+    def test_removes_dollar_delimiters(self):
+        """Test removal of $...$ delimiters."""
+        result = _sanitize_latex(r"$x^2$")
+        assert result == "x^2"
+
+    def test_removes_double_dollar_delimiters(self):
+        """Test removal of $$...$$ delimiters."""
+        result = _sanitize_latex(r"$$\frac{1}{2}$$")
+        assert result == r"\frac{1}{2}"
+
+    def test_removes_bracket_delimiters(self):
+        r"""Test removal of \[...\] delimiters."""
+        result = _sanitize_latex(r"\[\sum_{i=1}^n i\]")
+        assert result == r"\sum_{i=1}^n i"
+
+    def test_removes_paren_delimiters(self):
+        r"""Test removal of \(...\) delimiters."""
+        result = _sanitize_latex(r"\(x + y\)")
+        assert result == "x + y"
+
+    def test_replaces_ldots_with_cdots(self):
+        r"""Test that \ldots is replaced with \cdots."""
+        result = _sanitize_latex(r"1 + 2 + \ldots + n")
+        assert result == r"1 + 2 + \cdots + n"
+
+    def test_removes_text_command(self):
+        r"""Test that \text{} is removed keeping content."""
+        result = _sanitize_latex(r"x = 5 \text{ units}")
+        assert result == "x = 5  units"
+
+    def test_handles_newlines_in_input(self):
+        """Test that leading/trailing newlines are stripped."""
+        result = _sanitize_latex("\n$x^2$\n")
+        assert result == "x^2"
+
+    def test_strips_whitespace(self):
+        """Test that whitespace is stripped."""
+        result = _sanitize_latex("  x^2  ")
+        assert result == "x^2"
+
+    def test_no_delimiters_passes_through(self):
+        """Test that clean input passes through unchanged."""
+        result = _sanitize_latex(r"\frac{a}{b}")
+        assert result == r"\frac{a}{b}"
+
+    def test_complex_formula_with_delimiters(self):
+        """Test sanitization of complex formula with delimiters."""
+        input_latex = r"$\cos x = \sum_{n=0}^{\infty} \frac{(-1)^n x^{2n}}{(2n)!} = 1 - \frac{x^2}{2!} + \frac{x^4}{4!} - \ldots$"
+        result = _sanitize_latex(input_latex)
+        # Should strip $ and replace \ldots
+        assert not result.startswith("$")
+        assert not result.endswith("$")
+        assert r"\ldots" not in result
+        assert r"\cdots" in result
+
 
 # ============================================================================
 # RENDER_LATEX_TOOL Schema Tests
@@ -185,6 +250,55 @@ class TestRenderLatexSuccess:
         )
 
         assert result["success"] == "true"
+
+    @pytest.mark.asyncio
+    async def test_with_dollar_delimiters(self):
+        """Test that rendering works even with $ delimiters."""
+        result = await render_latex(
+            latex=r"$x^2 + y^2$",
+            bot=MagicMock(),
+            session=MagicMock(),
+        )
+
+        assert result["success"] == "true"
+        assert "_file_contents" in result
+
+    @pytest.mark.asyncio
+    async def test_with_double_dollar_delimiters(self):
+        """Test that rendering works with $$ delimiters."""
+        result = await render_latex(
+            latex=r"$$\frac{a}{b}$$",
+            bot=MagicMock(),
+            session=MagicMock(),
+        )
+
+        assert result["success"] == "true"
+
+    @pytest.mark.asyncio
+    async def test_with_ldots(self):
+        r"""Test that \ldots is handled correctly."""
+        result = await render_latex(
+            latex=r"1 + 2 + \ldots + n",
+            bot=MagicMock(),
+            session=MagicMock(),
+        )
+
+        assert result["success"] == "true"
+
+    @pytest.mark.asyncio
+    async def test_complex_formula_from_logs(self):
+        """Test the exact formula that was failing in logs."""
+        # This is the actual formula that failed in production
+        result = await render_latex(
+            latex=
+            r"$\cos x = \sum_{n=0}^{\infty} \frac{(-1)^n x^{2n}}{(2n)!} = 1 - \frac{x^2}{2!} + \frac{x^4}{4!} - \ldots$",
+            bot=MagicMock(),
+            session=MagicMock(),
+            display_mode="display",
+        )
+
+        assert result["success"] == "true"
+        assert "_file_contents" in result
 
 
 # ============================================================================
