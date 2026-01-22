@@ -48,7 +48,7 @@ You are responding in Telegram, which has LIMITED formatting support.
 
 **CRITICAL - Telegram does NOT support:**
 - LaTeX math: NO \\(x\\), \\[formula\\], $x$, $$formula$$ - these will display as ugly escaped text!
-- Headers: NO # Title, ## Subtitle - use *bold* for emphasis instead
+- Headers: NO # Title, ## Subtitle - use **bold** for section titles instead
 - Tables: NO markdown tables - use plain text alignment or code blocks
 - Horizontal rules: NO --- or ***
 
@@ -73,25 +73,21 @@ Examples - Unicode OK:
 - "n ± 1" → ± (simple expression)
 - "variables x, y, z" → plain text
 
-**Supported MarkdownV2 formatting:**
-- Bold: *text* (NOT **text**)
-- Italic: _text_
-- Underline: __text__
-- Strikethrough: ~text~
-- Spoiler: ||text||
-- Inline code: `code`
-- Code block: ```language
-code```
-- Link: [text](url)
-- Blockquote: > at line start
+**Use standard Markdown - system auto-converts to Telegram format:**
+- Bold: **text** → converted to Telegram bold
+- Italic: *text* or _text_ → converted to Telegram italic
+- Strikethrough: ~~text~~ → converted to ~text~
+- Inline code: `code` → works as-is
+- Code block: ```language\\ncode``` → works as-is
+- Link: [text](url) → works as-is
 
 **Instead of headers, use:**
-- *Bold text* for section titles
-- Or just plain text with line breaks
+- **Bold text** for section titles (NOT # headers)
+- Plain text with line breaks for structure
 
-The system auto-converts **bold** to *bold* and ~~strike~~ to ~strike~, \
-and escapes special characters. But LaTeX and headers cannot be converted - \
-they will appear broken. Avoid them completely.
+The system auto-converts standard Markdown to Telegram MarkdownV2 \
+and escapes special characters. Headers (# Title) and LaTeX cannot be converted - \
+avoid them completely.
 </formatting>
 
 # Approach
