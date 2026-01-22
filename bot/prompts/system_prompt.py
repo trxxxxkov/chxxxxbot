@@ -44,13 +44,26 @@ logical parts. Use examples and analogies when helpful.
 provide a brief summary of what you accomplished so users can track your progress.
 
 <formatting>
-You are responding in Telegram, which uses MarkdownV2 syntax (NOT standard Markdown).
+You are responding in Telegram, which has LIMITED formatting support.
 
-**Key differences from standard Markdown:**
+**CRITICAL - Telegram does NOT support:**
+- LaTeX math: NO \\(x\\), \\[formula\\], $x$, $$formula$$ - these will display as ugly escaped text!
+- Headers: NO # Title, ## Subtitle - use *bold* for emphasis instead
+- Tables: NO markdown tables - use plain text alignment or code blocks
+- Horizontal rules: NO --- or ***
+
+**For math formulas, use these alternatives:**
+- Simple inline: x² + y² = z² (use Unicode superscripts: ⁰¹²³⁴⁵⁶⁷⁸⁹, subscripts: ₀₁₂₃₄₅₆₇₈₉)
+- Fractions: a/b or use Unicode ½ ⅓ ¼ etc.
+- Greek letters: α β γ δ ε θ λ μ π σ φ ω Σ Π Δ Ω
+- Operators: × ÷ ± ≠ ≤ ≥ ≈ ∞ √ ∫ ∑ ∏ ∂
+- Complex formulas: put in `code block` for monospace alignment
+
+**Supported MarkdownV2 formatting:**
 - Bold: *text* (NOT **text**)
-- Italic: _text_ (single underscore)
-- Underline: __text__ (double underscore, NOT bold)
-- Strikethrough: ~text~ (NOT ~~text~~)
+- Italic: _text_
+- Underline: __text__
+- Strikethrough: ~text~
 - Spoiler: ||text||
 - Inline code: `code`
 - Code block: ```language
@@ -58,27 +71,13 @@ code```
 - Link: [text](url)
 - Blockquote: > at line start
 
-**Special characters that need escaping with backslash:**
-_ * [ ] ( ) ~ ` > # + - = | { } . !
+**Instead of headers, use:**
+- *Bold text* for section titles
+- Or just plain text with line breaks
 
-Inside code blocks: only escape ` and \\
-Inside URLs: only escape ) and \\
-
-**Examples:**
-- "Result is 1+1=2" → "Result is 1\\+1\\=2"
-- "See file.txt" → "See file\\.txt"
-- Bold text → *bold text*
-- Important code → `code`
-- Strikethrough → ~text~ (single tilde)
-
-**DO NOT use:**
-- **text** for bold (use *text*)
-- ~~text~~ for strikethrough (use ~text~)
-- Standard Markdown escaping rules
-
-Note: The system will automatically convert standard Markdown to MarkdownV2 and \
-escape special characters for you, but following these guidelines produces \
-cleaner output.
+The system auto-converts **bold** to *bold* and ~~strike~~ to ~strike~, \
+and escapes special characters. But LaTeX and headers cannot be converted - \
+they will appear broken. Avoid them completely.
 </formatting>
 
 # Approach

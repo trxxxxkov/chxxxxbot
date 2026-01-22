@@ -45,6 +45,58 @@ ESCAPE_CHARS_CODE = r"`\\"
 ESCAPE_CHARS_URL = r")\\"
 
 
+def preprocess_unsupported_markdown(text: str) -> str:
+    r"""Preprocess text to convert unsupported Markdown features.
+
+    Telegram MarkdownV2 doesn't support LaTeX math or headers.
+    This function converts them to readable alternatives BEFORE
+    the main MarkdownV2 rendering.
+
+    Conversions:
+    - LaTeX inline: \\(formula\\) or $formula$ → `formula`
+    - LaTeX display: \\[formula\\] or $$formula$$ → ```formula```
+    - Headers: # Title → *Title* (bold)
+
+    Args:
+        text: Raw text possibly containing LaTeX or headers.
+
+    Returns:
+        Text with unsupported features converted.
+    """
+    if not text:
+        return ""
+
+    result = text
+
+    # Convert LaTeX display math: \[...\] or $$...$$ to code block
+    # Must be done before inline math (longer patterns first)
+    result = re.sub(r'\\\[(.*?)\\\]',
+                    lambda m: f"```\n{m.group(1).strip()}\n```",
+                    result,
+                    flags=re.DOTALL)
+    result = re.sub(r'\$\$(.*?)\$\$',
+                    lambda m: f"```\n{m.group(1).strip()}\n```",
+                    result,
+                    flags=re.DOTALL)
+
+    # Convert LaTeX inline math: \(...\) or $...$ to inline code
+    result = re.sub(r'\\\((.*?)\\\)', lambda m: f"`{m.group(1).strip()}`",
+                    result)
+    result = re.sub(r'(?<!\$)\$(?!\$)(.*?)(?<!\$)\$(?!\$)',
+                    lambda m: f"`{m.group(1).strip()}`", result)
+
+    # Convert headers to bold (must be at line start)
+    # # Title → *Title*
+    # ## Title → *Title*
+    # ### Title → *Title*
+    result = re.sub(r'^(#{1,6})\s+(.+?)$',
+                    r'**\2**',
+                    result,
+                    flags=re.MULTILINE)
+
+    return result
+
+
 def escape_markdown_v2(text: str,
                        context: EscapeContext = EscapeContext.NORMAL) -> str:
     r"""Escape special characters for Telegram MarkdownV2.
@@ -212,6 +264,7 @@ def _render_markdown_v2(text: str, auto_close: bool = True) -> str:
     Internal function that does the actual parsing and rendering.
 
     Algorithm:
+    0. Preprocess unsupported features (LaTeX, headers)
     1. Parse text character by character
     2. Track open formatting contexts in a stack
     3. Convert standard Markdown delimiters to MarkdownV2
@@ -225,6 +278,9 @@ def _render_markdown_v2(text: str, auto_close: bool = True) -> str:
     Returns:
         Valid MarkdownV2 string.
     """
+    # Preprocess unsupported markdown features (LaTeX, headers)
+    text = preprocess_unsupported_markdown(text)
+
     result: list[str] = []
     context_stack: list[FormattingContext] = []
     i = 0

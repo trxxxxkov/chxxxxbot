@@ -8,6 +8,7 @@ from telegram.streaming.markdown_v2 import EscapeContext
 from telegram.streaming.markdown_v2 import format_blockquote_md2
 from telegram.streaming.markdown_v2 import format_expandable_blockquote_md2
 from telegram.streaming.markdown_v2 import MarkdownV2Renderer
+from telegram.streaming.markdown_v2 import preprocess_unsupported_markdown
 from telegram.streaming.markdown_v2 import render_streaming_safe
 
 
@@ -910,3 +911,106 @@ class TestRegressionCases:
         result = render_streaming_safe("List:\n- Item 1\n- Item 2")
         # - should be escaped
         assert r"\-" in result
+
+
+class TestPreprocessUnsupportedMarkdown:
+    """Tests for preprocess_unsupported_markdown function."""
+
+    def test_empty_string(self):
+        """Should handle empty string."""
+        assert preprocess_unsupported_markdown("") == ""
+
+    def test_plain_text_unchanged(self):
+        """Plain text without LaTeX or headers should be unchanged."""
+        text = "This is plain text without special features."
+        assert preprocess_unsupported_markdown(text) == text
+
+    def test_latex_inline_parentheses(self):
+        """Should convert LaTeX inline math \\(...\\) to code."""
+        result = preprocess_unsupported_markdown(
+            r"The formula \(x^2\) is simple")
+        assert result == "The formula `x^2` is simple"
+
+    def test_latex_inline_dollar(self):
+        """Should convert LaTeX inline math $...$ to code."""
+        result = preprocess_unsupported_markdown("The formula $x^2$ is simple")
+        assert result == "The formula `x^2` is simple"
+
+    def test_latex_display_brackets(self):
+        """Should convert LaTeX display math \\[...\\] to code block."""
+        result = preprocess_unsupported_markdown(
+            r"Formula: \[x^2 + y^2 = z^2\]")
+        assert "```" in result
+        assert "x^2 + y^2 = z^2" in result
+
+    def test_latex_display_double_dollar(self):
+        """Should convert LaTeX display math $$...$$ to code block."""
+        result = preprocess_unsupported_markdown("Formula: $$x^2 + y^2$$")
+        assert "```" in result
+        assert "x^2 + y^2" in result
+
+    def test_header_h1(self):
+        """Should convert # Header to bold."""
+        result = preprocess_unsupported_markdown("# Main Title")
+        assert result == "**Main Title**"
+
+    def test_header_h2(self):
+        """Should convert ## Header to bold."""
+        result = preprocess_unsupported_markdown("## Subtitle")
+        assert result == "**Subtitle**"
+
+    def test_header_h3(self):
+        """Should convert ### Header to bold."""
+        result = preprocess_unsupported_markdown("### Section")
+        assert result == "**Section**"
+
+    def test_multiple_headers(self):
+        """Should convert multiple headers."""
+        text = "# Title\nSome text\n## Subtitle\nMore text"
+        result = preprocess_unsupported_markdown(text)
+        assert "**Title**" in result
+        assert "**Subtitle**" in result
+        assert "Some text" in result
+
+    def test_header_not_at_line_start(self):
+        """Should not convert # that's not at line start."""
+        text = "Use the # symbol for comments"
+        result = preprocess_unsupported_markdown(text)
+        # # in the middle should not be converted
+        assert "**" not in result
+
+    def test_complex_latex_formula(self):
+        """Should handle complex LaTeX formulas."""
+        text = r"Taylor series: \[f(x) = \sum_{n=0}^{\infty} \frac{f^{(n)}(a)}{n!}(x-a)^n\]"
+        result = preprocess_unsupported_markdown(text)
+        assert "```" in result
+        assert "sum" in result
+        assert "frac" in result
+
+    def test_mixed_latex_and_headers(self):
+        """Should handle text with both LaTeX and headers."""
+        text = "# Math Formula\nThe equation \\(x^2\\) shows..."
+        result = preprocess_unsupported_markdown(text)
+        assert "**Math Formula**" in result
+        assert "`x^2`" in result
+
+    def test_latex_with_spaces(self):
+        """Should handle LaTeX with spaces around content."""
+        result = preprocess_unsupported_markdown(r"\( x + y \)")
+        assert result == "`x + y`"
+
+    def test_multiple_inline_latex(self):
+        """Should convert multiple inline LaTeX expressions."""
+        text = r"Variables \(x\) and \(y\) are used"
+        result = preprocess_unsupported_markdown(text)
+        assert result == "Variables `x` and `y` are used"
+
+    def test_render_after_preprocess(self):
+        """Full flow: preprocess then render should produce valid output."""
+        text = "# Formula\nThe Taylor series \\(f(x)\\) expands to..."
+        result = render_streaming_safe(text)
+        # Should have bold for header (after preprocessing converts # to **)
+        # and then ** is converted to * in MarkdownV2
+        assert "*Formula*" in result
+        # Should have code for LaTeX
+        assert "`f" in result or "f\\(x\\)" not in result
