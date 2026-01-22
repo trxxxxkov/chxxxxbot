@@ -28,6 +28,7 @@ RUN pip install --no-cache-dir \
     e2b-code-interpreter>=1.0.0 \
     google-genai>=1.0.0 \
     pillow>=10.0.0 \
+    matplotlib>=3.8.0 \
     pytest>=7.4.0 \
     pytest-asyncio>=0.21.0 \
     pytest-cov>=4.1.0 \
