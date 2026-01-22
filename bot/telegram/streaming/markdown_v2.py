@@ -173,12 +173,14 @@ class FormattingContext:
         start_pos: Position in raw text where opened.
         delimiter: Opening delimiter string.
         language: For code blocks, the language (may be empty).
+        paren_depth: For LINK_URL, tracks nested parentheses depth.
     """
 
     format_type: FormattingType
     start_pos: int
     delimiter: str
     language: str = ""
+    paren_depth: int = 0
 
 
 @dataclass
@@ -362,6 +364,34 @@ def _render_markdown_v2(text: str, auto_close: bool = True) -> str:
             i += 1
             continue
 
+        # Skip formatting inside link URL - output URL characters directly
+        if current_context() == FormattingType.LINK_URL:
+            if text[i] == "(":
+                # Open paren in URL - track depth for balanced parens
+                context_stack[-1].paren_depth += 1
+                result.append("(")
+                i += 1
+                continue
+            if text[i] == ")":
+                # Check if this closes the link or is a balanced paren
+                if context_stack[-1].paren_depth > 0:
+                    # This ) matches an earlier ( in the URL - escape it
+                    context_stack[-1].paren_depth -= 1
+                    result.append("\\)")
+                else:
+                    # This ) closes the link
+                    result.append(")")
+                    pop_context(FormattingType.LINK_URL)
+                i += 1
+                continue
+            if text[i] == "\\":
+                result.append("\\\\")
+            else:
+                # Output URL characters as-is (no escaping except \ and ))
+                result.append(text[i])
+            i += 1
+            continue
+
         # Check for standard Markdown bold (**) - convert to MarkdownV2 (*)
         if text[i:i + 2] == "**":
             if current_context() == FormattingType.BOLD:
@@ -479,23 +509,6 @@ def _render_markdown_v2(text: str, auto_close: bool = True) -> str:
             pop_context(FormattingType.LINK_TEXT)
             # Re-escape the opening bracket we added
             # Find and escape the [ we added
-            i += 1
-            continue
-
-        if text[i] == ")" and current_context() == FormattingType.LINK_URL:
-            result.append(")")
-            pop_context(FormattingType.LINK_URL)
-            i += 1
-            continue
-
-        # Inside link URL - minimal escaping
-        if current_context() == FormattingType.LINK_URL:
-            if text[i] == "\\":
-                result.append("\\\\")
-            elif text[i] == ")":
-                result.append("\\)")
-            else:
-                result.append(text[i])
             i += 1
             continue
 

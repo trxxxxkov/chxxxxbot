@@ -352,6 +352,10 @@ def format_tool_results(tool_uses: List[Dict[str, Any]],
     Creates tool_result blocks that match the tool_use requests.
     Handles both successful results and errors.
 
+    Special handling for image previews:
+    - If result contains `_image_preview` key, includes image in content
+    - This allows Claude to visually verify rendered images before delivery
+
     Args:
         tool_uses: List of tool_use dicts (from extract_tool_uses).
         results: List of execution results (from execute_tool).
@@ -391,14 +395,62 @@ def format_tool_results(tool_uses: List[Dict[str, Any]],
                         tool_name=tool_use["name"],
                         error=error_msg)
         else:
-            # Success result - serialize to JSON
-            formatted.append({
-                "type": "tool_result",
-                "tool_use_id": tool_use["id"],
-                "content": json.dumps(result)
-            })
-            logger.info("tools.helpers.format_tool_results.success",
-                        tool_use_id=tool_use["id"],
-                        tool_name=tool_use["name"])
+            # Check for image previews (render_latex, execute_python plots)
+            # Single image preview (render_latex)
+            image_preview = result.pop("_image_preview", None)
+            # Multiple image previews (execute_python)
+            image_previews = result.pop("_image_previews", None)
+
+            # Build list of all images to include
+            images_to_include: List[Dict[str, Any]] = []
+            if image_preview:
+                images_to_include.append(image_preview)
+            if image_previews:
+                images_to_include.extend(image_previews)
+
+            if images_to_include:
+                # Multi-part content: images + text result
+                content_blocks: List[Dict[str, Any]] = []
+
+                # Add all images
+                for img in images_to_include:
+                    content_blocks.append({
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": img.get("media_type", "image/png"),
+                            "data": img["data"],
+                        }
+                    })
+
+                # Add text result (JSON)
+                content_blocks.append({
+                    "type": "text",
+                    "text": json.dumps(result)
+                })
+
+                formatted.append({
+                    "type": "tool_result",
+                    "tool_use_id": tool_use["id"],
+                    "content": content_blocks
+                })
+
+                total_size_kb = sum(
+                    len(img["data"]) / 1024 for img in images_to_include)
+                logger.info("tools.helpers.format_tool_results.with_images",
+                            tool_use_id=tool_use["id"],
+                            tool_name=tool_use["name"],
+                            image_count=len(images_to_include),
+                            total_size_kb=round(total_size_kb, 1))
+            else:
+                # Success result - serialize to JSON
+                formatted.append({
+                    "type": "tool_result",
+                    "tool_use_id": tool_use["id"],
+                    "content": json.dumps(result)
+                })
+                logger.info("tools.helpers.format_tool_results.success",
+                            tool_use_id=tool_use["id"],
+                            tool_name=tool_use["name"])
 
     return formatted

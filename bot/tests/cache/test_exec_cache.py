@@ -24,12 +24,20 @@ class TestGenerateTempId:
     """Tests for temp ID generation."""
 
     def test_generate_temp_id_format(self):
-        """Test temp ID includes prefix and filename."""
+        """Test temp ID uses only exec_ prefix and UUID.
+
+        Format: exec_{8-char-uuid}
+        Filename is stored in metadata, not in temp_id.
+        This prevents Claude from mistyping complex filenames.
+        """
         temp_id = generate_temp_id("chart.png")
 
         assert temp_id.startswith("exec_")
-        assert temp_id.endswith("_chart.png")
-        assert len(temp_id) == len("exec_") + 8 + len("_chart.png")
+        # exec_ (5 chars) + 8-char uuid = 13 chars total
+        assert len(temp_id) == 13
+        # Verify UUID part is hex
+        uuid_part = temp_id[5:]  # After "exec_"
+        assert all(c in '0123456789abcdef' for c in uuid_part)
 
     def test_generate_temp_id_unique(self):
         """Test temp IDs are unique."""
@@ -37,6 +45,16 @@ class TestGenerateTempId:
         id2 = generate_temp_id("test.pdf")
 
         assert id1 != id2
+
+    def test_generate_temp_id_ignores_filename(self):
+        """Test that filename is ignored (stored in metadata instead)."""
+        id1 = generate_temp_id("chart.png")
+        id2 = generate_temp_id("report.pdf")
+
+        # Both should have same format (exec_ + 8 hex chars)
+        assert len(id1) == len(id2) == 13
+        assert id1.startswith("exec_")
+        assert id2.startswith("exec_")
 
 
 class TestGeneratePreview:

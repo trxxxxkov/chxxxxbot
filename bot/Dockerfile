@@ -3,13 +3,23 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install system dependencies for asyncpg, PostgreSQL client, and libmagic
+# Install system dependencies for asyncpg, PostgreSQL client, libmagic,
+# LaTeX (full rendering with TikZ support), and PDF conversion
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libpq-dev \
     postgresql-client \
     libmagic1 \
     file \
+    # LaTeX for render_latex tool (TikZ, complex math, diagrams)
+    texlive-latex-base \
+    texlive-latex-extra \
+    texlive-pictures \
+    texlive-fonts-recommended \
+    # Cyrillic support for LaTeX
+    texlive-lang-cyrillic \
+    # PDF to image conversion
+    poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching
@@ -36,7 +46,9 @@ RUN pip install --no-cache-dir \
     prometheus-client>=0.20.0 \
     aiohttp>=3.9.0 \
     python-magic>=0.4.27 \
-    "redis[hiredis]>=5.0.0"
+    "redis[hiredis]>=5.0.0" \
+    pdf2image>=1.17.0 \
+    openpyxl>=3.1.0
 
 # Copy application code
 COPY . .

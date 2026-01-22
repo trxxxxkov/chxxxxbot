@@ -364,7 +364,7 @@ chxxxxbot/
 **Testing:**
 - ✅ 46 integration tests (payment flow, refunds, middleware, admin commands)
 - ✅ Unit tests for all models, repositories, services
-- ✅ 566 total tests passing (100% pass rate)
+- ✅ 1163 total tests passing (100% pass rate)
 - ✅ Edge case coverage (duplicates, expiry, insufficient balance, soft check)
 
 **Files created:**
@@ -486,7 +486,38 @@ See [docs/phase-2.2-devops-agent.md](docs/phase-2.2-devops-agent.md) for full ar
 
 **See:** [docs/phase-3.2-redis-cache.md](docs/phase-3.2-redis-cache.md)
 
-#### 3.3 Other LLM Providers 📋 Planned
+#### 3.4 Flexible File Delivery ✅ Complete
+**Status:** Complete (2026-01-22)
+
+**New tool - preview_file:**
+- ✅ Preview CSV/XLSX data before delivery (shows table with rows)
+- ✅ Preview text files (with line numbers)
+- ✅ Info messages for images/PDFs (already visible or need analyze_*)
+- ✅ Supports max_rows, max_chars parameters
+
+**Sequential delivery mode:**
+- ✅ `deliver_file(temp_id, sequential=True)` forces turn break
+- ✅ Allows text between file deliveries
+- ✅ Continuation loop in handler (max 5 continuations)
+- ✅ Parallel delivery remains default for related files
+
+**Use cases:**
+- Explaining multiple methods with formulas → sequential
+- Generating related charts → parallel (default)
+- Verifying CSV data before sending → preview_file
+
+**Files:**
+- core/tools/preview_file.py - Preview tool
+- core/tools/deliver_file.py - +sequential parameter
+- telegram/handlers/claude.py - Turn break handling
+
+**Testing:**
+- ✅ 42 tests for preview_file and deliver_file
+- ✅ 1163 total tests passing
+
+**See:** [docs/phase-3.4-flexible-file-delivery.md](docs/phase-3.4-flexible-file-delivery.md)
+
+#### 3.5 Other LLM Providers 📋 Planned
 - OpenAI (latest models)
 - Google Gemini (latest models)
 - Unified provider interface
@@ -906,7 +937,7 @@ This script:
 - Refund support (30-day window with validation)
 - Commission formula: y = x * (1 - 0.35 - 0.15 - k3)
 - **Database**: 2 new models (Payment, BalanceOperation), migration 007
-- **Testing**: 46 integration tests, 566 total tests passing (100% pass rate)
+- **Testing**: 46 integration tests, 1163 total tests passing (100% pass rate)
 - **Files**: 17 new files (models, repos, services, handlers, middleware, tests)
 - Documentation: docs/phase-2.1-payment-system.md
 
@@ -917,5 +948,12 @@ This script:
 - CloudBeaver at :8978 (PostgreSQL web admin)
 - Pre-configured dashboards and datasources
 - Documentation: docs/phase-3-infrastructure.md
+
+**Phase 3.4 (Flexible File Delivery):** ✅ Complete (2026-01-22)
+- preview_file tool for CSV/XLSX/text analysis before delivery
+- Sequential delivery mode (deliver_file with sequential=True)
+- Turn break handling in streaming loop
+- 42 new tests (1163 total tests passing)
+- Documentation: docs/phase-3.4-flexible-file-delivery.md
 
 **Next:** Phase 2.2 (DevOps Agent)

@@ -1,15 +1,20 @@
 """Tests for render_latex tool.
 
-Tests LaTeX to PNG rendering:
-- Success flow (formula rendering)
-- Parameter handling (display_mode, font_size)
+Tests LaTeX to PNG rendering using pdflatex:
+- Success flow (formula rendering with caching)
+- Parameter handling (dpi)
 - Error handling (invalid LaTeX, empty input)
-- Output structure (_file_contents pattern)
+- Output structure (output_files pattern with temp_id)
+- TikZ diagram rendering
+- Complex formulas (matrices, cases, align)
 """
 
+from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
+from unittest.mock import patch
 
 from core.tools.render_latex import _sanitize_latex
+from core.tools.render_latex import _wrap_in_document
 from core.tools.render_latex import format_render_latex_result
 from core.tools.render_latex import render_latex
 from core.tools.render_latex import RENDER_LATEX_TOOL
@@ -44,16 +49,6 @@ class TestSanitizeLatex:
         result = _sanitize_latex(r"\(x + y\)")
         assert result == "x + y"
 
-    def test_replaces_ldots_with_cdots(self):
-        r"""Test that \ldots is replaced with \cdots."""
-        result = _sanitize_latex(r"1 + 2 + \ldots + n")
-        assert result == r"1 + 2 + \cdots + n"
-
-    def test_removes_text_command(self):
-        r"""Test that \text{} is removed keeping content."""
-        result = _sanitize_latex(r"x = 5 \text{ units}")
-        assert result == "x = 5  units"
-
     def test_handles_newlines_in_input(self):
         """Test that leading/trailing newlines are stripped."""
         result = _sanitize_latex("\n$x^2$\n")
@@ -69,15 +64,62 @@ class TestSanitizeLatex:
         result = _sanitize_latex(r"\frac{a}{b}")
         assert result == r"\frac{a}{b}"
 
-    def test_complex_formula_with_delimiters(self):
-        """Test sanitization of complex formula with delimiters."""
-        input_latex = r"$\cos x = \sum_{n=0}^{\infty} \frac{(-1)^n x^{2n}}{(2n)!} = 1 - \frac{x^2}{2!} + \frac{x^4}{4!} - \ldots$"
-        result = _sanitize_latex(input_latex)
-        # Should strip $ and replace \ldots
-        assert not result.startswith("$")
-        assert not result.endswith("$")
-        assert r"\ldots" not in result
-        assert r"\cdots" in result
+
+# ============================================================================
+# _wrap_in_document() Tests
+# ============================================================================
+
+
+class TestWrapInDocument:
+    """Tests for _wrap_in_document function."""
+
+    def test_wraps_simple_formula_in_math_mode(self):
+        """Test wrapping simple formula in document with math mode."""
+        result = _wrap_in_document(r"\frac{1}{2}")
+        assert r"\documentclass" in result
+        assert r"\usepackage{amsmath" in result
+        assert r"\usepackage{tikz}" in result
+        assert r"\begin{document}" in result
+        assert r"\end{document}" in result
+        # Should be wrapped in display math \[...\]
+        assert r"\[\frac{1}{2}\]" in result
+
+    def test_wraps_math_environments_in_math_mode(self):
+        """Test that math environments like bmatrix are wrapped in math mode."""
+        latex = r"\begin{bmatrix} 1 & 2 \\ 3 & 4 \end{bmatrix}"
+        result = _wrap_in_document(latex)
+        # Should wrap in \[...\] since bmatrix is a math environment
+        assert r"\[" + latex + r"\]" in result
+
+    def test_does_not_wrap_tikz(self):
+        """Test that TikZ pictures are not wrapped in math mode."""
+        latex = r"\begin{tikzpicture}\node[draw] {Hello};\end{tikzpicture}"
+        result = _wrap_in_document(latex)
+        # Should NOT wrap in \[...\] since tikzpicture is self-contained
+        assert r"\[" not in result
+        assert latex in result
+
+    def test_does_not_wrap_align(self):
+        """Test that align environment is not wrapped in math mode."""
+        latex = r"\begin{align} x &= 1 \\ y &= 2 \end{align}"
+        result = _wrap_in_document(latex)
+        # Should NOT wrap in \[...\] since align is a display math env
+        assert r"\[" not in result
+        assert latex in result
+
+    def test_includes_tikz_libraries(self):
+        """Test that TikZ libraries are included."""
+        result = _wrap_in_document(r"\begin{tikzpicture}\end{tikzpicture}")
+        assert r"\usetikzlibrary{" in result
+        assert "arrows" in result
+        assert "shapes" in result
+        assert "positioning" in result
+
+    def test_includes_pgfplots(self):
+        """Test that pgfplots is included."""
+        result = _wrap_in_document(r"\begin{tikzpicture}\end{tikzpicture}")
+        assert r"\usepackage{pgfplots}" in result
+        assert r"\pgfplotsset{compat=" in result
 
 
 # ============================================================================
@@ -109,14 +151,7 @@ class TestRenderLatexToolDefinition:
         """Test all expected properties are defined."""
         properties = RENDER_LATEX_TOOL["input_schema"]["properties"]
         assert "latex" in properties
-        assert "display_mode" in properties
-        assert "font_size" in properties
-
-    def test_display_mode_enum(self):
-        """Test display_mode has correct enum values."""
-        properties = RENDER_LATEX_TOOL["input_schema"]["properties"]
-        assert "enum" in properties["display_mode"]
-        assert set(properties["display_mode"]["enum"]) == {"inline", "display"}
+        assert "dpi" in properties
 
     def test_tool_config_valid(self):
         """Test TOOL_CONFIG is properly configured."""
@@ -126,179 +161,203 @@ class TestRenderLatexToolDefinition:
         assert TOOL_CONFIG.executor is render_latex
         assert TOOL_CONFIG.format_result is format_render_latex_result
 
+    def test_description_mentions_deliver_file(self):
+        """Test that description mentions deliver_file workflow."""
+        description = RENDER_LATEX_TOOL["description"]
+        assert "deliver_file" in description
+        assert "temp_id" in description
+
 
 # ============================================================================
-# render_latex() Tests - Success Scenarios
+# render_latex() Tests - Success Scenarios with Mocked Cache
 # ============================================================================
 
 
-class TestRenderLatexSuccess:
-    """Tests for successful render_latex calls."""
+class TestRenderLatexWithMockedCache:
+    """Tests for render_latex with mocked Redis cache."""
+
+    @pytest.fixture
+    def mock_store_exec_file(self):
+        """Mock store_exec_file to return predictable metadata."""
+
+        async def _store(filename, content, mime_type, execution_id):
+            return {
+                "temp_id": f"exec_{execution_id}_{filename}",
+                "filename": filename,
+                "size_bytes": len(content),
+                "mime_type": mime_type,
+                "preview": f"Image 200x100 (RGB), {len(content)/1024:.1f} KB",
+            }
+
+        return _store
 
     @pytest.mark.asyncio
-    async def test_simple_fraction(self):
-        """Test rendering a simple fraction."""
-        result = await render_latex(
-            latex=r"\frac{1}{2}",
-            bot=MagicMock(),
-            session=MagicMock(),
-        )
+    async def test_simple_fraction_returns_output_files(self,
+                                                        mock_store_exec_file):
+        """Test rendering a simple fraction returns output_files with temp_id."""
+        with patch('core.tools.render_latex.store_exec_file',
+                   new=mock_store_exec_file):
+            result = await render_latex(
+                latex=r"\frac{1}{2}",
+                bot=MagicMock(),
+                session=MagicMock(),
+            )
 
         assert result["success"] == "true"
-        assert "_file_contents" in result
-        assert len(result["_file_contents"]) == 1
-
-        file_content = result["_file_contents"][0]
-        assert "filename" in file_content
-        assert file_content["filename"].startswith("formula_")
-        assert file_content["filename"].endswith(".png")
-        assert file_content["mime_type"] == "image/png"
-        # PNG should be at least 1KB
-        assert len(file_content["content"]) > 1000
+        assert "output_files" in result
+        assert len(result["output_files"]) == 1
+        assert "temp_id" in result["output_files"][0]
+        assert "preview" in result["output_files"][0]
+        assert "message" in result
+        assert "deliver_file" in result["message"]
 
     @pytest.mark.asyncio
-    async def test_display_mode(self):
-        """Test rendering with display mode."""
-        result = await render_latex(
-            latex=r"\sum_{i=1}^{n} i^2",
-            bot=MagicMock(),
-            session=MagicMock(),
-            display_mode="display",
-        )
-
-        assert result["success"] == "true"
-        assert "_file_contents" in result
-
-    @pytest.mark.asyncio
-    async def test_inline_mode_default(self):
-        """Test that inline mode is default."""
-        result = await render_latex(
-            latex="x^2",
-            bot=MagicMock(),
-            session=MagicMock(),
-        )
-
-        assert result["success"] == "true"
-
-    @pytest.mark.asyncio
-    async def test_custom_font_size(self):
-        """Test rendering with custom font size."""
-        result = await render_latex(
-            latex="x^2 + y^2 = z^2",
-            bot=MagicMock(),
-            session=MagicMock(),
-            font_size=32,
-        )
-
-        assert result["success"] == "true"
-        assert "_file_contents" in result
-
-    @pytest.mark.asyncio
-    async def test_quadratic_formula(self):
+    async def test_quadratic_formula(self, mock_store_exec_file):
         """Test rendering the quadratic formula."""
-        result = await render_latex(
-            latex=r"x = \frac{-b \pm \sqrt{b^2-4ac}}{2a}",
-            bot=MagicMock(),
-            session=MagicMock(),
-        )
+        with patch('core.tools.render_latex.store_exec_file',
+                   new=mock_store_exec_file):
+            result = await render_latex(
+                latex=r"x = \frac{-b \pm \sqrt{b^2-4ac}}{2a}",
+                bot=MagicMock(),
+                session=MagicMock(),
+            )
 
         assert result["success"] == "true"
-        assert "_file_contents" in result
+        assert "output_files" in result
 
     @pytest.mark.asyncio
-    async def test_greek_letters(self):
-        """Test rendering Greek letters."""
-        result = await render_latex(
-            latex=r"\alpha + \beta = \gamma",
-            bot=MagicMock(),
-            session=MagicMock(),
-        )
+    async def test_matrix_rendering(self, mock_store_exec_file):
+        """Test rendering a matrix."""
+        with patch('core.tools.render_latex.store_exec_file',
+                   new=mock_store_exec_file):
+            result = await render_latex(
+                latex=r"\begin{bmatrix} 1 & 2 \\ 3 & 4 \end{bmatrix}",
+                bot=MagicMock(),
+                session=MagicMock(),
+            )
 
         assert result["success"] == "true"
+        assert "output_files" in result
 
     @pytest.mark.asyncio
-    async def test_integral(self):
-        """Test rendering an integral."""
-        result = await render_latex(
-            latex=r"\int_0^{\infty} e^{-x^2} dx",
-            bot=MagicMock(),
-            session=MagicMock(),
-            display_mode="display",
-        )
-
-        assert result["success"] == "true"
-
-    @pytest.mark.asyncio
-    async def test_sum_notation(self):
-        """Test rendering sum notation."""
-        result = await render_latex(
-            latex=r"\sum_{n=0}^{\infty} \frac{x^n}{n!}",
-            bot=MagicMock(),
-            session=MagicMock(),
-            display_mode="display",
-        )
+    async def test_cases_environment(self, mock_store_exec_file):
+        """Test rendering cases environment."""
+        with patch('core.tools.render_latex.store_exec_file',
+                   new=mock_store_exec_file):
+            result = await render_latex(
+                latex=r"\begin{cases} x + y = 1 \\ x - y = 0 \end{cases}",
+                bot=MagicMock(),
+                session=MagicMock(),
+            )
 
         assert result["success"] == "true"
 
     @pytest.mark.asyncio
-    async def test_simple_power(self):
-        """Test rendering simple power expression."""
-        result = await render_latex(
-            latex="x^2 + y^2",
-            bot=MagicMock(),
-            session=MagicMock(),
-        )
+    async def test_tikz_simple_node(self, mock_store_exec_file):
+        """Test rendering simple TikZ node."""
+        with patch('core.tools.render_latex.store_exec_file',
+                   new=mock_store_exec_file):
+            result = await render_latex(
+                latex=
+                r"\begin{tikzpicture}\node[draw] {Hello};\end{tikzpicture}",
+                bot=MagicMock(),
+                session=MagicMock(),
+            )
+
+        assert result["success"] == "true"
+        assert "output_files" in result
+
+    @pytest.mark.asyncio
+    async def test_align_environment(self, mock_store_exec_file):
+        """Test rendering align environment."""
+        with patch('core.tools.render_latex.store_exec_file',
+                   new=mock_store_exec_file):
+            result = await render_latex(
+                latex=r"\begin{align} x &= 1 \\ y &= 2 \end{align}",
+                bot=MagicMock(),
+                session=MagicMock(),
+            )
 
         assert result["success"] == "true"
 
     @pytest.mark.asyncio
-    async def test_with_dollar_delimiters(self):
+    async def test_custom_dpi(self, mock_store_exec_file):
+        """Test rendering with custom DPI."""
+        with patch('core.tools.render_latex.store_exec_file',
+                   new=mock_store_exec_file):
+            result = await render_latex(
+                latex="x^2",
+                bot=MagicMock(),
+                session=MagicMock(),
+                dpi=300,
+            )
+
+        assert result["success"] == "true"
+
+    @pytest.mark.asyncio
+    async def test_with_dollar_delimiters(self, mock_store_exec_file):
         """Test that rendering works even with $ delimiters."""
-        result = await render_latex(
-            latex=r"$x^2 + y^2$",
-            bot=MagicMock(),
-            session=MagicMock(),
-        )
+        with patch('core.tools.render_latex.store_exec_file',
+                   new=mock_store_exec_file):
+            result = await render_latex(
+                latex=r"$x^2 + y^2$",
+                bot=MagicMock(),
+                session=MagicMock(),
+            )
 
         assert result["success"] == "true"
+        assert "output_files" in result
+
+    @pytest.mark.asyncio
+    async def test_includes_image_preview_for_claude(self,
+                                                     mock_store_exec_file):
+        """Test that result includes _image_preview for Claude to see."""
+        with patch('core.tools.render_latex.store_exec_file',
+                   new=mock_store_exec_file):
+            result = await render_latex(
+                latex=r"\frac{a}{b}",
+                bot=MagicMock(),
+                session=MagicMock(),
+            )
+
+        assert result["success"] == "true"
+        # Check for image preview (base64-encoded PNG for Claude)
+        assert "_image_preview" in result
+        assert "data" in result["_image_preview"]
+        assert "media_type" in result["_image_preview"]
+        assert result["_image_preview"]["media_type"] == "image/png"
+        # Verify base64 data is not empty
+        assert len(result["_image_preview"]["data"]) > 0
+        # Verify message mentions visual review
+        assert "Review the image" in result["message"]
+
+
+# ============================================================================
+# render_latex() Tests - Cache Fallback
+# ============================================================================
+
+
+class TestRenderLatexCacheFallback:
+    """Tests for render_latex cache fallback behavior."""
+
+    @pytest.mark.asyncio
+    async def test_fallback_to_direct_delivery_on_cache_fail(self):
+        """Test fallback to _file_contents when cache fails."""
+
+        async def _store_fail(*args, **kwargs):
+            return None  # Simulate cache failure
+
+        with patch('core.tools.render_latex.store_exec_file', new=_store_fail):
+            result = await render_latex(
+                latex=r"\frac{1}{2}",
+                bot=MagicMock(),
+                session=MagicMock(),
+            )
+
+        assert result["success"] == "true"
+        # Fallback to direct delivery
         assert "_file_contents" in result
-
-    @pytest.mark.asyncio
-    async def test_with_double_dollar_delimiters(self):
-        """Test that rendering works with $$ delimiters."""
-        result = await render_latex(
-            latex=r"$$\frac{a}{b}$$",
-            bot=MagicMock(),
-            session=MagicMock(),
-        )
-
-        assert result["success"] == "true"
-
-    @pytest.mark.asyncio
-    async def test_with_ldots(self):
-        r"""Test that \ldots is handled correctly."""
-        result = await render_latex(
-            latex=r"1 + 2 + \ldots + n",
-            bot=MagicMock(),
-            session=MagicMock(),
-        )
-
-        assert result["success"] == "true"
-
-    @pytest.mark.asyncio
-    async def test_complex_formula_from_logs(self):
-        """Test the exact formula that was failing in logs."""
-        # This is the actual formula that failed in production
-        result = await render_latex(
-            latex=
-            r"$\cos x = \sum_{n=0}^{\infty} \frac{(-1)^n x^{2n}}{(2n)!} = 1 - \frac{x^2}{2!} + \frac{x^4}{4!} - \ldots$",
-            bot=MagicMock(),
-            session=MagicMock(),
-            display_mode="display",
-        )
-
-        assert result["success"] == "true"
-        assert "_file_contents" in result
+        assert "output_files" not in result
 
 
 # ============================================================================
@@ -310,59 +369,65 @@ class TestRenderLatexErrors:
     """Tests for render_latex error handling."""
 
     @pytest.mark.asyncio
-    async def test_empty_input(self):
-        """Test that empty latex raises ValueError."""
-        with pytest.raises(ValueError, match="cannot be empty"):
-            await render_latex(
-                latex="",
-                bot=MagicMock(),
-                session=MagicMock(),
-            )
-
-    @pytest.mark.asyncio
-    async def test_whitespace_only(self):
-        """Test that whitespace-only latex raises ValueError."""
-        with pytest.raises(ValueError, match="cannot be empty"):
-            await render_latex(
-                latex="   ",
-                bot=MagicMock(),
-                session=MagicMock(),
-            )
-
-    @pytest.mark.asyncio
-    async def test_font_size_too_small(self):
-        """Test that font_size below 12 raises ValueError."""
-        with pytest.raises(ValueError, match="font_size must be between"):
-            await render_latex(
-                latex="x^2",
-                bot=MagicMock(),
-                session=MagicMock(),
-                font_size=5,
-            )
-
-    @pytest.mark.asyncio
-    async def test_font_size_too_large(self):
-        """Test that font_size above 48 raises ValueError."""
-        with pytest.raises(ValueError, match="font_size must be between"):
-            await render_latex(
-                latex="x^2",
-                bot=MagicMock(),
-                session=MagicMock(),
-                font_size=100,
-            )
-
-    @pytest.mark.asyncio
-    async def test_invalid_display_mode_defaults_to_inline(self):
-        """Test that invalid display_mode defaults to inline."""
+    async def test_empty_input_returns_error(self):
+        """Test that empty latex returns error dict."""
         result = await render_latex(
-            latex="x^2",
+            latex="",
             bot=MagicMock(),
             session=MagicMock(),
-            display_mode="invalid",
         )
 
-        # Should succeed with default inline mode
+        assert result["success"] == "false"
+        assert "error" in result
+        assert "empty" in result["error"].lower()
+
+    @pytest.mark.asyncio
+    async def test_whitespace_only_returns_error(self):
+        """Test that whitespace-only latex returns error dict."""
+        result = await render_latex(
+            latex="   ",
+            bot=MagicMock(),
+            session=MagicMock(),
+        )
+
+        assert result["success"] == "false"
+        assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_invalid_dpi_uses_default(self):
+        """Test that invalid dpi uses default value."""
+
+        async def _store(filename, content, mime_type, execution_id):
+            return {
+                "temp_id": f"exec_{execution_id}_{filename}",
+                "filename": filename,
+                "size_bytes": len(content),
+                "mime_type": mime_type,
+                "preview": "test",
+            }
+
+        with patch('core.tools.render_latex.store_exec_file', new=_store):
+            # Should not fail, just use default dpi
+            result = await render_latex(
+                latex="x^2",
+                bot=MagicMock(),
+                session=MagicMock(),
+                dpi=1000,  # Invalid, should default to 200
+            )
+
         assert result["success"] == "true"
+
+    @pytest.mark.asyncio
+    async def test_invalid_latex_syntax_returns_error(self):
+        """Test that invalid LaTeX syntax returns error dict."""
+        result = await render_latex(
+            latex=r"\begin{invalid}",  # Unclosed environment
+            bot=MagicMock(),
+            session=MagicMock(),
+        )
+
+        assert result["success"] == "false"
+        assert "error" in result
 
 
 # ============================================================================
@@ -373,10 +438,34 @@ class TestRenderLatexErrors:
 class TestFormatRenderLatexResult:
     """Tests for format_render_latex_result function."""
 
-    def test_format_success(self):
-        """Test formatting successful result."""
-        result = format_render_latex_result({"latex": "x^2"},
-                                            {"success": "true"})
+    def test_format_success_with_output_files(self):
+        """Test formatting successful result with output_files."""
+        result = format_render_latex_result(
+            {"latex": "x^2"},
+            {
+                "success":
+                    "true",
+                "output_files": [{
+                    "temp_id": "exec_abc_formula.png",
+                    "preview": "Image 300x150 (RGB), 12.5 KB"
+                }]
+            },
+        )
+
+        assert "[📐 Formula rendered:" in result
+        assert "300x150" in result
+
+    def test_format_success_without_output_files(self):
+        """Test formatting successful result without output_files (fallback)."""
+        result = format_render_latex_result(
+            {"latex": "x^2"},
+            {
+                "success": "true",
+                "_file_contents": [{
+                    "filename": "test.png"
+                }]
+            },
+        )
 
         assert "[📐 Formula rendered]" in result
 
@@ -415,13 +504,24 @@ class TestOutputFileFormat:
     @pytest.mark.asyncio
     async def test_filename_format(self):
         """Test that filename follows expected format."""
-        result = await render_latex(
-            latex="x^2",
-            bot=MagicMock(),
-            session=MagicMock(),
-        )
 
-        filename = result["_file_contents"][0]["filename"]
+        async def _store(filename, content, mime_type, execution_id):
+            return {
+                "temp_id": f"exec_{execution_id}_{filename}",
+                "filename": filename,
+                "size_bytes": len(content),
+                "mime_type": mime_type,
+                "preview": "test",
+            }
+
+        with patch('core.tools.render_latex.store_exec_file', new=_store):
+            result = await render_latex(
+                latex="x^2",
+                bot=MagicMock(),
+                session=MagicMock(),
+            )
+
+        filename = result["output_files"][0]["filename"]
         # Should be formula_YYYYMMDD_HHMMSS.png
         assert filename.startswith("formula_")
         assert filename.endswith(".png")
@@ -430,38 +530,48 @@ class TestOutputFileFormat:
         assert date_part.isdigit()
 
     @pytest.mark.asyncio
-    async def test_mime_type(self):
+    async def test_mime_type_is_png(self):
         """Test that mime_type is image/png."""
-        result = await render_latex(
-            latex="x^2",
-            bot=MagicMock(),
-            session=MagicMock(),
-        )
 
-        assert result["_file_contents"][0]["mime_type"] == "image/png"
+        async def _store(filename, content, mime_type, execution_id):
+            return {
+                "temp_id": f"exec_{execution_id}_{filename}",
+                "filename": filename,
+                "size_bytes": len(content),
+                "mime_type": mime_type,
+                "preview": "test",
+            }
+
+        with patch('core.tools.render_latex.store_exec_file', new=_store):
+            result = await render_latex(
+                latex="x^2",
+                bot=MagicMock(),
+                session=MagicMock(),
+            )
+
+        assert result["output_files"][0]["mime_type"] == "image/png"
 
     @pytest.mark.asyncio
-    async def test_content_is_bytes(self):
-        """Test that content is bytes."""
-        result = await render_latex(
-            latex="x^2",
-            bot=MagicMock(),
-            session=MagicMock(),
-        )
+    async def test_temp_id_format(self):
+        """Test that temp_id has expected format."""
 
-        content = result["_file_contents"][0]["content"]
-        assert isinstance(content, bytes)
+        async def _store(filename, content, mime_type, execution_id):
+            return {
+                "temp_id": f"exec_{execution_id}_{filename}",
+                "filename": filename,
+                "size_bytes": len(content),
+                "mime_type": mime_type,
+                "preview": "test",
+            }
 
-    @pytest.mark.asyncio
-    async def test_content_is_valid_png(self):
-        """Test that content starts with PNG magic bytes."""
-        result = await render_latex(
-            latex="x^2",
-            bot=MagicMock(),
-            session=MagicMock(),
-        )
+        with patch('core.tools.render_latex.store_exec_file', new=_store):
+            result = await render_latex(
+                latex="x^2",
+                bot=MagicMock(),
+                session=MagicMock(),
+            )
 
-        content = result["_file_contents"][0]["content"]
-        # PNG files start with these magic bytes
-        png_magic = b'\x89PNG\r\n\x1a\n'
-        assert content[:8] == png_magic
+        temp_id = result["output_files"][0]["temp_id"]
+        assert temp_id.startswith("exec_")
+        assert "formula_" in temp_id
+        assert temp_id.endswith(".png")

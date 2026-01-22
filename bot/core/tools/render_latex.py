@@ -1,21 +1,29 @@
-"""Render LaTeX formulas as PNG images.
+"""Render LaTeX formulas as PNG images using pdflatex.
 
-This module implements the render_latex tool for converting LaTeX math
-expressions into PNG images that are sent to Telegram users.
+This module implements the render_latex tool for converting LaTeX code
+into PNG images. Supports full LaTeX including TikZ diagrams, complex
+matrices, and all standard packages.
 
-Uses matplotlib's mathtext renderer which supports a subset of LaTeX
-without requiring a full LaTeX installation.
+Uses pdflatex + pdf2image for rendering. Images are cached in Redis
+so the model can review the preview and decide whether to deliver
+to the user via deliver_file tool.
 
 NO __init__.py - use direct import:
     from core.tools.render_latex import render_latex, RENDER_LATEX_TOOL
 """
 
 import asyncio
+import base64
 from datetime import datetime
 from datetime import UTC
 from io import BytesIO
+from pathlib import Path
+import subprocess
+import tempfile
 from typing import Any, Dict, TYPE_CHECKING
+import uuid
 
+from cache.exec_cache import store_exec_file
 from utils.structured_logging import get_logger
 
 if TYPE_CHECKING:
@@ -26,21 +34,33 @@ logger = get_logger(__name__)
 
 
 def _sanitize_latex(latex: str) -> str:
-    """Sanitize LaTeX input by removing delimiters and fixing unsupported commands.
+    """Sanitize LaTeX input by removing delimiters and extracting from documents.
 
-    Claude sometimes passes LaTeX with delimiters despite instructions.
-    This function cleans the input to ensure successful rendering.
+    Claude sometimes passes LaTeX with delimiters or as full documents despite
+    instructions. This function cleans the input to ensure successful rendering.
 
     Args:
-        latex: Raw LaTeX input that may contain delimiters.
+        latex: Raw LaTeX input that may contain delimiters or be a full document.
 
     Returns:
-        Cleaned LaTeX without delimiters and with fixed commands.
+        Cleaned LaTeX content without delimiters.
     """
     result = latex.strip()
 
-    # Remove leading/trailing whitespace and newlines
-    result = result.strip()
+    # Extract content from full documents (Claude sometimes passes these)
+    # This ensures we get cropped formulas instead of full pages
+    if r'\documentclass' in result and r'\begin{document}' in result:
+        begin_idx = result.find(r'\begin{document}')
+        end_idx = result.find(r'\end{document}')
+        if begin_idx != -1 and end_idx != -1:
+            # Extract content between \begin{document} and \end{document}
+            content_start = begin_idx + len(r'\begin{document}')
+            result = result[content_start:end_idx].strip()
+            logger.debug(
+                "render_latex.extracted_from_document",
+                original_length=len(latex),
+                extracted_length=len(result),
+            )
 
     # Remove display math delimiters: \[...\] or $$...$$
     if result.startswith(r'\[') and result.endswith(r'\]'):
@@ -55,15 +75,197 @@ def _sanitize_latex(latex: str) -> str:
             '$') and not result.startswith('$$'):
         result = result[1:-1].strip()
 
-    # Fix unsupported mathtext commands
-    # \ldots -> \cdots (mathtext supports \cdots but not \ldots)
-    result = result.replace(r'\ldots', r'\cdots')
-
-    # \text{} is not supported - remove it and keep content
-    import re
-    result = re.sub(r'\\text\{([^}]*)\}', r'\1', result)
-
     return result
+
+
+def _wrap_in_document(latex: str) -> str:
+    """Wrap LaTeX fragment in minimal standalone document.
+
+    Args:
+        latex: LaTeX code fragment (math, tikz, etc.).
+
+    Returns:
+        Complete LaTeX document ready for compilation.
+    """
+    # Environments that provide their own context (no math wrapping needed)
+    # - TikZ/drawing environments
+    # - Top-level display math environments (align, equation, etc.)
+    # - Document structure environments
+    self_contained_environments = (
+        # Drawing
+        'tikzpicture',
+        'pgfpicture',
+        # Display math environments (amsmath) - already in math mode
+        'align',
+        'align*',
+        'equation',
+        'equation*',
+        'gather',
+        'gather*',
+        'multline',
+        'multline*',
+        'flalign',
+        'flalign*',
+        'alignat',
+        'alignat*',
+        'eqnarray',
+        'eqnarray*',
+        # Document structure
+        'document',
+        'figure',
+        'table',
+        'minipage',
+        'center',
+        'flushleft',
+        'flushright',
+        'itemize',
+        'enumerate',
+        'description',
+        'verbatim',
+        'lstlisting',
+        'tabular',
+    )
+
+    # Check if content contains a self-contained environment
+    needs_math_wrap = True
+    for env in self_contained_environments:
+        if rf'\begin{{{env}}}' in latex:
+            needs_math_wrap = False
+            break
+
+    # Math expressions and inline math environments (cases, bmatrix, etc.)
+    # need to be wrapped in display math \[...\]
+    if needs_math_wrap:
+        latex = r'\[' + latex + r'\]'
+
+    # Check if content contains Cyrillic characters
+    has_cyrillic = any('\u0400' <= c <= '\u04FF' for c in latex)
+
+    # Build preamble based on content
+    preamble = r'''\documentclass[preview,border=2pt]{standalone}
+\usepackage[utf8]{inputenc}
+'''
+
+    # Add Cyrillic support if needed
+    if has_cyrillic:
+        preamble += r'''\usepackage[T2A]{fontenc}
+\usepackage[russian]{babel}
+'''
+    else:
+        preamble += r'\usepackage[T1]{fontenc}' + '\n'
+
+    preamble += r'''\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{tikz}
+\usetikzlibrary{arrows,shapes,positioning,calc,decorations.pathmorphing}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepackage{xcolor}
+\usepackage{array,booktabs,multirow}
+'''
+
+    return preamble + r'\begin{document}' + '\n' + latex + '\n' + r'\end{document}'
+
+
+def _render_pdflatex(latex: str, dpi: int = 200) -> bytes:
+    """Render LaTeX to PNG using pdflatex + pdf2image.
+
+    Supports:
+    - TikZ diagrams
+    - Complex matrices (bmatrix, pmatrix, etc.)
+    - Multi-line equations (align, cases, etc.)
+    - All standard LaTeX packages
+
+    Args:
+        latex: LaTeX code to render.
+        dpi: Resolution in dots per inch (150-300).
+
+    Returns:
+        PNG image bytes.
+
+    Raises:
+        ValueError: If LaTeX compilation fails.
+    """
+    # Import here to avoid startup overhead
+    from pdf2image import \
+        convert_from_path  # pylint: disable=import-outside-toplevel
+    from PIL import Image  # pylint: disable=import-outside-toplevel
+
+    # Wrap in document if not already a full document
+    if r'\documentclass' not in latex:
+        latex = _wrap_in_document(latex)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmpdir_path = Path(tmpdir)
+        tex_file = tmpdir_path / 'formula.tex'
+        pdf_file = tmpdir_path / 'formula.pdf'
+
+        tex_file.write_text(latex, encoding='utf-8')
+
+        # Run pdflatex with timeout
+        try:
+            result = subprocess.run(
+                [
+                    'pdflatex',
+                    '-interaction=nonstopmode',
+                    '-halt-on-error',
+                    '-output-directory',
+                    str(tmpdir_path),
+                    str(tex_file),
+                ],
+                capture_output=True,
+                timeout=30,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as e:
+            raise ValueError("LaTeX compilation timed out (30s limit)") from e
+
+        if not pdf_file.exists():
+            # Extract error message from log
+            log_file = tmpdir_path / 'formula.log'
+            error_msg = "Unknown compilation error"
+            if log_file.exists():
+                log_content = log_file.read_text(encoding='utf-8',
+                                                 errors='ignore')
+                # Find error lines
+                error_lines = []
+                for line in log_content.split('\n'):
+                    if line.startswith('!') or 'Error' in line:
+                        error_lines.append(line.strip())
+                if error_lines:
+                    error_msg = '; '.join(error_lines[:3])
+            raise ValueError(f"LaTeX compilation failed: {error_msg}")
+
+        # Convert PDF to PNG
+        try:
+            images = convert_from_path(
+                str(pdf_file),
+                dpi=dpi,
+                fmt='png',
+            )
+        except Exception as e:
+            raise ValueError(f"PDF to PNG conversion failed: {e}") from e
+
+        if not images:
+            raise ValueError("No pages generated from PDF")
+
+        # Save first page to bytes
+        buffer = BytesIO()
+        images[0].save(buffer, format='PNG', optimize=True)
+        buffer.seek(0)
+        return buffer.read()
+
+
+def _generate_render_temp_id(filename: str) -> str:
+    """Generate unique temporary ID for render output file.
+
+    Args:
+        filename: Original filename (e.g., "formula.png").
+
+    Returns:
+        Temporary ID (e.g., "render_a1b2c3d4_formula.png").
+    """
+    short_uuid = uuid.uuid4().hex[:8]
+    return f"render_{short_uuid}_{filename}"
 
 
 # Tool definition for Claude API
@@ -71,75 +273,56 @@ RENDER_LATEX_TOOL = {
     "name":
         "render_latex",
     "description":
-        """Render LaTeX math formulas as PNG images.
+        """Render LaTeX to PNG image (supports full LaTeX including TikZ).
 
 <purpose>
-Convert LaTeX mathematical expressions into high-quality PNG images.
-Use when Telegram's text formatting cannot display formulas properly.
-Images are auto-delivered to the user.
+Convert LaTeX code into PNG images. Supports complex formulas, matrices,
+TikZ diagrams, and all standard LaTeX packages.
+Images are cached - use deliver_file to send to user after reviewing preview.
 </purpose>
 
-<when_to_use>
-USE this tool for:
-- Complex mathematical formulas with fractions, integrals, sums
-- Equations with multiple levels of subscripts/superscripts
-- Matrix notation and linear algebra expressions
-- Formulas with special symbols not available in Unicode
-- Any math that would look broken in plain text
+<capabilities>
+- Math: fractions, integrals, sums, limits, matrices
+- Matrices: bmatrix, pmatrix, vmatrix, cases, align
+- TikZ: diagrams, graphs, flowcharts, plots
+- Packages: amsmath, amssymb, tikz, pgfplots, xcolor
+</capabilities>
 
-DO NOT USE for:
-- Simple expressions that work in Unicode (x², a/b, Greek letters)
-- Single symbols or very short expressions
-- Non-math content
-</when_to_use>
+<workflow>
+1. Call render_latex with LaTeX code
+2. IMPORTANT: You will SEE the actual rendered image in the response
+3. Visually verify the formula/diagram looks correct
+4. If issues found, re-render with LaTeX corrections
+5. Call deliver_file(temp_id='...') to send to user
+</workflow>
 
-<latex_syntax>
-Input should be LaTeX math syntax WITHOUT delimiters:
-- Correct: "\\frac{1}{2} + \\sqrt{x}"
-- Incorrect: "$\\frac{1}{2}$" (no $ delimiters needed)
-- Incorrect: "\\[\\frac{1}{2}\\]" (no \\[ delimiters needed)
+<input_format>
+Either:
+- LaTeX fragment (auto-wrapped in document): "\\frac{a}{b}"
+- Full document with \\documentclass: "\\documentclass..."
 
-Supported commands (mathtext subset):
-- Fractions: \\frac{a}{b}
-- Roots: \\sqrt{x}, \\sqrt[n]{x}
-- Powers/indices: x^2, x_i, x^{n+1}_{i,j}
-- Greek: \\alpha, \\beta, \\gamma, \\Gamma, \\pi, \\Phi, \\omega
-- Operators: \\sum, \\prod, \\int, \\lim, \\infty
-- Relations: \\neq, \\leq, \\geq, \\approx, \\equiv
-- Accents: \\hat{x}, \\bar{x}, \\vec{v}, \\dot{x}
-- Delimiters: \\left( \\right), \\left[ \\right]
-- Sets: \\in, \\subset, \\cup, \\cap, \\emptyset
-- Functions: \\sin, \\cos, \\tan, \\log, \\ln, \\exp
-- Spaces: \\quad, \\qquad, \\, \\;
-</latex_syntax>
-
-<display_mode>
-- "inline": Compact rendering (default), good for formulas in text context
-- "display": Larger rendering with limits above/below sums/integrals
-</display_mode>
+Delimiters ($, $$, \\[, \\]) are auto-stripped.
+</input_format>
 
 <examples>
 Simple fraction:
   latex="\\frac{a}{b}"
 
+Matrix:
+  latex="\\begin{bmatrix} 1 & 2 \\\\ 3 & 4 \\end{bmatrix}"
+
+TikZ diagram:
+  latex="\\begin{tikzpicture}\\node[draw] {Hello};\\end{tikzpicture}"
+
+System of equations:
+  latex="\\begin{cases} x + y = 1 \\\\ x - y = 0 \\end{cases}"
+
 Quadratic formula:
   latex="x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}"
-
-Sum notation:
-  latex="\\sum_{i=1}^{n} i^2 = \\frac{n(n+1)(2n+1)}{6}"
-  display_mode="display"
-
-Integral:
-  latex="\\int_0^{\\infty} e^{-x^2} dx = \\frac{\\sqrt{\\pi}}{2}"
-  display_mode="display"
-
-Taylor series:
-  latex="e^x = \\sum_{n=0}^{\\infty} \\frac{x^n}{n!}"
-  display_mode="display"
 </examples>
 
 <cost>
-FREE - local rendering with matplotlib, no external API calls.
+FREE - local rendering (no external API).
 </cost>""",
     "input_schema": {
         "type": "object",
@@ -148,23 +331,13 @@ FREE - local rendering with matplotlib, no external API calls.
                 "type":
                     "string",
                 "description":
-                    ("LaTeX math expression WITHOUT delimiters. "
-                     "Example: '\\\\frac{1}{2}' not '$\\\\frac{1}{2}$'")
+                    "LaTeX code to render (fragment or full document)"
             },
-            "display_mode": {
-                "type":
-                    "string",
-                "enum": ["inline", "display"],
-                "description":
-                    ("'inline' for compact (default), 'display' for larger "
-                     "rendering with limits above/below operators.")
-            },
-            "font_size": {
+            "dpi": {
                 "type":
                     "integer",
                 "description":
-                    ("Font size in points (12-48). Default: 20. "
-                     "Increase for complex formulas or better readability.")
+                    "Resolution: 150 (fast), 200 (default), 300 (high quality)"
             }
         },
         "required": ["latex"]
@@ -172,180 +345,156 @@ FREE - local rendering with matplotlib, no external API calls.
 }
 
 
-def _render_sync(latex: str, display_mode: str, font_size: int) -> bytes:
-    """Synchronous LaTeX rendering using matplotlib.
-
-    Called via asyncio.to_thread() to avoid blocking event loop.
-
-    Args:
-        latex: LaTeX math expression.
-        display_mode: 'inline' or 'display'.
-        font_size: Font size in points.
-
-    Returns:
-        PNG image bytes.
-
-    Raises:
-        ValueError: If LaTeX syntax is invalid.
-    """
-    import matplotlib
-    matplotlib.use('Agg')  # Headless mode - no GUI
-    import matplotlib.pyplot as plt
-
-    # Configure matplotlib for math rendering
-    plt.rcParams.update({
-        'mathtext.fontset': 'cm',  # Computer Modern (LaTeX-like font)
-        'font.size': font_size,
-    })
-
-    # Create figure with minimal size (will be auto-adjusted)
-    fig, ax = plt.subplots(figsize=(0.01, 0.01))
-    ax.set_axis_off()
-
-    # Format LaTeX string
-    # Note: \displaystyle is not supported by mathtext, so we just use
-    # larger font for display mode (handled via font_size parameter)
-    latex_str = f"${latex}$"
-
-    # Render text
-    try:
-        text = ax.text(0.5,
-                       0.5,
-                       latex_str,
-                       transform=ax.transAxes,
-                       fontsize=font_size,
-                       ha='center',
-                       va='center')
-    except ValueError as e:
-        plt.close(fig)
-        raise ValueError(f"Invalid LaTeX syntax: {e}") from e
-
-    # Auto-size figure to fit text
-    fig.tight_layout(pad=0.1)
-    renderer = fig.canvas.get_renderer()
-    bbox = text.get_window_extent(renderer)
-
-    dpi = 300
-    width_inches = bbox.width / dpi + 0.15
-    height_inches = bbox.height / dpi + 0.15
-
-    # Minimum size to avoid tiny images
-    width_inches = max(width_inches, 0.5)
-    height_inches = max(height_inches, 0.3)
-
-    fig.set_size_inches(width_inches, height_inches)
-
-    # Save to buffer
-    buffer = BytesIO()
-    fig.savefig(buffer,
-                format='png',
-                dpi=dpi,
-                bbox_inches='tight',
-                pad_inches=0.05,
-                facecolor='white',
-                edgecolor='none',
-                transparent=False)
-    plt.close(fig)
-
-    buffer.seek(0)
-    return buffer.read()
-
-
 async def render_latex(
     latex: str,
     bot: 'Bot',
     session: 'AsyncSession',
-    display_mode: str = "inline",
-    font_size: int = 20,
+    dpi: int = 200,
 ) -> Dict[str, Any]:
-    """Render LaTeX formula as PNG image.
+    """Render LaTeX to PNG and cache for model-decided delivery.
 
     Args:
-        latex: LaTeX math expression (without delimiters).
+        latex: LaTeX code to render (fragment or full document).
         bot: Telegram Bot instance (unused, for interface consistency).
         session: Database session (unused, for interface consistency).
-        display_mode: 'inline' (compact) or 'display' (larger).
-        font_size: Font size in points (12-48).
+        dpi: Resolution in dots per inch (150-300, default 200).
 
     Returns:
         Dictionary with rendering result:
-        {
-            "success": "true",
-            "_file_contents": [{
-                "filename": "formula_YYYYMMDD_HHMMSS.png",
-                "content": bytes,
-                "mime_type": "image/png"
-            }]
-        }
+        - On success with cache:
+            {
+                "success": "true",
+                "output_files": [{
+                    "temp_id": "render_abc123_formula.png",
+                    "filename": "formula_YYYYMMDD_HHMMSS.png",
+                    "size_bytes": 12345,
+                    "mime_type": "image/png",
+                    "preview": "Image 400x200 (RGB), 12.3 KB"
+                }],
+                "message": "Rendered LaTeX formula. Use deliver_file..."
+            }
+        - On success without cache (fallback):
+            {
+                "success": "true",
+                "_file_contents": [...]
+            }
+        - On failure:
+            {
+                "success": "false",
+                "error": "..."
+            }
 
     Raises:
-        ValueError: If latex is empty or font_size out of range.
+        ValueError: If latex is empty or dpi out of range.
     """
-    # Mark as unused for pylint
+    # Mark unused for pylint
     _ = bot
     _ = session
 
-    logger.info("tools.render_latex.called",
-                latex_length=len(latex),
-                display_mode=display_mode,
-                font_size=font_size)
+    logger.info("tools.render_latex.called", latex_length=len(latex), dpi=dpi)
 
     # Validate input
     if not latex or not latex.strip():
-        raise ValueError("LaTeX expression cannot be empty")
+        return {"success": "false", "error": "LaTeX expression cannot be empty"}
 
-    if not 12 <= font_size <= 48:
-        raise ValueError("font_size must be between 12 and 48")
+    if not 150 <= dpi <= 300:
+        dpi = 200  # Use default for invalid values
 
-    if display_mode not in ("inline", "display"):
-        display_mode = "inline"
-
-    # For display mode, increase font size if using default
-    # This makes sums/integrals more readable
-    if display_mode == "display" and font_size == 20:
-        font_size = 28
-
-    # Sanitize input (remove delimiters, fix unsupported commands)
+    # Sanitize input (remove delimiters)
     clean_latex = _sanitize_latex(latex)
 
     logger.debug("tools.render_latex.sanitized",
                  original_length=len(latex),
                  clean_length=len(clean_latex),
-                 clean_preview=clean_latex[:50] if clean_latex else "")
+                 clean_preview=clean_latex[:100] if clean_latex else "")
 
     try:
-        # Render in thread pool to avoid blocking
-        image_bytes = await asyncio.to_thread(_render_sync, clean_latex,
-                                              display_mode, font_size)
+        # Render in thread pool to avoid blocking event loop
+        image_bytes = await asyncio.to_thread(
+            _render_pdflatex,
+            clean_latex,
+            dpi,
+        )
 
+        # Generate filename with timestamp
         filename = f"formula_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}.png"
 
+        # Generate preview
+        from PIL import Image  # pylint: disable=import-outside-toplevel
+        img = Image.open(BytesIO(image_bytes))
+        size_kb = len(image_bytes) / 1024
+        preview = f"Image {img.width}x{img.height} ({img.mode}), {size_kb:.1f} KB"
+
+        # Generate temp_id for cache
+        temp_id = _generate_render_temp_id(filename)
+
+        # Store in Redis cache for model-decided delivery
+        metadata = await store_exec_file(
+            filename=filename,
+            content=image_bytes,
+            mime_type="image/png",
+            execution_id=temp_id.split('_')[1],  # uuid part
+        )
+
+        if metadata is None:
+            # Fallback: direct delivery if cache fails
+            logger.warning("tools.render_latex.cache_failed_fallback",
+                           filename=filename)
+            return {
+                "success":
+                    "true",
+                "_file_contents": [{
+                    "filename": filename,
+                    "content": image_bytes,
+                    "mime_type": "image/png"
+                }]
+            }
+
+        # Use the temp_id from metadata (generated by store_exec_file)
+        actual_temp_id = metadata["temp_id"]
+
         logger.info("tools.render_latex.success",
-                    latex_preview=latex[:50],
+                    latex_preview=clean_latex[:50],
                     image_size=len(image_bytes),
-                    filename=filename)
+                    filename=filename,
+                    temp_id=actual_temp_id,
+                    preview=preview)
+
+        # Encode image as base64 for Claude to see the preview
+        image_base64 = base64.b64encode(image_bytes).decode('utf-8')
 
         return {
             "success":
                 "true",
-            "_file_contents": [{
+            "output_files": [{
+                "temp_id": actual_temp_id,
                 "filename": filename,
-                "content": image_bytes,
-                "mime_type": "image/png"
-            }]
+                "size_bytes": len(image_bytes),
+                "mime_type": "image/png",
+                "preview": preview,
+            }],
+            # Image preview for Claude to visually verify before delivery
+            "_image_preview": {
+                "data": image_base64,
+                "media_type": "image/png",
+            },
+            "message": (f"Rendered LaTeX formula. Preview: {preview}. "
+                        f"Review the image above. If it looks correct, use "
+                        f"deliver_file(temp_id='{actual_temp_id}') to send. "
+                        "If not, re-render with corrections.")
         }
 
     except ValueError as e:
-        logger.warning("tools.render_latex.syntax_error",
-                       latex_preview=latex[:50],
+        logger.warning("tools.render_latex.compilation_error",
+                       latex_preview=clean_latex[:50],
                        error=str(e))
         return {"success": "false", "error": str(e)}
     except Exception as e:
         logger.error("tools.render_latex.failed",
-                     latex_preview=latex[:50],
+                     latex_preview=clean_latex[:50] if clean_latex else "",
                      error=str(e),
                      exc_info=True)
-        raise
+        return {"success": "false", "error": f"Rendering failed: {str(e)}"}
 
 
 def format_render_latex_result(
@@ -355,7 +504,7 @@ def format_render_latex_result(
     """Format render_latex result for user display.
 
     Args:
-        tool_input: The input parameters (latex, display_mode, font_size).
+        tool_input: The input parameters (latex, dpi).
         result: The result dictionary.
 
     Returns:
@@ -363,7 +512,13 @@ def format_render_latex_result(
     """
     _ = tool_input  # Mark as unused
     if result.get("success") == "true":
-        return "[📐 Formula rendered]"
+        if "output_files" in result:
+            # Cached - model will decide to deliver
+            preview = result["output_files"][0].get("preview", "")
+            return f"[📐 Formula rendered: {preview}]"
+        else:
+            # Direct delivery (fallback)
+            return "[📐 Formula rendered]"
 
     error = result.get("error", "unknown error")
     preview = error[:80] + "..." if len(error) > 80 else error

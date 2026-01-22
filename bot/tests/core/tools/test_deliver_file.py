@@ -243,3 +243,118 @@ class TestToolConfig:
         assert "execute_python" in description.lower()
         assert "temp_id" in description
         assert "cache" in description.lower() or "30 min" in description
+
+    def test_tool_definition_sequential_param(self):
+        """Test sequential parameter is defined."""
+        schema = DELIVER_FILE_TOOL["input_schema"]
+
+        assert "sequential" in schema["properties"]
+        assert schema["properties"]["sequential"]["type"] == "boolean"
+        assert "sequential" not in schema["required"]
+
+
+class TestSequentialDelivery:
+    """Tests for sequential delivery mode (Phase 3.4)."""
+
+    @pytest.fixture
+    def mock_bot(self):
+        """Create mock Telegram bot."""
+        return AsyncMock()
+
+    @pytest.fixture
+    def mock_session(self):
+        """Create mock database session."""
+        return AsyncMock()
+
+    @pytest.fixture
+    def sample_metadata(self):
+        """Sample file metadata."""
+        return {
+            "temp_id": "exec_abc12345",
+            "filename": "chart.png",
+            "size_bytes": 12345,
+            "mime_type": "image/png",
+        }
+
+    @pytest.fixture
+    def sample_content(self):
+        """Sample file content."""
+        return b"\x89PNG\r\n" + b"\x00" * 100
+
+    @pytest.mark.asyncio
+    async def test_sequential_false_no_turn_break(self, mock_bot, mock_session,
+                                                  sample_metadata,
+                                                  sample_content):
+        """Test default (sequential=False) has no turn break marker."""
+        with patch("core.tools.deliver_file.get_exec_meta",
+                   return_value=sample_metadata), \
+             patch("core.tools.deliver_file.get_exec_file",
+                   return_value=sample_content), \
+             patch("core.tools.deliver_file.delete_exec_file",
+                   return_value=True):
+            result = await deliver_file(
+                temp_id="exec_abc12345",
+                bot=mock_bot,
+                session=mock_session,
+                sequential=False,
+            )
+
+        assert result["success"] == "true"
+        assert "_force_turn_break" not in result
+
+    @pytest.mark.asyncio
+    async def test_sequential_true_has_turn_break(self, mock_bot, mock_session,
+                                                  sample_metadata,
+                                                  sample_content):
+        """Test sequential=True adds turn break marker."""
+        with patch("core.tools.deliver_file.get_exec_meta",
+                   return_value=sample_metadata), \
+             patch("core.tools.deliver_file.get_exec_file",
+                   return_value=sample_content), \
+             patch("core.tools.deliver_file.delete_exec_file",
+                   return_value=True):
+            result = await deliver_file(
+                temp_id="exec_abc12345",
+                bot=mock_bot,
+                session=mock_session,
+                sequential=True,
+            )
+
+        assert result["success"] == "true"
+        assert result["_force_turn_break"] is True
+
+    @pytest.mark.asyncio
+    async def test_sequential_error_no_turn_break(self, mock_bot, mock_session):
+        """Test error result has no turn break marker."""
+        with patch("core.tools.deliver_file.get_exec_meta", return_value=None):
+            result = await deliver_file(
+                temp_id="nonexistent",
+                bot=mock_bot,
+                session=mock_session,
+                sequential=True,
+            )
+
+        assert result["success"] == "false"
+        assert "_force_turn_break" not in result
+
+    @pytest.mark.asyncio
+    async def test_sequential_with_caption(self, mock_bot, mock_session,
+                                           sample_metadata, sample_content):
+        """Test sequential works with caption."""
+        with patch("core.tools.deliver_file.get_exec_meta",
+                   return_value=sample_metadata), \
+             patch("core.tools.deliver_file.get_exec_file",
+                   return_value=sample_content), \
+             patch("core.tools.deliver_file.delete_exec_file",
+                   return_value=True):
+            result = await deliver_file(
+                temp_id="exec_abc12345",
+                bot=mock_bot,
+                session=mock_session,
+                caption="First chart",
+                sequential=True,
+            )
+
+        assert result["success"] == "true"
+        assert result["_force_turn_break"] is True
+        assert result["caption"] == "First chart"

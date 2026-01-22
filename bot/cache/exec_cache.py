@@ -36,14 +36,18 @@ logger = get_logger(__name__)
 def generate_temp_id(filename: str) -> str:
     """Generate unique temporary ID for execution output file.
 
+    Uses only UUID to avoid Claude mistyping complex filenames with dates.
+    The filename is stored in metadata and retrieved when delivering.
+
     Args:
-        filename: Original filename (e.g., "plot.png").
+        filename: Original filename (unused, kept for API compatibility).
 
     Returns:
-        Temporary ID (e.g., "exec_a1b2c3d4_plot.png").
+        Short temporary ID (e.g., "exec_a1b2c3d4").
     """
+    _ = filename  # Unused, filename stored in metadata
     short_uuid = uuid.uuid4().hex[:8]
-    return f"exec_{short_uuid}_{filename}"
+    return f"exec_{short_uuid}"
 
 
 def _generate_preview(  # pylint: disable=too-many-return-statements

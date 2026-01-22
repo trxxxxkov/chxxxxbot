@@ -13,6 +13,7 @@ NO __init__.py - use direct import:
 """
 
 import asyncio
+import base64
 import json
 from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 
@@ -335,7 +336,10 @@ async def execute_python(code: str,
             # Create cache tasks for parallel execution
             async def cache_one(
                     file_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-                """Cache single file and return metadata."""
+                """Cache single file and return metadata.
+
+                For image files, also includes base64 data for Claude to see.
+                """
                 filename = file_data["filename"]
                 content = file_data["content"]
                 mime_type = file_data["mime_type"]
@@ -354,13 +358,20 @@ async def execute_python(code: str,
                         filename=filename,
                         size_bytes=len(content),
                     )
-                    return {
+                    file_info: Dict[str, Any] = {
                         "temp_id": metadata["temp_id"],
                         "filename": metadata["filename"],
                         "size_bytes": metadata["size_bytes"],
                         "mime_type": metadata["mime_type"],
                         "preview": metadata["preview"],
                     }
+                    # Add base64 image data for Claude to see image previews
+                    # Limited to images under 1MB to avoid context bloat
+                    if mime_type.startswith("image/") and len(
+                            content) < 1024 * 1024:
+                        file_info["_image_data"] = base64.b64encode(
+                            content).decode('utf-8')
+                    return file_info
                 else:
                     logger.warning(
                         "tools.execute_python.file_cache_failed",
@@ -386,7 +397,27 @@ async def execute_python(code: str,
                     output_files.append(result_item)  # type: ignore[arg-type]
 
         # Add output_files to result (metadata only, no binary)
+        # Extract image previews for Claude to see
+        image_previews = []
+        for file_info in output_files:
+            image_data = file_info.pop("_image_data", None)
+            if image_data:
+                image_previews.append({
+                    "data": image_data,
+                    "media_type": file_info["mime_type"],
+                    "filename": file_info["filename"],
+                })
+
         result["output_files"] = output_files
+
+        # Add image previews for Claude to visually verify generated images
+        if image_previews:
+            result["_image_previews"] = image_previews
+            logger.info(
+                "tools.execute_python.image_previews_included",
+                count=len(image_previews),
+                filenames=[p["filename"] for p in image_previews],
+            )
 
         logger.info("tools.execute_python.success",
                     success=result["success"],

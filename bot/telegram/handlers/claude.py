@@ -123,7 +123,8 @@ async def _stream_with_unified_events(
     chat_id: int,
     user_id: int,
     telegram_thread_id: int | None,
-) -> tuple[str, types.Message | None]:
+    continuation_conversation: list | None = None,
+) -> tuple[str, types.Message | None, bool, list | None]:
     """Stream response with unified thinking/text/tool handling.
 
     Uses sendMessageDraft (Bot API 9.3) for streaming without flood control.
@@ -134,6 +135,11 @@ async def _stream_with_unified_events(
     3. Finalize draft to permanent message at the end
     4. Return final answer text and final message
 
+    Phase 3.4: Sequential delivery support
+    - If tool returns _force_turn_break, stops iteration early
+    - Returns needs_continuation=True so caller can continue in new call
+    - Conversation state is returned for continuation
+
     Args:
         request: LLMRequest with tools configured.
         first_message: First Telegram message (for replies).
@@ -143,17 +149,29 @@ async def _stream_with_unified_events(
         chat_id: Telegram chat ID.
         user_id: User ID.
         telegram_thread_id: Telegram thread/topic ID.
+        continuation_conversation: If continuing from previous call,
+            the conversation state to resume from.
 
     Returns:
-        Tuple of (final_answer_text, final_message).
+        Tuple of (final_answer_text, final_message, needs_continuation,
+                  conversation_state).
+        - needs_continuation: True if _force_turn_break was triggered
+        - conversation_state: Updated conversation for continuation
     """
     max_iterations = TOOL_LOOP_MAX_ITERATIONS
 
     # Build conversation for tool loop
-    conversation = [{
-        "role": msg.role,
-        "content": msg.content
-    } for msg in request.messages]
+    # Use continuation_conversation if resuming, otherwise build from request
+    if continuation_conversation is not None:
+        conversation = continuation_conversation
+        logger.info("stream.unified.continuation",
+                    thread_id=thread_id,
+                    conversation_length=len(conversation))
+    else:
+        conversation = [{
+            "role": msg.role,
+            "content": msg.content
+        } for msg in request.messages]
 
     logger.info("stream.unified.start",
                 thread_id=thread_id,
@@ -256,7 +274,8 @@ async def _stream_with_unified_events(
                 else:
                     await dm.current.clear()
 
-                return final_answer, final_message
+                # No continuation needed - final answer
+                return final_answer, final_message, False, None
 
             if stream.stop_reason == "tool_use" and stream.pending_tools:
                 # Execute all tools in PARALLEL, process results AS COMPLETED
@@ -287,6 +306,8 @@ async def _stream_with_unified_events(
                 # Process results as they complete (not waiting for all)
                 results = [None] * len(pending_tools)  # Preserve order
                 first_file_committed = False
+                force_turn_break = False  # Phase 3.4: sequential delivery
+                turn_break_tool = None
 
                 for coro in asyncio.as_completed(tool_tasks):
                     idx, result = await coro
@@ -309,6 +330,16 @@ async def _stream_with_unified_events(
                                 result, first_message, thread_id, session,
                                 user_file_repo, chat_id, user_id,
                                 telegram_thread_id)
+
+                        # Phase 3.4: Check for sequential delivery
+                        if result.get("_force_turn_break"):
+                            force_turn_break = True
+                            turn_break_tool = tool.name
+                            logger.info(
+                                "stream.unified.turn_break_requested",
+                                thread_id=thread_id,
+                                tool_name=tool.name,
+                            )
 
                     # Clean up metadata keys AFTER process_generated_files
                     # so files_delivered is included in tool result
@@ -392,7 +423,9 @@ async def _stream_with_unified_events(
                                  thread_id=thread_id,
                                  tool_count=len(pending_tools))
                     await dm.current.clear()
-                    return "⚠️ Tool execution error: missing assistant context", None
+                    return (
+                        "⚠️ Tool execution error: missing assistant context",
+                        None, False, None)
 
                 # Update display with system messages
                 await stream.update_display()
@@ -400,6 +433,31 @@ async def _stream_with_unified_events(
                 logger.info("stream.unified.tool_results_added",
                             thread_id=thread_id,
                             tool_count=len(pending_tools))
+
+                # Phase 3.4: Handle sequential delivery turn break
+                if force_turn_break:
+                    logger.info("stream.unified.forcing_turn_break",
+                                thread_id=thread_id,
+                                triggered_by=turn_break_tool)
+
+                    # Get current partial answer
+                    partial_answer = stream.get_final_text()
+                    partial_display = stream.get_final_display()
+
+                    # Finalize current draft
+                    final_message = None
+                    if partial_display.strip():
+                        try:
+                            final_message = await dm.current.finalize(
+                                final_text=partial_display)
+                        except Exception as e:  # pylint: disable=broad-exception-caught
+                            logger.error("stream.turn_break.finalize_failed",
+                                         thread_id=thread_id,
+                                         error=str(e))
+
+                    # Return with continuation needed
+                    # Conversation state is passed so caller can continue
+                    return (partial_answer, final_message, True, conversation)
 
             else:
                 # Unexpected stop reason
@@ -425,7 +483,7 @@ async def _stream_with_unified_events(
                 except Exception:  # pylint: disable=broad-exception-caught
                     final_message = None
 
-                return final_answer, final_message
+                return final_answer, final_message, False, None
 
         # Max iterations exceeded (DraftManager will cleanup on exit)
         logger.error("stream.unified.max_iterations",
@@ -443,7 +501,7 @@ async def _stream_with_unified_events(
         except Exception:  # pylint: disable=broad-exception-caught
             final_message = None
 
-        return error_msg, final_message
+        return error_msg, final_message, False, None
 
 
 async def _send_with_retry(
@@ -702,21 +760,62 @@ async def _process_message_batch(thread_id: int,
 
             # 8. Unified streaming with thinking/text/tools
             # All requests go through stream_events for real-time updates
+            # Phase 3.4: Supports continuation for sequential file delivery
             logger.info("claude_handler.unified_streaming",
                         thread_id=thread_id,
                         tool_count=len(request.tools) if request.tools else 0)
 
             try:
-                response_text, bot_message = await _stream_with_unified_events(
-                    request=request,
-                    first_message=first_message,
-                    thread_id=thread_id,
-                    session=session,
-                    user_file_repo=user_file_repo,
-                    chat_id=thread.chat_id,
-                    user_id=thread.user_id,
-                    telegram_thread_id=thread.thread_id,
-                )
+                # Phase 3.4: Continuation loop for sequential file delivery
+                # Max 5 continuations to prevent infinite loops
+                max_continuations = 5
+                continuation_conversation = None
+                all_response_parts = []
+                final_bot_message = None
+
+                for continuation_idx in range(max_continuations + 1):
+                    (response_text, bot_message, needs_continuation,
+                     conversation_state) = await _stream_with_unified_events(
+                         request=request,
+                         first_message=first_message,
+                         thread_id=thread_id,
+                         session=session,
+                         user_file_repo=user_file_repo,
+                         chat_id=thread.chat_id,
+                         user_id=thread.user_id,
+                         telegram_thread_id=thread.thread_id,
+                         continuation_conversation=continuation_conversation,
+                     )
+
+                    # Collect response parts
+                    if response_text:
+                        all_response_parts.append(response_text)
+
+                    # Keep track of latest message for DB
+                    if bot_message:
+                        final_bot_message = bot_message
+
+                    if not needs_continuation:
+                        # Normal completion
+                        break
+
+                    # Continuation needed (sequential delivery)
+                    logger.info("claude_handler.continuation",
+                                thread_id=thread_id,
+                                continuation_idx=continuation_idx + 1,
+                                max_continuations=max_continuations)
+
+                    continuation_conversation = conversation_state
+
+                else:
+                    # Max continuations reached
+                    logger.warning("claude_handler.max_continuations",
+                                   thread_id=thread_id,
+                                   max_continuations=max_continuations)
+
+                # Combine all response parts
+                response_text = "\n\n".join(all_response_parts)
+                bot_message = final_bot_message
 
                 # With sendMessageDraft, final message is already sent via finalize()
                 # No cleanup needed - drafts don't create intermediate messages

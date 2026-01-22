@@ -161,7 +161,7 @@ async def close_redis() -> None:
 
     if _redis_client is not None:
         try:
-            await _redis_client.close()
+            await _redis_client.aclose()
             logger.info("redis.closed")
         except Exception as e:  # pylint: disable=broad-exception-caught
             logger.warning("redis.close_error", error=str(e))
