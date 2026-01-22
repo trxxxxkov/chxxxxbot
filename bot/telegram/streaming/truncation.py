@@ -177,7 +177,7 @@ class TruncationManager:
         MarkdownV2 expandable blockquote format:
         **>first line
         >second line
-        >third line
+        >third line||
 
         Args:
             thinking_md2: MarkdownV2-formatted thinking content.
@@ -188,9 +188,9 @@ class TruncationManager:
         Returns:
             Tuple of (truncated_thinking_md2, text_md2).
         """
-        # For MD2, blockquote uses **> prefix
-        # Overhead: **> on first line, > on subsequent lines
-        overhead = 3 + len(ellipsis)  # "**>" + ellipsis
+        # For MD2, blockquote uses **> prefix and || suffix
+        # Overhead: **> on first line, || at end, + ellipsis
+        overhead = 3 + 2 + len(ellipsis)  # "**>" + "||" + ellipsis
         available_for_content = self._effective_limit - text_len - overhead
 
         # If not enough space for meaningful thinking, hide it entirely
@@ -199,9 +199,10 @@ class TruncationManager:
 
         # Check if this is expandable blockquote format
         if thinking_md2.startswith("**>"):
-            # Truncate from beginning, keep recent content
-            # Take last N characters while preserving structure
+            # Remove **> prefix and || suffix for content extraction
             content = thinking_md2[3:]  # Remove "**>" prefix
+            if content.endswith("||"):
+                content = content[:-2]  # Remove "||" suffix
 
             if len(content) <= available_for_content:
                 # Fits without truncation
@@ -224,7 +225,8 @@ class TruncationManager:
                     else:
                         result_lines.append(line)
 
-            return "\n".join(result_lines), text_md2
+            # Add || end marker
+            return "\n".join(result_lines) + "||", text_md2
 
         # Fallback for non-blockquote thinking
         truncated_thinking = ellipsis + thinking_md2[-available_for_content:]

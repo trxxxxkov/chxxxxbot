@@ -573,8 +573,10 @@ def render_streaming_safe(text: str) -> str:
 def format_expandable_blockquote_md2(content: str) -> str:
     r"""Format content as expandable blockquote in MarkdownV2.
 
-    Telegram expandable blockquote uses **> prefix on first line
-    (empty bold entity as expandable marker).
+    Telegram expandable blockquote syntax:
+    - **> prefix on first line (empty bold entity as expandable marker)
+    - > prefix on subsequent lines
+    - || suffix on last line (expandability end marker)
 
     Args:
         content: Content for blockquote (will be escaped).
@@ -584,7 +586,7 @@ def format_expandable_blockquote_md2(content: str) -> str:
 
     Examples:
         >>> format_expandable_blockquote_md2("Line 1\\nLine 2")
-        '**>Line 1\\n>Line 2'
+        '**>Line 1\\n>Line 2||'
     """
     if not content:
         return ""
@@ -603,7 +605,8 @@ def format_expandable_blockquote_md2(content: str) -> str:
             # Subsequent lines: just >
             result.append(f">{escaped}")
 
-    return "\n".join(result)
+    # Add expandability end marker || to the last line
+    return "\n".join(result) + "||"
 
 
 def format_blockquote_md2(content: str) -> str:
