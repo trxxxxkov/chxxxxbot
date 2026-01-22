@@ -16,7 +16,7 @@ class TestTruncationManager:
     def test_no_truncation_when_fits(self):
         """Content that fits in limit is returned unchanged."""
         tm = TruncationManager()
-        thinking = "<blockquote>Short thinking</blockquote>"
+        thinking = "<blockquote expandable>Short thinking</blockquote>"
         text = "Short answer"
 
         result_thinking, result_text = tm.truncate_for_display(thinking, text)
@@ -29,8 +29,8 @@ class TestTruncationManager:
         tm = TruncationManager()
         # Create text that takes up most of the limit and thinking that exceeds
         text = "x" * 3500
-        thinking = "<blockquote>" + "t" * 1000 + "</blockquote>"
-        # Total: 3500 + 1025 = 4525 > 4046 (EFFECTIVE_LIMIT)
+        thinking = "<blockquote expandable>" + "t" * 1000 + "</blockquote>"
+        # Total: 3500 + 1036 = 4536 > 4046 (EFFECTIVE_LIMIT)
 
         result_thinking, result_text = tm.truncate_for_display(thinking, text)
 

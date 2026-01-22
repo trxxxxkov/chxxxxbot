@@ -551,22 +551,26 @@ class TestContextFormatterThinkingBlocks:
         from db.models.message import MessageRole
 
         formatter = ContextFormatter(chat_type="private")
-        # New format: JSON string with full blocks including signature
+        # New format: JSON string with FULL content (thinking + text blocks)
+        # This preserves exact Claude response for context reconstruction
         thinking_json = json.dumps([{
             "type": "thinking",
             "thinking": "Let me think about this...",
             "signature": "abc123signature"
+        }, {
+            "type": "text",
+            "text": "The answer is 42."
         }])
         msg = create_mock_db_message(
             from_user_id=None,
-            text_content="The answer is 42.",
+            text_content="The answer is 42.",  # For display/search
             role=MessageRole.ASSISTANT,
-            thinking_blocks=thinking_json,
+            thinking_blocks=thinking_json,  # Full content for API
         )
 
         result = formatter.format_message(msg)
 
-        # Content should be a list with thinking and text blocks
+        # Content should be used AS-IS from thinking_blocks (not reconstructed)
         assert isinstance(result.content, list)
         assert len(result.content) == 2
         assert result.content[0]["type"] == "thinking"
@@ -600,18 +604,29 @@ class TestContextFormatterThinkingBlocks:
         assert result.content == "The answer is 42."
 
     def test_assistant_with_thinking_blocks_json_no_signature(self):
-        """Test JSON thinking blocks without signature are skipped."""
+        """Test JSON content without signature is used as-is.
+
+        Content preservation is critical - we use saved content exactly
+        as received from Claude API. If API requires signature, it will
+        reject the request itself.
+        """
         import json
 
         from db.models.message import MessageRole
 
         formatter = ContextFormatter(chat_type="private")
-        # JSON but missing signature
-        thinking_json = json.dumps([{
-            "type": "thinking",
-            "thinking": "Let me think..."
-            # No signature field
-        }])
+        # JSON content without signature (unlikely but possible)
+        thinking_json = json.dumps([
+            {
+                "type": "thinking",
+                "thinking": "Let me think..."
+                # No signature field
+            },
+            {
+                "type": "text",
+                "text": "The answer is 42."
+            }
+        ])
         msg = create_mock_db_message(
             from_user_id=None,
             text_content="The answer is 42.",
@@ -621,9 +636,9 @@ class TestContextFormatterThinkingBlocks:
 
         result = formatter.format_message(msg)
 
-        # Missing signature - should return text only
-        assert isinstance(result.content, str)
-        assert result.content == "The answer is 42."
+        # Content should be used as-is (API will validate signature)
+        assert isinstance(result.content, list)
+        assert len(result.content) == 2
 
     def test_assistant_without_thinking_blocks(self):
         """Test assistant message without thinking returns string content."""
@@ -660,3 +675,127 @@ class TestContextFormatterThinkingBlocks:
         # User messages always return string content
         assert isinstance(result.content, str)
         assert result.content == "User question"
+
+    def test_regression_thinking_blocks_not_modified(self):
+        """REGRESSION TEST: Content must be preserved exactly as received.
+
+        Bug: Claude API returned error 'thinking or redacted_thinking blocks
+        cannot be modified' because we were reconstructing content from
+        separate thinking_blocks and text_content fields.
+
+        Fix: Store and restore the ENTIRE content array as-is.
+
+        See: https://github.com/anthropics/claude-code/issues/XXX
+        """
+        import json
+
+        from db.models.message import MessageRole
+
+        formatter = ContextFormatter(chat_type="private")
+
+        # Simulate EXACT content from Claude API response
+        original_content = [{
+            "type": "thinking",
+            "thinking": "Let me analyze this problem step by step...",
+            "signature": "sig_abc123"
+        }, {
+            "type": "text",
+            "text": "Based on my analysis, here is the answer."
+        }]
+
+        thinking_json = json.dumps(original_content)
+        msg = create_mock_db_message(
+            from_user_id=None,
+            text_content="Based on my analysis, here is the answer.",
+            role=MessageRole.ASSISTANT,
+            thinking_blocks=thinking_json,
+        )
+
+        result = formatter.format_message(msg)
+
+        # CRITICAL: Content must be EXACTLY the same as original
+        # No reconstruction, no modification
+        assert result.content == original_content
+
+    def test_regression_redacted_thinking_preserved(self):
+        """REGRESSION TEST: redacted_thinking blocks must be preserved.
+
+        Claude API can return redacted_thinking blocks when thinking content
+        is filtered. These MUST be preserved exactly or API returns error.
+        """
+        import json
+
+        from db.models.message import MessageRole
+
+        formatter = ContextFormatter(chat_type="private")
+
+        # Content with redacted_thinking (as returned by Claude)
+        original_content = [{
+            "type": "redacted_thinking",
+            "data": "encrypted_data_here"
+        }, {
+            "type": "thinking",
+            "thinking": "Visible thinking...",
+            "signature": "sig_xyz789"
+        }, {
+            "type": "text",
+            "text": "The final answer."
+        }]
+
+        thinking_json = json.dumps(original_content)
+        msg = create_mock_db_message(
+            from_user_id=None,
+            text_content="The final answer.",
+            role=MessageRole.ASSISTANT,
+            thinking_blocks=thinking_json,
+        )
+
+        result = formatter.format_message(msg)
+
+        # CRITICAL: redacted_thinking must be preserved
+        assert result.content == original_content
+        assert result.content[0]["type"] == "redacted_thinking"
+
+    def test_regression_tool_use_blocks_preserved(self):
+        """REGRESSION TEST: tool_use blocks in content must be preserved.
+
+        During tool loops, assistant messages contain tool_use blocks.
+        These must be preserved exactly for context reconstruction.
+        """
+        import json
+
+        from db.models.message import MessageRole
+
+        formatter = ContextFormatter(chat_type="private")
+
+        # Content with tool_use (as captured during tool loop)
+        original_content = [{
+            "type": "thinking",
+            "thinking": "I need to search the web...",
+            "signature": "sig_tool123"
+        }, {
+            "type": "text",
+            "text": "Let me search for that."
+        }, {
+            "type": "tool_use",
+            "id": "tool_abc123",
+            "name": "web_search",
+            "input": {
+                "query": "weather today"
+            }
+        }]
+
+        thinking_json = json.dumps(original_content)
+        msg = create_mock_db_message(
+            from_user_id=None,
+            text_content="Let me search for that.",
+            role=MessageRole.ASSISTANT,
+            thinking_blocks=thinking_json,
+        )
+
+        result = formatter.format_message(msg)
+
+        # CRITICAL: All blocks including tool_use must be preserved
+        assert result.content == original_content
+        assert len(result.content) == 3
+        assert result.content[2]["type"] == "tool_use"

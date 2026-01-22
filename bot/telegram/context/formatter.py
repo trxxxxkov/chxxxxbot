@@ -51,9 +51,10 @@ class ContextFormatter:
     def format_message(self, msg: DBMessage) -> LLMMessage:
         """Format a single database message for LLM.
 
-        For assistant messages with thinking_blocks, formats content as
-        a list with thinking block first (required when Extended Thinking
-        is enabled).
+        For assistant messages with thinking_blocks (which stores the FULL
+        original content from Claude), uses it as-is to preserve exact format.
+        This is CRITICAL for Extended Thinking - the API rejects modified
+        thinking/redacted_thinking blocks.
 
         Args:
             msg: Database Message object with context fields.
@@ -62,33 +63,24 @@ class ContextFormatter:
             LLM Message with formatted content.
         """
         role = "user" if msg.from_user_id else "assistant"
-        text_content = self._format_content(msg)
 
-        # For assistant messages with thinking, format as content blocks
-        # (required by Claude API when extended thinking is enabled)
+        # For assistant messages with saved content blocks, use them as-is
+        # This preserves thinking/redacted_thinking blocks exactly as Claude sent
         if msg.role == MessageRole.ASSISTANT and msg.thinking_blocks:
-            # thinking_blocks is stored as JSON string with full blocks + signatures
             try:
-                thinking_list = json.loads(msg.thinking_blocks)
-                # Verify blocks have signatures (required by API)
-                if thinking_list and "signature" in thinking_list[0]:
-                    # Build content: thinking blocks first, then text
-                    content: Union[str, list[dict[str,
-                                                  Any]]] = thinking_list + [{
-                                                      "type": "text",
-                                                      "text": text_content
-                                                  }]
-                else:
-                    # JSON but no signature - skip thinking (legacy or invalid)
-                    content = text_content
+                content_blocks = json.loads(msg.thinking_blocks)
+                # Validate it's a list with content blocks
+                if isinstance(content_blocks, list) and content_blocks:
+                    # Use saved content directly - DO NOT MODIFY
+                    content: Union[str, list[dict[str, Any]]] = content_blocks
+                    return LLMMessage(role=role, content=content)
             except (json.JSONDecodeError, TypeError):
-                # Not valid JSON (legacy plain text format) - skip thinking
-                # Old messages without signatures will cause API errors
-                content = text_content
-        else:
-            content = text_content
+                # Not valid JSON - fall back to text_content
+                pass
 
-        return LLMMessage(role=role, content=content)
+        # For user messages or assistant without thinking: format text
+        text_content = self._format_content(msg)
+        return LLMMessage(role=role, content=text_content)
 
     def _format_content(self, msg: DBMessage) -> str:
         """Format message content with context.
@@ -226,21 +218,21 @@ class ContextFormatter:
             LLM Message with multimodal content if files present.
         """
         role = "user" if msg.from_user_id else "assistant"
-        text_content = self._format_content(msg)
 
-        # For assistant messages with thinking, handle specially
+        # For assistant messages with saved content blocks, use them as-is
+        # This preserves thinking/redacted_thinking blocks exactly as Claude sent
         if msg.role == MessageRole.ASSISTANT and msg.thinking_blocks:
             try:
-                thinking_list = json.loads(msg.thinking_blocks)
-                if thinking_list and "signature" in thinking_list[0]:
-                    content: Union[str, list[dict[str,
-                                                  Any]]] = thinking_list + [{
-                                                      "type": "text",
-                                                      "text": text_content
-                                                  }]
+                content_blocks = json.loads(msg.thinking_blocks)
+                # Validate it's a list with content blocks
+                if isinstance(content_blocks, list) and content_blocks:
+                    # Use saved content directly - DO NOT MODIFY
+                    content: Union[str, list[dict[str, Any]]] = content_blocks
                     return LLMMessage(role=role, content=content)
             except (json.JSONDecodeError, TypeError):
                 pass
+
+        text_content = self._format_content(msg)
 
         # For user messages, check for ALL attached files
         if msg.from_user_id:

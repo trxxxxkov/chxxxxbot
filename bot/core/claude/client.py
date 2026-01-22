@@ -676,40 +676,56 @@ class ClaudeProvider(LLMProvider):
         return self.last_thinking
 
     def get_thinking_blocks_json(self) -> Optional[str]:
-        """Get full thinking blocks with signatures as JSON.
+        """Get full assistant content blocks as JSON for context preservation.
 
         When Extended Thinking is enabled, subsequent requests must include
-        thinking blocks from previous turns WITH their signatures. This method
-        extracts the full thinking blocks from the last response.
+        ALL content blocks from previous turns EXACTLY as received. This method
+        serializes the complete content array from the last response.
+
+        IMPORTANT: The content must be preserved without modification to avoid
+        'thinking blocks cannot be modified' errors from the API.
 
         Returns:
-            JSON string of thinking blocks or None if no thinking was used.
-            Format: [{"type": "thinking", "thinking": "...", "signature": "..."}]
+            JSON string of ALL content blocks or None if no message available.
+            Format: [{"type": "thinking", ...}, {"type": "text", ...}, ...]
 
         Examples:
             >>> blocks_json = provider.get_thinking_blocks_json()
             >>> if blocks_json:
-            >>>     # Save to database for context reconstruction
+            >>>     # Save to database for exact context reconstruction
         """
         if self.last_message is None:
             return None
 
-        thinking_blocks = []
-        for block in self.last_message.content:
-            if hasattr(block, 'type') and block.type == "thinking":
-                block_dict = {
-                    "type": "thinking",
-                    "thinking": block.thinking,
-                }
-                # Include signature if present (required for context)
-                if hasattr(block, 'signature') and block.signature:
-                    block_dict["signature"] = block.signature
-                thinking_blocks.append(block_dict)
+        content_blocks = []
+        has_thinking = False
 
-        if not thinking_blocks:
+        for block in self.last_message.content:
+            # Check if there are any thinking-related blocks
+            if hasattr(block, 'type') and block.type in ("thinking",
+                                                         "redacted_thinking"):
+                has_thinking = True
+
+            # Serialize each block preserving all fields
+            if hasattr(block, 'model_dump'):
+                # Pydantic model - use model_dump for complete serialization
+                block_dict = block.model_dump(exclude_none=True)
+                content_blocks.append(block_dict)
+            elif isinstance(block, dict):
+                content_blocks.append(block)
+            else:
+                # Fallback: try to convert to dict
+                try:
+                    content_blocks.append(dict(block))
+                except (TypeError, ValueError):
+                    logger.warning("claude.thinking_blocks.serialize_failed",
+                                   block_type=type(block).__name__)
+
+        # Only return if there were thinking blocks (otherwise not needed)
+        if not has_thinking:
             return None
 
-        return json.dumps(thinking_blocks)
+        return json.dumps(content_blocks)
 
     # pylint: disable=too-many-locals,too-many-branches,too-many-statements
     async def stream_events(self,

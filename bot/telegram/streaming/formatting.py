@@ -101,10 +101,11 @@ def format_blocks(blocks: list[DisplayBlock], is_streaming: bool = True) -> str:
             text_parts.append(escaped)
 
     # Build HTML for each section
+    # Use expandable blockquote so thinking is collapsed by default
     thinking_html = ""
     if thinking_parts:
         thinking_content = "\n\n".join(thinking_parts)
-        thinking_html = f"<blockquote>{thinking_content}</blockquote>"
+        thinking_html = f"<blockquote expandable>{thinking_content}</blockquote>"
 
     text_html = ""
     if text_parts:

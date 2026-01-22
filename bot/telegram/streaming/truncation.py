@@ -63,7 +63,7 @@ class TruncationManager:
         Examples:
             >>> tm = TruncationManager()
             >>> thinking, text = tm.truncate_for_display(
-            ...     "<blockquote>long thinking...</blockquote>",
+            ...     "<blockquote expandable>long thinking...</blockquote>",
             ...     "Short answer"
             ... )
             >>> # thinking content may be truncated, tags preserved
@@ -87,7 +87,7 @@ class TruncationManager:
 
         # Calculate available space for thinking after reserving for text
         # Also reserve space for truncation indicator and blockquote tags
-        blockquote_open = "<blockquote>"
+        blockquote_open = "<blockquote expandable>"
         blockquote_close = "</blockquote>"
         tag_overhead = len(blockquote_open) + len(blockquote_close) + len(
             ellipsis)
@@ -98,7 +98,7 @@ class TruncationManager:
             return "", text_html
 
         # Extract content from blockquote (preserve tags, truncate content)
-        # thinking_html format: "<blockquote>content</blockquote>"
+        # thinking_html format: "<blockquote expandable>content</blockquote>"
         if thinking_html.startswith(blockquote_open) and thinking_html.endswith(
                 blockquote_close):
             content = thinking_html[len(blockquote_open):-len(blockquote_close)]
