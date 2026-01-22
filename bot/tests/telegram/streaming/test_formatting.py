@@ -89,9 +89,18 @@ class TestFormatBlocks:
     def test_formats_thinking_with_emoji(self):
         """Should add brain emoji to thinking during streaming."""
         blocks = [DisplayBlock(block_type=BlockType.THINKING, content="test")]
-        result = format_blocks(blocks, is_streaming=True)
-        assert "🧠" in result
-        assert "<blockquote expandable>" in result
+        # Test HTML mode
+        result_html = format_blocks(blocks,
+                                    is_streaming=True,
+                                    parse_mode="HTML")
+        assert "🧠" in result_html
+        assert "<blockquote expandable>" in result_html
+        # Test MarkdownV2 mode (default)
+        result_md2 = format_blocks(blocks,
+                                   is_streaming=True,
+                                   parse_mode="MarkdownV2")
+        assert "🧠" in result_md2
+        assert "**>" in result_md2  # Expandable blockquote marker
 
     def test_no_emoji_for_tool_markers(self):
         """Should not add emoji to tool markers (they start with [)."""
@@ -104,11 +113,20 @@ class TestFormatBlocks:
         assert result.count("🧠") == 0
 
     def test_escapes_html(self):
-        """Should escape HTML in content."""
+        """Should escape HTML in content for HTML mode."""
         blocks = [DisplayBlock(block_type=BlockType.TEXT, content="<script>")]
-        result = format_blocks(blocks, is_streaming=True)
-        assert "<script>" not in result
-        assert "&lt;script&gt;" in result
+        # Test HTML mode
+        result_html = format_blocks(blocks,
+                                    is_streaming=True,
+                                    parse_mode="HTML")
+        assert "<script>" not in result_html
+        assert "&lt;script&gt;" in result_html
+        # Test MarkdownV2 mode - < and > are escaped differently
+        result_md2 = format_blocks(blocks,
+                                   is_streaming=True,
+                                   parse_mode="MarkdownV2")
+        # In MarkdownV2, < and > are escaped with backslash
+        assert "<script>" not in result_md2
 
     def test_thinking_at_top(self):
         """Thinking should appear at top in blockquote."""

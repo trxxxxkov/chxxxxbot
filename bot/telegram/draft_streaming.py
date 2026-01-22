@@ -3,6 +3,8 @@
 This module provides DraftStreamer class for streaming responses using
 sendMessageDraft method with proper rate limiting.
 
+Supports both MarkdownV2 (default) and HTML parse modes.
+
 NO __init__.py - use direct import: from telegram.draft_streaming import DraftStreamer
 """
 
@@ -10,15 +12,22 @@ import asyncio
 from asyncio import Task
 import random
 import time
-from typing import Optional
+from typing import Literal, Optional
 
 from aiogram import Bot
 from aiogram import types
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.exceptions import TelegramRetryAfter
 from aiogram.methods import SendMessageDraft
 from utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
+
+# Type alias for parse mode
+ParseMode = Literal["MarkdownV2", "HTML"]
+
+# Default parse mode
+DEFAULT_PARSE_MODE: ParseMode = "MarkdownV2"
 
 # Minimum interval between draft updates (seconds)
 # sendMessageDraft still has rate limits, just more relaxed than edit_message
@@ -81,8 +90,10 @@ class DraftManager:
             self._current.start_keepalive(self.keepalive_interval)
         return self._current
 
-    async def commit_and_create_new(self,
-                                    final_text: Optional[str] = None) -> None:
+    async def commit_and_create_new(
+            self,
+            final_text: Optional[str] = None,
+            parse_mode: ParseMode = DEFAULT_PARSE_MODE) -> None:
         """Finalize current draft and prepare for new one.
 
         Use this when sending files - commits current content, then
@@ -94,10 +105,12 @@ class DraftManager:
 
         Args:
             final_text: Optional final text for current draft.
+            parse_mode: "MarkdownV2" (default) or "HTML".
         """
         if self._current is not None:
             if final_text:
-                await self._current.finalize(final_text=final_text)
+                await self._current.finalize(final_text=final_text,
+                                             parse_mode=parse_mode)
             else:
                 await self._current.clear()
 
@@ -278,16 +291,17 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
     async def update(  # pylint: disable=too-many-return-statements
             self,
             text: str,
-            parse_mode: Optional[str] = "HTML",
+            parse_mode: Optional[str] = DEFAULT_PARSE_MODE,
             force: bool = False) -> bool:
         """Update draft with new text (with throttling).
 
         Skips update if text hasn't changed or if called too frequently.
         Handles TelegramRetryAfter by waiting and retrying.
+        Falls back to plain text if MarkdownV2 parsing fails.
 
         Args:
             text: New text content (1-4096 chars).
-            parse_mode: Parse mode for formatting (HTML, Markdown, etc).
+            parse_mode: Parse mode for formatting (MarkdownV2, HTML, None).
             force: If True, ignore throttling (for final updates).
 
         Returns:
@@ -370,6 +384,23 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
             except Exception:  # pylint: disable=broad-exception-caught
                 return False
 
+        except TelegramBadRequest as e:
+            # MarkdownV2 parse error - fallback to plain text
+            if "can't parse entities" in str(e).lower() and parse_mode:
+                logger.warning("draft_streamer.parse_error_fallback",
+                               chat_id=self.chat_id,
+                               draft_id=self.draft_id,
+                               parse_mode=parse_mode,
+                               error=str(e))
+                return await self.update(text_to_send,
+                                         parse_mode=None,
+                                         force=force)
+            logger.warning("draft_streamer.update_failed",
+                           chat_id=self.chat_id,
+                           draft_id=self.draft_id,
+                           error=str(e))
+            return False
+
         except Exception as e:  # pylint: disable=broad-exception-caught
             logger.warning("draft_streamer.update_failed",
                            chat_id=self.chat_id,
@@ -377,10 +408,14 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
                            error=str(e))
             # Try without parse_mode as fallback
             if parse_mode:
-                return await self.update(text_to_send, parse_mode=None)
+                return await self.update(text_to_send,
+                                         parse_mode=None,
+                                         force=force)
             return False
 
-    async def flush_pending(self, parse_mode: Optional[str] = "HTML") -> bool:
+    async def flush_pending(self,
+                            parse_mode: Optional[str] = DEFAULT_PARSE_MODE
+                           ) -> bool:
         """Send any pending text that was throttled.
 
         Call this before finalize() to ensure all text is sent.
@@ -395,7 +430,8 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
             return await self.update(self._pending_text, parse_mode, force=True)
         return True
 
-    async def keepalive(self, parse_mode: Optional[str] = "HTML") -> bool:
+    async def keepalive(self,
+                        parse_mode: Optional[str] = DEFAULT_PARSE_MODE) -> bool:
         """Send keep-alive update to prevent draft from disappearing.
 
         Unlike update(), this always sends even if text unchanged.
@@ -462,9 +498,10 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
                            error=str(e))
             return False
 
-    async def finalize(self,
-                       final_text: Optional[str] = None,
-                       parse_mode: Optional[str] = "HTML") -> types.Message:
+    async def finalize(
+            self,
+            final_text: Optional[str] = None,
+            parse_mode: Optional[str] = DEFAULT_PARSE_MODE) -> types.Message:
         """Convert draft to permanent message.
 
         Flushes any pending text, then sends final message.
@@ -472,6 +509,8 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
 
         If final_text is provided, updates draft to final_text first for smooth
         transition, then sends final_text directly (no edit needed).
+
+        Falls back to plain text if MarkdownV2 parsing fails.
 
         Args:
             final_text: Optional final text to show. If provided, this text
@@ -510,12 +549,28 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
                     final_length=len(text_to_send))
 
         # Send final message directly with correct text (no edit needed)
-        message = await self.bot.send_message(
-            chat_id=self.chat_id,
-            text=text_to_send,
-            message_thread_id=self.topic_id,
-            parse_mode=parse_mode,
-        )
+        # Falls back to plain text if MarkdownV2 parsing fails
+        try:
+            message = await self.bot.send_message(
+                chat_id=self.chat_id,
+                text=text_to_send,
+                message_thread_id=self.topic_id,
+                parse_mode=parse_mode,
+            )
+        except TelegramBadRequest as e:
+            if "can't parse entities" in str(e).lower() and parse_mode:
+                logger.warning("draft_streamer.finalize_parse_error_fallback",
+                               chat_id=self.chat_id,
+                               parse_mode=parse_mode,
+                               error=str(e))
+                message = await self.bot.send_message(
+                    chat_id=self.chat_id,
+                    text=text_to_send,
+                    message_thread_id=self.topic_id,
+                    parse_mode=None,  # Fallback to plain text
+                )
+            else:
+                raise
 
         return message
 

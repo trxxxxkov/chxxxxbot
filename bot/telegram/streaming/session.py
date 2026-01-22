@@ -9,8 +9,10 @@ from typing import Any, Optional
 from core.tools.registry import get_tool_emoji
 from telegram.draft_streaming import DraftManager
 from telegram.streaming.display_manager import DisplayManager
+from telegram.streaming.formatting import DEFAULT_PARSE_MODE
 from telegram.streaming.formatting import format_display
 from telegram.streaming.formatting import format_final_text
+from telegram.streaming.formatting import ParseMode
 from telegram.streaming.formatting import strip_tool_markers
 from telegram.streaming.truncation import TruncationManager
 from telegram.streaming.types import BlockType
@@ -46,17 +48,22 @@ class StreamingSession:  # pylint: disable=too-many-instance-attributes
             final_text = session.get_final_text()
     """
 
-    def __init__(self, draft_manager: DraftManager, thread_id: int) -> None:
+    def __init__(self,
+                 draft_manager: DraftManager,
+                 thread_id: int,
+                 parse_mode: ParseMode = DEFAULT_PARSE_MODE) -> None:
         """Initialize streaming session.
 
         Args:
             draft_manager: DraftManager for sending updates.
             thread_id: Database thread ID for logging.
+            parse_mode: "MarkdownV2" (default) or "HTML".
         """
         self._dm = draft_manager
         self._thread_id = thread_id
+        self._parse_mode = parse_mode
         self._display = DisplayManager()
-        self._truncator = TruncationManager()
+        self._truncator = TruncationManager(parse_mode=parse_mode)
         self._last_sent_text = ""
         self._pending_tools: list[ToolCall] = []
         self._message_part = 1  # Track message parts for splitting
@@ -278,19 +285,22 @@ class StreamingSession:  # pylint: disable=too-many-instance-attributes
         text_only = self._display.get_text_blocks()
         if not text_only:
             # No text content, just commit
-            await self._dm.commit_and_create_new()
+            await self._dm.commit_and_create_new(parse_mode=self._parse_mode)
             self._last_sent_text = ""
             self._display.clear()
             return
 
         # Format text only (no thinking in final)
         from telegram.streaming.formatting import format_blocks
-        final_text = format_blocks(text_only, is_streaming=False)
+        final_text = format_blocks(text_only,
+                                   is_streaming=False,
+                                   parse_mode=self._parse_mode)
         final_text = strip_tool_markers(final_text)
 
         # Commit with final text
-        await self._dm.commit_and_create_new(
-            final_text=final_text.strip() or None)
+        await self._dm.commit_and_create_new(final_text=final_text.strip() or
+                                             None,
+                                             parse_mode=self._parse_mode)
         self._last_sent_text = ""
         self._display.clear()
 
@@ -308,9 +318,9 @@ class StreamingSession:  # pylint: disable=too-many-instance-attributes
         """Get formatted final display (text only, no thinking).
 
         Returns:
-            HTML-formatted final text.
+            Formatted final text (MarkdownV2 or HTML based on parse_mode).
         """
-        return format_final_text(self._display)
+        return format_final_text(self._display, parse_mode=self._parse_mode)
 
     def add_system_message(self, message: str) -> None:
         """Add a system message to thinking block.
@@ -383,24 +393,33 @@ class StreamingSession:  # pylint: disable=too-many-instance-attributes
         Args:
             force: If True, bypass throttling.
         """
-        display_text = format_display(self._display, is_streaming=True)
+        display_text = format_display(self._display,
+                                      is_streaming=True,
+                                      parse_mode=self._parse_mode)
 
         # Check if we need to split (text too long, thinking gone)
         text_length = self._display.total_text_length()
         # After formatting, thinking might be truncated to empty
-        # Check the formatted result for blockquote presence
-        has_thinking = "<blockquote" in display_text
+        # Check the formatted result for blockquote/expandable marker presence
+        if self._parse_mode == "MarkdownV2":
+            has_thinking = "**>" in display_text
+        else:
+            has_thinking = "<blockquote" in display_text
 
         if self._truncator.should_split("x" if has_thinking else "",
                                         text_length):
             await self._split_message()
             # Re-format after split
-            display_text = format_display(self._display, is_streaming=True)
+            display_text = format_display(self._display,
+                                          is_streaming=True,
+                                          parse_mode=self._parse_mode)
 
         if display_text != self._last_sent_text:
             # TTFT: Force first update to bypass throttle
             should_force = force or not self._first_update_sent
-            await self._dm.current.update(display_text, force=should_force)
+            await self._dm.current.update(display_text,
+                                          parse_mode=self._parse_mode,
+                                          force=should_force)
             self._last_sent_text = display_text
 
             if not self._first_update_sent:
@@ -421,7 +440,9 @@ class StreamingSession:  # pylint: disable=too-many-instance-attributes
 
         # Format text only (no thinking)
         from telegram.streaming.formatting import format_blocks
-        final_text = format_blocks(text_blocks, is_streaming=False)
+        final_text = format_blocks(text_blocks,
+                                   is_streaming=False,
+                                   parse_mode=self._parse_mode)
         final_text = strip_tool_markers(final_text)
 
         if not final_text.strip():
@@ -433,7 +454,8 @@ class StreamingSession:  # pylint: disable=too-many-instance-attributes
                     text_length=len(final_text))
 
         # Commit current part and create new draft
-        await self._dm.commit_and_create_new(final_text=final_text.strip())
+        await self._dm.commit_and_create_new(final_text=final_text.strip(),
+                                             parse_mode=self._parse_mode)
         self._message_part += 1
 
         # Clear display for continuation (thinking already gone)

@@ -3,25 +3,28 @@
 This module provides TruncationManager for handling Telegram's 4096-char limit
 while prioritizing visible text over collapsed thinking blocks.
 
+Supports both MarkdownV2 and HTML parse modes with appropriate
+length calculations for each.
+
 NO __init__.py - use direct import:
     from telegram.streaming.truncation import TruncationManager
 """
+
+from typing import Literal
 
 # Telegram message limit
 TELEGRAM_LIMIT = 4096
 
 # Safety margin for formatting overhead
-SAFETY_MARGIN = 46
-
-# Effective limit after safety margin
-EFFECTIVE_LIMIT = TELEGRAM_LIMIT - SAFETY_MARGIN  # 4050
+# MarkdownV2 needs larger margin due to escaping overhead
+SAFETY_MARGIN_HTML = 46
+SAFETY_MARGIN_MD2 = 100  # More margin for escaping overhead
 
 # Minimum space to keep for thinking (if less, hide it entirely)
 MIN_THINKING_SPACE = 100
 
-# Threshold for splitting messages
-# When text exceeds this and thinking is empty, split into new message
-SPLIT_THRESHOLD = EFFECTIVE_LIMIT  # 4050
+# Type alias for parse mode
+ParseMode = Literal["MarkdownV2", "HTML"]
 
 
 class TruncationManager:
@@ -32,17 +35,44 @@ class TruncationManager:
     - Thinking is shown in blockquote
     - Users see text first, thinking is supplementary
 
+    Supports both MarkdownV2 and HTML parse modes:
+    - HTML: Uses <blockquote expandable> tags
+    - MarkdownV2: Uses **> prefix for expandable blockquotes
+
     Algorithm:
     1. If total fits in limit, return as-is
     2. Calculate available space for thinking after text
     3. If not enough space for meaningful thinking, hide it
     4. Otherwise truncate thinking from beginning (keep recent)
+
+    Example:
+        >>> tm = TruncationManager(parse_mode="MarkdownV2")
+        >>> thinking, text = tm.truncate_for_display(
+        ...     "**>Long thinking content...",
+        ...     "Short answer"
+        ... )
     """
+
+    def __init__(self, parse_mode: ParseMode = "MarkdownV2") -> None:
+        """Initialize truncation manager.
+
+        Args:
+            parse_mode: "MarkdownV2" (default) or "HTML".
+        """
+        self._parse_mode = parse_mode
+        self._safety_margin = (SAFETY_MARGIN_MD2 if parse_mode == "MarkdownV2"
+                               else SAFETY_MARGIN_HTML)
+        self._effective_limit = TELEGRAM_LIMIT - self._safety_margin
+
+    @property
+    def effective_limit(self) -> int:
+        """Get effective character limit after safety margin."""
+        return self._effective_limit
 
     def truncate_for_display(
         self,
-        thinking_html: str,
-        text_html: str,
+        thinking_formatted: str,
+        text_formatted: str,
     ) -> tuple[str, str]:
         """Truncate content to fit Telegram limit.
 
@@ -54,44 +84,69 @@ class TruncationManager:
         3. Otherwise, truncate thinking to fit remaining space
 
         Args:
-            thinking_html: HTML-formatted thinking content (with blockquote tags).
-            text_html: HTML-formatted text content (escaped, no HTML tags).
+            thinking_formatted: Formatted thinking content (with blockquote).
+            text_formatted: Formatted text content.
 
         Returns:
-            Tuple of (truncated_thinking_html, truncated_text_html).
+            Tuple of (truncated_thinking, truncated_text).
 
         Examples:
-            >>> tm = TruncationManager()
+            >>> tm = TruncationManager(parse_mode="MarkdownV2")
             >>> thinking, text = tm.truncate_for_display(
-            ...     "<blockquote expandable>long thinking...</blockquote>",
+            ...     "**>Long thinking...",
             ...     "Short answer"
             ... )
-            >>> # thinking content may be truncated, tags preserved
+            >>> # thinking content may be truncated, structure preserved
         """
         ellipsis = "…"
-        text_len = len(text_html)
-        thinking_len = len(thinking_html)
+        text_len = len(text_formatted)
+        thinking_len = len(thinking_formatted)
         total = text_len + thinking_len
 
         # If everything fits, return as-is
-        if total <= EFFECTIVE_LIMIT:
-            return thinking_html, text_html
+        if total <= self._effective_limit:
+            return thinking_formatted, text_formatted
 
         # If text alone exceeds limit, hide thinking and truncate text
-        # text_html has no HTML tags (only escaped content), safe to truncate
-        if text_len >= EFFECTIVE_LIMIT:
+        if text_len >= self._effective_limit:
             # Truncate from end (user sees beginning during streaming)
-            max_text = EFFECTIVE_LIMIT - len(ellipsis)
-            truncated_text = text_html[:max_text] + ellipsis
+            max_text = self._effective_limit - len(ellipsis)
+            truncated_text = text_formatted[:max_text] + ellipsis
             return "", truncated_text
 
-        # Calculate available space for thinking after reserving for text
-        # Also reserve space for truncation indicator and blockquote tags
+        # Calculate available space for thinking
+        if self._parse_mode == "MarkdownV2":
+            return self._truncate_thinking_md2(thinking_formatted,
+                                               text_formatted, text_len,
+                                               ellipsis)
+        else:
+            return self._truncate_thinking_html(thinking_formatted,
+                                                text_formatted, text_len,
+                                                ellipsis)
+
+    def _truncate_thinking_html(
+        self,
+        thinking_html: str,
+        text_html: str,
+        text_len: int,
+        ellipsis: str,
+    ) -> tuple[str, str]:
+        """Truncate thinking for HTML mode.
+
+        Args:
+            thinking_html: HTML-formatted thinking content.
+            text_html: HTML-formatted text content.
+            text_len: Length of text content.
+            ellipsis: Ellipsis character.
+
+        Returns:
+            Tuple of (truncated_thinking_html, text_html).
+        """
         blockquote_open = "<blockquote expandable>"
         blockquote_close = "</blockquote>"
         tag_overhead = len(blockquote_open) + len(blockquote_close) + len(
             ellipsis)
-        available_for_content = EFFECTIVE_LIMIT - text_len - tag_overhead
+        available_for_content = self._effective_limit - text_len - tag_overhead
 
         # If not enough space for meaningful thinking, hide it entirely
         if available_for_content <= MIN_THINKING_SPACE:
@@ -110,6 +165,71 @@ class TruncationManager:
         truncated_thinking = ellipsis + thinking_html[-available_for_content:]
         return truncated_thinking, text_html
 
+    def _truncate_thinking_md2(
+        self,
+        thinking_md2: str,
+        text_md2: str,
+        text_len: int,
+        ellipsis: str,
+    ) -> tuple[str, str]:
+        """Truncate thinking for MarkdownV2 mode.
+
+        MarkdownV2 expandable blockquote format:
+        **>first line
+        >second line
+        >third line
+
+        Args:
+            thinking_md2: MarkdownV2-formatted thinking content.
+            text_md2: MarkdownV2-formatted text content.
+            text_len: Length of text content.
+            ellipsis: Ellipsis character.
+
+        Returns:
+            Tuple of (truncated_thinking_md2, text_md2).
+        """
+        # For MD2, blockquote uses **> prefix
+        # Overhead: **> on first line, > on subsequent lines
+        overhead = 3 + len(ellipsis)  # "**>" + ellipsis
+        available_for_content = self._effective_limit - text_len - overhead
+
+        # If not enough space for meaningful thinking, hide it entirely
+        if available_for_content <= MIN_THINKING_SPACE:
+            return "", text_md2
+
+        # Check if this is expandable blockquote format
+        if thinking_md2.startswith("**>"):
+            # Truncate from beginning, keep recent content
+            # Take last N characters while preserving structure
+            content = thinking_md2[3:]  # Remove "**>" prefix
+
+            if len(content) <= available_for_content:
+                # Fits without truncation
+                return thinking_md2, text_md2
+
+            # Truncate content from beginning
+            truncated_content = ellipsis + content[-available_for_content:]
+
+            # Ensure proper blockquote structure (each line starts with >)
+            lines = truncated_content.split("\n")
+            result_lines: list[str] = []
+            for i, line in enumerate(lines):
+                if i == 0:
+                    # First line uses **> (expandable marker)
+                    result_lines.append(f"**>{line.lstrip('>')}")
+                else:
+                    # Other lines use >
+                    if not line.startswith(">"):
+                        result_lines.append(f">{line}")
+                    else:
+                        result_lines.append(line)
+
+            return "\n".join(result_lines), text_md2
+
+        # Fallback for non-blockquote thinking
+        truncated_thinking = ellipsis + thinking_md2[-available_for_content:]
+        return truncated_thinking, text_md2
+
     def calculate_available_space(self, text_length: int) -> int:
         """Calculate how much space is available for thinking.
 
@@ -119,7 +239,7 @@ class TruncationManager:
         Returns:
             Available characters for thinking content.
         """
-        available = EFFECTIVE_LIMIT - text_length
+        available = self._effective_limit - text_length
         return max(0, available)
 
     def needs_truncation(self, thinking_length: int, text_length: int) -> bool:
@@ -132,23 +252,23 @@ class TruncationManager:
         Returns:
             True if total exceeds effective limit.
         """
-        return thinking_length + text_length > EFFECTIVE_LIMIT
+        return thinking_length + text_length > self._effective_limit
 
-    def should_split(self, thinking_html: str, text_length: int) -> bool:
+    def should_split(self, thinking_formatted: str, text_length: int) -> bool:
         """Check if message should be split into multiple parts.
 
         Split is needed when:
-        - Text exceeds SPLIT_THRESHOLD
+        - Text exceeds split threshold
         - Thinking is already empty (fully truncated away)
 
         This allows gradual thinking truncation before resorting to splitting.
 
         Args:
-            thinking_html: Current thinking HTML (empty string if truncated away).
+            thinking_formatted: Current thinking (empty string if truncated away).
             text_length: Length of text content.
 
         Returns:
             True if message should be split.
         """
         # Only split if thinking is already gone and text is large
-        return not thinking_html and text_length >= SPLIT_THRESHOLD
+        return not thinking_formatted and text_length >= self._effective_limit

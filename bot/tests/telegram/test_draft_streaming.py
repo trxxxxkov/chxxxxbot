@@ -120,7 +120,7 @@ class TestDraftStreamerFinalize:
             chat_id=100,
             text="clean text",
             message_thread_id=200,
-            parse_mode="HTML",
+            parse_mode="MarkdownV2",  # Default parse mode
         )
         mock_bot.edit_message_text.assert_not_called()
 
@@ -158,7 +158,7 @@ class TestDraftStreamerFinalize:
             chat_id=100,
             text="clean text",
             message_thread_id=200,
-            parse_mode="HTML",
+            parse_mode="MarkdownV2",  # Default parse mode
         )
 
     @pytest.mark.asyncio
