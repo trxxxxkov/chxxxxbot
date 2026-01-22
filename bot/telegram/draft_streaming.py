@@ -22,7 +22,7 @@ logger = get_logger(__name__)
 
 # Minimum interval between draft updates (seconds)
 # sendMessageDraft still has rate limits, just more relaxed than edit_message
-MIN_UPDATE_INTERVAL = 0.5
+MIN_UPDATE_INTERVAL = 0.6
 
 # Default keepalive interval (seconds)
 DEFAULT_KEEPALIVE_INTERVAL = 6.0
