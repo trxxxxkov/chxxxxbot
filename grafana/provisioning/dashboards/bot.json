@@ -1604,7 +1604,7 @@
         "name": "user_filter",
         "options": [],
         "query": "SELECT '' AS __value, 'All' AS __text UNION ALL SELECT COALESCE(username, id::text) AS __value, COALESCE(username, '') || ' (' || id || ')' AS __text FROM users ORDER BY __text",
-        "refresh": 2,
+        "refresh": 1,
         "regex": "",
         "skipUrlSync": false,
         "sort": 0,
