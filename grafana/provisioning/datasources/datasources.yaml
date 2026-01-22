@@ -19,3 +19,19 @@ datasources:
     editable: false
     jsonData:
       timeInterval: "15s"
+
+  - name: PostgreSQL
+    type: postgres
+    uid: postgres
+    access: proxy
+    url: postgres:5432
+    user: bot
+    editable: false
+    jsonData:
+      database: bot
+      sslmode: disable
+      maxOpenConns: 5
+      maxIdleConns: 2
+      connMaxLifetime: 14400
+    secureJsonData:
+      password: $POSTGRES_PASSWORD

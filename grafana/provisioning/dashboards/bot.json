@@ -1588,16 +1588,27 @@
     "list": [
       {
         "current": {
-          "selected": false,
-          "text": "",
+          "selected": true,
+          "text": "All",
           "value": ""
         },
+        "datasource": {
+          "type": "postgres",
+          "uid": "postgres"
+        },
+        "definition": "SELECT '' AS __value, 'All' AS __text UNION ALL SELECT COALESCE(username, id::text) AS __value, COALESCE(username, '') || ' (' || id || ')' AS __text FROM users ORDER BY __text",
         "hide": 0,
-        "label": "User (ID or username)",
+        "includeAll": false,
+        "label": "User",
+        "multi": false,
         "name": "user_filter",
         "options": [],
-        "query": "",
-        "type": "textbox"
+        "query": "SELECT '' AS __value, 'All' AS __text UNION ALL SELECT COALESCE(username, id::text) AS __value, COALESCE(username, '') || ' (' || id || ')' AS __text FROM users ORDER BY __text",
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
       },
       {
         "current": {
