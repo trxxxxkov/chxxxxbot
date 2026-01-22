@@ -25,10 +25,10 @@ datasources:
     uid: postgres
     access: proxy
     url: postgres:5432
-    user: bot
+    user: postgres
     editable: false
     jsonData:
-      database: bot
+      database: postgres
       sslmode: disable
       maxOpenConns: 5
       maxIdleConns: 2
