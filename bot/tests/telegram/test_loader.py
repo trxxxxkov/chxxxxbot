@@ -34,6 +34,7 @@ def reset_routers():
         payment,
         personality,
         start,
+        stop_generation,
     )
     from telegram.pipeline import handler as unified_handler
 
@@ -43,6 +44,7 @@ def reset_routers():
         personality.router,
         payment.router,
         admin.router,
+        stop_generation.router,
         edited_message.router,
         unified_handler.router,
     ]
@@ -174,8 +176,8 @@ def test_create_dispatcher_middleware_order():
 def test_create_dispatcher_router_order():
     """Test create_dispatcher registers routers in correct order.
 
-    Unified Pipeline: 7 routers (start, model, personality, payment, admin,
-    edited_message, unified_pipeline).
+    Unified Pipeline: 8 routers (start, model, personality, payment, admin,
+    stop_generation, edited_message, unified_pipeline).
     """
     with patch('telegram.loader.logger'):
         dispatcher = create_dispatcher()
@@ -183,14 +185,14 @@ def test_create_dispatcher_router_order():
         # Check routers registered
         routers = list(dispatcher.sub_routers)
 
-        # Should have 7 routers (unified pipeline)
-        assert len(routers) == 7
+        # Should have 8 routers (unified pipeline + stop_generation)
+        assert len(routers) == 8
 
         # Check router names (order matters - unified_pipeline is catch-all)
         router_names = [r.name for r in routers]
         expected = [
             "start", "model", "personality", "payment", "admin",
-            "edited_message", "unified_pipeline"
+            "stop_generation", "edited_message", "unified_pipeline"
         ]
         assert router_names == expected, \
             f"Routers should be in order: {expected}"
@@ -199,7 +201,7 @@ def test_create_dispatcher_router_order():
 def test_create_dispatcher_router_names():
     """Test that routers have correct names.
 
-    Unified Pipeline: Verifies all 7 routers present.
+    Unified Pipeline: Verifies all 8 routers present.
     """
     with patch('telegram.loader.logger'):
         dispatcher = create_dispatcher()
@@ -207,10 +209,10 @@ def test_create_dispatcher_router_names():
         routers = list(dispatcher.sub_routers)
         router_names = [r.name for r in routers]
 
-        # Check all routers present (unified pipeline)
+        # Check all routers present (unified pipeline + stop_generation)
         expected_routers = [
             "start", "model", "personality", "payment", "admin",
-            "edited_message", "unified_pipeline"
+            "stop_generation", "edited_message", "unified_pipeline"
         ]
         for router_name in expected_routers:
             assert router_name in router_names, \
@@ -225,10 +227,10 @@ def test_create_dispatcher_logging():
     with patch('telegram.loader.logger') as mock_logger:
         create_dispatcher()
 
-        # Verify logging (7 routers, unified pipeline)
+        # Verify logging (8 routers, unified pipeline + stop_generation)
         expected_routers = [
             "start", "model", "personality", "payment", "admin",
-            "edited_message", "unified_pipeline"
+            "stop_generation", "edited_message", "unified_pipeline"
         ]
         mock_logger.info.assert_called_once_with(
             "dispatcher_created",

@@ -16,6 +16,7 @@ from telegram.handlers import model
 from telegram.handlers import payment  # Phase 2.1: Payment handlers
 from telegram.handlers import personality
 from telegram.handlers import start
+from telegram.handlers import stop_generation  # Phase 2.5: Stop generation
 from telegram.middlewares.balance_middleware import \
     BalanceMiddleware  # Phase 2.1: Balance check
 from telegram.middlewares.database_middleware import DatabaseMiddleware
@@ -68,6 +69,8 @@ def create_dispatcher() -> Dispatcher:
     dispatcher.include_router(personality.router)
     dispatcher.include_router(payment.router)  # Phase 2.1: Payment commands
     dispatcher.include_router(admin.router)  # Phase 2.1: Admin commands
+    dispatcher.include_router(
+        stop_generation.router)  # Phase 2.5: Stop generation
 
     # Unified pipeline: Single handler for all message types
     # Handles: text, photo, document, voice, audio, video, video_note
@@ -82,6 +85,7 @@ def create_dispatcher() -> Dispatcher:
             "personality",
             "payment",
             "admin",
+            "stop_generation",
             "edited_message",
             "unified_pipeline",
         ],

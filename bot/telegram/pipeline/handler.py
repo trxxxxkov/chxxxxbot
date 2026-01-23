@@ -18,6 +18,7 @@ from aiogram import F
 from aiogram import Router
 from aiogram import types
 from sqlalchemy.ext.asyncio import AsyncSession
+from telegram.generation_tracker import generation_tracker
 from telegram.pipeline.models import ProcessedMessage
 from telegram.pipeline.models import TranscriptInfo
 from telegram.pipeline.normalizer import get_normalizer
@@ -99,6 +100,17 @@ async def handle_message(message: types.Message, session: AsyncSession) -> None:
 
     user_id = message.from_user.id
     chat_id = message.chat.id
+
+    # Phase 2.5: Cancel any active generation for this user/chat
+    # New message will be queued and processed after current generation stops
+    if generation_tracker.is_active(chat_id, user_id):
+        await generation_tracker.cancel(chat_id, user_id)
+        logger.info(
+            "unified_handler.cancelled_active_generation",
+            user_id=user_id,
+            chat_id=chat_id,
+            message_id=message.message_id,
+        )
 
     # Determine content type for metrics
     content_type = _get_content_type(message)

@@ -72,6 +72,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from telegram.context.extractors import extract_message_context
 from telegram.context.formatter import ContextFormatter
 from telegram.draft_streaming import DraftManager
+from telegram.generation_tracker import generation_context
 from telegram.handlers.claude_files import process_generated_files
 from telegram.handlers.claude_helpers import compose_system_prompt
 from telegram.handlers.claude_helpers import split_text_smart
@@ -113,7 +114,7 @@ def init_claude_provider(api_key: str) -> None:
 
 
 # pylint: disable=too-many-locals,too-many-branches,too-many-statements
-# pylint: disable=too-many-nested-blocks
+# pylint: disable=too-many-nested-blocks,too-many-return-statements
 async def _stream_with_unified_events(
     request: LLMRequest,
     first_message: types.Message,
@@ -124,7 +125,7 @@ async def _stream_with_unified_events(
     user_id: int,
     telegram_thread_id: int | None,
     continuation_conversation: list | None = None,
-) -> tuple[str, types.Message | None, bool, list | None]:
+) -> tuple[str, types.Message | None, bool, list | None, bool]:
     """Stream response with unified thinking/text/tool handling.
 
     Uses sendMessageDraft (Bot API 9.3) for streaming without flood control.
@@ -154,9 +155,10 @@ async def _stream_with_unified_events(
 
     Returns:
         Tuple of (final_answer_text, final_message, needs_continuation,
-                  conversation_state).
+                  conversation_state, was_cancelled).
         - needs_continuation: True if _force_turn_break was triggered
         - conversation_state: Updated conversation for continuation
+        - was_cancelled: True if user cancelled via /stop or new message
     """
     max_iterations = TOOL_LOOP_MAX_ITERATIONS
 
@@ -178,14 +180,17 @@ async def _stream_with_unified_events(
                 max_iterations=max_iterations,
                 streaming_method="sendMessageDraft")
 
-    # Initialize draft manager for smooth animated updates with automatic cleanup
-    # DraftManager handles keepalive, cleanup on errors, and multiple drafts
-    async with DraftManager(
-        bot=first_message.bot,
-        chat_id=chat_id,
-        topic_id=telegram_thread_id,
-        keepalive_interval=DRAFT_KEEPALIVE_INTERVAL,
-    ) as dm:
+    # Phase 2.5: Generation tracking for /stop command
+    # Combined async with to avoid extra nesting
+    async with (
+        generation_context(chat_id, user_id) as cancel_event,
+        DraftManager(
+            bot=first_message.bot,
+            chat_id=chat_id,
+            topic_id=telegram_thread_id,
+            keepalive_interval=DRAFT_KEEPALIVE_INTERVAL,
+        ) as dm,
+    ):
         # StreamingSession encapsulates all streaming state
         # - Display blocks (thinking, text)
         # - Pending tools
@@ -214,7 +219,34 @@ async def _stream_with_unified_events(
             )
 
             # Stream events (DraftManager handles cleanup via context manager)
+            # Phase 2.5: Track if cancelled for handling after loop
+            was_cancelled = False
+
             async for event in claude_provider.stream_events(iter_request):
+                # Phase 2.5: Check for user cancellation between events
+                if cancel_event.is_set():
+                    # Determine current phase for logging
+                    current_phase = "unknown"
+                    if stream.display.total_thinking_length() > 0:
+                        if stream.get_final_text():
+                            current_phase = "text"
+                        else:
+                            current_phase = "thinking"
+                    elif stream.get_final_text():
+                        current_phase = "text"
+
+                    logger.info(
+                        "stream.cancelled_by_user",
+                        thread_id=thread_id,
+                        iteration=iteration + 1,
+                        phase=current_phase,
+                        thinking_length=stream.display.total_thinking_length(),
+                        text_length=len(stream.get_final_text()),
+                        pending_tools=len(stream.pending_tools),
+                    )
+                    was_cancelled = True
+                    break
+
                 if event.type == "thinking_delta":
                     await stream.handle_thinking_delta(event.content)
 
@@ -248,6 +280,40 @@ async def _stream_with_unified_events(
             # Log iteration stats
             stream.log_iteration_complete(iteration + 1)
 
+            # Phase 2.5: Handle user cancellation
+            if was_cancelled:
+                partial_answer = stream.get_final_text()
+                partial_display = stream.get_final_display()
+
+                # Add interrupted indicator to display (MarkdownV2 format)
+                # In MarkdownV2: _text_ for italic, \[ and \] to escape brackets
+                stopped_suffix = "\n\n_\\[interrupted\\]_"
+                if partial_display.strip():
+                    partial_display = partial_display + stopped_suffix
+                else:
+                    partial_display = "_\\[interrupted\\]_"
+
+                # Finalize draft with partial content
+                final_message = None
+                try:
+                    final_message = await dm.current.finalize(
+                        final_text=partial_display)
+                except Exception as e:  # pylint: disable=broad-exception-caught
+                    logger.error("stream.cancelled.finalize_failed",
+                                 thread_id=thread_id,
+                                 error=str(e))
+
+                logger.info(
+                    "stream.unified.stopped_by_user",
+                    thread_id=thread_id,
+                    partial_answer_length=len(partial_answer),
+                    partial_display_length=len(partial_display),
+                    finalized=final_message is not None,
+                )
+
+                # Return with was_cancelled=True to skip usage tracking
+                return partial_answer, final_message, False, None, True
+
             if stream.stop_reason in ("end_turn", "pause_turn"):
                 # Final answer
                 final_answer = stream.get_final_text()
@@ -275,7 +341,7 @@ async def _stream_with_unified_events(
                     await dm.current.clear()
 
                 # No continuation needed - final answer
-                return final_answer, final_message, False, None
+                return final_answer, final_message, False, None, False
 
             if stream.stop_reason == "tool_use" and stream.pending_tools:
                 # Execute all tools in PARALLEL, process results AS COMPLETED
@@ -426,7 +492,7 @@ async def _stream_with_unified_events(
                     await dm.current.clear()
                     return (
                         "⚠️ Tool execution error: missing assistant context",
-                        None, False, None)
+                        None, False, None, False)
 
                 # Update display with system messages
                 await stream.update_display()
@@ -434,6 +500,40 @@ async def _stream_with_unified_events(
                 logger.info("stream.unified.tool_results_added",
                             thread_id=thread_id,
                             tool_count=len(pending_tools))
+
+                # Phase 2.5: Check for cancellation after tool execution
+                # User may have pressed /stop while tools were running
+                if cancel_event.is_set():
+                    logger.info(
+                        "stream.cancelled_after_tools",
+                        thread_id=thread_id,
+                        iteration=iteration + 1,
+                        tools_completed=len(pending_tools),
+                        tool_names=tool_names,
+                    )
+
+                    partial_answer = stream.get_final_text()
+                    partial_display = stream.get_final_display()
+
+                    # Add interrupted indicator
+                    stopped_suffix = "\n\n_\\[interrupted\\]_"
+                    if partial_display.strip():
+                        partial_display = partial_display + stopped_suffix
+                    else:
+                        partial_display = "_\\[interrupted\\]_"
+
+                    # Finalize draft with partial content
+                    final_message = None
+                    try:
+                        final_message = await dm.current.finalize(
+                            final_text=partial_display)
+                    except Exception as e:  # pylint: disable=broad-exception-caught
+                        logger.error(
+                            "stream.cancelled_after_tools.finalize_failed",
+                            thread_id=thread_id,
+                            error=str(e))
+
+                    return partial_answer, final_message, False, None, True
 
                 # Phase 3.4: Handle sequential delivery turn break
                 if force_turn_break:
@@ -458,7 +558,8 @@ async def _stream_with_unified_events(
 
                     # Return with continuation needed
                     # Conversation state is passed so caller can continue
-                    return (partial_answer, final_message, True, conversation)
+                    return (partial_answer, final_message, True, conversation,
+                            False)
 
             else:
                 # Unexpected stop reason
@@ -484,7 +585,7 @@ async def _stream_with_unified_events(
                 except Exception:  # pylint: disable=broad-exception-caught
                     final_message = None
 
-                return final_answer, final_message, False, None
+                return final_answer, final_message, False, None, False
 
         # Max iterations exceeded (DraftManager will cleanup on exit)
         logger.error("stream.unified.max_iterations",
@@ -502,7 +603,7 @@ async def _stream_with_unified_events(
         except Exception:  # pylint: disable=broad-exception-caught
             final_message = None
 
-        return error_msg, final_message, False, None
+        return error_msg, final_message, False, None, False
 
 
 async def _send_with_retry(
@@ -541,6 +642,7 @@ async def _send_with_retry(
 
 
 # pylint: disable=too-many-locals,too-many-branches,too-many-statements
+# pylint: disable=too-many-return-statements
 async def _process_message_batch(thread_id: int,
                                  messages: list['ProcessedMessage']) -> None:
     """Process batch of messages for a thread.
@@ -774,9 +876,11 @@ async def _process_message_batch(thread_id: int,
                 all_response_parts = []
                 final_bot_message = None
 
+                was_cancelled = False  # Track if user cancelled generation
                 for continuation_idx in range(max_continuations + 1):
                     (response_text, bot_message, needs_continuation,
-                     conversation_state) = await _stream_with_unified_events(
+                     conversation_state,
+                     was_cancelled) = await _stream_with_unified_events(
                          request=request,
                          first_message=first_message,
                          thread_id=thread_id,
@@ -866,6 +970,12 @@ async def _process_message_batch(thread_id: int,
                 logger.error("claude_handler.no_bot_message",
                              thread_id=thread_id)
                 await first_message.answer("Failed to send response.")
+                return
+
+            # Phase 2.5: If user cancelled, skip usage tracking (no usage data)
+            if was_cancelled:
+                logger.info("claude_handler.cancelled_skip_usage",
+                            thread_id=thread_id)
                 return
 
             # 9. Get usage stats, stop_reason, thinking, and calculate cost

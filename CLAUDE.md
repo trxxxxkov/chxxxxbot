@@ -446,7 +446,32 @@ See [docs/phase-2.2-devops-agent.md](docs/phase-2.2-devops-agent.md) for full ar
 
 **See:** [docs/phase-2.3-tool-cost-precheck.md](docs/phase-2.3-tool-cost-precheck.md)
 
-#### 2.4 Additional Telegram Features 📋 Planned
+#### 2.5 Generation Stop Button ✅ Complete
+**Status:** Complete (2026-01-23)
+
+**Problem solved:**
+- No way for users to stop long-running generations
+- Thinking and text streaming could not be interrupted
+
+**Solution:**
+- Reply keyboard "⏹ Stop" button appears during generation
+- New message automatically cancels active generation
+- Cancellation check between Claude stream events
+- Partial content preserved with "[Generation stopped]" indicator
+
+**Implementation:**
+- ✅ `GenerationTracker` singleton for tracking active generations
+- ✅ `generation_context` context manager (Reply keyboard show/hide)
+- ✅ Stop button handler + new message cancellation in pipeline
+- ✅ Integration with streaming loop in claude.py
+
+**Testing:**
+- 37 new tests (tracker, handler, keyboard)
+- 1238 total tests passing
+
+**See:** [docs/phase-2.5-generation-stop.md](docs/phase-2.5-generation-stop.md)
+
+#### 2.6 Additional Telegram Features 📋 Planned
 - Draft messages (Bot API 9.3)
 - Threads/topics (Bot API 9.3)
 - Keyboards (inline, reply)
@@ -983,5 +1008,13 @@ This script:
 - Turn break handling in streaming loop
 - 42 new tests (1163 total tests passing)
 - Documentation: docs/phase-3.4-flexible-file-delivery.md
+
+**Phase 2.5 (Generation Stop Button):** ✅ Complete (2026-01-23)
+- Reply keyboard "⏹ Stop" button during generation
+- New message auto-cancels active generation
+- `GenerationTracker` singleton + `generation_context` context manager
+- Cancellation check in streaming loop, partial content preserved
+- 37 new tests (1238 total tests passing)
+- Documentation: docs/phase-2.5-generation-stop.md
 
 **Next:** Phase 2.2 (DevOps Agent)
