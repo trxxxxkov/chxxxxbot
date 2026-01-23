@@ -475,15 +475,16 @@ def _render_markdown_v2(text: str, auto_close: bool = True) -> str:
             i += 1
             continue
 
-        # Check for single ~ (strikethrough in MarkdownV2)
+        # Single ~ should always be escaped (Claude uses ~~ for strikethrough,
+        # which is handled above and converted to single ~)
+        # A lone ~ in Claude's output is NOT intended as strikethrough
         if text[i] == "~" and text[i:i + 2] != "~~":
             if current_context() == FormattingType.STRIKETHROUGH:
+                # Closing strikethrough opened by ~~
                 result.append("~")
                 pop_context(FormattingType.STRIKETHROUGH)
-            elif i + 1 < n and text[i + 1] not in " \t\n":
-                result.append("~")
-                push_context(FormattingType.STRIKETHROUGH, "~")
             else:
+                # Lone ~ should be escaped, not treated as strikethrough
                 result.append("\\~")
             i += 1
             continue

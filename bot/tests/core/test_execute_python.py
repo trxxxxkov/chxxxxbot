@@ -53,7 +53,7 @@ class TestExecutePython:
         # Setup mock API key
         mock_get_api_key.return_value = "test_api_key"
 
-        # Setup mock sandbox with context manager support
+        # Setup mock sandbox (no context manager, manual lifecycle)
         mock_sandbox = Mock()
 
         # E2B v1.0+ API: execution.logs.stdout/stderr
@@ -69,8 +69,8 @@ class TestExecutePython:
         mock_sandbox.run_code.return_value = mock_execution
         # Mock files.list() to return empty list (no output files)
         mock_sandbox.files.list.return_value = []
-        mock_sandbox.__enter__ = Mock(return_value=mock_sandbox)
-        mock_sandbox.__exit__ = Mock(return_value=None)
+        # Mock kill() for manual cleanup (called in finally block)
+        mock_sandbox.kill.return_value = None
         mock_sandbox_class.create.return_value = mock_sandbox
 
         # Test
@@ -87,8 +87,7 @@ class TestExecutePython:
 
         # Verify sandbox was created and context manager was used
         mock_sandbox_class.create.assert_called_once()
-        mock_sandbox.__enter__.assert_called_once()
-        mock_sandbox.__exit__.assert_called_once()
+        mock_sandbox.kill.assert_called_once()
 
         # Verify run_code was called
         mock_sandbox.run_code.assert_called_once()
@@ -124,8 +123,7 @@ class TestExecutePython:
         mock_execution.logs = mock_logs
 
         mock_sandbox.run_code.return_value = mock_execution
-        mock_sandbox.__enter__ = Mock(return_value=mock_sandbox)
-        mock_sandbox.__exit__ = Mock(return_value=None)
+        mock_sandbox.kill.return_value = None
         mock_sandbox_class.create.return_value = mock_sandbox
 
         # Test
@@ -142,8 +140,7 @@ class TestExecutePython:
         mock_sandbox.commands.run.assert_called_once_with("pip install numpy")
 
         # Verify context manager was used
-        mock_sandbox.__enter__.assert_called_once()
-        mock_sandbox.__exit__.assert_called_once()
+        mock_sandbox.kill.assert_called_once()
 
     @pytest.mark.asyncio
     @patch('core.tools.execute_python.Sandbox')
@@ -170,8 +167,7 @@ class TestExecutePython:
         mock_execution.logs = mock_logs
 
         mock_sandbox.run_code.return_value = mock_execution
-        mock_sandbox.__enter__ = Mock(return_value=mock_sandbox)
-        mock_sandbox.__exit__ = Mock(return_value=None)
+        mock_sandbox.kill.return_value = None
         mock_sandbox_class.create.return_value = mock_sandbox
 
         # Test
@@ -184,8 +180,7 @@ class TestExecutePython:
         assert "NameError" in result["error"]
 
         # Verify context manager was used even after error
-        mock_sandbox.__enter__.assert_called_once()
-        mock_sandbox.__exit__.assert_called_once()
+        mock_sandbox.kill.assert_called_once()
 
     @pytest.mark.asyncio
     @patch('core.tools.execute_python.Sandbox')
@@ -211,8 +206,7 @@ class TestExecutePython:
         mock_execution.logs = mock_logs
 
         mock_sandbox.run_code.return_value = mock_execution
-        mock_sandbox.__enter__ = Mock(return_value=mock_sandbox)
-        mock_sandbox.__exit__ = Mock(return_value=None)
+        mock_sandbox.kill.return_value = None
         mock_sandbox_class.create.return_value = mock_sandbox
 
         # Test
@@ -249,8 +243,7 @@ class TestExecutePython:
         mock_execution.logs = mock_logs
 
         mock_sandbox.run_code.return_value = mock_execution
-        mock_sandbox.__enter__ = Mock(return_value=mock_sandbox)
-        mock_sandbox.__exit__ = Mock(return_value=None)
+        mock_sandbox.kill.return_value = None
         mock_sandbox_class.create.return_value = mock_sandbox
 
         # Test
@@ -313,8 +306,7 @@ class TestExecutePython:
         mock_execution.logs = mock_logs
 
         mock_sandbox.run_code.return_value = mock_execution
-        mock_sandbox.__enter__ = Mock(return_value=mock_sandbox)
-        mock_sandbox.__exit__ = Mock(return_value=None)
+        mock_sandbox.kill.return_value = None
         mock_sandbox_class.create.return_value = mock_sandbox
 
         # Test
@@ -391,8 +383,7 @@ with open('/tmp/inputs/data.csv', 'r') as f:
 
         mock_sandbox.run_code.return_value = mock_execution
         mock_sandbox.files.list.return_value = []
-        mock_sandbox.__enter__ = Mock(return_value=mock_sandbox)
-        mock_sandbox.__exit__ = Mock(return_value=None)
+        mock_sandbox.kill.return_value = None
         mock_sandbox_class.create.return_value = mock_sandbox
 
         # Code without /tmp/inputs/ should execute normally
@@ -436,8 +427,7 @@ class TestExecutePythonOutputFiles:
         mock_sandbox.run_code.return_value = mock_execution
         # No output files
         mock_sandbox.files.list.return_value = []
-        mock_sandbox.__enter__ = Mock(return_value=mock_sandbox)
-        mock_sandbox.__exit__ = Mock(return_value=None)
+        mock_sandbox.kill.return_value = None
         mock_sandbox_class.create.return_value = mock_sandbox
 
         result = await execute_python(code="print('Hello')",
@@ -477,8 +467,7 @@ class TestExecutePythonOutputFiles:
         mock_sandbox.files.list.return_value = [mock_file_entry]
         mock_sandbox.files.read.return_value = b"Hello, World!"
 
-        mock_sandbox.__enter__ = Mock(return_value=mock_sandbox)
-        mock_sandbox.__exit__ = Mock(return_value=None)
+        mock_sandbox.kill.return_value = None
         mock_sandbox_class.create.return_value = mock_sandbox
 
         # Mock Redis cache response

@@ -60,7 +60,10 @@ def _run_sandbox_sync(  # pylint: disable=too-many-locals,too-many-statements
 
     sandbox_start_time = time.time()
 
-    with Sandbox.create() as sandbox:
+    # Manual sandbox lifecycle management to handle cleanup errors gracefully.
+    # Using context manager causes cleanup errors to lose all execution results.
+    sandbox = Sandbox.create()
+    try:
         # Upload pre-downloaded files to sandbox
         if downloaded_files:
             sandbox.commands.run("mkdir -p /tmp/inputs")
@@ -193,6 +196,17 @@ def _run_sandbox_sync(  # pylint: disable=too-many-locals,too-many-statements
             result["_raw_files"] = generated_files
 
         return result, sandbox_duration
+
+    finally:
+        # Attempt to kill sandbox, but don't let cleanup errors lose our results.
+        # E2B infrastructure issues (timeouts, port errors) can cause kill() to fail
+        # even when execution completed successfully.
+        try:
+            sandbox.kill()
+        except Exception as cleanup_error:  # pylint: disable=broad-exception-caught
+            # Log as warning, not error - this is a cleanup issue, not execution failure
+            logger.warning("tools.execute_python.sandbox_cleanup_failed",
+                           error=str(cleanup_error))
 
 
 # pylint: disable=too-many-locals,too-many-statements

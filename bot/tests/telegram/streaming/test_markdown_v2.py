@@ -912,6 +912,44 @@ class TestRegressionCases:
         # - should be escaped
         assert r"\-" in result
 
+    def test_single_tilde_not_strikethrough(self):
+        """Single ~ should be escaped, not treated as strikethrough.
+
+        Bug fix regression test: Single ~ followed by text was incorrectly
+        opening a strikethrough context, causing text to be struck through.
+        Only ~~ should be treated as strikethrough (standard Markdown).
+        """
+        # Cost with tilde - should NOT create strikethrough
+        result = render_streaming_safe("Cost: ~$0.006/minute")
+        # Single ~ should be escaped (backslash before tilde)
+        assert r"\~" in result
+        # The entire text after tilde should NOT be struck through
+        # If strikethrough was opened, everything would be in strikethrough
+        # With proper escaping, we get \~$0\.006/minute
+        assert result.count("~") == 1  # Only one ~ (escaped)
+
+        # Text with tilde at various positions
+        result2 = render_streaming_safe("Approximately ~100 items remaining")
+        assert r"\~" in result2
+        assert result2.count("~") == 1  # Only one ~ (escaped)
+
+        # Double tilde SHOULD still work as strikethrough
+        result3 = render_streaming_safe("This is ~~struck~~ text")
+        assert "~struck~" in result3  # Converted to single ~ for MarkdownV2
+
+    def test_tilde_in_technical_content(self):
+        """Tilde in technical content should be escaped.
+
+        Common cases: home directories (~user), approximate values (~10ms).
+        """
+        # Unix home directory
+        result = render_streaming_safe("Path: ~/Documents/file.txt")
+        assert r"\~" in result
+
+        # Latency with approximate
+        result2 = render_streaming_safe("Latency: ~10ms for fast queries")
+        assert r"\~" in result2
+
 
 class TestPreprocessUnsupportedMarkdown:
     """Tests for preprocess_unsupported_markdown function."""
