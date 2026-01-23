@@ -12,18 +12,55 @@ NO __init__.py - use direct import:
 
 from decimal import Decimal
 import time
+from typing import Optional
 
 from aiogram import types
+from cache.user_cache import get_balance_from_cached
+from cache.user_cache import get_cached_user
+import config
 from core.exceptions import ToolValidationError
+from core.tools.cost_estimator import is_paid_tool
 from core.tools.registry import execute_tool
 from db.repositories.balance_operation_repository import \
     BalanceOperationRepository
 from db.repositories.user_repository import UserRepository
 from services.balance_service import BalanceService
 from sqlalchemy.ext.asyncio import AsyncSession
+from utils.metrics import record_tool_precheck_rejected
 from utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
+
+
+async def get_user_balance(
+    user_id: int,
+    session: AsyncSession,
+) -> Optional[Decimal]:
+    """Get user balance from cache or database.
+
+    Tries Redis cache first, falls back to Postgres if miss.
+    Used for tool cost pre-check to avoid blocking paid tools
+    when balance is negative.
+
+    Args:
+        user_id: Telegram user ID.
+        session: Database session for fallback query.
+
+    Returns:
+        User balance in USD, or None if user not found.
+    """
+    # Try cache first
+    cached = await get_cached_user(user_id)
+    if cached:
+        return get_balance_from_cached(cached)
+
+    # Fallback to database
+    user_repo = UserRepository(session)
+    user = await user_repo.get(user_id)
+    if user:
+        return user.balance
+
+    return None
 
 
 async def charge_for_tool(
@@ -75,6 +112,7 @@ async def execute_single_tool_safe(
     bot: types.Message,
     session: AsyncSession,
     thread_id: int,
+    user_id: int,
 ) -> dict:
     """Execute a single tool with error handling for parallel execution.
 
@@ -82,12 +120,17 @@ async def execute_single_tool_safe(
     with asyncio.gather(). Each tool execution is independent and errors
     are captured in the result dict.
 
+    Includes balance pre-check for paid tools (Phase 2.3):
+    - If balance < 0 and tool is paid, rejects with structured error
+    - Claude should inform user to top up with /pay command
+
     Args:
         tool_name: Name of the tool to execute.
         tool_input: Tool input parameters.
         bot: Telegram Bot instance.
         session: Database session.
         thread_id: Thread ID for logging.
+        user_id: User ID for balance pre-check.
 
     Returns:
         Dict with result or error. Always includes:
@@ -101,6 +144,34 @@ async def execute_single_tool_safe(
     logger.info("tools.parallel.executing",
                 thread_id=thread_id,
                 tool_name=tool_name)
+
+    # Phase 2.3: Balance pre-check for paid tools
+    if config.TOOL_COST_PRECHECK_ENABLED and is_paid_tool(tool_name):
+        balance = await get_user_balance(user_id, session)
+
+        if balance is not None and balance < 0:
+            duration = time.time() - start_time
+            record_tool_precheck_rejected(tool_name)
+
+            logger.info("tools.precheck.rejected",
+                        thread_id=thread_id,
+                        tool_name=tool_name,
+                        user_id=user_id,
+                        balance_usd=str(balance))
+
+            return {
+                "error": "insufficient_balance",
+                "message":
+                    (f"Cannot execute {tool_name}: your balance is negative "
+                     f"(${balance:.2f}). Paid tools are blocked until balance "
+                     "is topped up. Please inform the user to use /pay command."
+                    ),
+                "balance_usd": str(balance),
+                "tool_name": tool_name,
+                "_tool_name": tool_name,
+                "_start_time": start_time,
+                "_duration": duration,
+            }
 
     try:
         result = await execute_tool(tool_name, tool_input, bot, session)

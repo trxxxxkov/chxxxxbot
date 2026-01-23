@@ -59,6 +59,10 @@ TOOL_EXECUTION_TIME = Histogram('bot_tool_execution_seconds',
                                 'Tool execution time in seconds', ['tool_name'],
                                 buckets=[0.1, 0.5, 1, 2, 5, 10, 30, 60])
 
+TOOL_PRECHECK_REJECTED = Counter(
+    'bot_tool_precheck_rejected_total',
+    'Paid tool calls rejected due to negative balance', ['tool_name'])
+
 # === Cost Metrics ===
 
 COSTS_USD = Counter(
@@ -233,6 +237,11 @@ def record_tool_call(tool_name: str, success: bool, duration: float) -> None:
     TOOL_CALLS.labels(tool_name=tool_name,
                       status='success' if success else 'error').inc()
     TOOL_EXECUTION_TIME.labels(tool_name=tool_name).observe(duration)
+
+
+def record_tool_precheck_rejected(tool_name: str) -> None:
+    """Record a paid tool rejected due to negative balance."""
+    TOOL_PRECHECK_REJECTED.labels(tool_name=tool_name).inc()
 
 
 def record_cost(service: str, amount_usd: float) -> None:

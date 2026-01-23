@@ -166,33 +166,35 @@ No need for negative cap - simple rule: balance < 0 → reject paid tools.
 
 ## Implementation Steps
 
-### Step 1: Paid Tools Registry
-- [ ] Create `core/tools/cost_estimator.py`
-- [ ] Define `PAID_TOOLS` set
-- [ ] Add `is_paid_tool()` function
-- [ ] Add `estimate_tool_cost()` for logging/analytics
-- [ ] Add tests
+### Step 1: Paid Tools Registry ✅
+- [x] Create `core/tools/cost_estimator.py`
+- [x] Define `PAID_TOOLS` set
+- [x] Add `is_paid_tool()` function
+- [x] Add `estimate_tool_cost()` for logging/analytics
+- [x] Add tests (17 tests in test_cost_estimator.py)
 
-### Step 2: Pre-check Integration
-- [ ] Modify `execute_single_tool_safe()` in `claude.py`
-- [ ] Check `is_paid_tool()` before execution
-- [ ] Get cached balance via `get_cached_user_balance()`
-- [ ] If balance < 0, return structured error
-- [ ] Log pre-check rejections
+### Step 2: Pre-check Integration ✅
+- [x] Modify `execute_single_tool_safe()` in `claude_tools.py`
+- [x] Check `is_paid_tool()` before execution
+- [x] Get cached balance via `get_user_balance()` (cache → DB fallback)
+- [x] If balance < 0, return structured error
+- [x] Log pre-check rejections
 
-### Step 3: Error Response Format
-- [ ] Define clear error format for Claude
-- [ ] Include balance, tool name, action required
-- [ ] Test that Claude doesn't retry rejected tool
+### Step 3: Error Response Format ✅
+- [x] Define clear error format for Claude
+- [x] Include balance, tool name, action required
+- [x] Error message tells Claude to inform user about /pay
 
-### Step 4: Monitoring
-- [ ] Add Prometheus counter for rejections
-- [ ] Add Grafana panel
+### Step 4: Monitoring ✅
+- [x] Add Prometheus counter `bot_tool_precheck_rejected_total`
+- [ ] Add Grafana panel (optional, can be done later)
 
-### Step 5: Testing
-- [ ] Unit tests for `is_paid_tool()`
-- [ ] Integration test: tool rejected when balance < 0
-- [ ] Integration test: free tools work with negative balance
+### Step 5: Testing ✅
+- [x] Unit tests for `is_paid_tool()` (5 tests)
+- [x] Unit tests for `estimate_tool_cost()` (11 tests)
+- [x] Integration test: tool rejected when balance < 0 (6 tests)
+- [x] Integration test: free tools work with negative balance
+- [x] Total: 28 new tests, all passing
 
 ## File Changes
 
@@ -200,17 +202,21 @@ No need for negative cap - simple rule: balance < 0 → reject paid tools.
 bot/
 ├── core/
 │   └── tools/
-│       └── cost_estimator.py         # NEW: PAID_TOOLS, is_paid_tool()
+│       └── cost_estimator.py              # NEW: PAID_TOOLS, is_paid_tool()
 ├── telegram/
 │   └── handlers/
-│       └── claude.py                 # MODIFY: Add pre-check in tool execution
-├── config.py                         # MODIFY: TOOL_COST_PRECHECK_ENABLED
+│       ├── claude.py                      # MODIFY: Pass user_id to execute_single_tool_safe
+│       └── claude_tools.py                # MODIFY: Add balance pre-check
+├── config.py                              # MODIFY: TOOL_COST_PRECHECK_ENABLED
 ├── utils/
-│   └── metrics.py                    # MODIFY: Add rejection counter
+│   └── metrics.py                         # MODIFY: Add TOOL_PRECHECK_REJECTED counter
 └── tests/
-    └── core/
-        └── tools/
-            └── test_cost_estimator.py  # NEW: Tests
+    ├── core/
+    │   └── tools/
+    │       └── test_cost_estimator.py     # NEW: 17 tests
+    └── telegram/
+        └── handlers/
+            └── test_tool_precheck.py      # NEW: 11 tests
 ```
 
 ## Edge Cases

@@ -56,6 +56,7 @@ MESSAGE_BATCH_DELAY_MS = 200  # Batching window for split message detection (ms)
 # With sendMessageDraft (Bot API 9.3), no flood control - update immediately
 DRAFT_KEEPALIVE_INTERVAL = 5.0  # Keep draft visible during long operations (seconds)
 TOOL_LOOP_MAX_ITERATIONS = 10  # Max tool calls per request
+TOOL_COST_PRECHECK_ENABLED = True  # Pre-check balance before paid tools
 
 
 @dataclass

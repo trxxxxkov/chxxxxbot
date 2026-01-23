@@ -295,6 +295,7 @@ async def _stream_with_unified_events(
                         bot=first_message.bot,
                         session=session,
                         thread_id=thread_id,
+                        user_id=user_id,
                     )
                     return (idx, result)
 
