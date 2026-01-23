@@ -418,7 +418,35 @@ chxxxxbot/
 
 See [docs/phase-2.2-devops-agent.md](docs/phase-2.2-devops-agent.md) for full architecture.
 
-#### 2.3 Additional Telegram Features 📋 Planned
+#### 2.3 Tool Cost Pre-check ✅ Complete
+**Status:** Complete (2026-01-23)
+
+**Problem solved:**
+- Users could request expensive tool operations (e.g., "draw 100 images")
+- Balance could go significantly negative within single request
+
+**Solution:**
+- Simple rule: if balance < 0, reject all paid tool calls
+- 4 paid tools: generate_image, transcribe_audio, web_search, execute_python
+- Free tools (render_latex, analyze_*, web_fetch, etc.) always allowed
+
+**Implementation:**
+- ✅ `core/tools/cost_estimator.py` - PAID_TOOLS set, is_paid_tool()
+- ✅ Balance pre-check in `execute_single_tool_safe()`
+- ✅ Redis cache for fast balance lookups (DB fallback)
+- ✅ Prometheus counter for rejections
+- ✅ Structured error for Claude to inform user about /pay
+
+**Configuration:**
+- `TOOL_COST_PRECHECK_ENABLED` in config.py (default: True)
+
+**Testing:**
+- 28 new tests (17 cost_estimator + 11 pre-check integration)
+- 1193 total tests passing
+
+**See:** [docs/phase-2.3-tool-cost-precheck.md](docs/phase-2.3-tool-cost-precheck.md)
+
+#### 2.4 Additional Telegram Features 📋 Planned
 - Draft messages (Bot API 9.3)
 - Threads/topics (Bot API 9.3)
 - Keyboards (inline, reply)
