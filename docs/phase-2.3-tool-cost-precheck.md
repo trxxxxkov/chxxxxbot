@@ -21,14 +21,14 @@ Pre-check estimated tool cost before execution. **If user balance < 0, reject al
 | `transcribe_audio` | ✅ Yes | $0.006/minute | OpenAI Whisper API |
 | `web_search` | ✅ Yes | $0.01/request | Anthropic server-side tool |
 | `execute_python` | ✅ Yes | $0.000036/sec × timeout | E2B sandbox (default 3600s → max $0.13) |
+| `analyze_image` | ✅ Yes | Variable (tokens) | Claude API (separate call) |
+| `analyze_pdf` | ✅ Yes | Variable (tokens) | Claude API (separate call) |
 | `render_latex` | ❌ Free | $0 | Local pdflatex rendering |
-| `analyze_image` | ❌ Free | Included in API | Claude API tokens |
-| `analyze_pdf` | ❌ Free | Included in API | Claude API tokens |
 | `web_fetch` | ❌ Free | Server-side | No external API |
 | `deliver_file` | ❌ Free | No cost | File delivery only |
 | `preview_file` | ❌ Free | No cost | Preview only |
 
-**Key insight:** 4 tools have external costs. If balance < 0, reject these 4.
+**Key insight:** 6 tools have API costs. If balance < 0, reject these 6.
 
 ## Architecture
 
@@ -40,12 +40,14 @@ Pre-check estimated tool cost before execution. **If user balance < 0, reject al
 from decimal import Decimal
 from typing import Any, Dict, Optional
 
-# Tools that have external API costs
+# Tools that have API costs (external or Claude)
 PAID_TOOLS = {
     "generate_image",     # Google Gemini: $0.134-0.240/image
     "transcribe_audio",   # OpenAI Whisper: $0.006/minute
     "web_search",         # Anthropic: $0.01/request
     "execute_python",     # E2B sandbox: $0.000036/second
+    "analyze_image",      # Claude API: separate call for image analysis
+    "analyze_pdf",        # Claude API: separate call for PDF analysis
 }
 
 def is_paid_tool(tool_name: str) -> bool:

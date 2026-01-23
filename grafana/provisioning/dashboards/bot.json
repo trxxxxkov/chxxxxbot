@@ -457,36 +457,6 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "analyze_image"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "#38BDF8",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "analyze_pdf"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "#0EA5E9",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
               "options": "web_search"
             },
             "properties": [
@@ -589,27 +559,9 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"analyze_image\"  | unwrap cost_usd [$__interval])) or vector(0)",
-          "legendFormat": "analyze_image",
-          "refId": "D"
-        },
-        {
-          "datasource": {
-            "type": "loki",
-            "uid": "loki"
-          },
-          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"analyze_pdf\"  | unwrap cost_usd [$__interval])) or vector(0)",
-          "legendFormat": "analyze_pdf",
-          "refId": "E"
-        },
-        {
-          "datasource": {
-            "type": "loki",
-            "uid": "loki"
-          },
           "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.web_search.user_charged\"  | unwrap cost_usd [$__interval])) or vector(0)",
           "legendFormat": "web_search",
-          "refId": "F"
+          "refId": "D"
         },
         {
           "datasource": {
@@ -618,7 +570,7 @@
           },
           "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"execute_python\"  | unwrap cost_usd [$__interval])) or vector(0)",
           "legendFormat": "execute_python",
-          "refId": "G"
+          "refId": "E"
         }
       ],
       "title": "Costs",

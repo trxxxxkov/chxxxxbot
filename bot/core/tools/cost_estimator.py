@@ -13,19 +13,19 @@ Simple rule: If balance < 0, reject all paid tool calls.
 from decimal import Decimal
 from typing import Any, Optional
 
-# Tools that have external API costs
+# Tools that have API costs (external or Claude)
 # If user balance < 0, these tools are blocked
 PAID_TOOLS: set[str] = {
     "generate_image",  # Google Gemini: $0.134-0.240/image
     "transcribe_audio",  # OpenAI Whisper: $0.006/minute
     "web_search",  # Anthropic: $0.01/request
     "execute_python",  # E2B sandbox: $0.000036/second
+    "analyze_image",  # Claude API: separate call for image analysis
+    "analyze_pdf",  # Claude API: separate call for PDF analysis
 }
 
 # Free tools (for reference, not used in checks)
 # - render_latex: local pdflatex
-# - analyze_image: included in Claude API tokens
-# - analyze_pdf: included in Claude API tokens
 # - web_fetch: server-side, no external API
 # - deliver_file: file delivery only
 # - preview_file: preview only
@@ -71,15 +71,19 @@ def estimate_tool_cost(
         return Decimal("0.240") if resolution == "4k" else Decimal("0.134")
 
     if tool_name == "transcribe_audio":
-        if audio_duration_seconds:
-            minutes = Decimal(str(audio_duration_seconds)) / 60
-            return minutes * Decimal("0.006")
         # Estimate 5 minutes if duration unknown
-        return Decimal("0.03")
+        duration = audio_duration_seconds if audio_duration_seconds else 300
+        minutes = Decimal(str(duration)) / 60
+        return minutes * Decimal("0.006")
 
     if tool_name == "web_search":
         return Decimal("0.01")
 
-    # execute_python: Use timeout from input, default 3600 seconds (1 hour)
-    timeout = tool_input.get("timeout", 3600)
-    return Decimal(str(timeout)) * Decimal("0.000036")
+    if tool_name == "execute_python":
+        # Use timeout from input, default 3600 seconds (1 hour)
+        timeout = tool_input.get("timeout", 3600)
+        return Decimal(str(timeout)) * Decimal("0.000036")
+
+    # analyze_image, analyze_pdf: Claude API cost depends on response tokens
+    # Can't estimate upfront, actual cost calculated after call
+    return None

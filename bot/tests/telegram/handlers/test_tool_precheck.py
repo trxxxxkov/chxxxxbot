@@ -224,7 +224,7 @@ class TestExecuteSingleToolSafePrecheck:
 
     @pytest.mark.asyncio
     async def test_all_paid_tools_rejected_when_negative(self):
-        """All 4 paid tools are rejected when balance is negative."""
+        """All 6 paid tools are rejected when balance is negative."""
         mock_session = AsyncMock()
         mock_bot = MagicMock()
 
@@ -240,6 +240,14 @@ class TestExecuteSingleToolSafePrecheck:
             }),
             ("execute_python", {
                 "code": "print(1)"
+            }),
+            ("analyze_image", {
+                "file_id": "abc",
+                "question": "what is this?"
+            }),
+            ("analyze_pdf", {
+                "file_id": "abc",
+                "question": "summarize"
             }),
         ]
 

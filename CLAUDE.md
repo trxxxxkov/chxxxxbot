@@ -427,8 +427,8 @@ See [docs/phase-2.2-devops-agent.md](docs/phase-2.2-devops-agent.md) for full ar
 
 **Solution:**
 - Simple rule: if balance < 0, reject all paid tool calls
-- 4 paid tools: generate_image, transcribe_audio, web_search, execute_python
-- Free tools (render_latex, analyze_*, web_fetch, etc.) always allowed
+- 6 paid tools: generate_image, transcribe_audio, web_search, execute_python, analyze_image, analyze_pdf
+- Free tools (render_latex, web_fetch, deliver_file, preview_file) always allowed
 
 **Implementation:**
 - ✅ `core/tools/cost_estimator.py` - PAID_TOOLS set, is_paid_tool()
