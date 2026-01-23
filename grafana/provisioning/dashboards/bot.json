@@ -427,7 +427,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "analyze_image"
+              "options": "generate_image"
             },
             "properties": [
               {
@@ -442,7 +442,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "analyze_pdf"
+              "options": "transcribe_audio"
             },
             "properties": [
               {
@@ -457,7 +457,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "generate_image"
+              "options": "analyze_image"
             },
             "properties": [
               {
@@ -472,7 +472,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "execute_python"
+              "options": "analyze_pdf"
             },
             "properties": [
               {
@@ -487,7 +487,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "transcribe_audio"
+              "options": "web_search"
             },
             "properties": [
               {
@@ -502,7 +502,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "web_search"
+              "options": "execute_python"
             },
             "properties": [
               {
@@ -571,36 +571,9 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"analyze_image\"  | unwrap cost_usd [$__interval])) or vector(0)",
-          "legendFormat": "analyze_image",
-          "refId": "B"
-        },
-        {
-          "datasource": {
-            "type": "loki",
-            "uid": "loki"
-          },
-          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"analyze_pdf\"  | unwrap cost_usd [$__interval])) or vector(0)",
-          "legendFormat": "analyze_pdf",
-          "refId": "C"
-        },
-        {
-          "datasource": {
-            "type": "loki",
-            "uid": "loki"
-          },
           "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"generate_image\"  | unwrap cost_usd [$__interval])) or vector(0)",
           "legendFormat": "generate_image",
-          "refId": "D"
-        },
-        {
-          "datasource": {
-            "type": "loki",
-            "uid": "loki"
-          },
-          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"execute_python\"  | unwrap cost_usd [$__interval])) or vector(0)",
-          "legendFormat": "execute_python",
-          "refId": "E"
+          "refId": "B"
         },
         {
           "datasource": {
@@ -609,7 +582,25 @@
           },
           "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"transcribe_audio\"  | unwrap cost_usd [$__interval])) or vector(0)",
           "legendFormat": "transcribe_audio",
-          "refId": "F"
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"analyze_image\"  | unwrap cost_usd [$__interval])) or vector(0)",
+          "legendFormat": "analyze_image",
+          "refId": "D"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"analyze_pdf\"  | unwrap cost_usd [$__interval])) or vector(0)",
+          "legendFormat": "analyze_pdf",
+          "refId": "E"
         },
         {
           "datasource": {
@@ -618,6 +609,15 @@
           },
           "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.web_search.user_charged\"  | unwrap cost_usd [$__interval])) or vector(0)",
           "legendFormat": "web_search",
+          "refId": "F"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"execute_python\"  | unwrap cost_usd [$__interval])) or vector(0)",
+          "legendFormat": "execute_python",
           "refId": "G"
         }
       ],
