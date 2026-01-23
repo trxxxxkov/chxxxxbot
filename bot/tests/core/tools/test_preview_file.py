@@ -1,14 +1,18 @@
-"""Tests for preview_file tool.
+"""Tests for universal preview_file tool.
 
 Tests the preview_file tool functionality including:
 - CSV file preview with data table
 - Excel file preview (requires openpyxl)
 - Text file preview
-- Image/PDF info messages
+- Image preview via Claude Vision API
+- PDF preview via Claude PDF API
+- Audio/video metadata
+- Binary file suggestions
 - Error handling for missing files
 """
 
 from unittest.mock import AsyncMock
+from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import pytest
@@ -30,9 +34,9 @@ class TestPreviewCSV:
         assert result["columns"] == ["name", "age", "city"]
         assert result["column_count"] == 3
         assert result["previewed_rows"] == 3
-        assert "Alice" in result["data_preview"]
-        assert "Bob" in result["data_preview"]
-        assert "Charlie" in result["data_preview"]
+        assert "Alice" in result["content"]
+        assert "Bob" in result["content"]
+        assert "Charlie" in result["content"]
 
     def test_preview_csv_truncation(self):
         """Test CSV preview respects max_rows limit."""
@@ -48,8 +52,9 @@ class TestPreviewCSV:
         assert result["previewed_rows"] == 5
         # total_rows counts newlines, so 101 lines = 100 newlines
         assert result["total_rows"] == 100
-        assert "row4" in result["data_preview"]
-        assert "row5" not in result["data_preview"]  # 6th row (0-indexed)
+        assert "row4" in result["content"]
+        # row5 is not shown (6th row, 0-indexed)
+        assert "row5" not in result["content"]
 
     def test_preview_csv_empty(self):
         """Test CSV preview handles empty file."""
@@ -124,8 +129,8 @@ class TestPreviewFile:
     """Tests for main preview_file function."""
 
     @pytest.mark.asyncio
-    async def test_preview_file_not_found(self):
-        """Test preview_file returns error when file not in cache."""
+    async def test_preview_file_exec_not_found(self):
+        """Test preview_file returns error when exec file not in cache."""
         from core.tools.preview_file import preview_file
 
         with patch("core.tools.preview_file.get_exec_meta",
@@ -133,17 +138,17 @@ class TestPreviewFile:
             mock_meta.return_value = None
 
             result = await preview_file(
-                temp_id="nonexistent",
-                bot=None,
-                session=None,
+                file_id="exec_nonexistent",
+                bot=MagicMock(),
+                session=AsyncMock(),
             )
 
             assert result["success"] == "false"
             assert "not found" in result["error"]
 
     @pytest.mark.asyncio
-    async def test_preview_file_content_missing(self):
-        """Test preview_file returns error when content missing."""
+    async def test_preview_file_exec_content_missing(self):
+        """Test preview_file returns error when exec content missing."""
         from core.tools.preview_file import preview_file
 
         with patch("core.tools.preview_file.get_exec_meta",
@@ -158,9 +163,9 @@ class TestPreviewFile:
             mock_file.return_value = None
 
             result = await preview_file(
-                temp_id="exec_abc",
-                bot=None,
-                session=None,
+                file_id="exec_abc",
+                bot=MagicMock(),
+                session=AsyncMock(),
             )
 
             assert result["success"] == "false"
@@ -183,9 +188,9 @@ class TestPreviewFile:
             mock_file.return_value = b"a,b,c\n1,2,3"
 
             result = await preview_file(
-                temp_id="exec_abc",
-                bot=None,
-                session=None,
+                file_id="exec_abc",
+                bot=MagicMock(),
+                session=AsyncMock(),
             )
 
             assert result["success"] == "true"
@@ -193,8 +198,8 @@ class TestPreviewFile:
             assert "a" in result["columns"]
 
     @pytest.mark.asyncio
-    async def test_preview_file_image_info(self):
-        """Test preview_file returns info message for images."""
+    async def test_preview_file_audio_video(self):
+        """Test preview_file returns metadata for audio/video."""
         from core.tools.preview_file import preview_file
 
         with patch("core.tools.preview_file.get_exec_meta",
@@ -203,25 +208,24 @@ class TestPreviewFile:
                    new_callable=AsyncMock) as mock_file:
 
             mock_meta.return_value = {
-                "filename": "chart.png",
-                "mime_type": "image/png",
-                "preview": "Image 800x600"
+                "filename": "audio.mp3",
+                "mime_type": "audio/mpeg"
             }
-            mock_file.return_value = b"fake png data"
+            mock_file.return_value = b"fake mp3 data"
 
             result = await preview_file(
-                temp_id="exec_abc",
-                bot=None,
-                session=None,
+                file_id="exec_abc",
+                bot=MagicMock(),
+                session=AsyncMock(),
             )
 
             assert result["success"] == "true"
-            assert result["file_type"] == "image"
-            assert "already visible" in result["message"]
+            assert result["file_type"] == "audio_video"
+            assert "transcribe_audio" in result["message"]
 
     @pytest.mark.asyncio
-    async def test_preview_file_pdf_info(self):
-        """Test preview_file returns info message for PDFs."""
+    async def test_preview_file_binary(self):
+        """Test preview_file suggests library for binary files."""
         from core.tools.preview_file import preview_file
 
         with patch("core.tools.preview_file.get_exec_meta",
@@ -230,22 +234,91 @@ class TestPreviewFile:
                    new_callable=AsyncMock) as mock_file:
 
             mock_meta.return_value = {
-                "filename": "report.pdf",
-                "mime_type": "application/pdf",
-                "preview": "PDF, 5 pages"
+                "filename": "data.parquet",
+                "mime_type": "application/octet-stream"
             }
-            mock_file.return_value = b"fake pdf data"
+            mock_file.return_value = b"parquet binary data"
 
             result = await preview_file(
-                temp_id="exec_abc",
-                bot=None,
-                session=None,
+                file_id="exec_abc",
+                bot=MagicMock(),
+                session=AsyncMock(),
             )
 
             assert result["success"] == "true"
-            assert result["file_type"] == "pdf"
-            assert "deliver_file" in result["message"]
-            assert "analyze_pdf" in result["message"]
+            assert result["file_type"] == "binary"
+            assert result["suggested_library"] == "pandas or pyarrow"
+            assert "execute_python" in result["content"]
+
+    @pytest.mark.asyncio
+    async def test_preview_file_db_not_found(self):
+        """Test preview_file returns error when file not in database."""
+        from core.tools.preview_file import preview_file
+
+        mock_repo = MagicMock()
+        mock_repo.get_by_claude_file_id = AsyncMock(return_value=None)
+        mock_repo.get_by_telegram_file_id = AsyncMock(return_value=None)
+
+        with patch("core.tools.preview_file.UserFileRepository",
+                   return_value=mock_repo):
+            result = await preview_file(
+                file_id="file_unknown",
+                bot=MagicMock(),
+                session=AsyncMock(),
+            )
+
+            assert result["success"] == "false"
+            assert "not found" in result["error"]
+
+
+class TestFileTypeDetection:
+    """Tests for file type detection helpers."""
+
+    def test_is_text_format(self):
+        """Test text format detection."""
+        from core.tools.preview_file import _is_text_format
+
+        assert _is_text_format("text/plain", "test.txt") is True
+        assert _is_text_format("text/csv", "data.csv") is True
+        assert _is_text_format("application/json", "config.json") is True
+        assert _is_text_format("application/octet-stream", "script.py") is True
+        assert _is_text_format("application/octet-stream",
+                               "binary.bin") is False
+
+    def test_is_spreadsheet(self):
+        """Test spreadsheet detection."""
+        from core.tools.preview_file import _is_spreadsheet
+
+        assert _is_spreadsheet("text/csv", "data.csv") is True
+        assert _is_spreadsheet(
+            "application/vnd.openxmlformats-officedocument"
+            ".spreadsheetml.sheet", "data.xlsx") is True
+        assert _is_spreadsheet("application/octet-stream", "file.xlsx") is True
+        assert _is_spreadsheet("text/plain", "file.txt") is False
+
+    def test_is_image(self):
+        """Test image detection."""
+        from core.tools.preview_file import _is_image
+
+        assert _is_image("image/png") is True
+        assert _is_image("image/jpeg") is True
+        assert _is_image("text/plain") is False
+
+    def test_is_pdf(self):
+        """Test PDF detection."""
+        from core.tools.preview_file import _is_pdf
+
+        assert _is_pdf("application/pdf", "doc.pdf") is True
+        assert _is_pdf("application/octet-stream", "doc.pdf") is True
+        assert _is_pdf("application/octet-stream", "doc.txt") is False
+
+    def test_is_audio_video(self):
+        """Test audio/video detection."""
+        from core.tools.preview_file import _is_audio_video
+
+        assert _is_audio_video("audio/mpeg") is True
+        assert _is_audio_video("video/mp4") is True
+        assert _is_audio_video("text/plain") is False
 
 
 class TestToolConfig:
@@ -270,18 +343,19 @@ class TestToolConfig:
         assert TOOL_CONFIG.needs_bot_session is True
 
     def test_tool_definition_has_required_params(self):
-        """Test tool definition has temp_id as required."""
+        """Test tool definition has file_id as required."""
         from core.tools.preview_file import PREVIEW_FILE_TOOL
 
-        assert "temp_id" in PREVIEW_FILE_TOOL["input_schema"]["required"]
+        assert "file_id" in PREVIEW_FILE_TOOL["input_schema"]["required"]
 
     def test_tool_definition_has_optional_params(self):
-        """Test tool definition has optional max_rows and max_chars."""
+        """Test tool definition has optional max_rows, max_chars, question."""
         from core.tools.preview_file import PREVIEW_FILE_TOOL
 
         props = PREVIEW_FILE_TOOL["input_schema"]["properties"]
         assert "max_rows" in props
         assert "max_chars" in props
+        assert "question" in props
 
 
 class TestFormatPreviewFileResult:
@@ -320,6 +394,22 @@ class TestFormatPreviewFileResult:
 
         assert "readme.txt" in formatted
         assert "50 lines" in formatted
+
+    def test_format_image_result(self):
+        """Test formatting image preview result."""
+        from core.tools.preview_file import format_preview_file_result
+
+        result = {
+            "success": "true",
+            "filename": "photo.jpg",
+            "file_type": "image",
+            "cost_usd": "0.001234",
+        }
+
+        formatted = format_preview_file_result({}, result)
+
+        assert "photo.jpg" in formatted
+        assert "analyzed" in formatted
 
     def test_format_error_result(self):
         """Test formatting error result."""

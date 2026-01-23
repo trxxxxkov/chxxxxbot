@@ -23,13 +23,13 @@ class TestIsPaidTool:
         assert "execute_python" in PAID_TOOLS
         assert "analyze_image" in PAID_TOOLS
         assert "analyze_pdf" in PAID_TOOLS
+        assert "preview_file" in PAID_TOOLS
 
     def test_free_tools_not_in_set(self):
         """Free tools are not in PAID_TOOLS set."""
         assert "render_latex" not in PAID_TOOLS
         assert "web_fetch" not in PAID_TOOLS
         assert "deliver_file" not in PAID_TOOLS
-        assert "preview_file" not in PAID_TOOLS
 
     def test_is_paid_tool_returns_true_for_paid(self):
         """is_paid_tool returns True for paid tools."""
@@ -39,13 +39,13 @@ class TestIsPaidTool:
         assert is_paid_tool("execute_python") is True
         assert is_paid_tool("analyze_image") is True
         assert is_paid_tool("analyze_pdf") is True
+        assert is_paid_tool("preview_file") is True
 
     def test_is_paid_tool_returns_false_for_free(self):
         """is_paid_tool returns False for free tools."""
         assert is_paid_tool("render_latex") is False
         assert is_paid_tool("web_fetch") is False
         assert is_paid_tool("deliver_file") is False
-        assert is_paid_tool("preview_file") is False
 
     def test_is_paid_tool_returns_false_for_unknown(self):
         """is_paid_tool returns False for unknown tools."""
@@ -132,14 +132,14 @@ class TestEstimateToolCost:
         assert estimate_tool_cost("render_latex", {}) is None
         assert estimate_tool_cost("web_fetch", {}) is None
         assert estimate_tool_cost("deliver_file", {}) is None
-        assert estimate_tool_cost("preview_file", {}) is None
 
     def test_claude_api_tools_return_none(self):
         """Claude API tools return None (cost calculated after call)."""
-        # analyze_image and analyze_pdf are paid but cost depends on
-        # response tokens, so can't be estimated upfront
+        # analyze_image, analyze_pdf, preview_file (for images/PDF) are paid
+        # but cost depends on response tokens, so can't be estimated upfront
         assert estimate_tool_cost("analyze_image", {}) is None
         assert estimate_tool_cost("analyze_pdf", {}) is None
+        assert estimate_tool_cost("preview_file", {}) is None
 
     def test_unknown_tools_return_none(self):
         """Unknown tools return None (no cost)."""
@@ -151,5 +151,5 @@ class TestPaidToolsCount:
     """Test that PAID_TOOLS set has expected count."""
 
     def test_paid_tools_count(self):
-        """Exactly 6 paid tools in the set."""
-        assert len(PAID_TOOLS) == 6
+        """Exactly 7 paid tools in the set."""
+        assert len(PAID_TOOLS) == 7

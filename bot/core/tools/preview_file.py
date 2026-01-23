@@ -1,22 +1,29 @@
-"""Preview cached file content without delivering to user.
+"""Universal file preview tool.
 
-Allows Claude to analyze file content (CSV rows, text content, etc.)
-before deciding whether to deliver or regenerate the file.
+Preview any file content - text locally, images/PDF via Claude Vision API.
 
-Supports:
-- CSV: Shows header + first N rows as table
-- XLSX: Shows sheet data (requires openpyxl)
-- Text/JSON/XML: Shows first N characters
-- PDF/Images: Returns info message (use other tools)
+Supports multiple file sources:
+- exec_* (temp_id): Files from execute_python in Redis cache
+- file_* (claude_file_id): Files in Claude Files API
+- Telegram file_id: Files from user uploads
+
+For text formats (CSV, JSON, code) - FREE local parsing.
+For images/PDF - PAID Claude Vision/PDF API call.
 
 NO __init__.py - use direct import:
     from core.tools.preview_file import preview_file, PREVIEW_FILE_TOOL
 """
 
-from typing import Any, Dict, TYPE_CHECKING
+import asyncio
+from typing import Any, Dict, Optional, TYPE_CHECKING
 
+from anthropic import APIStatusError
 from cache.exec_cache import get_exec_file
 from cache.exec_cache import get_exec_meta
+from core.clients import get_anthropic_client
+from core.pricing import calculate_claude_cost
+from core.pricing import cost_to_float
+from db.repositories.user_file_repository import UserFileRepository
 from utils.structured_logging import get_logger
 
 if TYPE_CHECKING:
@@ -25,67 +32,226 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
+# Retry configuration for Claude API
+MAX_RETRIES = 3
+RETRY_DELAY_SECONDS = 2.0
+RETRYABLE_STATUS_CODES = {500, 502, 503, 504, 529}
+
+# Model for vision/PDF analysis
+VISION_MODEL_ID = "claude-sonnet-4-5-20250929"
+
 PREVIEW_FILE_TOOL = {
     "name":
         "preview_file",
     "description":
-        """Preview cached file content without sending to user.
+        """Preview any file content without sending to user.
 
 <purpose>
-Analyze file content before deciding to deliver. Useful for:
-- CSV/XLSX: See actual data rows, verify column values
-- Text files: Read full content
-- PDF: Cannot preview content (use deliver_file then analyze_pdf)
-- Images: Already visible in execute_python/render_latex result
+Universal file preview - see what's in any file before deciding next steps.
+Works with files from execute_python output, user uploads, or Files API.
 </purpose>
 
-<when_to_use>
-- Verify CSV/XLSX data is correct before sending
-- Check text file content matches expectations
-- Analyze tabular data quality
-- Review generated code or config files
-</when_to_use>
+<file_sources>
+- exec_xxx: Files from execute_python (in output_files)
+- file_xxx: Files already in Claude Files API
+- Telegram file_id: Files from user messages
+</file_sources>
 
-<supported_formats>
-- CSV: Shows header + data rows as formatted table
-- XLSX/XLS: Shows first sheet data as table
-- Text/JSON/XML/JS: Shows content with line numbers
-- Images: Already visible in tool results (no preview needed)
-- PDF: Use deliver_file then analyze_pdf
-</supported_formats>
+<processing_by_type>
+- CSV/XLSX: Shows table with rows (FREE, local parsing)
+- Text/JSON/XML/code: Shows content with line numbers (FREE)
+- Images: Claude Vision describes what's visible (PAID)
+- PDF: Claude PDF analyzes document content (PAID)
+- Audio/Video: Shows metadata, use transcribe_audio for content
+</processing_by_type>
 
-<workflow>
-1. execute_python generates CSV → output_files with temp_id
-2. preview_file(temp_id, max_rows=10) → see first 10 rows
-3. If data looks good → deliver_file(temp_id)
-4. If data wrong → re-run execute_python with fixes
-</workflow>
+<examples>
+1. Check CSV data before sending:
+   preview_file(file_id="exec_abc123", max_rows=5)
+
+2. See what's in user's image:
+   preview_file(file_id="file_xyz789", question="What objects are visible?")
+
+3. Analyze PDF structure:
+   preview_file(file_id="AgACAgIAAxk...", question="List all section headers")
+</examples>
 
 <cost>
-FREE - local processing only.
+FREE for text formats (local parsing).
+PAID for images/PDF (Claude Vision API).
 </cost>""",
     "input_schema": {
         "type": "object",
         "properties": {
-            "temp_id": {
+            "file_id": {
                 "type": "string",
-                "description": "Temporary file ID from output_files "
-                               "(e.g., 'exec_abc123')"
+                "description":
+                    "File identifier: exec_xxx (from execute_python), "
+                    "file_xxx (Files API), or Telegram file_id"
+            },
+            "question": {
+                "type": "string",
+                "description": "For images/PDF: what to look for. "
+                               "Default: 'Describe the content of this file'"
             },
             "max_rows": {
                 "type": "integer",
-                "description": "Max rows to show for CSV/XLSX (default: 20)"
+                "description": "Max rows for CSV/XLSX preview (default: 20)"
             },
             "max_chars": {
-                "type":
-                    "integer",
-                "description":
-                    "Max characters to show for text files (default: 5000)"
+                "type": "integer",
+                "description": "Max characters for text files (default: 5000)"
             }
         },
-        "required": ["temp_id"]
+        "required": ["file_id"]
     }
 }
+
+
+async def _get_file_from_exec_cache(
+    temp_id: str,) -> tuple[Optional[bytes], Optional[Dict[str, Any]]]:
+    """Get file from execute_python Redis cache.
+
+    Args:
+        temp_id: Temporary file ID (exec_xxx).
+
+    Returns:
+        Tuple of (content bytes, metadata dict) or (None, None) if not found.
+    """
+    metadata = await get_exec_meta(temp_id)
+    if not metadata:
+        return None, None
+
+    content = await get_exec_file(temp_id)
+    if not content:
+        return None, None
+
+    return content, metadata
+
+
+async def _get_file_from_db(
+    file_id: str,
+    session: 'AsyncSession',
+    bot: 'Bot',
+) -> tuple[Optional[bytes], Optional[Dict[str, Any]], Optional[str]]:
+    """Get file from database (telegram or claude file_id).
+
+    Args:
+        file_id: Claude file_id or Telegram file_id.
+        session: Database session.
+        bot: Telegram bot for downloading.
+
+    Returns:
+        Tuple of (content bytes, metadata dict, claude_file_id) or
+        (None, None, None) if not found.
+    """
+    user_file_repo = UserFileRepository(session)
+
+    # Try to find by claude_file_id first
+    user_file = await user_file_repo.get_by_claude_file_id(file_id)
+
+    # If not found, try by telegram_file_id
+    if not user_file:
+        user_file = await user_file_repo.get_by_telegram_file_id(file_id)
+
+    if not user_file:
+        return None, None, None
+
+    # Build metadata
+    metadata = {
+        "filename": user_file.filename,
+        "mime_type": user_file.mime_type,
+        "file_size": user_file.file_size,
+        "file_type": user_file.file_type.value,
+    }
+
+    # Download content
+    try:
+        if user_file.telegram_file_id:
+            # Download from Telegram
+            tg_file = await bot.get_file(user_file.telegram_file_id)
+            from io import BytesIO
+            buffer = BytesIO()
+            await bot.download_file(tg_file.file_path, buffer)
+            content = buffer.getvalue()
+        else:
+            # Download from Files API
+            from core.claude.files_api import download_from_files_api
+            content = await download_from_files_api(user_file.claude_file_id)
+
+        return content, metadata, user_file.claude_file_id
+
+    except Exception as e:
+        logger.warning("preview_file.download_failed",
+                       file_id=file_id,
+                       error=str(e))
+        return None, None, None
+
+
+def _is_text_format(mime_type: str, filename: str) -> bool:
+    """Check if file is a text format that can be parsed locally."""
+    text_mimes = {
+        "text/plain",
+        "text/csv",
+        "text/html",
+        "text/xml",
+        "application/json",
+        "application/xml",
+        "application/javascript",
+    }
+    text_extensions = {
+        ".txt",
+        ".csv",
+        ".json",
+        ".xml",
+        ".html",
+        ".js",
+        ".py",
+        ".md",
+        ".yaml",
+        ".yml",
+        ".toml",
+        ".ini",
+        ".cfg",
+        ".log",
+        ".sh",
+        ".bash",
+        ".sql",
+        ".css",
+        ".scss",
+        ".less",
+    }
+
+    if mime_type in text_mimes or mime_type.startswith("text/"):
+        return True
+
+    return any(filename.lower().endswith(ext) for ext in text_extensions)
+
+
+def _is_spreadsheet(mime_type: str, filename: str) -> bool:
+    """Check if file is a spreadsheet (CSV/XLSX)."""
+    spreadsheet_mimes = {
+        "text/csv",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/vnd.ms-excel",
+    }
+    return (mime_type in spreadsheet_mimes or filename.lower().endswith(
+        (".csv", ".xlsx", ".xls")))
+
+
+def _is_image(mime_type: str) -> bool:
+    """Check if file is an image."""
+    return mime_type.startswith("image/")
+
+
+def _is_pdf(mime_type: str, filename: str) -> bool:
+    """Check if file is a PDF."""
+    return mime_type == "application/pdf" or filename.lower().endswith(".pdf")
+
+
+def _is_audio_video(mime_type: str) -> bool:
+    """Check if file is audio or video."""
+    return mime_type.startswith("audio/") or mime_type.startswith("video/")
 
 
 def _preview_csv(
@@ -93,31 +259,20 @@ def _preview_csv(
     metadata: Dict[str, Any],
     max_rows: int,
 ) -> Dict[str, Any]:
-    """Preview CSV file content.
-
-    Args:
-        content: Raw file bytes.
-        metadata: File metadata from cache.
-        max_rows: Maximum data rows to include.
-
-    Returns:
-        Dict with parsed CSV data or error.
-    """
+    """Preview CSV file content."""
     try:
-        import csv  # pylint: disable=import-outside-toplevel
-        import io  # pylint: disable=import-outside-toplevel
+        import csv
+        import io
 
-        # Decode with fallback
         try:
             text = content.decode("utf-8")
         except UnicodeDecodeError:
             text = content.decode("latin-1")
 
         reader = csv.reader(io.StringIO(text))
-
         rows = []
         for i, row in enumerate(reader):
-            if i >= max_rows + 1:  # +1 for header
+            if i >= max_rows + 1:
                 break
             rows.append(row)
 
@@ -128,7 +283,7 @@ def _preview_csv(
         data_rows = rows[1:]
         total_rows = text.count('\n')
 
-        # Format as table with column width limits
+        # Format as table
         col_widths = []
         for col_idx, col_name in enumerate(header):
             col_vals = [col_name] + [
@@ -150,14 +305,6 @@ def _preview_csv(
         for row in data_rows:
             table_lines.append(format_row(row))
 
-        table_str = "\n".join(table_lines)
-
-        logger.info("preview_file.csv_parsed",
-                    filename=metadata.get("filename"),
-                    columns=len(header),
-                    rows_shown=len(data_rows),
-                    total_rows=total_rows)
-
         return {
             "success": "true",
             "filename": metadata.get("filename"),
@@ -166,14 +313,11 @@ def _preview_csv(
             "column_count": len(header),
             "total_rows": total_rows,
             "previewed_rows": len(data_rows),
-            "data_preview": table_str,
+            "content": "\n".join(table_lines),
             "message": f"Showing {len(data_rows)} of ~{total_rows} rows"
         }
 
-    except Exception as e:  # pylint: disable=broad-exception-caught
-        logger.warning("preview_file.csv_error",
-                       error=str(e),
-                       filename=metadata.get("filename"))
+    except Exception as e:
         return {"success": "false", "error": f"CSV parse error: {str(e)}"}
 
 
@@ -182,26 +326,17 @@ def _preview_excel(
     metadata: Dict[str, Any],
     max_rows: int,
 ) -> Dict[str, Any]:
-    """Preview Excel file content.
-
-    Args:
-        content: Raw file bytes.
-        metadata: File metadata from cache.
-        max_rows: Maximum data rows to include.
-
-    Returns:
-        Dict with parsed Excel data or error.
-    """
+    """Preview Excel file content."""
     try:
-        import io  # pylint: disable=import-outside-toplevel
+        import io
 
-        import openpyxl  # pylint: disable=import-outside-toplevel
+        import openpyxl
 
         wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True)
         sheet = wb.active
 
         if sheet is None:
-            return {"success": "false", "error": "No active sheet in workbook"}
+            return {"success": "false", "error": "No active sheet"}
 
         rows = []
         for i, row in enumerate(sheet.iter_rows(values_only=True)):
@@ -239,15 +374,6 @@ def _preview_excel(
         for row in data_rows:
             table_lines.append(format_row(row))
 
-        table_str = "\n".join(table_lines)
-
-        logger.info("preview_file.excel_parsed",
-                    filename=metadata.get("filename"),
-                    sheet=sheet.title,
-                    columns=len(header),
-                    rows_shown=len(data_rows),
-                    total_rows=sheet.max_row)
-
         return {
             "success": "true",
             "filename": metadata.get("filename"),
@@ -257,20 +383,13 @@ def _preview_excel(
             "column_count": len(header),
             "total_rows": sheet.max_row or 0,
             "previewed_rows": len(data_rows),
-            "data_preview": table_str,
-            "message": f"Showing {len(data_rows)} of {sheet.max_row} rows "
-                       f"from sheet '{sheet.title}'"
+            "content": "\n".join(table_lines),
+            "message": f"Showing {len(data_rows)} of {sheet.max_row} rows"
         }
 
     except ImportError:
-        return {
-            "success": "false",
-            "error": "openpyxl not installed. Cannot preview Excel files."
-        }
-    except Exception as e:  # pylint: disable=broad-exception-caught
-        logger.warning("preview_file.excel_error",
-                       error=str(e),
-                       filename=metadata.get("filename"))
+        return {"success": "false", "error": "openpyxl not installed"}
+    except Exception as e:
         return {"success": "false", "error": f"Excel parse error: {str(e)}"}
 
 
@@ -279,18 +398,8 @@ def _preview_text(
     metadata: Dict[str, Any],
     max_chars: int,
 ) -> Dict[str, Any]:
-    """Preview text file content.
-
-    Args:
-        content: Raw file bytes.
-        metadata: File metadata from cache.
-        max_chars: Maximum characters to include.
-
-    Returns:
-        Dict with text content or error.
-    """
+    """Preview text file content."""
     try:
-        # Decode with fallback
         try:
             text = content.decode("utf-8")
         except UnicodeDecodeError:
@@ -299,25 +408,15 @@ def _preview_text(
         total_chars = len(text)
         total_lines = text.count('\n') + 1
         truncated = total_chars > max_chars
-
         preview = text[:max_chars]
 
-        # Add line numbers for readability
+        # Add line numbers
         lines = preview.split('\n')
         numbered_lines = []
         for i, line in enumerate(lines, 1):
-            # Truncate long lines
             if len(line) > 120:
                 line = line[:117] + "..."
             numbered_lines.append(f"{i:4d} | {line}")
-
-        content_with_numbers = "\n".join(numbered_lines)
-
-        logger.info("preview_file.text_parsed",
-                    filename=metadata.get("filename"),
-                    total_chars=total_chars,
-                    shown_chars=len(preview),
-                    truncated=truncated)
 
         return {
             "success":
@@ -331,170 +430,452 @@ def _preview_text(
             "total_lines":
                 total_lines,
             "content":
-                content_with_numbers,
+                "\n".join(numbered_lines),
             "truncated":
                 truncated,
-            "message": (f"Showing {len(preview)} of {total_chars} characters"
+            "message": (f"Showing {len(preview)} of {total_chars} chars"
                         if truncated else "Full content shown")
         }
 
-    except Exception as e:  # pylint: disable=broad-exception-caught
-        logger.warning("preview_file.text_error",
-                       error=str(e),
-                       filename=metadata.get("filename"))
+    except Exception as e:
         return {"success": "false", "error": f"Text decode error: {str(e)}"}
 
 
-# pylint: disable=too-many-return-statements
-async def preview_file(
-    temp_id: str,
-    bot: 'Bot',
-    session: 'AsyncSession',
-    max_rows: int = 20,
-    max_chars: int = 5000,
+async def _preview_image_with_vision(
+    claude_file_id: str,
+    question: str,
 ) -> Dict[str, Any]:
-    """Preview file content from cache without delivering.
+    """Preview image using Claude Vision API (PAID)."""
+    client = get_anthropic_client(use_files_api=True)
+
+    last_error = None
+    for attempt in range(MAX_RETRIES):
+        try:
+
+            def _sync_call():
+                return client.messages.create(
+                    model=VISION_MODEL_ID,
+                    max_tokens=4096,
+                    messages=[{
+                        "role":
+                            "user",
+                        "content": [{
+                            "type": "image",
+                            "source": {
+                                "type": "file",
+                                "file_id": claude_file_id
+                            }
+                        }, {
+                            "type": "text",
+                            "text": question
+                        }]
+                    }])
+
+            response = await asyncio.to_thread(_sync_call)
+
+            analysis = response.content[0].text
+            input_tokens = response.usage.input_tokens
+            output_tokens = response.usage.output_tokens
+
+            cost_usd = calculate_claude_cost(
+                model_id=VISION_MODEL_ID,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+            )
+
+            logger.info("preview_file.vision_success",
+                        claude_file_id=claude_file_id,
+                        tokens=input_tokens + output_tokens,
+                        cost_usd=cost_to_float(cost_usd))
+
+            return {
+                "success": "true",
+                "file_type": "image",
+                "content": analysis,
+                "tokens_used": str(input_tokens + output_tokens),
+                "cost_usd": f"{cost_to_float(cost_usd):.6f}",
+                "message": "Image analyzed with Claude Vision"
+            }
+
+        except APIStatusError as e:
+            last_error = e
+            if e.status_code in RETRYABLE_STATUS_CODES:
+                if attempt < MAX_RETRIES - 1:
+                    await asyncio.sleep(RETRY_DELAY_SECONDS * (2**attempt))
+                    continue
+            raise
+
+    if last_error:
+        raise last_error
+    raise RuntimeError("Unexpected: retry loop completed without result")
+
+
+async def _preview_pdf_with_vision(
+    claude_file_id: str,
+    question: str,
+) -> Dict[str, Any]:
+    """Preview PDF using Claude PDF API (PAID)."""
+    client = get_anthropic_client(use_files_api=True)
+
+    last_error = None
+    for attempt in range(MAX_RETRIES):
+        try:
+
+            def _sync_call():
+                return client.messages.create(
+                    model=VISION_MODEL_ID,
+                    max_tokens=4096,
+                    messages=[{
+                        "role":
+                            "user",
+                        "content": [{
+                            "type": "document",
+                            "source": {
+                                "type": "file",
+                                "file_id": claude_file_id
+                            }
+                        }, {
+                            "type": "text",
+                            "text": question
+                        }]
+                    }])
+
+            response = await asyncio.to_thread(_sync_call)
+
+            analysis = response.content[0].text
+            input_tokens = response.usage.input_tokens
+            output_tokens = response.usage.output_tokens
+
+            cost_usd = calculate_claude_cost(
+                model_id=VISION_MODEL_ID,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+            )
+
+            logger.info("preview_file.pdf_success",
+                        claude_file_id=claude_file_id,
+                        tokens=input_tokens + output_tokens,
+                        cost_usd=cost_to_float(cost_usd))
+
+            return {
+                "success": "true",
+                "file_type": "pdf",
+                "content": analysis,
+                "tokens_used": str(input_tokens + output_tokens),
+                "cost_usd": f"{cost_to_float(cost_usd):.6f}",
+                "message": "PDF analyzed with Claude"
+            }
+
+        except APIStatusError as e:
+            last_error = e
+            if e.status_code in RETRYABLE_STATUS_CODES:
+                if attempt < MAX_RETRIES - 1:
+                    await asyncio.sleep(RETRY_DELAY_SECONDS * (2**attempt))
+                    continue
+            raise
+
+    if last_error:
+        raise last_error
+    raise RuntimeError("Unexpected: retry loop completed without result")
+
+
+async def _preview_by_type(
+    content: bytes,
+    metadata: Dict[str, Any],
+    mime_type: str,
+    filename: str,
+    claude_file_id: Optional[str],
+    file_id: str,
+    question: str,
+    max_rows: int,
+    max_chars: int,
+) -> Dict[str, Any]:
+    """Route preview to appropriate handler based on file type.
 
     Args:
-        temp_id: Temporary file ID from output_files.
-        bot: Bot instance (unused, interface consistency).
-        session: DB session (unused, interface consistency).
-        max_rows: Maximum rows for tabular data (CSV/XLSX).
+        content: File content bytes.
+        metadata: File metadata dict.
+        mime_type: MIME type of file.
+        filename: Original filename.
+        claude_file_id: Claude Files API ID if available.
+        file_id: Original file_id for logging.
+        question: Question for image/PDF analysis.
+        max_rows: Maximum rows for tabular data.
         max_chars: Maximum characters for text files.
 
     Returns:
-        Dict with file content preview or error message.
+        Dict with preview result.
     """
-    # Mark unused args
-    _ = bot
-    _ = session
+    # pylint: disable=too-many-return-statements
+    # 1. Spreadsheets (CSV/XLSX) - FREE
+    if _is_spreadsheet(mime_type, filename):
+        if mime_type == "text/csv" or filename.endswith(".csv"):
+            result = _preview_csv(content, metadata, max_rows)
+        else:
+            result = _preview_excel(content, metadata, max_rows)
+        result["filename"] = filename
+        return result
 
-    logger.info("tools.preview_file.called",
-                temp_id=temp_id,
-                max_rows=max_rows,
-                max_chars=max_chars)
+    # 2. Text files - FREE
+    if _is_text_format(mime_type, filename):
+        result = _preview_text(content, metadata, max_chars)
+        result["filename"] = filename
+        return result
 
-    # Get metadata
-    metadata = await get_exec_meta(temp_id)
-    if not metadata:
-        logger.warning("tools.preview_file.not_found", temp_id=temp_id)
-        return {
-            "success": "false",
-            "error": f"File '{temp_id}' not found or expired (30 min TTL). "
-                     "Use execute_python to regenerate."
-        }
+    # 3. Images - PAID (Claude Vision)
+    if _is_image(mime_type):
+        return await _handle_image_preview(content, filename, mime_type,
+                                           claude_file_id, file_id, question)
 
-    # Get content
-    content = await get_exec_file(temp_id)
-    if not content:
-        logger.warning("tools.preview_file.content_missing", temp_id=temp_id)
-        return {
-            "success": "false",
-            "error": f"File content for '{temp_id}' not found. "
-                     "Use execute_python to regenerate."
-        }
+    # 4. PDF - PAID (Claude PDF)
+    if _is_pdf(mime_type, filename):
+        return await _handle_pdf_preview(content, filename, mime_type,
+                                         claude_file_id, file_id, question)
 
-    mime_type = metadata.get("mime_type", "")
-    filename = metadata.get("filename", "unknown")
-
-    logger.debug("tools.preview_file.processing",
-                 temp_id=temp_id,
-                 filename=filename,
-                 mime_type=mime_type,
-                 size_bytes=len(content))
-
-    # Route to appropriate preview handler based on type
-    if mime_type == "text/csv" or filename.endswith(".csv"):
-        return _preview_csv(content, metadata, max_rows)
-
-    if mime_type in (
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            "application/vnd.ms-excel",
-    ) or filename.endswith((".xlsx", ".xls")):
-        return _preview_excel(content, metadata, max_rows)
-
-    if mime_type.startswith("text/") or mime_type in (
-            "application/json",
-            "application/xml",
-            "application/javascript",
-    ) or filename.endswith((".txt", ".json", ".xml", ".js", ".py", ".md")):
-        return _preview_text(content, metadata, max_chars)
-
-    if mime_type.startswith("image/"):
+    # 5. Audio/Video - FREE (metadata only)
+    if _is_audio_video(mime_type):
         return {
             "success": "true",
             "filename": filename,
-            "file_type": "image",
+            "file_type": "audio_video",
+            "mime_type": mime_type,
             "size_bytes": len(content),
-            "message": "Image files are already visible in tool results. "
-                       "No separate preview needed - you can see the image "
-                       "in the execute_python or render_latex response.",
-            "preview": metadata.get("preview", ""),
+            "content": f"Audio/video file: {filename} ({mime_type}, "
+                       f"{len(content)} bytes). Use transcribe_audio tool "
+                       "to get the spoken content.",
+            "message": "Use transcribe_audio for audio/video content"
         }
 
-    if mime_type == "application/pdf":
+    # 6. Unknown binary - FREE (info only, suggest execute_python)
+    return _preview_binary(content, filename, mime_type)
+
+
+async def _handle_image_preview(
+    content: bytes,
+    filename: str,
+    mime_type: str,
+    claude_file_id: Optional[str],
+    file_id: str,
+    question: str,
+) -> Dict[str, Any]:
+    """Handle image preview via Claude Vision API."""
+    if not claude_file_id:
+        from core.claude.files_api import upload_to_files_api
+        claude_file_id = await upload_to_files_api(content, filename, mime_type)
+        logger.info("preview_file.uploaded_for_vision",
+                    filename=filename,
+                    claude_file_id=claude_file_id)
+
+    try:
+        result = await _preview_image_with_vision(claude_file_id, question)
+        result["filename"] = filename
+        return result
+    except Exception as e:
+        logger.error("preview_file.vision_failed",
+                     file_id=file_id,
+                     error=str(e))
         return {
-            "success": "true",
+            "success": "false",
             "filename": filename,
-            "file_type": "pdf",
-            "size_bytes": len(content),
-            "message": "PDF content cannot be previewed directly. "
-                       "To analyze: deliver_file(temp_id) first, then use "
-                       "analyze_pdf(claude_file_id) with the returned ID.",
-            "preview": metadata.get("preview", ""),
+            "error": f"Vision API error: {str(e)}"
         }
 
-    # Binary/unknown type
+
+async def _handle_pdf_preview(
+    content: bytes,
+    filename: str,
+    mime_type: str,
+    claude_file_id: Optional[str],
+    file_id: str,
+    question: str,
+) -> Dict[str, Any]:
+    """Handle PDF preview via Claude PDF API."""
+    if not claude_file_id:
+        from core.claude.files_api import upload_to_files_api
+        claude_file_id = await upload_to_files_api(content, filename, mime_type)
+        logger.info("preview_file.uploaded_for_pdf",
+                    filename=filename,
+                    claude_file_id=claude_file_id)
+
+    try:
+        result = await _preview_pdf_with_vision(claude_file_id, question)
+        result["filename"] = filename
+        return result
+    except Exception as e:
+        logger.error("preview_file.pdf_failed", file_id=file_id, error=str(e))
+        return {
+            "success": "false",
+            "filename": filename,
+            "error": f"PDF API error: {str(e)}"
+        }
+
+
+def _preview_binary(
+    content: bytes,
+    filename: str,
+    mime_type: str,
+) -> Dict[str, Any]:
+    """Preview unknown binary file with library suggestions."""
+    ext = filename.lower().split('.')[-1] if '.' in filename else ""
+    lib_suggestions = {
+        "docx": "python-docx",
+        "doc": "python-docx or antiword",
+        "pptx": "python-pptx",
+        "xlsx": "openpyxl or pandas",
+        "xls": "xlrd or pandas",
+        "sqlite": "sqlite3",
+        "db": "sqlite3",
+        "parquet": "pandas or pyarrow",
+        "pkl": "pickle",
+        "pickle": "pickle",
+        "zip": "zipfile",
+        "tar": "tarfile",
+        "gz": "gzip",
+        "7z": "py7zr",
+        "rar": "rarfile",
+        "npy": "numpy",
+        "npz": "numpy",
+        "h5": "h5py",
+        "hdf5": "h5py",
+        "mat": "scipy.io",
+        "feather": "pandas or pyarrow",
+        "avro": "fastavro",
+        "msgpack": "msgpack",
+        "bson": "bson",
+    }
+
+    suggestion = lib_suggestions.get(ext, "")
+    if suggestion:
+        parse_hint = (f"To parse this file, use execute_python with the "
+                      f"'{suggestion}' library. The file is available at the "
+                      f"path provided in input_files.")
+    else:
+        parse_hint = ("To inspect this file, use execute_python. Try reading "
+                      "first bytes to detect format, or use 'file' command.")
+
     return {
         "success": "true",
         "filename": filename,
         "file_type": "binary",
         "mime_type": mime_type,
+        "file_extension": ext,
         "size_bytes": len(content),
-        "message": f"Binary file type '{mime_type}' cannot be previewed. "
-                   "Use deliver_file(temp_id) to send to user.",
-        "preview": metadata.get("preview", ""),
+        "content":
+            f"Binary file: {filename} ({mime_type}, {len(content)} bytes).\n\n"
+            f"{parse_hint}",
+        "message": "Use execute_python to parse binary files",
+        "suggested_library": suggestion if suggestion else None,
     }
+
+
+async def preview_file(
+    file_id: str,
+    bot: 'Bot',
+    session: 'AsyncSession',
+    question: str = "Describe the content of this file",
+    max_rows: int = 20,
+    max_chars: int = 5000,
+) -> Dict[str, Any]:
+    """Preview file content from any source.
+
+    Args:
+        file_id: File identifier (exec_xxx, file_xxx, or Telegram file_id).
+        bot: Telegram bot instance.
+        session: Database session.
+        question: Question for image/PDF analysis.
+        max_rows: Maximum rows for tabular data.
+        max_chars: Maximum characters for text files.
+
+    Returns:
+        Dict with file content preview, optionally with cost_usd for paid ops.
+    """
+    logger.info("tools.preview_file.called",
+                file_id=file_id,
+                question_length=len(question),
+                max_rows=max_rows,
+                max_chars=max_chars)
+
+    content: Optional[bytes] = None
+    metadata: Optional[Dict[str, Any]] = None
+    claude_file_id: Optional[str] = None
+
+    # Determine source and get file
+    if file_id.startswith("exec_"):
+        content, metadata = await _get_file_from_exec_cache(file_id)
+        if not content:
+            return {
+                "success": "false",
+                "error": f"File '{file_id}' not found or expired (30 min TTL)"
+            }
+    else:
+        content, metadata, claude_file_id = await _get_file_from_db(
+            file_id, session, bot)
+        if not content:
+            return {
+                "success": "false",
+                "error": f"File '{file_id}' not found in database"
+            }
+
+    mime_type = metadata.get("mime_type", "application/octet-stream")
+    filename = metadata.get("filename", "unknown")
+
+    logger.debug("preview_file.processing",
+                 file_id=file_id,
+                 filename=filename,
+                 mime_type=mime_type,
+                 size_bytes=len(content),
+                 has_claude_id=bool(claude_file_id))
+
+    return await _preview_by_type(content, metadata, mime_type, filename,
+                                  claude_file_id, file_id, question, max_rows,
+                                  max_chars)
+
+
+def _format_success_result(result: Dict[str, Any]) -> str:
+    """Format successful preview result."""
+    filename = result.get("filename", "file")
+    file_type = result.get("file_type", "")
+    cost = result.get("cost_usd")
+
+    if file_type in ("csv", "xlsx"):
+        rows = result.get("previewed_rows", 0)
+        cols = result.get("column_count", 0)
+        return f"[📋 {filename}: {rows} rows × {cols} cols]"
+
+    if file_type == "text":
+        lines = result.get("total_lines", 0)
+        return f"[📄 {filename}: {lines} lines]"
+
+    if file_type == "image":
+        cost_str = f" ${cost}" if cost else ""
+        return f"[🖼️ {filename}: analyzed{cost_str}]"
+
+    if file_type == "pdf":
+        cost_str = f" ${cost}" if cost else ""
+        return f"[📑 {filename}: analyzed{cost_str}]"
+
+    if file_type == "audio_video":
+        return f"[🎵 {filename}: use transcribe_audio]"
+
+    return f"[📁 {filename}]"
 
 
 def format_preview_file_result(
     tool_input: Dict[str, Any],
     result: Dict[str, Any],
 ) -> str:
-    """Format preview_file result for user display.
-
-    Args:
-        tool_input: The input parameters.
-        result: The result dictionary.
-
-    Returns:
-        Formatted system message string.
-    """
-    _ = tool_input  # Unused
+    """Format preview_file result for user display."""
+    _ = tool_input
 
     if result.get("success") == "true":
-        filename = result.get("filename", "file")
-        file_type = result.get("file_type", "")
+        return _format_success_result(result)
 
-        if file_type in ("csv", "xlsx"):
-            rows = result.get("previewed_rows", 0)
-            cols = result.get("column_count", 0)
-            return f"[📋 Preview {filename}: {rows} rows × {cols} cols]"
-
-        if file_type == "text":
-            lines = result.get("total_lines", 0)
-            return f"[📄 Preview {filename}: {lines} lines]"
-
-        # Image, PDF, binary - just info message
-        return f"[📁 {filename}: {result.get('message', 'info')[:60]}]"
-
-    error = result.get("error", "unknown error")
-    preview = error[:60] + "..." if len(error) > 60 else error
-    return f"[❌ Preview failed: {preview}]"
+    error = result.get("error", "unknown error")[:50]
+    return f"[❌ Preview failed: {error}]"
 
 
 # Unified tool configuration
-from core.tools.base import ToolConfig  # pylint: disable=wrong-import-position
+from core.tools.base import ToolConfig
 
 TOOL_CONFIG = ToolConfig(
     name="preview_file",

@@ -119,6 +119,28 @@ class UserFileRepository(BaseRepository[UserFile]):
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_by_telegram_file_id(
+        self,
+        telegram_file_id: str,
+    ) -> Optional[UserFile]:
+        """Get file by Telegram file ID.
+
+        Args:
+            telegram_file_id: Telegram file ID from user uploads.
+
+        Returns:
+            UserFile instance or None if not found.
+
+        Examples:
+            >>> file = await user_file_repo.get_by_telegram_file_id("AgACAgIA...")
+            >>> if file:
+            ...     print(f"Found: {file.filename}")
+        """
+        stmt = select(UserFile).where(
+            UserFile.telegram_file_id == telegram_file_id)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def get_by_message_id(
         self,
         message_id: int,

@@ -22,13 +22,13 @@ PAID_TOOLS: set[str] = {
     "execute_python",  # E2B sandbox: $0.000036/second
     "analyze_image",  # Claude API: separate call for image analysis
     "analyze_pdf",  # Claude API: separate call for PDF analysis
+    "preview_file",  # Claude Vision API for images/PDF (free for text)
 }
 
 # Free tools (for reference, not used in checks)
 # - render_latex: local pdflatex
 # - web_fetch: server-side, no external API
 # - deliver_file: file delivery only
-# - preview_file: preview only
 
 
 def is_paid_tool(tool_name: str) -> bool:
@@ -84,6 +84,7 @@ def estimate_tool_cost(
         timeout = tool_input.get("timeout", 3600)
         return Decimal(str(timeout)) * Decimal("0.000036")
 
-    # analyze_image, analyze_pdf: Claude API cost depends on response tokens
+    # analyze_image, analyze_pdf, preview_file (images/PDF):
+    # Claude API cost depends on response tokens
     # Can't estimate upfront, actual cost calculated after call
     return None
