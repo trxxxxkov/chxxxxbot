@@ -159,7 +159,7 @@ def _wrap_in_document(latex: str) -> str:
 \usetikzlibrary{arrows,shapes,positioning,calc,decorations.pathmorphing}
 \usepackage{pgfplots}
 \pgfplotsset{compat=1.18}
-\usepackage{xcolor}
+\usepackage[svgnames,x11names]{xcolor}
 \usepackage{array,booktabs,multirow}
 '''
 
