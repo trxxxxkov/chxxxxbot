@@ -808,10 +808,13 @@ async def _process_message_batch(thread_id: int,
                     continuation_conversation = conversation_state
 
                 else:
-                    # Max continuations reached
-                    logger.warning("claude_handler.max_continuations",
-                                   thread_id=thread_id,
-                                   max_continuations=max_continuations)
+                    # Max continuations reached (typically from many sequential
+                    # deliver_file calls). This is not an error - files were
+                    # delivered, just more than expected.
+                    logger.info("claude_handler.max_continuations_reached",
+                                thread_id=thread_id,
+                                max_continuations=max_continuations,
+                                response_parts_count=len(all_response_parts))
 
                 # Combine all response parts
                 response_text = "\n\n".join(all_response_parts)
@@ -832,6 +835,14 @@ async def _process_message_batch(thread_id: int,
                         for chunk in chunks:
                             bot_message = await _send_with_retry(
                                 first_message, chunk)
+                    elif all_response_parts:
+                        # Had content in previous continuations but empty final
+                        # This can happen with many sequential deliveries
+                        logger.debug("claude_handler.continuations_exhausted",
+                                     thread_id=thread_id)
+                        # Files were already delivered, just acknowledge
+                        bot_message = await _send_with_retry(
+                            first_message, "✓ Files delivered.")
                     else:
                         logger.warning("claude_handler.empty_response",
                                        thread_id=thread_id)
