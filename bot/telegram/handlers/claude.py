@@ -125,7 +125,7 @@ async def _stream_with_unified_events(
     user_id: int,
     telegram_thread_id: int | None,
     continuation_conversation: list | None = None,
-) -> tuple[str, types.Message | None, bool, list | None, bool]:
+) -> tuple[str, types.Message | None, bool, list | None, bool, int]:
     """Stream response with unified thinking/text/tool handling.
 
     Uses sendMessageDraft (Bot API 9.3) for streaming without flood control.
@@ -155,10 +155,11 @@ async def _stream_with_unified_events(
 
     Returns:
         Tuple of (final_answer_text, final_message, needs_continuation,
-                  conversation_state, was_cancelled).
+                  conversation_state, was_cancelled, thinking_chars).
         - needs_continuation: True if _force_turn_break was triggered
         - conversation_state: Updated conversation for continuation
         - was_cancelled: True if user cancelled via /stop or new message
+        - thinking_chars: Character count of thinking (for partial cost estimate)
     """
     max_iterations = TOOL_LOOP_MAX_ITERATIONS
 
@@ -303,16 +304,20 @@ async def _stream_with_unified_events(
                                  thread_id=thread_id,
                                  error=str(e))
 
+                # Get thinking chars for partial cost estimate
+                thinking_chars = stream.display.total_thinking_length()
+
                 logger.info(
                     "stream.unified.stopped_by_user",
                     thread_id=thread_id,
                     partial_answer_length=len(partial_answer),
                     partial_display_length=len(partial_display),
+                    thinking_chars=thinking_chars,
                     finalized=final_message is not None,
                 )
 
-                # Return with was_cancelled=True to skip usage tracking
-                return partial_answer, final_message, False, None, True
+                # Return with was_cancelled=True and thinking_chars for partial billing
+                return partial_answer, final_message, False, None, True, thinking_chars
 
             if stream.stop_reason in ("end_turn", "pause_turn"):
                 # Final answer
@@ -340,8 +345,8 @@ async def _stream_with_unified_events(
                 else:
                     await dm.current.clear()
 
-                # No continuation needed - final answer
-                return final_answer, final_message, False, None, False
+                # No continuation needed - final answer (thinking_chars=0, not used)
+                return final_answer, final_message, False, None, False, 0
 
             if stream.stop_reason == "tool_use" and stream.pending_tools:
                 # Execute all tools in PARALLEL, process results AS COMPLETED
@@ -492,7 +497,7 @@ async def _stream_with_unified_events(
                     await dm.current.clear()
                     return (
                         "⚠️ Tool execution error: missing assistant context",
-                        None, False, None, False)
+                        None, False, None, False, 0)
 
                 # Update display with system messages
                 await stream.update_display()
@@ -533,7 +538,9 @@ async def _stream_with_unified_events(
                             thread_id=thread_id,
                             error=str(e))
 
-                    return partial_answer, final_message, False, None, True
+                    # Get thinking chars for partial cost estimate
+                    thinking_chars = stream.display.total_thinking_length()
+                    return partial_answer, final_message, False, None, True, thinking_chars
 
                 # Phase 3.4: Handle sequential delivery turn break
                 if force_turn_break:
@@ -559,7 +566,7 @@ async def _stream_with_unified_events(
                     # Return with continuation needed
                     # Conversation state is passed so caller can continue
                     return (partial_answer, final_message, True, conversation,
-                            False)
+                            False, 0)
 
             else:
                 # Unexpected stop reason
@@ -585,7 +592,7 @@ async def _stream_with_unified_events(
                 except Exception:  # pylint: disable=broad-exception-caught
                     final_message = None
 
-                return final_answer, final_message, False, None, False
+                return final_answer, final_message, False, None, False, 0
 
         # Max iterations exceeded (DraftManager will cleanup on exit)
         logger.error("stream.unified.max_iterations",
@@ -603,7 +610,7 @@ async def _stream_with_unified_events(
         except Exception:  # pylint: disable=broad-exception-caught
             final_message = None
 
-        return error_msg, final_message, False, None, False
+        return error_msg, final_message, False, None, False, 0
 
 
 async def _send_with_retry(
@@ -877,10 +884,11 @@ async def _process_message_batch(thread_id: int,
                 final_bot_message = None
 
                 was_cancelled = False  # Track if user cancelled generation
+                thinking_chars = 0  # Track thinking chars for partial payment
                 for continuation_idx in range(max_continuations + 1):
                     (response_text, bot_message, needs_continuation,
-                     conversation_state,
-                     was_cancelled) = await _stream_with_unified_events(
+                     conversation_state, was_cancelled,
+                     iter_thinking_chars) = await _stream_with_unified_events(
                          request=request,
                          first_message=first_message,
                          thread_id=thread_id,
@@ -891,6 +899,9 @@ async def _process_message_batch(thread_id: int,
                          telegram_thread_id=thread.thread_id,
                          continuation_conversation=continuation_conversation,
                      )
+
+                    # Accumulate thinking chars across iterations
+                    thinking_chars += iter_thinking_chars
 
                     # Collect response parts
                     if response_text:
@@ -972,10 +983,95 @@ async def _process_message_batch(thread_id: int,
                 await first_message.answer("Failed to send response.")
                 return
 
-            # Phase 2.5: If user cancelled, skip usage tracking (no usage data)
+            # Phase 2.5.2: Partial payment for cancelled requests
+            # Estimate cost from accumulated text and charge user
             if was_cancelled:
-                logger.info("claude_handler.cancelled_skip_usage",
-                            thread_id=thread_id)
+                # Estimate tokens from accumulated content (~4 chars per token)
+                output_chars = len(response_text) if response_text else 0
+                estimated_output_tokens = output_chars // 4
+                estimated_thinking_tokens = thinking_chars // 4
+
+                # Estimate input tokens from context
+                # (system prompt + messages sent to Claude)
+                context_chars = len(composed_prompt)
+                for msg in context:
+                    if isinstance(msg.content, str):
+                        context_chars += len(msg.content)
+                    elif isinstance(msg.content, list):
+                        for block in msg.content:
+                            if hasattr(block, 'text'):
+                                context_chars += len(block.text)
+                estimated_input_tokens = context_chars // 4
+
+                # Calculate partial cost with cache assumption
+                # System prompt is likely cached (5-min TTL), use cache pricing
+                system_prompt_tokens = len(composed_prompt) // 4
+                user_context_tokens = max(
+                    0, estimated_input_tokens - system_prompt_tokens)
+
+                # Cache read pricing for system prompt (10x cheaper)
+                cache_pricing = (model_config.pricing_cache_read or
+                                 model_config.pricing_input * 0.1)
+
+                partial_cost = (
+                    (system_prompt_tokens / 1_000_000) * cache_pricing +
+                    (user_context_tokens / 1_000_000) *
+                    model_config.pricing_input +
+                    ((estimated_output_tokens + estimated_thinking_tokens) /
+                     1_000_000) * model_config.pricing_output)
+
+                logger.info(
+                    "claude_handler.cancelled_partial_charge",
+                    thread_id=thread_id,
+                    system_prompt_tokens=system_prompt_tokens,
+                    user_context_tokens=user_context_tokens,
+                    estimated_output_tokens=estimated_output_tokens,
+                    estimated_thinking_tokens=estimated_thinking_tokens,
+                    output_chars=output_chars,
+                    thinking_chars=thinking_chars,
+                    partial_cost_usd=round(partial_cost, 6),
+                )
+
+                # Charge user for partial usage (tools already charged separately)
+                if partial_cost > 0:
+                    try:
+                        balance_op_repo = BalanceOperationRepository(session)
+                        balance_service = BalanceService(
+                            session, user_repo, balance_op_repo)
+
+                        balance_after = await balance_service.charge_user(
+                            user_id=user.id,
+                            amount=partial_cost,
+                            description=(
+                                f"Claude API (cancelled): "
+                                f"~{estimated_input_tokens} input + "
+                                f"~{estimated_output_tokens} output + "
+                                f"~{estimated_thinking_tokens} thinking tokens"
+                            ),
+                            related_message_id=(bot_message.message_id
+                                                if bot_message else None),
+                        )
+
+                        logger.info(
+                            "claude_handler.cancelled_user_charged",
+                            user_id=user.id,
+                            partial_cost_usd=round(partial_cost, 6),
+                            balance_after=float(balance_after),
+                        )
+
+                    except Exception as e:  # pylint: disable=broad-exception-caught
+                        logger.error(
+                            "claude_handler.cancelled_charge_error",
+                            user_id=user.id,
+                            partial_cost_usd=round(partial_cost, 6),
+                            error=str(e),
+                            exc_info=True,
+                        )
+
+                # Record metrics for cancelled request
+                record_claude_request(model=user.model_id, success=True)
+                record_cost(service="claude_cancelled", amount_usd=partial_cost)
+
                 return
 
             # 9. Get usage stats, stop_reason, thinking, and calculate cost
@@ -1138,10 +1234,6 @@ async def _process_message_batch(thread_id: int,
 
             # Phase 2.1: Charge user for API usage
             try:
-                from db.repositories.balance_operation_repository import \
-                    BalanceOperationRepository
-                from services.balance_service import BalanceService
-
                 balance_op_repo = BalanceOperationRepository(session)
                 balance_service = BalanceService(session, user_repo,
                                                  balance_op_repo)
