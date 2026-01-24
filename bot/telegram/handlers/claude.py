@@ -185,7 +185,8 @@ async def _stream_with_unified_events(
     # Phase 2.5: Generation tracking for /stop command
     # Combined async with to avoid extra nesting
     async with (
-        generation_context(chat_id, user_id) as cancel_event,
+        generation_context(chat_id, user_id, telegram_thread_id) as
+        cancel_event,
         DraftManager(
             bot=first_message.bot,
             chat_id=chat_id,

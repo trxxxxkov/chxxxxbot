@@ -100,15 +100,17 @@ async def handle_message(message: types.Message, session: AsyncSession) -> None:
 
     user_id = message.from_user.id
     chat_id = message.chat.id
+    thread_id = message.message_thread_id
 
-    # Phase 2.5: Cancel any active generation for this user/chat
+    # Phase 2.5: Cancel any active generation for this user in same thread
     # New message will be queued and processed after current generation stops
-    if generation_tracker.is_active(chat_id, user_id):
-        await generation_tracker.cancel(chat_id, user_id)
+    if generation_tracker.is_active(chat_id, user_id, thread_id):
+        await generation_tracker.cancel(chat_id, user_id, thread_id)
         logger.info(
             "unified_handler.cancelled_active_generation",
             user_id=user_id,
             chat_id=chat_id,
+            thread_id=thread_id,
             message_id=message.message_id,
         )
 

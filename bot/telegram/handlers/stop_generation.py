@@ -32,32 +32,40 @@ async def handle_stop_command(message: types.Message) -> None:
 
     chat_id = message.chat.id
     user_id = message.from_user.id
+    thread_id = message.message_thread_id
 
-    # Try to cancel active generation (silent - no reply messages)
-    cancelled = await generation_tracker.cancel(chat_id, user_id)
+    # Try to cancel active generation in this thread (silent - no reply)
+    cancelled = await generation_tracker.cancel(chat_id, user_id, thread_id)
 
     if cancelled:
         logger.info(
             "stop_generation.command_success",
             chat_id=chat_id,
             user_id=user_id,
+            thread_id=thread_id,
         )
     else:
         logger.debug(
             "stop_generation.command_no_active",
             chat_id=chat_id,
             user_id=user_id,
+            thread_id=thread_id,
         )
 
 
-async def cancel_if_active(chat_id: int, user_id: int) -> bool:
+async def cancel_if_active(
+    chat_id: int,
+    user_id: int,
+    thread_id: int | None = None,
+) -> bool:
     """Cancel active generation if any.
 
     Args:
         chat_id: Telegram chat ID.
         user_id: Telegram user ID.
+        thread_id: Telegram thread/topic ID (None for main chat).
 
     Returns:
         True if a generation was active and cancelled, False otherwise.
     """
-    return await generation_tracker.cancel(chat_id, user_id)
+    return await generation_tracker.cancel(chat_id, user_id, thread_id)

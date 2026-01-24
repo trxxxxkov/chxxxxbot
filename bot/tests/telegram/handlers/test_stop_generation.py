@@ -22,6 +22,7 @@ class TestHandleStopCommand:
         message.from_user.id = 456
         message.chat = MagicMock()
         message.chat.id = 123
+        message.message_thread_id = 789
         return message
 
     @pytest.mark.asyncio
@@ -31,16 +32,16 @@ class TestHandleStopCommand:
         from telegram.generation_tracker import generation_tracker
         from telegram.handlers.stop_generation import handle_stop_command
 
-        # Start a generation
-        await generation_tracker.start(chat_id=123, user_id=456)
+        # Start a generation in the same thread
+        await generation_tracker.start(chat_id=123, user_id=456, thread_id=789)
 
         await handle_stop_command(mock_message)
 
         # Generation should be cancelled (event set)
-        assert not generation_tracker.is_active(123, 456)
+        assert not generation_tracker.is_active(123, 456, 789)
 
         # Cleanup
-        await generation_tracker.cleanup(123, 456)
+        await generation_tracker.cleanup(123, 456, 789)
 
     @pytest.mark.asyncio
     async def test_stop_command_no_active_generation(
@@ -83,20 +84,39 @@ class TestCancelIfActive:
         from telegram.generation_tracker import generation_tracker
         from telegram.handlers.stop_generation import cancel_if_active
 
-        await generation_tracker.start(chat_id=123, user_id=456)
+        await generation_tracker.start(chat_id=123, user_id=456, thread_id=789)
 
-        result = await cancel_if_active(chat_id=123, user_id=456)
+        result = await cancel_if_active(chat_id=123, user_id=456, thread_id=789)
 
         assert result is True
 
         # Cleanup
-        await generation_tracker.cleanup(123, 456)
+        await generation_tracker.cleanup(123, 456, 789)
 
     @pytest.mark.asyncio
     async def test_cancel_if_active_returns_false_when_not_active(self) -> None:
         """Test that cancel_if_active returns False when no generation."""
         from telegram.handlers.stop_generation import cancel_if_active
 
-        result = await cancel_if_active(chat_id=123, user_id=456)
+        result = await cancel_if_active(chat_id=123, user_id=456, thread_id=789)
 
         assert result is False
+
+    @pytest.mark.asyncio
+    async def test_cancel_if_active_different_thread_not_cancelled(
+            self) -> None:
+        """Test that cancel_if_active only cancels in same thread."""
+        from telegram.generation_tracker import generation_tracker
+        from telegram.handlers.stop_generation import cancel_if_active
+
+        await generation_tracker.start(chat_id=123, user_id=456, thread_id=100)
+
+        # Try to cancel in different thread
+        result = await cancel_if_active(chat_id=123, user_id=456, thread_id=200)
+
+        assert result is False
+        # Original still active
+        assert generation_tracker.is_active(123, 456, 100)
+
+        # Cleanup
+        await generation_tracker.cleanup(123, 456, 100)

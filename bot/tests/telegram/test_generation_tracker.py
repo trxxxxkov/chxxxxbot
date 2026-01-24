@@ -119,6 +119,31 @@ class TestGenerationTracker:
         assert event1.is_set()
         assert not event2.is_set()
 
+    @pytest.mark.asyncio
+    async def test_multiple_threads_tracked_separately(
+            self, tracker: GenerationTracker) -> None:
+        """Test that different threads are tracked separately."""
+        event1 = await tracker.start(chat_id=123, user_id=1, thread_id=100)
+        event2 = await tracker.start(chat_id=123, user_id=1, thread_id=200)
+
+        await tracker.cancel(chat_id=123, user_id=1, thread_id=100)
+
+        assert event1.is_set()
+        assert not event2.is_set()
+        assert tracker.get_active_count() == 2
+
+    @pytest.mark.asyncio
+    async def test_thread_id_none_tracked_separately(
+            self, tracker: GenerationTracker) -> None:
+        """Test that thread_id=None is tracked separately from specific threads."""
+        event1 = await tracker.start(chat_id=123, user_id=1, thread_id=None)
+        event2 = await tracker.start(chat_id=123, user_id=1, thread_id=100)
+
+        await tracker.cancel(chat_id=123, user_id=1, thread_id=None)
+
+        assert event1.is_set()
+        assert not event2.is_set()
+
 
 class TestGenerationContext:
     """Tests for generation_context context manager."""
