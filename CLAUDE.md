@@ -446,28 +446,33 @@ See [docs/phase-2.2-devops-agent.md](docs/phase-2.2-devops-agent.md) for full ar
 
 **See:** [docs/phase-2.3-tool-cost-precheck.md](docs/phase-2.3-tool-cost-precheck.md)
 
-#### 2.5 Generation Stop Button ✅ Complete
-**Status:** Complete (2026-01-23)
+#### 2.5 Generation Stop ✅ Complete
+**Status:** Complete (2026-01-24)
 
 **Problem solved:**
 - No way for users to stop long-running generations
 - Thinking and text streaming could not be interrupted
 
 **Solution:**
-- Reply keyboard "⏹ Stop" button appears during generation
+- `/stop` command silently cancels active generation
 - New message automatically cancels active generation
 - Cancellation check between Claude stream events
-- Partial content preserved with "[Generation stopped]" indicator
+- Partial content preserved with `[interrupted]` indicator
 
 **Implementation:**
 - ✅ `GenerationTracker` singleton for tracking active generations
-- ✅ `generation_context` context manager (Reply keyboard show/hide)
-- ✅ Stop button handler + new message cancellation in pipeline
+- ✅ `generation_context` context manager for tracking
+- ✅ `/stop` command handler + new message cancellation in pipeline
 - ✅ Integration with streaming loop in claude.py
 
+**Phase 2.5.2 - Partial Payment:**
+- ✅ Estimate Claude API tokens from accumulated text (~4 chars/token)
+- ✅ Charge user for partial usage when cancelled
+- ✅ Tool costs remain immediate (abuse protection)
+
 **Testing:**
-- 37 new tests (tracker, handler, keyboard)
-- 1238 total tests passing
+- 20 tests (tracker, handler)
+- 1221 total tests passing
 
 **See:** [docs/phase-2.5-generation-stop.md](docs/phase-2.5-generation-stop.md)
 
