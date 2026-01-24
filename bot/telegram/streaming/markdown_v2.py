@@ -366,6 +366,12 @@ def _render_markdown_v2(text: str, auto_close: bool = True) -> str:
 
         # Skip formatting inside link URL - output URL characters directly
         if current_context() == FormattingType.LINK_URL:
+            # Whitespace in URL is invalid - close the link immediately
+            if text[i] in " \t\n\r":
+                result.append(")")
+                pop_context(FormattingType.LINK_URL)
+                # Don't consume the whitespace, let normal processing handle it
+                continue
             if text[i] == "(":
                 # Open paren in URL - track depth for balanced parens
                 context_stack[-1].paren_depth += 1
@@ -491,9 +497,13 @@ def _render_markdown_v2(text: str, auto_close: bool = True) -> str:
 
         # Check for link [text](url)
         if text[i] == "[":
-            # Could be start of link text
+            # Could be start of link text - remember position to fix if not a link
+            bracket_pos = len(result)
             result.append("[")
-            push_context(FormattingType.LINK_TEXT, "[")
+            ctx = FormattingContext(format_type=FormattingType.LINK_TEXT,
+                                    start_pos=bracket_pos,
+                                    delimiter="[")
+            context_stack.append(ctx)
             i += 1
             continue
 
@@ -505,11 +515,12 @@ def _render_markdown_v2(text: str, auto_close: bool = True) -> str:
                 push_context(FormattingType.LINK_URL, "](")
                 i += 2
                 continue
-            # Not a link, just brackets
+            # Not a link, just brackets - escape the opening [ we added earlier
+            ctx = context_stack[-1]
+            if ctx.start_pos < len(result):
+                result[ctx.start_pos] = "\\["
             result.append("\\]")
             pop_context(FormattingType.LINK_TEXT)
-            # Re-escape the opening bracket we added
-            # Find and escape the [ we added
             i += 1
             continue
 
@@ -543,8 +554,12 @@ def _render_markdown_v2(text: str, auto_close: bool = True) -> str:
             elif ctx.format_type == FormattingType.SPOILER:
                 result.append("||")
             elif ctx.format_type == FormattingType.LINK_TEXT:
+                # Escape the opening [ we added earlier
+                if ctx.start_pos < len(result):
+                    result[ctx.start_pos] = "\\["
                 result.append("\\]")
             elif ctx.format_type == FormattingType.LINK_URL:
+                # Close the URL - add ) to complete the link
                 result.append(")")
 
     return "".join(result)
