@@ -125,7 +125,7 @@ async def _stream_with_unified_events(
     user_id: int,
     telegram_thread_id: int | None,
     continuation_conversation: list | None = None,
-) -> tuple[str, types.Message | None, bool, list | None, bool, int]:
+) -> tuple[str, types.Message | None, bool, list | None, bool, int, int]:
     """Stream response with unified thinking/text/tool handling.
 
     Uses sendMessageDraft (Bot API 9.3) for streaming without flood control.
@@ -155,11 +155,12 @@ async def _stream_with_unified_events(
 
     Returns:
         Tuple of (final_answer_text, final_message, needs_continuation,
-                  conversation_state, was_cancelled, thinking_chars).
+                  conversation_state, was_cancelled, thinking_chars, output_chars).
         - needs_continuation: True if _force_turn_break was triggered
         - conversation_state: Updated conversation for continuation
         - was_cancelled: True if user cancelled via /stop or new message
         - thinking_chars: Character count of thinking (for partial cost estimate)
+        - output_chars: Character count of output text (for partial cost estimate)
     """
     max_iterations = TOOL_LOOP_MAX_ITERATIONS
 
@@ -197,6 +198,9 @@ async def _stream_with_unified_events(
         # - Pending tools
         # - Last sent text for deduplication
         stream = StreamingSession(dm, thread_id)
+
+        # Track cumulative output chars across iterations (for partial cost)
+        total_output_chars = 0
 
         for iteration in range(max_iterations):
             logger.info("stream.unified.iteration",
@@ -281,6 +285,9 @@ async def _stream_with_unified_events(
             # Log iteration stats
             stream.log_iteration_complete(iteration + 1)
 
+            # Accumulate output chars before any clearing (for partial cost)
+            total_output_chars += stream.get_current_text_length()
+
             # Phase 2.5: Handle user cancellation
             if was_cancelled:
                 partial_answer = stream.get_final_text()
@@ -316,8 +323,9 @@ async def _stream_with_unified_events(
                     finalized=final_message is not None,
                 )
 
-                # Return with was_cancelled=True and thinking_chars for partial billing
-                return partial_answer, final_message, False, None, True, thinking_chars
+                # Return with was_cancelled=True and chars for partial billing
+                return (partial_answer, final_message, False, None, True,
+                        thinking_chars, total_output_chars)
 
             if stream.stop_reason in ("end_turn", "pause_turn"):
                 # Final answer
@@ -345,8 +353,8 @@ async def _stream_with_unified_events(
                 else:
                     await dm.current.clear()
 
-                # No continuation needed - final answer (thinking_chars=0, not used)
-                return final_answer, final_message, False, None, False, 0
+                # No continuation needed - final answer (chars=0, not used for billing)
+                return final_answer, final_message, False, None, False, 0, 0
 
             if stream.stop_reason == "tool_use" and stream.pending_tools:
                 # Execute all tools in PARALLEL, process results AS COMPLETED
@@ -392,7 +400,9 @@ async def _stream_with_unified_events(
                         # IMPORTANT: process_generated_files adds files_delivered
                         # to result dict, so we must call it BEFORE creating
                         # clean_result
-                        if result.get("_file_contents"):
+                        # Phase 2.5: Skip file delivery if user cancelled
+                        if result.get(
+                                "_file_contents") and not cancel_event.is_set():
                             if not first_file_committed:
                                 # Commit text BEFORE first file
                                 await stream.commit_for_files()
@@ -402,6 +412,13 @@ async def _stream_with_unified_events(
                                 result, first_message, thread_id, session,
                                 user_file_repo, chat_id, user_id,
                                 telegram_thread_id)
+                        elif result.get(
+                                "_file_contents") and cancel_event.is_set():
+                            logger.info(
+                                "stream.unified.file_skipped_cancelled",
+                                thread_id=thread_id,
+                                tool_name=tool.name,
+                            )
 
                         # Phase 3.4: Check for sequential delivery
                         if result.get("_force_turn_break"):
@@ -497,7 +514,7 @@ async def _stream_with_unified_events(
                     await dm.current.clear()
                     return (
                         "⚠️ Tool execution error: missing assistant context",
-                        None, False, None, False, 0)
+                        None, False, None, False, 0, 0)
 
                 # Update display with system messages
                 await stream.update_display()
@@ -540,7 +557,8 @@ async def _stream_with_unified_events(
 
                     # Get thinking chars for partial cost estimate
                     thinking_chars = stream.display.total_thinking_length()
-                    return partial_answer, final_message, False, None, True, thinking_chars
+                    return (partial_answer, final_message, False, None, True,
+                            thinking_chars, total_output_chars)
 
                 # Phase 3.4: Handle sequential delivery turn break
                 if force_turn_break:
@@ -566,7 +584,7 @@ async def _stream_with_unified_events(
                     # Return with continuation needed
                     # Conversation state is passed so caller can continue
                     return (partial_answer, final_message, True, conversation,
-                            False, 0)
+                            False, 0, 0)
 
             else:
                 # Unexpected stop reason
@@ -592,7 +610,7 @@ async def _stream_with_unified_events(
                 except Exception:  # pylint: disable=broad-exception-caught
                     final_message = None
 
-                return final_answer, final_message, False, None, False, 0
+                return final_answer, final_message, False, None, False, 0, 0
 
         # Max iterations exceeded (DraftManager will cleanup on exit)
         logger.error("stream.unified.max_iterations",
@@ -610,7 +628,7 @@ async def _stream_with_unified_events(
         except Exception:  # pylint: disable=broad-exception-caught
             final_message = None
 
-        return error_msg, final_message, False, None, False, 0
+        return error_msg, final_message, False, None, False, 0, 0
 
 
 async def _send_with_retry(
@@ -885,10 +903,11 @@ async def _process_message_batch(thread_id: int,
 
                 was_cancelled = False  # Track if user cancelled generation
                 thinking_chars = 0  # Track thinking chars for partial payment
+                output_chars = 0  # Track output chars for partial payment
                 for continuation_idx in range(max_continuations + 1):
                     (response_text, bot_message, needs_continuation,
-                     conversation_state, was_cancelled,
-                     iter_thinking_chars) = await _stream_with_unified_events(
+                     conversation_state, was_cancelled, iter_thinking_chars,
+                     iter_output_chars) = await _stream_with_unified_events(
                          request=request,
                          first_message=first_message,
                          thread_id=thread_id,
@@ -900,8 +919,9 @@ async def _process_message_batch(thread_id: int,
                          continuation_conversation=continuation_conversation,
                      )
 
-                    # Accumulate thinking chars across iterations
+                    # Accumulate chars across iterations for partial billing
                     thinking_chars += iter_thinking_chars
+                    output_chars += iter_output_chars
 
                     # Collect response parts
                     if response_text:
@@ -986,8 +1006,8 @@ async def _process_message_batch(thread_id: int,
             # Phase 2.5.2: Partial payment for cancelled requests
             # Estimate cost from accumulated text and charge user
             if was_cancelled:
-                # Estimate tokens from accumulated content (~4 chars per token)
-                output_chars = len(response_text) if response_text else 0
+                # Estimate tokens from accumulated chars (~4 chars per token)
+                # output_chars accumulated from _stream_with_unified_events
                 estimated_output_tokens = output_chars // 4
                 estimated_thinking_tokens = thinking_chars // 4
 

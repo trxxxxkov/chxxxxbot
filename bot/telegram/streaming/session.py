@@ -22,6 +22,7 @@ from utils.structured_logging import get_logger
 logger = get_logger(__name__)
 
 
+# pylint: disable=too-many-public-methods
 class StreamingSession:  # pylint: disable=too-many-instance-attributes
     """Encapsulates state for a single streaming response.
 
@@ -321,6 +322,14 @@ class StreamingSession:  # pylint: disable=too-many-instance-attributes
             Formatted final text (MarkdownV2 or HTML based on parse_mode).
         """
         return format_final_text(self._display, parse_mode=self._parse_mode)
+
+    def get_current_text_length(self) -> int:
+        """Get current text length before any clearing.
+
+        Returns:
+            Total character count of text blocks.
+        """
+        return self._display.total_text_length()
 
     def add_system_message(self, message: str) -> None:
         """Add a system message to thinking block.
