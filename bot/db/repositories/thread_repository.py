@@ -227,3 +227,47 @@ class ThreadRepository(BaseRepository[Thread]):
         stmt = select(func.count()).select_from(Thread)
         result = await self.session.execute(stmt)
         return result.scalar() or 0
+
+    async def get_unique_topic_ids(self, chat_id: int) -> list[int]:
+        """Get unique Telegram topic IDs for a chat.
+
+        Returns distinct thread_id values (Telegram forum topic IDs)
+        for the given chat, excluding NULL (main chat).
+
+        Args:
+            chat_id: Telegram chat ID.
+
+        Returns:
+            List of unique Telegram topic IDs (not internal thread IDs).
+        """
+        stmt = (select(Thread.thread_id).where(
+            Thread.chat_id == chat_id, Thread.thread_id.isnot(None)).distinct())
+        result = await self.session.execute(stmt)
+        return [row[0] for row in result.fetchall()]
+
+    async def delete_threads_by_topic_id(
+        self,
+        chat_id: int,
+        topic_id: int,
+    ) -> int:
+        """Delete all threads for a specific Telegram topic.
+
+        Removes all thread records (for all users) associated with
+        the given Telegram topic ID in the chat.
+
+        Args:
+            chat_id: Telegram chat ID.
+            topic_id: Telegram forum topic ID (thread_id).
+
+        Returns:
+            Number of threads deleted.
+        """
+        from sqlalchemy import delete as sql_delete
+
+        stmt = sql_delete(Thread).where(
+            Thread.chat_id == chat_id,
+            Thread.thread_id == topic_id,
+        )
+        result = await self.session.execute(stmt)
+        await self.session.flush()
+        return result.rowcount

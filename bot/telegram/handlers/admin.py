@@ -3,6 +3,7 @@
 This module handles admin-only commands:
 - /topup - Adjust any user's balance (add or subtract)
 - /set_margin - Configure owner margin (k3) for payment commissions
+- /delete_topics - Delete all forum topics in the current chat
 
 Only users in PRIVILEGED_USERS (from secrets/privileged_users.txt) can use these.
 """
@@ -15,6 +16,7 @@ from aiogram.types import Message
 import config
 from db.repositories.balance_operation_repository import \
     BalanceOperationRepository
+from db.repositories.thread_repository import ThreadRepository
 from db.repositories.user_repository import UserRepository
 from services.balance_service import BalanceService
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -271,4 +273,125 @@ async def cmd_set_margin(message: Message):
         new_margin=k3,
         total_commission=k1 + k2 + k3,
         msg="Owner margin updated successfully",
+    )
+
+
+@router.message(Command("delete_topics"))
+async def cmd_delete_topics(message: Message, session: AsyncSession):
+    """Handler for /delete_topics command - delete all forum topics.
+
+    Privileged users only. Deletes all forum topics in the current chat
+    that are known to the bot (stored in database).
+
+    Note: Topic ID=1 (General) cannot be deleted by Telegram.
+    Note: Bot must have can_delete_messages admin right.
+
+    Args:
+        message: Telegram message with /delete_topics command.
+        session: Database session from middleware.
+    """
+    user_id = message.from_user.id
+    chat_id = message.chat.id
+
+    # Check privileges
+    if not is_privileged(user_id):
+        logger.warning(
+            "admin.delete_topics_unauthorized",
+            user_id=user_id,
+            username=message.from_user.username,
+        )
+        await message.answer(
+            "❌ This command is only available to privileged users.")
+        return
+
+    # Get unique topic IDs from database
+    thread_repo = ThreadRepository(session)
+    topic_ids = await thread_repo.get_unique_topic_ids(chat_id)
+
+    if not topic_ids:
+        await message.answer(
+            "ℹ️ No forum topics found in database for this chat.")
+        return
+
+    logger.info(
+        "admin.delete_topics_started",
+        admin_user_id=user_id,
+        chat_id=chat_id,
+        topic_count=len(topic_ids),
+        topic_ids=topic_ids,
+    )
+
+    # Send progress message
+    progress_msg = await message.answer(
+        f"🗑️ Deleting {len(topic_ids)} topic(s)...\n\n"
+        f"Topic IDs: {', '.join(map(str, topic_ids))}")
+
+    deleted_count = 0
+    failed_count = 0
+    skipped_general = False
+    errors = []
+
+    for topic_id in topic_ids:
+        # Skip General topic (ID=1) - cannot be deleted
+        if topic_id == 1:
+            skipped_general = True
+            # Still delete DB records for General topic threads
+            await thread_repo.delete_threads_by_topic_id(chat_id, topic_id)
+            continue
+
+        try:
+            # Delete topic via Bot API
+            await message.bot.delete_forum_topic(
+                chat_id=chat_id,
+                message_thread_id=topic_id,
+            )
+            deleted_count += 1
+
+            # Delete DB records for this topic
+            await thread_repo.delete_threads_by_topic_id(chat_id, topic_id)
+
+            logger.info(
+                "admin.delete_topic_success",
+                chat_id=chat_id,
+                topic_id=topic_id,
+            )
+
+        except Exception as e:
+            failed_count += 1
+            error_msg = str(e)
+            errors.append(f"Topic {topic_id}: {error_msg[:50]}")
+            logger.error(
+                "admin.delete_topic_failed",
+                chat_id=chat_id,
+                topic_id=topic_id,
+                error=error_msg,
+            )
+
+    # Commit all DB changes
+    await session.commit()
+
+    # Build result message
+    result_parts = [f"✅ <b>Topics deletion complete</b>\n"]
+    result_parts.append(f"• Deleted: {deleted_count}")
+    if failed_count:
+        result_parts.append(f"• Failed: {failed_count}")
+    if skipped_general:
+        result_parts.append("• Skipped: General (ID=1, cannot be deleted)")
+
+    if errors:
+        result_parts.append(f"\n<b>Errors:</b>")
+        for err in errors[:5]:  # Show max 5 errors
+            result_parts.append(f"• {err}")
+        if len(errors) > 5:
+            result_parts.append(f"• ... and {len(errors) - 5} more")
+
+    await progress_msg.edit_text("\n".join(result_parts))
+
+    logger.info(
+        "admin.delete_topics_complete",
+        admin_user_id=user_id,
+        chat_id=chat_id,
+        deleted=deleted_count,
+        failed=failed_count,
+        skipped_general=skipped_general,
     )
