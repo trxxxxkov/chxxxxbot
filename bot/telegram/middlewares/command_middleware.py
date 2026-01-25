@@ -19,6 +19,7 @@ from aiogram import BaseMiddleware
 from aiogram import types
 from db.repositories.chat_repository import ChatRepository
 from db.repositories.thread_repository import ThreadRepository
+from db.repositories.user_repository import UserRepository
 from sqlalchemy.ext.asyncio import AsyncSession
 from utils.structured_logging import get_logger
 
@@ -84,6 +85,7 @@ class CommandMiddleware(BaseMiddleware):
             if session:
                 await self._ensure_topic_registered(
                     session=session,
+                    event=event,
                     chat_id=chat_id,
                     user_id=user_id,
                     topic_id=topic_id,
@@ -94,58 +96,76 @@ class CommandMiddleware(BaseMiddleware):
     async def _ensure_topic_registered(
         self,
         session: AsyncSession,
+        event: types.Message,
         chat_id: int,
         user_id: int,
         topic_id: int,
     ) -> None:
         """Ensure topic has a thread record in DB.
 
-        Creates chat and thread records if they don't exist.
+        Creates user, chat, and thread records if they don't exist.
         This is lightweight - only creates minimal records.
 
         Args:
             session: Database session.
+            event: Telegram message (for user info).
             chat_id: Telegram chat ID.
             user_id: Telegram user ID.
             topic_id: Telegram topic/thread ID.
         """
         try:
-            # Ensure chat exists
-            chat_repo = ChatRepository(session)
-            chat = await chat_repo.get_by_telegram_id(chat_id)
-            if not chat:
-                # Create minimal chat record
-                chat = await chat_repo.create(
-                    telegram_id=chat_id,
-                    chat_type="private",  # Assume private for commands
-                    is_forum=True,  # Has topics
+            # Ensure user exists (required for thread foreign key)
+            user_repo = UserRepository(session)
+            user = await user_repo.get_by_telegram_id(user_id)
+            if not user and event.from_user:
+                # Create minimal user record
+                user, _ = await user_repo.get_or_create(
+                    telegram_id=user_id,
+                    is_bot=event.from_user.is_bot,
+                    first_name=event.from_user.first_name,
+                    last_name=event.from_user.last_name,
+                    username=event.from_user.username,
+                    language_code=event.from_user.language_code,
+                    is_premium=event.from_user.is_premium or False,
+                    added_to_attachment_menu=(
+                        event.from_user.added_to_attachment_menu or False),
                 )
-                await session.commit()
+                logger.debug(
+                    "command.user_created",
+                    user_id=user_id,
+                )
+
+            # Ensure chat exists (get_or_create handles both cases)
+            chat_repo = ChatRepository(session)
+            chat, chat_created = await chat_repo.get_or_create(
+                telegram_id=chat_id,
+                chat_type="private",  # Assume private for commands
+                is_forum=True,  # Has topics
+            )
+            if chat_created:
                 logger.debug(
                     "command.chat_created",
                     chat_id=chat_id,
                 )
 
-            # Ensure thread exists for this topic
+            # Ensure thread exists for this topic (get_or_create_thread)
+            # Uses Telegram IDs directly since models use them as PKs
             thread_repo = ThreadRepository(session)
-            thread = await thread_repo.get_by_chat_and_topic(
-                chat_id=chat.id,
-                topic_id=topic_id,
+            thread, thread_created = await thread_repo.get_or_create_thread(
+                chat_id=chat_id,  # Telegram chat ID = Chat.id
+                user_id=user_id,  # Telegram user ID = User.id
+                thread_id=topic_id,  # Telegram topic ID
             )
-            if not thread:
-                # Create minimal thread record
-                thread = await thread_repo.create(
-                    chat_id=chat.id,
-                    user_id=user_id,
-                    topic_id=topic_id,
-                )
-                await session.commit()
+            if thread_created:
                 logger.debug(
                     "command.topic_registered",
                     chat_id=chat_id,
                     topic_id=topic_id,
                     thread_id=thread.id,
                 )
+
+            # Commit all changes
+            await session.commit()
 
         except Exception as e:  # pylint: disable=broad-exception-caught
             # Don't fail command if topic registration fails

@@ -281,8 +281,9 @@ async def cmd_clear(message: Message, session: AsyncSession):
     """Handler for /clear command - delete forum topics.
 
     Privileged users only. Behavior:
-    - /clear in General or NEW topic → deletes ALL topics, result in General
-    - /clear in EXISTING topic (has messages) → deletes only that topic
+    - /clear all → deletes ALL topics (from anywhere)
+    - /clear in General (topic_id=None or 1) → deletes ALL topics
+    - /clear in topic → deletes only that topic
 
     Note: Bot must have can_manage_topics admin right.
 
@@ -304,37 +305,53 @@ async def cmd_clear(message: Message, session: AsyncSession):
             "❌ This command is only available to privileged users.")
         return
 
+    # Check for "all" argument
+    args = message.text.split()
+    force_all = len(args) > 1 and args[1].lower() == "all"
+
     current_topic_id = message.message_thread_id
     thread_repo = ThreadRepository(session)
     existing_topic_ids = await thread_repo.get_unique_topic_ids(chat_id)
 
-    # Determine mode:
-    # - General (id=1 or None) or new topic (not in DB) → delete ALL
-    # - Existing topic (in DB) → delete only that one
-    is_general = not current_topic_id or current_topic_id == 1
-    topic_exists_in_db = current_topic_id in existing_topic_ids if current_topic_id else False
+    logger.debug(
+        "admin.clear_context",
+        chat_id=chat_id,
+        current_topic_id=current_topic_id,
+        force_all=force_all,
+        existing_topic_ids=existing_topic_ids,
+    )
 
-    if is_general or not topic_exists_in_db:
-        # General or new topic - delete all topics
+    # Determine mode:
+    # - /clear all → delete ALL topics
+    # - General (id=1 or None) → delete ALL topics
+    # - Any topic → delete only that one
+    is_general = not current_topic_id or current_topic_id == 1
+
+    if force_all or is_general:
+        # Force all or General - delete all topics
         topic_ids = list(existing_topic_ids)
-        # Include current topic if it's a new one (not General)
+        # Include current topic if it exists and not General
         if current_topic_id and current_topic_id != 1 and current_topic_id not in topic_ids:
             topic_ids.append(current_topic_id)
         mode = "all"
     else:
-        # Existing topic - delete only this one
+        # Regular topic - delete only this one
         topic_ids = [current_topic_id]
         mode = "single"
 
     if not topic_ids:
-        await message.answer("ℹ️ No forum topics to delete.")
+        await message.answer(
+            "ℹ️ No forum topics to delete.\n\n"
+            "💡 Use <code>/clear all</code> to delete all topics from anywhere.")
         return
+
     logger.info(
         "admin.clear_started",
         admin_user_id=user_id,
         chat_id=chat_id,
         mode=mode,
-        topic_exists_in_db=topic_exists_in_db,
+        force_all=force_all,
+        is_general=is_general,
         current_topic_id=current_topic_id,
         topic_count=len(topic_ids),
         topic_ids=topic_ids,

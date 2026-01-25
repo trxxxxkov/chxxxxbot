@@ -427,3 +427,217 @@ class TestPrivilegeChecking:
             assert admin.is_privileged(admin1) is True
             assert admin.is_privileged(admin2) is True
             assert admin.is_privileged(regular) is False
+
+
+@pytest.mark.asyncio
+class TestClearCommand:
+    """Test /clear admin command for deleting forum topics."""
+
+    async def test_clear_unauthorized_user(self, test_session):
+        """Test that non-privileged user cannot use /clear.
+
+        Args:
+            test_session: Async session fixture.
+        """
+        regular_user_id = 222222222
+        with patch.object(config, 'PRIVILEGED_USERS', set()):
+            mock_message = Mock()
+            mock_message.from_user = Mock()
+            mock_message.from_user.id = regular_user_id
+            mock_message.from_user.username = "regular_user"
+            mock_message.chat = Mock()
+            mock_message.chat.id = 123456789
+            mock_message.text = "/clear"
+            mock_message.message_thread_id = None
+            mock_message.answer = AsyncMock()
+
+            await admin.cmd_clear(mock_message, test_session)
+
+            mock_message.answer.assert_called_once()
+            response = mock_message.answer.call_args[0][0]
+            assert "privileged users" in response.lower()
+
+    async def test_clear_no_topics(self, test_session):
+        """Test /clear when no topics exist.
+
+        Args:
+            test_session: Async session fixture.
+        """
+        admin_user_id = 111111111
+        with patch.object(config, 'PRIVILEGED_USERS', {admin_user_id}):
+            mock_message = Mock()
+            mock_message.from_user = Mock()
+            mock_message.from_user.id = admin_user_id
+            mock_message.chat = Mock()
+            mock_message.chat.id = 999999999  # Chat with no topics
+            mock_message.text = "/clear"
+            mock_message.message_thread_id = None  # General
+            mock_message.answer = AsyncMock()
+
+            await admin.cmd_clear(mock_message, test_session)
+
+            mock_message.answer.assert_called_once()
+            response = mock_message.answer.call_args[0][0]
+            assert "No forum topics" in response
+
+    async def test_clear_all_from_general(self, test_session):
+        """Test /clear from General deletes all topics.
+
+        Args:
+            test_session: Async session fixture.
+        """
+        from db.repositories.thread_repository import ThreadRepository
+
+        admin_user_id = 111111111
+        chat_id = 888888888
+
+        # Create some threads with topics
+        thread_repo = ThreadRepository(test_session)
+        await thread_repo.get_or_create_thread(chat_id=chat_id,
+                                               user_id=admin_user_id,
+                                               thread_id=1001)
+        await thread_repo.get_or_create_thread(chat_id=chat_id,
+                                               user_id=admin_user_id,
+                                               thread_id=1002)
+        await test_session.flush()  # Flush instead of commit
+
+        with patch.object(config, 'PRIVILEGED_USERS', {admin_user_id}):
+            mock_message = Mock()
+            mock_message.from_user = Mock()
+            mock_message.from_user.id = admin_user_id
+            mock_message.chat = Mock()
+            mock_message.chat.id = chat_id
+            mock_message.text = "/clear"
+            mock_message.message_thread_id = None  # General
+            mock_message.answer = AsyncMock()
+            mock_message.bot = Mock()
+            mock_message.bot.delete_forum_topic = AsyncMock()
+            mock_message.bot.send_message = AsyncMock()
+
+            await admin.cmd_clear(mock_message, test_session)
+
+            # Should delete both topics
+            assert mock_message.bot.delete_forum_topic.call_count == 2
+            mock_message.bot.send_message.assert_called_once()
+            assert "All topics cleared" in mock_message.bot.send_message.call_args[
+                0][1]
+
+    async def test_clear_all_explicit(self, test_session):
+        """Test /clear all deletes all topics from anywhere.
+
+        Args:
+            test_session: Async session fixture.
+        """
+        from db.repositories.thread_repository import ThreadRepository
+
+        admin_user_id = 111111111
+        chat_id = 777777777
+
+        # Create threads
+        thread_repo = ThreadRepository(test_session)
+        await thread_repo.get_or_create_thread(chat_id=chat_id,
+                                               user_id=admin_user_id,
+                                               thread_id=2001)
+        await thread_repo.get_or_create_thread(chat_id=chat_id,
+                                               user_id=admin_user_id,
+                                               thread_id=2002)
+        await test_session.flush()  # Flush instead of commit
+
+        with patch.object(config, 'PRIVILEGED_USERS', {admin_user_id}):
+            mock_message = Mock()
+            mock_message.from_user = Mock()
+            mock_message.from_user.id = admin_user_id
+            mock_message.chat = Mock()
+            mock_message.chat.id = chat_id
+            mock_message.text = "/clear all"  # Explicit "all"
+            mock_message.message_thread_id = 2001  # Even from a topic
+            mock_message.answer = AsyncMock()
+            mock_message.bot = Mock()
+            mock_message.bot.delete_forum_topic = AsyncMock()
+            mock_message.bot.send_message = AsyncMock()
+
+            await admin.cmd_clear(mock_message, test_session)
+
+            # Should delete both topics (not just current)
+            assert mock_message.bot.delete_forum_topic.call_count == 2
+            mock_message.bot.send_message.assert_called_once()
+
+    async def test_clear_single_topic(self, test_session):
+        """Test /clear in a topic deletes only that topic.
+
+        Args:
+            test_session: Async session fixture.
+        """
+        from db.repositories.thread_repository import ThreadRepository
+
+        admin_user_id = 111111111
+        chat_id = 666666666
+
+        # Create threads
+        thread_repo = ThreadRepository(test_session)
+        await thread_repo.get_or_create_thread(chat_id=chat_id,
+                                               user_id=admin_user_id,
+                                               thread_id=3001)
+        await thread_repo.get_or_create_thread(chat_id=chat_id,
+                                               user_id=admin_user_id,
+                                               thread_id=3002)
+        await test_session.flush()  # Flush instead of commit
+
+        with patch.object(config, 'PRIVILEGED_USERS', {admin_user_id}):
+            mock_message = Mock()
+            mock_message.from_user = Mock()
+            mock_message.from_user.id = admin_user_id
+            mock_message.chat = Mock()
+            mock_message.chat.id = chat_id
+            mock_message.text = "/clear"  # No "all"
+            mock_message.message_thread_id = 3001  # From topic 3001
+            mock_message.answer = AsyncMock()
+            mock_message.bot = Mock()
+            mock_message.bot.delete_forum_topic = AsyncMock()
+            mock_message.bot.send_message = AsyncMock()
+
+            await admin.cmd_clear(mock_message, test_session)
+
+            # Should delete only topic 3001
+            mock_message.bot.delete_forum_topic.assert_called_once()
+            call_kwargs = mock_message.bot.delete_forum_topic.call_args[1]
+            assert call_kwargs["message_thread_id"] == 3001
+
+            # No "All topics cleared" message for single mode
+            mock_message.bot.send_message.assert_not_called()
+
+    async def test_clear_general_topic_id_1(self, test_session):
+        """Test /clear with topic_id=1 (General) deletes all.
+
+        Args:
+            test_session: Async session fixture.
+        """
+        from db.repositories.thread_repository import ThreadRepository
+
+        admin_user_id = 111111111
+        chat_id = 555555555
+
+        thread_repo = ThreadRepository(test_session)
+        await thread_repo.get_or_create_thread(chat_id=chat_id,
+                                               user_id=admin_user_id,
+                                               thread_id=4001)
+        await test_session.flush()  # Flush instead of commit
+
+        with patch.object(config, 'PRIVILEGED_USERS', {admin_user_id}):
+            mock_message = Mock()
+            mock_message.from_user = Mock()
+            mock_message.from_user.id = admin_user_id
+            mock_message.chat = Mock()
+            mock_message.chat.id = chat_id
+            mock_message.text = "/clear"
+            mock_message.message_thread_id = 1  # General topic ID
+            mock_message.answer = AsyncMock()
+            mock_message.bot = Mock()
+            mock_message.bot.delete_forum_topic = AsyncMock()
+            mock_message.bot.send_message = AsyncMock()
+
+            await admin.cmd_clear(mock_message, test_session)
+
+            # Should delete the topic (all mode)
+            mock_message.bot.delete_forum_topic.assert_called_once()
+            mock_message.bot.send_message.assert_called_once()
