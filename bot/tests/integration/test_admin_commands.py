@@ -522,46 +522,6 @@ class TestClearCommand:
             assert "All topics cleared" in mock_message.bot.send_message.call_args[
                 0][1]
 
-    async def test_clear_all_explicit(self, test_session):
-        """Test /clear all deletes all topics from anywhere.
-
-        Args:
-            test_session: Async session fixture.
-        """
-        from db.repositories.thread_repository import ThreadRepository
-
-        admin_user_id = 111111111
-        chat_id = 777777777
-
-        # Create threads
-        thread_repo = ThreadRepository(test_session)
-        await thread_repo.get_or_create_thread(chat_id=chat_id,
-                                               user_id=admin_user_id,
-                                               thread_id=2001)
-        await thread_repo.get_or_create_thread(chat_id=chat_id,
-                                               user_id=admin_user_id,
-                                               thread_id=2002)
-        await test_session.flush()  # Flush instead of commit
-
-        with patch.object(config, 'PRIVILEGED_USERS', {admin_user_id}):
-            mock_message = Mock()
-            mock_message.from_user = Mock()
-            mock_message.from_user.id = admin_user_id
-            mock_message.chat = Mock()
-            mock_message.chat.id = chat_id
-            mock_message.text = "/clear all"  # Explicit "all"
-            mock_message.message_thread_id = 2001  # Even from a topic
-            mock_message.answer = AsyncMock()
-            mock_message.bot = Mock()
-            mock_message.bot.delete_forum_topic = AsyncMock()
-            mock_message.bot.send_message = AsyncMock()
-
-            await admin.cmd_clear(mock_message, test_session)
-
-            # Should delete both topics (not just current)
-            assert mock_message.bot.delete_forum_topic.call_count == 2
-            mock_message.bot.send_message.assert_called_once()
-
     async def test_clear_single_topic(self, test_session):
         """Test /clear in a topic deletes only that topic.
 

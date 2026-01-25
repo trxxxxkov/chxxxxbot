@@ -281,7 +281,6 @@ async def cmd_clear(message: Message, session: AsyncSession):
     """Handler for /clear command - delete forum topics.
 
     Privileged users only. Behavior:
-    - /clear all → deletes ALL topics (from anywhere)
     - /clear in General (topic_id=None or 1) → deletes ALL topics
     - /clear in topic → deletes only that topic
 
@@ -305,10 +304,6 @@ async def cmd_clear(message: Message, session: AsyncSession):
             "❌ This command is only available to privileged users.")
         return
 
-    # Check for "all" argument
-    args = message.text.split()
-    force_all = len(args) > 1 and args[1].lower() == "all"
-
     current_topic_id = message.message_thread_id
     thread_repo = ThreadRepository(session)
     existing_topic_ids = await thread_repo.get_unique_topic_ids(chat_id)
@@ -317,22 +312,17 @@ async def cmd_clear(message: Message, session: AsyncSession):
         "admin.clear_context",
         chat_id=chat_id,
         current_topic_id=current_topic_id,
-        force_all=force_all,
         existing_topic_ids=existing_topic_ids,
     )
 
     # Determine mode:
-    # - /clear all → delete ALL topics
     # - General (id=1 or None) → delete ALL topics
     # - Any topic → delete only that one
     is_general = not current_topic_id or current_topic_id == 1
 
-    if force_all or is_general:
-        # Force all or General - delete all topics
+    if is_general:
+        # General - delete all topics
         topic_ids = list(existing_topic_ids)
-        # Include current topic if it exists and not General
-        if current_topic_id and current_topic_id != 1 and current_topic_id not in topic_ids:
-            topic_ids.append(current_topic_id)
         mode = "all"
     else:
         # Regular topic - delete only this one
@@ -340,9 +330,7 @@ async def cmd_clear(message: Message, session: AsyncSession):
         mode = "single"
 
     if not topic_ids:
-        await message.answer(
-            "ℹ️ No forum topics to delete.\n\n"
-            "💡 Use <code>/clear all</code> to delete all topics from anywhere.")
+        await message.answer("ℹ️ No forum topics to delete.")
         return
 
     logger.info(
@@ -350,7 +338,6 @@ async def cmd_clear(message: Message, session: AsyncSession):
         admin_user_id=user_id,
         chat_id=chat_id,
         mode=mode,
-        force_all=force_all,
         is_general=is_general,
         current_topic_id=current_topic_id,
         topic_count=len(topic_ids),
