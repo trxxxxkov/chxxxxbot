@@ -194,6 +194,7 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
         self._finalized = False  # Prevents keepalive on finalized drafts
         self._keepalive_task: Optional[Task[None]] = None  # Managed keepalive
         self._keepalive_interval: float = 5.0  # Default keepalive interval
+        self._last_parse_mode: Optional[str] = DEFAULT_PARSE_MODE  # Track mode
 
         logger.debug("draft_streamer.initialized",
                      chat_id=chat_id,
@@ -351,6 +352,7 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
                 ))
 
             self.last_text = text_to_send
+            self._last_parse_mode = parse_mode  # Track successful parse_mode
             self._update_count += 1
             self._last_update_time = time.time()
 
@@ -378,6 +380,7 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
                         parse_mode=parse_mode,
                     ))
                 self.last_text = text_to_send
+                self._last_parse_mode = parse_mode  # Track successful parse_mode
                 self._update_count += 1
                 self._last_update_time = time.time()
                 return True
@@ -430,8 +433,9 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
             return await self.update(self._pending_text, parse_mode, force=True)
         return True
 
-    async def keepalive(self,
-                        parse_mode: Optional[str] = DEFAULT_PARSE_MODE) -> bool:
+    async def keepalive(  # pylint: disable=too-many-return-statements
+            self,
+            parse_mode: Optional[str] = DEFAULT_PARSE_MODE) -> bool:
         """Send keep-alive update to prevent draft from disappearing.
 
         Unlike update(), this always sends even if text unchanged.
@@ -440,8 +444,11 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
         Skips if we recently sent an update (within MIN_TIME_BEFORE_KEEPALIVE)
         to avoid flood control.
 
+        Uses the last successful parse_mode to avoid parse errors when
+        previous update fell back to plain text.
+
         Args:
-            parse_mode: Parse mode for formatting.
+            parse_mode: Parse mode for formatting (overridden by tracked mode).
 
         Returns:
             True on success, False on failure.
@@ -472,6 +479,18 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
                          seconds_ago=round(time_since_update, 1))
             return True
 
+        return await self._send_keepalive(self._last_parse_mode)
+
+    async def _send_keepalive(self,
+                              effective_parse_mode: Optional[str]) -> bool:
+        """Send keepalive with specified parse mode, with fallback.
+
+        Args:
+            effective_parse_mode: Parse mode to use for sending.
+
+        Returns:
+            True on success, False on failure.
+        """
         try:
             await self.bot(
                 SendMessageDraft(
@@ -479,7 +498,7 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
                     draft_id=self.draft_id,
                     text=self.last_text,
                     message_thread_id=self.topic_id,
-                    parse_mode=parse_mode,
+                    parse_mode=effective_parse_mode,
                 ))
             self._last_update_time = time.time()
             logger.debug("draft_streamer.keepalive",
@@ -492,6 +511,19 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
                            retry_after=e.retry_after)
             await asyncio.sleep(e.retry_after)
             return True
+        except TelegramBadRequest as e:
+            # Parse error - try again with plain text and track it
+            if "can't parse entities" in str(
+                    e).lower() and effective_parse_mode:
+                logger.warning("draft_streamer.keepalive_parse_error",
+                               chat_id=self.chat_id,
+                               error=str(e))
+                self._last_parse_mode = None  # Track fallback
+                return await self._send_keepalive(None)  # Retry without parse
+            logger.warning("draft_streamer.keepalive_failed",
+                           chat_id=self.chat_id,
+                           error=str(e))
+            return False
         except Exception as e:  # pylint: disable=broad-exception-caught
             logger.warning("draft_streamer.keepalive_failed",
                            chat_id=self.chat_id,
