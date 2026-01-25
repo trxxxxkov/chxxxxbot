@@ -445,7 +445,10 @@ async def execute_python(code: str,
         return result
 
     except Exception as e:
-        logger.error("tools.execute_python.failed", error=str(e), exc_info=True)
+        # E2B sandbox failures are external service issues, not our bugs
+        logger.warning("tools.execute_python.failed",
+                       error=str(e),
+                       exc_info=True)
         # Re-raise to let caller handle
         raise
 

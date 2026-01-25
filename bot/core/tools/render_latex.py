@@ -490,10 +490,11 @@ async def render_latex(
                        error=str(e))
         return {"success": "false", "error": str(e)}
     except Exception as e:
-        logger.error("tools.render_latex.failed",
-                     latex_preview=clean_latex[:50] if clean_latex else "",
-                     error=str(e),
-                     exc_info=True)
+        # LaTeX rendering failures are usually invalid input, not internal bugs
+        logger.warning("tools.render_latex.failed",
+                       latex_preview=clean_latex[:50] if clean_latex else "",
+                       error=str(e),
+                       exc_info=True)
         return {"success": "false", "error": f"Rendering failed: {str(e)}"}
 
 

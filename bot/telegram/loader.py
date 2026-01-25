@@ -19,6 +19,10 @@ from telegram.handlers import start
 from telegram.handlers import stop_generation  # Phase 2.5: Stop generation
 from telegram.middlewares.balance_middleware import \
     BalanceMiddleware  # Phase 2.1: Balance check
+from telegram.middlewares.command_middleware import \
+    CallbackLoggingMiddleware  # Callback button logging
+from telegram.middlewares.command_middleware import \
+    CommandMiddleware  # Command logging + topic registration
 from telegram.middlewares.database_middleware import DatabaseMiddleware
 from telegram.middlewares.logging_middleware import LoggingMiddleware
 from telegram.pipeline import handler as unified_handler
@@ -58,10 +62,17 @@ def create_dispatcher() -> Dispatcher:
     dispatcher.update.middleware(LoggingMiddleware())
     dispatcher.update.middleware(DatabaseMiddleware())
 
+    # Command middleware: logs all commands and registers topics
+    # Must be after DatabaseMiddleware (needs session in data)
+    dispatcher.message.middleware(CommandMiddleware())
+
     # Phase 2.1: Balance middleware (checks balance before paid requests)
     # Must be after DatabaseMiddleware (needs db_session in data)
     dispatcher.message.middleware(BalanceMiddleware())
     dispatcher.callback_query.middleware(BalanceMiddleware())
+
+    # Callback logging middleware: logs button presses
+    dispatcher.callback_query.middleware(CallbackLoggingMiddleware())
 
     # Register routers (order matters - first match wins)
     dispatcher.include_router(start.router)

@@ -125,17 +125,19 @@ async def analyze_image(claude_file_id: str, question: str) -> Dict[str, str]:
                     await asyncio.sleep(delay)
                     continue
             # Non-retryable error or max retries reached
-            logger.error("tools.analyze_image.failed",
-                         claude_file_id=claude_file_id,
-                         error=str(e),
-                         exc_info=True)
+            # Claude API failures are external service issues
+            logger.warning("tools.analyze_image.failed",
+                           claude_file_id=claude_file_id,
+                           error=str(e),
+                           exc_info=True)
             raise
 
         except Exception as e:
-            logger.error("tools.analyze_image.failed",
-                         claude_file_id=claude_file_id,
-                         error=str(e),
-                         exc_info=True)
+            # External API failures, not internal bugs
+            logger.warning("tools.analyze_image.failed",
+                           claude_file_id=claude_file_id,
+                           error=str(e),
+                           exc_info=True)
             raise
 
     # Should not reach here, but satisfy mypy

@@ -220,8 +220,9 @@ async def generate_image(  # pylint: disable=unused-argument,too-many-locals
 
         # Check if response has parts
         if not response.parts:
-            logger.error("tools.generate_image.no_parts",
-                         response=str(response)[:500])
+            # API returned empty - likely content filter or API issue
+            logger.warning("tools.generate_image.no_parts",
+                           response=str(response)[:500])
             return {
                 "success": "false",
                 "error":
@@ -243,7 +244,8 @@ async def generate_image(  # pylint: disable=unused-argument,too-many-locals
 
         if not image_bytes:
             error_msg = "No image generated in response"
-            logger.error(
+            # API returned text but no image - prompt issue or API limitation
+            logger.warning(
                 "tools.generate_image.no_image",
                 response_parts=len(response.parts) if response.parts else 0)
             return {

@@ -142,17 +142,19 @@ async def transcribe_audio(file_id: str,
         }
 
     except openai.APIError as e:
-        logger.error("tools.transcribe_audio.whisper_api_failed",
-                     file_id=file_id,
-                     error=str(e),
-                     exc_info=True)
+        # OpenAI Whisper API failures are external service issues
+        logger.warning("tools.transcribe_audio.whisper_api_failed",
+                       file_id=file_id,
+                       error=str(e),
+                       exc_info=True)
         raise
 
     except Exception as e:
-        logger.error("tools.transcribe_audio.failed",
-                     file_id=file_id,
-                     error=str(e),
-                     exc_info=True)
+        # External service failures, not internal bugs
+        logger.warning("tools.transcribe_audio.failed",
+                       file_id=file_id,
+                       error=str(e),
+                       exc_info=True)
         raise
 
 
