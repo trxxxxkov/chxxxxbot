@@ -195,6 +195,7 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
         self._keepalive_task: Optional[Task[None]] = None  # Managed keepalive
         self._keepalive_interval: float = 5.0  # Default keepalive interval
         self._last_parse_mode: Optional[str] = DEFAULT_PARSE_MODE  # Track mode
+        self._keepalive_failure_logged = False  # Prevent repeated warnings
 
         logger.debug("draft_streamer.initialized",
                      chat_id=chat_id,
@@ -515,19 +516,26 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
             # Parse error - try again with plain text and track it
             if "can't parse entities" in str(
                     e).lower() and effective_parse_mode:
-                logger.warning("draft_streamer.keepalive_parse_error",
-                               chat_id=self.chat_id,
-                               error=str(e))
+                if not self._keepalive_failure_logged:
+                    logger.warning("draft_streamer.keepalive_parse_error",
+                                   chat_id=self.chat_id,
+                                   error=str(e))
                 self._last_parse_mode = None  # Track fallback
                 return await self._send_keepalive(None)  # Retry without parse
-            logger.warning("draft_streamer.keepalive_failed",
-                           chat_id=self.chat_id,
-                           error=str(e))
+            # Log only first failure to avoid log flooding
+            if not self._keepalive_failure_logged:
+                logger.warning("draft_streamer.keepalive_failed",
+                               chat_id=self.chat_id,
+                               error=str(e))
+                self._keepalive_failure_logged = True
             return False
         except Exception as e:  # pylint: disable=broad-exception-caught
-            logger.warning("draft_streamer.keepalive_failed",
-                           chat_id=self.chat_id,
-                           error=str(e))
+            # Log only first failure to avoid log flooding
+            if not self._keepalive_failure_logged:
+                logger.warning("draft_streamer.keepalive_failed",
+                               chat_id=self.chat_id,
+                               error=str(e))
+                self._keepalive_failure_logged = True
             return False
 
     async def finalize(
