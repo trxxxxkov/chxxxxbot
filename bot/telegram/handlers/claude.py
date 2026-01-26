@@ -32,6 +32,8 @@ if TYPE_CHECKING:
     from telegram.pipeline.models import ProcessedMessage
 
 from cache.exec_cache import get_pending_files_for_thread
+from cache.thread_cache import cache_messages
+from cache.thread_cache import get_cached_messages
 from cache.thread_cache import invalidate_messages
 from cache.thread_cache import update_cached_messages
 from cache.user_cache import cache_user
@@ -788,6 +790,10 @@ async def _process_message_batch(thread_id: int,
 
             await session.commit()
 
+            # Invalidate message cache after saving user messages
+            # This ensures next read gets fresh data including new messages
+            await invalidate_messages(thread_id)
+
             logger.debug("claude_handler.batch_messages_saved",
                          thread_id=thread_id,
                          batch_size=len(messages))
@@ -860,7 +866,19 @@ async def _process_message_batch(thread_id: int,
             # 4. Get thread history (includes newly saved messages)
             # Limit to 500 most recent messages for performance
             # Context manager will trim based on token budget
+            # Note: We always read from DB after saving user messages
+            # (cache was invalidated above to ensure fresh data)
             history = await msg_repo.get_thread_messages(thread_id, limit=500)
+
+            # Cache history for potential future requests in same thread
+            # (e.g., rapid follow-up messages, tool continuations)
+            history_for_cache = [{
+                "role": msg.role.value,
+                "text_content": msg.text_content,
+                "message_id": msg.message_id,
+                "date": msg.date,
+            } for msg in history]
+            await cache_messages(thread_id, history_for_cache)
 
             logger.debug("claude_handler.history_retrieved",
                          thread_id=thread_id,
@@ -1344,9 +1362,19 @@ async def _process_message_batch(thread_id: int,
                     tokens=total_tokens,
                 )
 
-            # 12. Invalidate message cache (next read fetches from DB)
-            # This ensures consistency until full cache-first is implemented
-            await invalidate_messages(thread_id)
+            # 12. Update message cache with assistant response (Phase 3.3)
+            # Add to cache instead of invalidating (preserves cached history)
+            assistant_cache_msg = {
+                "role": MessageRole.ASSISTANT.value,
+                "text_content": response_text,
+                "message_id": bot_message.message_id,
+                "date": int(bot_message.date.timestamp()),
+            }
+            cache_updated = await update_cached_messages(
+                thread_id, assistant_cache_msg)
+            if not cache_updated:
+                # Cache miss (not populated) - invalidate to be safe
+                await invalidate_messages(thread_id)
 
             # Commit any pending direct writes (fallback path)
             await session.commit()

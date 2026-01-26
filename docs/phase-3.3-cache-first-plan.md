@@ -512,8 +512,8 @@ async def _process_message_batch(thread_id: int, messages: list) -> None:
 ### Этап 3: Full Cache-First (medium risk)
 9. ✅ Add cache update functions (custom_prompt in user_cache)
 10. ✅ Refactor claude handler to cache-first (user data)
-11. [ ] Remove DB reads from hot path (messages, files)
-12. [ ] Add monitoring for cache hit rate
+11. ✅ Message cache: invalidate after user writes, update after assistant
+12. [ ] Add monitoring for cache hit rate (basic metrics already exist)
 
 ### Этап 4: Production Hardening
 13. [ ] Add circuit breaker for Redis
