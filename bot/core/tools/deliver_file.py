@@ -173,7 +173,8 @@ async def deliver_file(
 
         filename = metadata["filename"]
         mime_type = metadata["mime_type"]
-        preview = metadata.get("preview", "")
+        # Use context from metadata (set by tool that created the file)
+        file_context = metadata.get("context")
         size_bytes = len(content)
 
         logger.info("tools.deliver_file.file_retrieved",
@@ -197,7 +198,7 @@ async def deliver_file(
                 "filename": filename,
                 "content": content,
                 "mime_type": mime_type,
-                "context": f"Delivered file: {preview}" if preview else None,
+                "context": file_context,
             }],
         }
 

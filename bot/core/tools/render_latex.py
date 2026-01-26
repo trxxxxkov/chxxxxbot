@@ -430,11 +430,16 @@ async def render_latex(
         # Generate temp_id for cache
         temp_id = _generate_render_temp_id(filename)
 
+        # Truncate LaTeX for context (max 200 chars)
+        latex_context = clean_latex[:200] + ("..."
+                                             if len(clean_latex) > 200 else "")
+
         # Store in Redis cache for model-decided delivery
         metadata = await store_exec_file(
             filename=filename,
             content=image_bytes,
             mime_type="image/png",
+            context=f"LaTeX: {latex_context}",
             execution_id=temp_id.split('_')[1],  # uuid part
             thread_id=thread_id,
         )

@@ -163,6 +163,7 @@ class TestStoreExecFile:
                 filename="output.txt",
                 content=sample_content,
                 mime_type="text/plain",
+                context="Test output file",
             )
 
         assert result is not None
@@ -171,6 +172,8 @@ class TestStoreExecFile:
         assert result["mime_type"] == "text/plain"
         assert result["size_bytes"] == len(sample_content)
         assert "preview" in result
+        assert "context" in result
+        assert result["context"] == "Test output file"
         assert "created_at" in result
         assert "expires_at" in result
 
@@ -186,6 +189,7 @@ class TestStoreExecFile:
                 filename="chart.png",
                 content=sample_content,
                 mime_type="image/png",
+                context="Python output: chart.png",
                 execution_id="abc123",
             )
 
@@ -206,6 +210,7 @@ class TestStoreExecFile:
                 filename="sandbox_output.png",
                 content=bytearray_content,
                 mime_type="image/png",
+                context="Python output: sandbox_output.png",
             )
 
         assert result is not None
@@ -228,6 +233,7 @@ class TestStoreExecFile:
                 filename="huge.bin",
                 content=large_content,
                 mime_type="application/octet-stream",
+                context="Test large file",
             )
 
         assert result is None
@@ -243,6 +249,7 @@ class TestStoreExecFile:
                 filename="exact.bin",
                 content=content_at_limit,
                 mime_type="application/octet-stream",
+                context="Test file at size limit",
             )
 
         assert result is not None
@@ -256,6 +263,7 @@ class TestStoreExecFile:
                 filename="test.txt",
                 content=sample_content,
                 mime_type="text/plain",
+                context="Test file",
             )
 
         assert result is None
@@ -268,6 +276,7 @@ class TestStoreExecFile:
                 filename="test.txt",
                 content=sample_content,
                 mime_type="text/plain",
+                context="Test file",
             )
 
         # Check TTL in setex calls
@@ -478,6 +487,7 @@ class TestStoreExecFileWithThreadId:
                 filename="chart.png",
                 content=sample_content,
                 mime_type="image/png",
+                context="Python output: chart.png",
                 thread_id=12345,
             )
 
@@ -493,6 +503,7 @@ class TestStoreExecFileWithThreadId:
                 filename="chart.png",
                 content=sample_content,
                 mime_type="image/png",
+                context="Python output: chart.png",
             )
 
         assert result is not None
@@ -507,6 +518,7 @@ class TestStoreExecFileWithThreadId:
                 filename="output.csv",
                 content=sample_content,
                 mime_type="text/csv",
+                context="Python output: output.csv",
                 execution_id="exec123",
                 thread_id=42,
             )

@@ -161,6 +161,7 @@ async def store_exec_file(
     filename: str,
     content: bytes,
     mime_type: str,
+    context: str,
     execution_id: Optional[str] = None,
     thread_id: Optional[int] = None,
 ) -> Optional[dict]:
@@ -170,6 +171,9 @@ async def store_exec_file(
         filename: Original filename (e.g., "plot.png").
         content: File content as bytes.
         mime_type: MIME type of the file.
+        context: Human-readable description of what this file is
+            (e.g., "LaTeX: E=mc^2", "Python plot: sales chart").
+            This helps the model understand the file's purpose.
         execution_id: Optional execution ID for grouping.
         thread_id: Optional thread ID for associating file with conversation.
 
@@ -207,6 +211,7 @@ async def store_exec_file(
             "size_bytes": len(content),
             "mime_type": mime_type,
             "preview": preview,
+            "context": context,
             "execution_id": execution_id,
             "thread_id": thread_id,
             "created_at": time.time(),

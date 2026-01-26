@@ -359,10 +359,14 @@ async def execute_python(code: str,
                 content = file_data["content"]
                 mime_type = file_data["mime_type"]
 
+                # Context describes what this file is (for model understanding)
+                file_context = f"Python output: {filename}"
+
                 metadata = await store_exec_file(
                     filename=filename,
                     content=content,
                     mime_type=mime_type,
+                    context=file_context,
                     execution_id=execution_id,
                     thread_id=thread_id,
                 )

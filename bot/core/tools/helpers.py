@@ -473,6 +473,12 @@ def format_unified_files_section(
 
             lines.append(f"  - {pf.get('filename', 'unknown')} ({size_str})")
             lines.append(f"    temp_id: {pf.get('temp_id', 'unknown')}")
+            # Show context (describes what the file is) - universal field
+            context = pf.get('context')
+            if context:
+                truncated = (context[:100] +
+                             "...") if len(context) > 100 else context
+                lines.append(f"    context: \"{truncated}\"")
             lines.append(f"    preview: {pf.get('preview', 'No preview')}")
             lines.append(f"    expires in: {ttl_str}")
             lines.append("")

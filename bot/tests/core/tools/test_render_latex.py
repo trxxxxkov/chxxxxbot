@@ -183,6 +183,7 @@ class TestRenderLatexWithMockedCache:
         async def _store(filename,
                          content,
                          mime_type,
+                         context,
                          execution_id,
                          thread_id=None):
             return {
@@ -191,6 +192,7 @@ class TestRenderLatexWithMockedCache:
                 "size_bytes": len(content),
                 "mime_type": mime_type,
                 "preview": f"Image 200x100 (RGB), {len(content)/1024:.1f} KB",
+                "context": context,
                 "thread_id": thread_id,
             }
 
@@ -405,6 +407,7 @@ class TestRenderLatexErrors:
         async def _store(filename,
                          content,
                          mime_type,
+                         context,
                          execution_id,
                          thread_id=None):
             return {
@@ -413,6 +416,7 @@ class TestRenderLatexErrors:
                 "size_bytes": len(content),
                 "mime_type": mime_type,
                 "preview": "test",
+                "context": context,
                 "thread_id": thread_id,
             }
 
@@ -518,6 +522,7 @@ class TestOutputFileFormat:
         async def _store(filename,
                          content,
                          mime_type,
+                         context,
                          execution_id,
                          thread_id=None):
             return {
@@ -526,6 +531,7 @@ class TestOutputFileFormat:
                 "size_bytes": len(content),
                 "mime_type": mime_type,
                 "preview": "test",
+                "context": context,
             }
 
         with patch('core.tools.render_latex.store_exec_file', new=_store):
@@ -550,6 +556,7 @@ class TestOutputFileFormat:
         async def _store(filename,
                          content,
                          mime_type,
+                         context,
                          execution_id,
                          thread_id=None):
             return {
@@ -558,6 +565,7 @@ class TestOutputFileFormat:
                 "size_bytes": len(content),
                 "mime_type": mime_type,
                 "preview": "test",
+                "context": context,
             }
 
         with patch('core.tools.render_latex.store_exec_file', new=_store):
@@ -576,6 +584,7 @@ class TestOutputFileFormat:
         async def _store(filename,
                          content,
                          mime_type,
+                         context,
                          execution_id,
                          thread_id=None):
             return {
@@ -584,6 +593,7 @@ class TestOutputFileFormat:
                 "size_bytes": len(content),
                 "mime_type": mime_type,
                 "preview": "test",
+                "context": context,
             }
 
         with patch('core.tools.render_latex.store_exec_file', new=_store):
