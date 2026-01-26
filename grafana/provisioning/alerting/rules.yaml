@@ -1,0 +1,116 @@
+# Grafana Alert Rules for Cache-First Architecture (Phase 3.3)
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: cache_alerts
+    folder: Redis
+    interval: 1m
+    rules:
+      # Alert when write queue grows too large (backlog)
+      - uid: write_queue_backlog
+        title: Write Queue Backlog
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: bot_write_queue_depth > 1000
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+        noDataState: OK
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: Write queue backlog is growing
+          description: |
+            The write-behind queue has {{ $values.A }} pending writes.
+            This may indicate Redis is slow or the flush task is not keeping up.
+        labels:
+          severity: warning
+
+      # Alert when Redis circuit breaker is open
+      - uid: redis_circuit_open
+        title: Redis Circuit Breaker Open
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 60
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: bot_redis_circuit_open == 1
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+        noDataState: OK
+        execErrState: Error
+        for: 1m
+        annotations:
+          summary: Redis circuit breaker is open
+          description: |
+            Redis has failed multiple times and the circuit breaker is open.
+            Bot is running in degraded mode (fallback to DB).
+        labels:
+          severity: critical
+
+      # Alert on high cache miss rate
+      - uid: high_cache_miss_rate
+        title: High Cache Miss Rate
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: |
+                sum(rate(bot_redis_cache_misses_total[5m]))
+                /
+                (sum(rate(bot_redis_cache_hits_total[5m])) + sum(rate(bot_redis_cache_misses_total[5m])))
+                > 0.5
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+        noDataState: OK
+        execErrState: Error
+        for: 10m
+        annotations:
+          summary: Cache miss rate is above 50%
+          description: |
+            The Redis cache miss rate is {{ $values.A | printf "%.1f" }}%.
+            This may indicate cache is not effective or needs tuning.
+        labels:
+          severity: warning
+
+      # Alert when write flush is slow
+      - uid: slow_write_flush
+        title: Slow Write Flush
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: histogram_quantile(0.99, rate(bot_write_flush_seconds_bucket[5m])) > 1
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+        noDataState: OK
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: Write flush operations are slow
+          description: |
+            The 99th percentile write flush time is {{ $values.A | printf "%.2f" }} seconds.
+            This may indicate database performance issues.
+        labels:
+          severity: warning
