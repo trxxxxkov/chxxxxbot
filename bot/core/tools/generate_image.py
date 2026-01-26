@@ -274,6 +274,8 @@ async def generate_image(  # pylint: disable=unused-argument,too-many-locals
         # Handler will: upload to Files API, save to DB, send to user
         # Note: Keep result minimal - image is auto-delivered to user,
         # Claude doesn't need to include image links in response
+        # Truncate prompt for context (max 200 chars)
+        prompt_context = prompt[:200] + ("..." if len(prompt) > 200 else "")
         result = {
             "success":
                 "true",
@@ -283,6 +285,7 @@ async def generate_image(  # pylint: disable=unused-argument,too-many-locals
                 "filename": filename,
                 "content": image_bytes,
                 "mime_type": mime_type,
+                "context": f"Generated image: {prompt_context}",
             }],
         }
 

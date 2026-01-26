@@ -443,13 +443,17 @@ async def render_latex(
             # Fallback: direct delivery if cache fails
             logger.warning("tools.render_latex.cache_failed_fallback",
                            filename=filename)
+            # Truncate LaTeX for context (max 200 chars)
+            latex_context = clean_latex[:200] + ("..." if len(clean_latex) > 200
+                                                 else "")
             return {
                 "success":
                     "true",
                 "_file_contents": [{
                     "filename": filename,
                     "content": image_bytes,
-                    "mime_type": "image/png"
+                    "mime_type": "image/png",
+                    "context": f"LaTeX: {latex_context}"
                 }]
             }
 

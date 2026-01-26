@@ -53,6 +53,8 @@ async def _process_single_file(
         filename = file_data["filename"]
         file_bytes = file_data["content"]
         mime_type = file_data["mime_type"]
+        # Context helps model understand what this file is about
+        upload_context = file_data.get("context")
 
         # Step 1: Upload to Files API (parallel with other files)
         claude_file_id = await upload_to_files_api(
@@ -113,6 +115,7 @@ async def _process_single_file(
             expires_at=datetime.now(timezone.utc) +
             timedelta(hours=FILES_API_TTL_HOURS),
             file_metadata={},
+            upload_context=upload_context,
         )
 
         # Dashboard tracking event
