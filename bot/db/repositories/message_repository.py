@@ -575,3 +575,19 @@ class MessageRepository(BaseRepository[Message]):
         )
 
         return messages
+
+    async def count_messages_in_thread(self, thread_id: int) -> int:
+        """Count messages in a thread by internal thread ID.
+
+        Args:
+            thread_id: Internal thread ID (from threads table).
+
+        Returns:
+            Number of messages in the thread.
+        """
+        from sqlalchemy import func
+
+        stmt = select(func.count()).select_from(Message).where(
+            Message.thread_id == thread_id)
+        result = await self.session.execute(stmt)
+        return result.scalar() or 0

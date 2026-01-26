@@ -528,6 +528,8 @@ class TestClearCommand:
         Args:
             test_session: Async session fixture.
         """
+        from db.models.message import MessageRole
+        from db.repositories.message_repository import MessageRepository
         from db.repositories.thread_repository import ThreadRepository
 
         admin_user_id = 111111111
@@ -535,13 +537,25 @@ class TestClearCommand:
 
         # Create threads
         thread_repo = ThreadRepository(test_session)
-        await thread_repo.get_or_create_thread(chat_id=chat_id,
-                                               user_id=admin_user_id,
-                                               thread_id=3001)
+        thread1, _ = await thread_repo.get_or_create_thread(
+            chat_id=chat_id, user_id=admin_user_id, thread_id=3001)
         await thread_repo.get_or_create_thread(chat_id=chat_id,
                                                user_id=admin_user_id,
                                                thread_id=3002)
-        await test_session.flush()  # Flush instead of commit
+
+        # Add a message to thread1 so it's not considered "new"
+        # (topics with 0 messages are treated as created from General)
+        message_repo = MessageRepository(test_session)
+        await message_repo.create_message(
+            chat_id=chat_id,
+            message_id=999001,
+            thread_id=thread1.id,
+            from_user_id=admin_user_id,
+            date=1700000000,
+            role=MessageRole.USER,
+            text_content="Previous message in topic",
+        )
+        await test_session.flush()
 
         with patch.object(config, 'PRIVILEGED_USERS', {admin_user_id}):
             mock_message = Mock()
@@ -558,7 +572,7 @@ class TestClearCommand:
 
             await admin.cmd_clear(mock_message, test_session)
 
-            # Should delete only topic 3001
+            # Should delete only topic 3001 (it has messages, so it's not "new")
             mock_message.bot.delete_forum_topic.assert_called_once()
             call_kwargs = mock_message.bot.delete_forum_topic.call_args[1]
             assert call_kwargs["message_thread_id"] == 3001
@@ -600,4 +614,53 @@ class TestClearCommand:
 
             # Should delete the topic (all mode)
             mock_message.bot.delete_forum_topic.assert_called_once()
+            mock_message.bot.send_message.assert_called_once()
+
+    async def test_clear_from_new_topic_deletes_all(self, test_session):
+        """Test /clear from a newly created topic (0 messages) deletes all.
+
+        When a command is sent from General in a forum, Telegram creates a new
+        topic for it. If that topic has 0 messages, it's treated as "from General"
+        and all topics should be deleted.
+
+        Args:
+            test_session: Async session fixture.
+        """
+        from db.repositories.thread_repository import ThreadRepository
+
+        admin_user_id = 111111111
+        chat_id = 777777777
+
+        # Create multiple threads (topics)
+        thread_repo = ThreadRepository(test_session)
+        # Thread for topic 5001 - the "new" topic (no messages)
+        await thread_repo.get_or_create_thread(chat_id=chat_id,
+                                               user_id=admin_user_id,
+                                               thread_id=5001)
+        # Thread for topic 5002 - existing topic
+        await thread_repo.get_or_create_thread(chat_id=chat_id,
+                                               user_id=admin_user_id,
+                                               thread_id=5002)
+        await test_session.flush()
+
+        with patch.object(config, 'PRIVILEGED_USERS', {admin_user_id}):
+            mock_message = Mock()
+            mock_message.from_user = Mock()
+            mock_message.from_user.id = admin_user_id
+            mock_message.chat = Mock()
+            mock_message.chat.id = chat_id
+            mock_message.text = "/clear"
+            # Simulate: command sent to topic 5001 which has 0 messages
+            mock_message.message_thread_id = 5001
+            mock_message.answer = AsyncMock()
+            mock_message.bot = Mock()
+            mock_message.bot.delete_forum_topic = AsyncMock()
+            mock_message.bot.send_message = AsyncMock()
+
+            await admin.cmd_clear(mock_message, test_session)
+
+            # Should delete ALL topics (5001 and 5002) because 5001 has 0 messages
+            assert mock_message.bot.delete_forum_topic.call_count == 2
+
+            # "All topics cleared" message should be sent
             mock_message.bot.send_message.assert_called_once()

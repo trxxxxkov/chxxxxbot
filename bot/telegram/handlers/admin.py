@@ -16,6 +16,7 @@ from aiogram.types import Message
 import config
 from db.repositories.balance_operation_repository import \
     BalanceOperationRepository
+from db.repositories.message_repository import MessageRepository
 from db.repositories.thread_repository import ThreadRepository
 from db.repositories.user_repository import UserRepository
 from services.balance_service import BalanceService
@@ -306,19 +307,35 @@ async def cmd_clear(message: Message, session: AsyncSession):
 
     current_topic_id = message.message_thread_id
     thread_repo = ThreadRepository(session)
+    message_repo = MessageRepository(session)
     existing_topic_ids = await thread_repo.get_unique_topic_ids(chat_id)
+
+    # Check if current topic is "new" (created by this command from General)
+    # A topic is considered "from General" if:
+    # 1. topic_id is None or 1 (truly General)
+    # 2. OR topic exists but has 0 messages (just created by this command)
+    is_new_topic = False
+    if current_topic_id and current_topic_id != 1:
+        # Check if this topic has any messages
+        thread = await thread_repo.get_active_thread(chat_id, user_id,
+                                                     current_topic_id)
+        if thread:
+            msg_count = await message_repo.count_messages_in_thread(thread.id)
+            is_new_topic = msg_count == 0
 
     logger.debug(
         "admin.clear_context",
         chat_id=chat_id,
         current_topic_id=current_topic_id,
         existing_topic_ids=existing_topic_ids,
+        is_new_topic=is_new_topic,
     )
 
     # Determine mode:
     # - General (id=1 or None) → delete ALL topics
-    # - Any topic → delete only that one
-    is_general = not current_topic_id or current_topic_id == 1
+    # - New topic (0 messages, created by this command) → delete ALL topics
+    # - Existing topic with messages → delete only that one
+    is_general = not current_topic_id or current_topic_id == 1 or is_new_topic
 
     if is_general:
         # General - delete all topics
