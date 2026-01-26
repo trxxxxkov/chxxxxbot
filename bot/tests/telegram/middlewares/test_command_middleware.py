@@ -206,7 +206,7 @@ class TestCommandMiddleware:
                     mock_thread_repo.get_or_create_thread = AsyncMock(
                         return_value=(MagicMock(id=1), True))
 
-                    await middleware._ensure_topic_registered(
+                    result = await middleware._ensure_topic_registered(
                         session=mock_session,
                         event=mock_message,
                         chat_id=123456789,
@@ -219,6 +219,9 @@ class TestCommandMiddleware:
                     mock_chat_repo.get_or_create.assert_called_once()
                     mock_thread_repo.get_or_create_thread.assert_called_once()
                     mock_session.commit.assert_called_once()
+
+                    # Should return True since thread was created
+                    assert result is True
 
     @pytest.mark.asyncio
     async def test_ensure_topic_registered_handles_errors(self, mock_session):
@@ -237,7 +240,7 @@ class TestCommandMiddleware:
             with patch("telegram.middlewares.command_middleware.logger"
                       ) as mock_logger:
                 # Should not raise exception
-                await middleware._ensure_topic_registered(
+                result = await middleware._ensure_topic_registered(
                     session=mock_session,
                     event=mock_message,
                     chat_id=123456789,
@@ -249,6 +252,57 @@ class TestCommandMiddleware:
                 mock_logger.warning.assert_called()
                 call_args = mock_logger.warning.call_args
                 assert "topic_registration_failed" in call_args[0][0]
+
+                # Should return False on error
+                assert result is False
+
+    @pytest.mark.asyncio
+    async def test_topic_was_created_flag_passed_to_handler(
+            self, mock_message_with_topic, mock_handler, mock_session):
+        """topic_was_created flag should be passed to handler via data."""
+        middleware = CommandMiddleware()
+        data = {"session": mock_session}
+
+        with patch.object(middleware,
+                          "_ensure_topic_registered",
+                          new_callable=AsyncMock,
+                          return_value=True) as mock_register:
+            await middleware(mock_handler, mock_message_with_topic, data)
+
+            # Verify flag is passed in data
+            mock_handler.assert_called_once()
+            call_data = mock_handler.call_args[0][1]
+            assert "topic_was_created" in call_data
+            assert call_data["topic_was_created"] is True
+
+    @pytest.mark.asyncio
+    async def test_topic_was_created_false_for_existing_topic(
+            self, mock_message_with_topic, mock_handler, mock_session):
+        """topic_was_created should be False for existing topics."""
+        middleware = CommandMiddleware()
+        data = {"session": mock_session}
+
+        with patch.object(middleware,
+                          "_ensure_topic_registered",
+                          new_callable=AsyncMock,
+                          return_value=False):
+            await middleware(mock_handler, mock_message_with_topic, data)
+
+            call_data = mock_handler.call_args[0][1]
+            assert call_data["topic_was_created"] is False
+
+    @pytest.mark.asyncio
+    async def test_topic_was_created_false_without_topic(
+            self, mock_message, mock_handler, mock_session):
+        """topic_was_created should be False when no topic (General)."""
+        mock_message.text = "/help"
+        middleware = CommandMiddleware()
+        data = {"session": mock_session}
+
+        await middleware(mock_handler, mock_message, data)
+
+        call_data = mock_handler.call_args[0][1]
+        assert call_data["topic_was_created"] is False
 
 
 class TestCallbackLoggingMiddleware:

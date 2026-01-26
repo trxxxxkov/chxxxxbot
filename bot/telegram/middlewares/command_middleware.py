@@ -80,16 +80,20 @@ class CommandMiddleware(BaseMiddleware):
 
         # Register topic in DB if we're in a topic
         # This ensures /clear knows the topic has activity
+        topic_was_created = False
         if topic_id and user_id:
             session: AsyncSession | None = data.get("session")
             if session:
-                await self._ensure_topic_registered(
+                topic_was_created = await self._ensure_topic_registered(
                     session=session,
                     event=event,
                     chat_id=chat_id,
                     user_id=user_id,
                     topic_id=topic_id,
                 )
+
+        # Pass flag to handlers - True if topic was just created by this command
+        data["topic_was_created"] = topic_was_created
 
         return await handler(event, data)
 
@@ -100,7 +104,7 @@ class CommandMiddleware(BaseMiddleware):
         chat_id: int,
         user_id: int,
         topic_id: int,
-    ) -> None:
+    ) -> bool:
         """Ensure topic has a thread record in DB.
 
         Creates user, chat, and thread records if they don't exist.
@@ -112,6 +116,9 @@ class CommandMiddleware(BaseMiddleware):
             chat_id: Telegram chat ID.
             user_id: Telegram user ID.
             topic_id: Telegram topic/thread ID.
+
+        Returns:
+            True if thread was just created, False if it already existed.
         """
         try:
             # Ensure user exists (required for thread foreign key)
@@ -167,6 +174,8 @@ class CommandMiddleware(BaseMiddleware):
             # Commit all changes
             await session.commit()
 
+            return thread_created
+
         except Exception as e:  # pylint: disable=broad-exception-caught
             # Don't fail command if topic registration fails
             logger.warning(
@@ -175,6 +184,7 @@ class CommandMiddleware(BaseMiddleware):
                 topic_id=topic_id,
                 error=str(e),
             )
+            return False
 
 
 class CallbackLoggingMiddleware(BaseMiddleware):
