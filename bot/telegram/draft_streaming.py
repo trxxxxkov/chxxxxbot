@@ -513,16 +513,32 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
             await asyncio.sleep(e.retry_after)
             return True
         except TelegramBadRequest as e:
+            error_msg = str(e).lower()
+            is_parse_error = "can't parse entities" in error_msg
+
             # Parse error - try again with plain text and track it
-            if "can't parse entities" in str(
-                    e).lower() and effective_parse_mode:
+            if is_parse_error and effective_parse_mode:
                 if not self._keepalive_failure_logged:
                     logger.warning("draft_streamer.keepalive_parse_error",
                                    chat_id=self.chat_id,
+                                   parse_mode=effective_parse_mode,
                                    error=str(e))
                 self._last_parse_mode = None  # Track fallback
                 return await self._send_keepalive(None)  # Retry without parse
-            # Log only first failure to avoid log flooding
+
+            # Parse error even with None - draft API limitation
+            if is_parse_error and not effective_parse_mode:
+                if not self._keepalive_failure_logged:
+                    logger.warning(
+                        "draft_streamer.keepalive_parse_error_persistent",
+                        chat_id=self.chat_id,
+                        error=str(e),
+                        hint="Draft parse_mode cannot be changed after creation"
+                    )
+                    self._keepalive_failure_logged = True
+                return False
+
+            # Other errors - log only first
             if not self._keepalive_failure_logged:
                 logger.warning("draft_streamer.keepalive_failed",
                                chat_id=self.chat_id,

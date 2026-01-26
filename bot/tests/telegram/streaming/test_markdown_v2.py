@@ -725,8 +725,42 @@ class TestExpandableBlockquoteEdgeCases:
         """Blockquote containing code markers."""
         result = format_expandable_blockquote_md2("Use `code` here")
         assert "**>" in result
-        # Backticks should be escaped in blockquote content
-        assert r"\`" in result
+        # Backticks are now treated as valid inline code formatting
+        # (content goes through render_streaming_safe for proper MarkdownV2)
+        assert "`code`" in result
+
+    def test_blockquote_auto_closes_unclosed_formatting(self):
+        """Unclosed formatting in blockquote should be auto-closed.
+
+        This is critical for Draft API compatibility - once a draft is created
+        with MarkdownV2, all subsequent text must be valid MarkdownV2. Without
+        auto-closing, unclosed formatting could cause parse errors in keepalive.
+        """
+        # Unclosed bold
+        result = format_expandable_blockquote_md2("Starting *bold text")
+        assert "**>" in result
+        assert result.endswith("||")
+        # Bold should be auto-closed
+        assert result.count("*") >= 2  # Opening and closing
+
+        # Unclosed code block
+        result = format_expandable_blockquote_md2(
+            "Code: ```python\nprint('hi')")
+        assert "```" in result
+        # Code block should be auto-closed
+        assert result.count("```") >= 2
+
+        # Unclosed inline code
+        result = format_expandable_blockquote_md2("Variable `foo should close")
+        assert result.count("`") >= 2  # Opening and closing
+
+    def test_blockquote_with_markdown_syntax(self):
+        """Blockquote should properly convert standard Markdown to MarkdownV2."""
+        # Standard Markdown bold (**) should convert to MarkdownV2 (*)
+        result = format_expandable_blockquote_md2("This is **bold** text")
+        assert "**>" in result  # Expandable marker
+        # Bold content preserved (converted to single *)
+        assert "*bold*" in result
 
     def test_very_long_single_line_blockquote(self):
         """Very long single line blockquote."""

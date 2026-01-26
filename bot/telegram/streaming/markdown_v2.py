@@ -594,8 +594,13 @@ def format_expandable_blockquote_md2(content: str) -> str:
     - > prefix on subsequent lines
     - || suffix on last line (expandability end marker)
 
+    IMPORTANT: Content is processed through render_streaming_safe() first to
+    ensure valid MarkdownV2. This is critical because Telegram's Draft API
+    remembers the initial parse_mode and all subsequent updates must be valid
+    for that mode, even if we try to send with parse_mode=None.
+
     Args:
-        content: Content for blockquote (will be escaped).
+        content: Content for blockquote (will be rendered as MarkdownV2).
 
     Returns:
         MarkdownV2 expandable blockquote string.
@@ -607,19 +612,21 @@ def format_expandable_blockquote_md2(content: str) -> str:
     if not content:
         return ""
 
-    lines = content.split("\n")
+    # First render the ENTIRE content as valid MarkdownV2
+    # This handles Markdown conversion, escaping, AND auto-closing of unclosed
+    # formatting. Critical for Draft API which keeps initial parse_mode.
+    rendered = _render_markdown_v2(content, auto_close=True)
+
+    lines = rendered.split("\n")
     result: list[str] = []
 
     for i, line in enumerate(lines):
-        # Escape the line content
-        escaped = escape_markdown_v2(line.rstrip(), EscapeContext.NORMAL)
-
         if i == 0:
             # First line: **> (expandable marker)
-            result.append(f"**>{escaped}")
+            result.append(f"**>{line}")
         else:
             # Subsequent lines: just >
-            result.append(f">{escaped}")
+            result.append(f">{line}")
 
     # Add expandability end marker || to the last line
     return "\n".join(result) + "||"
@@ -628,8 +635,12 @@ def format_expandable_blockquote_md2(content: str) -> str:
 def format_blockquote_md2(content: str) -> str:
     r"""Format content as regular blockquote in MarkdownV2.
 
+    IMPORTANT: Content is processed through render_streaming_safe() first to
+    ensure valid MarkdownV2. This is critical because Telegram's Draft API
+    remembers the initial parse_mode.
+
     Args:
-        content: Content for blockquote (will be escaped).
+        content: Content for blockquote (will be rendered as MarkdownV2).
 
     Returns:
         MarkdownV2 blockquote string.
@@ -641,12 +652,14 @@ def format_blockquote_md2(content: str) -> str:
     if not content:
         return ""
 
-    lines = content.split("\n")
+    # First render the ENTIRE content as valid MarkdownV2
+    rendered = _render_markdown_v2(content, auto_close=True)
+
+    lines = rendered.split("\n")
     result: list[str] = []
 
     for line in lines:
-        escaped = escape_markdown_v2(line.rstrip(), EscapeContext.NORMAL)
-        result.append(f">{escaped}")
+        result.append(f">{line}")
 
     return "\n".join(result)
 
