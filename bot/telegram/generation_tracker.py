@@ -47,7 +47,8 @@ class GenerationTracker:
         """Initialize tracker."""
         self._active: dict[tuple[int, int, int | None], asyncio.Event] = {}
         self._lock = asyncio.Lock()
-        logger.info("generation_tracker.initialized")
+        # Note: Don't log here - singleton is created at module import time,
+        # before structlog is configured, which causes non-JSON log output.
 
     async def start(
         self,
