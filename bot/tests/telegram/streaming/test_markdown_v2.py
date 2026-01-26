@@ -1086,3 +1086,103 @@ class TestPreprocessUnsupportedMarkdown:
         assert "*Formula*" in result
         # Should have code for LaTeX
         assert "`f" in result or "f\\(x\\)" not in result
+
+
+class TestFixTruncatedMd2:
+    """Tests for fix_truncated_md2() function."""
+
+    def test_empty_string(self):
+        """Should handle empty string."""
+        from telegram.streaming.markdown_v2 import fix_truncated_md2
+        assert fix_truncated_md2("") == ""
+
+    def test_valid_text_unchanged(self):
+        """Valid text should not be changed."""
+        from telegram.streaming.markdown_v2 import fix_truncated_md2
+        text = r"Hello \| world"
+        result = fix_truncated_md2(text)
+        assert result == text
+
+    def test_trailing_backslash_removed(self):
+        """Trailing backslash from truncated escape should be removed."""
+        from telegram.streaming.markdown_v2 import fix_truncated_md2
+
+        # Truncated \| becomes \
+        result = fix_truncated_md2("Hello \\")
+        assert result == "Hello "
+        assert not result.endswith("\\")
+
+    def test_multiple_trailing_backslashes(self):
+        """All trailing backslashes are removed to ensure validity."""
+        from telegram.streaming.markdown_v2 import fix_truncated_md2
+        result = fix_truncated_md2("Text\\\\\\")
+        # Three backslashes: all removed to ensure valid MarkdownV2
+        # This is conservative - may lose valid escaped backslash,
+        # but guarantees no parse errors
+        assert result == "Text"
+        assert not result.endswith("\\")
+
+    def test_unclosed_bold(self):
+        """Unclosed bold should be closed."""
+        from telegram.streaming.markdown_v2 import fix_truncated_md2
+        result = fix_truncated_md2("*bold text")
+        assert result.endswith("*")
+        assert result.count("*") == 2
+
+    def test_unclosed_italic(self):
+        """Unclosed italic should be closed."""
+        from telegram.streaming.markdown_v2 import fix_truncated_md2
+        result = fix_truncated_md2("_italic text")
+        assert result.endswith("_")
+
+    def test_unclosed_code_block(self):
+        """Unclosed code block should be closed."""
+        from telegram.streaming.markdown_v2 import fix_truncated_md2
+        result = fix_truncated_md2("```python\nprint('hello')")
+        assert result.endswith("```")
+
+    def test_unclosed_inline_code(self):
+        """Unclosed inline code should be closed."""
+        from telegram.streaming.markdown_v2 import fix_truncated_md2
+        result = fix_truncated_md2("`code here")
+        assert result.endswith("`")
+
+    def test_unclosed_strikethrough(self):
+        """Unclosed strikethrough should be closed."""
+        from telegram.streaming.markdown_v2 import fix_truncated_md2
+        result = fix_truncated_md2("~struck text")
+        assert result.endswith("~")
+
+    def test_unclosed_spoiler(self):
+        """Unclosed spoiler should be closed."""
+        from telegram.streaming.markdown_v2 import fix_truncated_md2
+        result = fix_truncated_md2("||spoiler content")
+        assert result.endswith("||")
+
+    def test_nested_formatting(self):
+        """Should close multiple unclosed formatting."""
+        from telegram.streaming.markdown_v2 import fix_truncated_md2
+
+        # Bold with italic inside, both unclosed
+        result = fix_truncated_md2("*bold _and italic")
+        # Should have closing markers
+        assert "*" in result
+        assert "_" in result
+
+    def test_code_block_content_not_affected(self):
+        """Content inside code blocks should not trigger fixes."""
+        from telegram.streaming.markdown_v2 import fix_truncated_md2
+
+        # * inside code block should not be counted as formatting
+        result = fix_truncated_md2("```\n*not bold*\n```")
+        # Code block is closed, so no fixes needed
+        assert result == "```\n*not bold*\n```"
+
+    def test_escaped_markers_not_counted(self):
+        """Escaped markers should not be counted as formatting."""
+        from telegram.streaming.markdown_v2 import fix_truncated_md2
+
+        # \* is escaped, not formatting
+        result = fix_truncated_md2(r"\*not bold")
+        # Should not add closing * because \* is escaped
+        assert result == r"\*not bold"

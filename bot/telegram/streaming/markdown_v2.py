@@ -697,3 +697,128 @@ def convert_standard_markdown(text: str) -> str:
         Telegram MarkdownV2 text.
     """
     return _render_markdown_v2(text, auto_close=True)
+
+
+def fix_truncated_md2(text: str) -> str:
+    """Fix MarkdownV2 text that was truncated mid-formatting.
+
+    When text is truncated after rendering, it may have:
+    1. Trailing backslash from cut escape sequence
+    2. Unclosed formatting markers
+
+    This function repairs such damage to produce valid MarkdownV2.
+
+    Args:
+        text: Potentially truncated MarkdownV2 text.
+
+    Returns:
+        Valid MarkdownV2 text with formatting closed.
+    """
+    if not text:
+        return ""
+
+    result = text
+
+    # Fix 1: Remove trailing backslash (truncated escape sequence)
+    # A trailing \ would cause parse error
+    while result.endswith("\\"):
+        result = result[:-1]
+
+    # Fix 2: Close unclosed formatting by counting markers
+    # For MarkdownV2, we need balanced: *, _, __, ~, ||, `, ```
+
+    # Count code blocks (```) - must be balanced
+    code_block_count = result.count("```")
+    if code_block_count % 2 == 1:
+        # Add newline if needed before closing
+        if not result.endswith("\n"):
+            result += "\n"
+        result += "```"
+
+    # After closing code blocks, check inline code
+    # Only count ` that are NOT part of ```
+    # Simple approach: temporarily remove ``` and count `
+    temp = result.replace("```", "")
+    inline_code_count = temp.count("`")
+    if inline_code_count % 2 == 1:
+        result += "`"
+
+    # Count bold (*) - in MarkdownV2, single * is bold
+    # Exclude * inside code blocks/inline code
+    bold_count = _count_outside_code(result, "*")
+    if bold_count % 2 == 1:
+        result += "*"
+
+    # Count italic (_) - single _ is italic, __ is underline
+    # First handle underline (__)
+    underline_count = _count_outside_code(result, "__")
+    if underline_count % 2 == 1:
+        result += "__"
+
+    # Then count remaining single _ (not part of __)
+    # This is tricky - approximate by counting _ and subtracting 2*underline
+    total_underscore = _count_outside_code(result, "_")
+    single_underscore = total_underscore - 2 * underline_count
+    if single_underscore % 2 == 1:
+        result += "_"
+
+    # Count strikethrough (~)
+    strike_count = _count_outside_code(result, "~")
+    if strike_count % 2 == 1:
+        result += "~"
+
+    # Count spoiler (||)
+    spoiler_count = _count_outside_code(result, "||")
+    if spoiler_count % 2 == 1:
+        result += "||"
+
+    return result
+
+
+def _count_outside_code(text: str, marker: str) -> int:
+    """Count occurrences of marker outside code blocks/inline code.
+
+    Args:
+        text: MarkdownV2 text.
+        marker: Marker to count (e.g., "*", "_", "||").
+
+    Returns:
+        Count of marker occurrences outside code.
+    """
+    count = 0
+    in_code_block = False
+    in_inline_code = False
+    i = 0
+    n = len(text)
+    marker_len = len(marker)
+
+    while i < n:
+        # Check for code block toggle
+        if text[i:i + 3] == "```":
+            in_code_block = not in_code_block
+            i += 3
+            continue
+
+        # Check for inline code toggle (only if not in code block)
+        if not in_code_block and text[i] == "`":
+            in_inline_code = not in_inline_code
+            i += 1
+            continue
+
+        # Skip escaped characters
+        if text[i] == "\\" and i + 1 < n:
+            i += 2
+            continue
+
+        # Count marker if outside code
+        if not in_code_block and not in_inline_code:
+            if text[i:i + marker_len] == marker:
+                # For ||, make sure we don't double-count
+                # For __, make sure we count pairs
+                count += 1
+                i += marker_len
+                continue
+
+        i += 1
+
+    return count

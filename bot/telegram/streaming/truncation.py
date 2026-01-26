@@ -12,6 +12,8 @@ NO __init__.py - use direct import:
 
 from typing import Literal
 
+from telegram.streaming.markdown_v2 import fix_truncated_md2
+
 # Telegram message limit
 TELEGRAM_LIMIT = 4096
 
@@ -110,8 +112,13 @@ class TruncationManager:
         # If text alone exceeds limit, hide thinking and truncate text
         if text_len >= self._effective_limit:
             # Truncate from end (user sees beginning during streaming)
-            max_text = self._effective_limit - len(ellipsis)
+            # Reserve space for ellipsis and potential formatting fixes
+            fix_safety = 20 if self._parse_mode == "MarkdownV2" else 0
+            max_text = self._effective_limit - len(ellipsis) - fix_safety
             truncated_text = text_formatted[:max_text] + ellipsis
+            # Fix broken formatting for MarkdownV2
+            if self._parse_mode == "MarkdownV2":
+                truncated_text = fix_truncated_md2(truncated_text)
             return "", truncated_text
 
         # Calculate available space for thinking
@@ -179,6 +186,9 @@ class TruncationManager:
         >second line
         >third line||
 
+        After truncation, applies fix_truncated_md2() to close any
+        unclosed formatting that may have been cut mid-marker.
+
         Args:
             thinking_md2: MarkdownV2-formatted thinking content.
             text_md2: MarkdownV2-formatted text content.
@@ -189,8 +199,10 @@ class TruncationManager:
             Tuple of (truncated_thinking_md2, text_md2).
         """
         # For MD2, blockquote uses **> prefix and || suffix
-        # Overhead: **> on first line, || at end, + ellipsis
-        overhead = 3 + 2 + len(ellipsis)  # "**>" + "||" + ellipsis
+        # Overhead: **> on first line, || at end, + ellipsis + safety for fix
+        # Extra safety margin for potential formatting closures
+        fix_safety = 20
+        overhead = 3 + 2 + len(ellipsis) + fix_safety  # "**>" + "||" + fixes
         available_for_content = self._effective_limit - text_len - overhead
 
         # If not enough space for meaningful thinking, hide it entirely
@@ -211,6 +223,9 @@ class TruncationManager:
             # Truncate content from beginning
             truncated_content = ellipsis + content[-available_for_content:]
 
+            # Fix any broken formatting from truncation
+            truncated_content = fix_truncated_md2(truncated_content)
+
             # Ensure proper blockquote structure (each line starts with >)
             lines = truncated_content.split("\n")
             result_lines: list[str] = []
@@ -230,6 +245,7 @@ class TruncationManager:
 
         # Fallback for non-blockquote thinking
         truncated_thinking = ellipsis + thinking_md2[-available_for_content:]
+        truncated_thinking = fix_truncated_md2(truncated_thinking)
         return truncated_thinking, text_md2
 
     def calculate_available_space(self, text_length: int) -> int:
