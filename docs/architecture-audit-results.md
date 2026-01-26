@@ -1,7 +1,7 @@
 # Architecture Audit Results
 
 **Date:** 2026-01-26
-**Tests:** 1301 passing
+**Tests:** 1304 passing
 
 ---
 
@@ -14,7 +14,7 @@
   - `_file_contents` → immediate delivery (generate_image, deliver_file)
   - `output_files` → pending state, model decides when to deliver
 
-### Issues Found
+### Issues Found & Fixed
 
 #### A1. Performance: SCAN for pending files ✅ FIXED
 ```python
@@ -22,23 +22,30 @@
 # Now: SMEMBERS exec:thread:{thread_id} → batch GET (O(1))
 ```
 
+#### A2. Missing file context ✅ FIXED
+Model didn't know what files it generated (asked "let me look at your files").
+
+**Solution:** Universal `context` field in exec_cache + `upload_context` in user_files.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    FILE CONTEXT FLOW                             │
+├─────────────────────────────────────────────────────────────────┤
+│ User upload     → processor.py   → upload_context = user's text │
+│ render_latex    → exec_cache     → context = "LaTeX: {formula}" │
+│ execute_python  → exec_cache     → context = "Python output: X" │
+│ generate_image  → _file_contents → context = "Generated: ..."   │
+│ deliver_file    → user_files     → upload_context = from cache  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
 **Implementation:**
-- Added `exec:thread:{thread_id}` SET index
-- `store_exec_file()` adds to index with SADD
-- `delete_exec_file()` removes from index with SREM
-- `get_pending_files_for_thread()` uses SMEMBERS + lazy cleanup
-
-#### A2. No file state transitions (Priority: Low)
-Files have states: pending → delivered (or expired)
-Currently no explicit state machine, relies on:
-- pending: exists in exec_cache
-- delivered: exists in user_files DB table
-
-**Status:** Works correctly, but could be more explicit.
+- `store_exec_file()` now requires `context` parameter
+- All tools pass meaningful context when storing files
+- `format_unified_files_section()` shows context for both delivered and pending files
+- Model sees: `context: "LaTeX: \frac{1}{2}"` in system prompt
 
 ### Verdict: ✅ Excellent architecture
-The unified file visibility (`format_unified_files_section`) solves the main concern.
-Thread index optimization implemented for O(1) pending files lookup.
 
 ---
 
@@ -48,7 +55,6 @@ Thread index optimization implemented for O(1) pending files lookup.
 - **Single entry point:** `telegram/pipeline/handler.py` handles ALL message types
 - **Normalizer pattern:** All I/O (download, upload, transcribe) happens BEFORE queue
 - **Race conditions:** Eliminated by design (files ready before queue)
-- **Old handlers removed:** `files.py`, `media_handlers.py` deleted
 
 ### Pipeline Structure
 ```
@@ -61,11 +67,7 @@ telegram/pipeline/
 └── tracker.py     # Message tracking for batching
 ```
 
-### Issues Found
-None. The pipeline is well-architected.
-
 ### Verdict: ✅ Excellent architecture
-The "Unified Message Pipeline" plan was fully implemented.
 
 ---
 
@@ -76,20 +78,6 @@ The "Unified Message Pipeline" plan was fully implemented.
 - **Simple rule:** If balance < 0, reject all paid tools
 - **6 paid tools:** generate_image, transcribe_audio, web_search, execute_python, analyze_image, analyze_pdf
 - **Generation stop:** Partial usage charged on cancellation
-
-### Flow
-```
-User request → Balance middleware (fail-open) → Tool execution
-                                                     ↓
-                                              is_paid_tool?
-                                                     ↓
-                                            balance < 0? → Reject
-                                                     ↓
-                                              Execute → Charge
-```
-
-### Issues Found
-None. The system is universal and simple.
 
 ### Verdict: ✅ Good architecture
 
@@ -105,21 +93,11 @@ None. The system is universal and simple.
 | Messages | 1 hour | Invalidate on new message |
 | Files | 1 hour | Invalidate on new file |
 | File bytes | 1 hour | Immutable content |
-| Exec files | 1 hour | Consumed once, then deleted |
+| Exec files | 30 min | Consumed once, then deleted |
 
 - **Write-behind queue:** 5s flush, batch 100
 - **Circuit breaker:** 3 failures → 30s timeout
 - **Cache-first reads:** User data, messages
-
-### Issues Found
-
-#### D1. All TTLs identical (Priority: Low)
-All caches use 1 hour TTL. Could be tuned:
-- User balance: shorter (60s) for faster reflection
-- Thread metadata: longer (24h) since rarely changes
-- Messages: keep 1h (balance between freshness and performance)
-
-**Status:** Current approach works, optimization optional.
 
 ### Verdict: ✅ Good architecture
 
@@ -131,40 +109,18 @@ All caches use 1 hour TTL. Could be tuned:
 - **9 tools total:** 6 paid, 3 free
 - **Unified interface:** All tools return dict with optional `_file_contents` or `output_files`
 - **Cost tracking:** Each tool reports `cost_usd` in result
+- **Context tracking:** All tools provide `context` for generated files
 
 ### Tool Patterns
 ```python
 # Immediate delivery (generate_image)
-{"_file_contents": [...], "cost_usd": 0.134}
+{"_file_contents": [{"filename": "...", "content": ..., "context": "..."}], "cost_usd": 0.134}
 
-# Pending (execute_python)
-{"output_files": [...], "cost_usd": 0.001}
-
-# Free tool (render_latex)
-{"output_files": [...]}  # No cost_usd
+# Pending (execute_python, render_latex)
+{"output_files": [{"temp_id": "...", "preview": "...", "context": "..."}]}
 ```
 
-### Issues Found
-None significant. Tools are well-structured.
-
 ### Verdict: ✅ Good architecture
-
----
-
-## F. Documentation
-
-### Issues Found
-
-#### F1. Outdated docs (Priority: High)
-Several docs reference old architecture:
-- Phase docs mention files that no longer exist
-- Test counts outdated
-
-#### F2. CLAUDE.md was bloated
-Fixed: Compressed from 1046 to 171 lines.
-
-### Recommendation
-Review and update all docs in `docs/` directory.
 
 ---
 
@@ -172,32 +128,31 @@ Review and update all docs in `docs/` directory.
 
 | Area | Status | Issues |
 |------|--------|--------|
-| File Architecture | ✅ Excellent | A1: ✅ Fixed (thread index) |
+| File Architecture | ✅ Excellent | A1, A2: ✅ Fixed |
 | Message Pipeline | ✅ Excellent | None |
 | Payment System | ✅ Good | None |
-| Caching | ✅ Good | D1: TTL tuning optional |
+| Caching | ✅ Good | None |
 | Tools | ✅ Good | None |
-| Documentation | ✅ Updated | F1: ✅ Fixed |
-
-### Critical Issues
-None found.
+| Documentation | ✅ Updated | None |
 
 ### Completed Actions
 
 1. **✅ A1: Thread index for pending files**
    - Created `exec:thread:{thread_id}` SET
-   - Updated `store_exec_file()` to SADD
-   - Updated `delete_exec_file()` to SREM
-   - Updated `get_pending_files_for_thread()` to use SMEMBERS
+   - O(1) lookup instead of O(n) SCAN
 
-2. **✅ F1: Updated documentation**
+2. **✅ A2: Universal file context**
+   - Added `context` parameter to `store_exec_file()`
+   - All tools pass context when creating files
+   - Context shown in system prompt for model understanding
+
+3. **✅ Documentation updated**
    - Compressed CLAUDE.md (1046 → 171 lines)
-   - Updated docs/README.md with current phase status
-   - Removed DevOps Agent references
+   - Updated docs with current architecture
 
 ---
 
-## Architecture Diagram (Current)
+## Architecture Diagram
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -218,6 +173,7 @@ None found.
 │     - Download media                                         │
 │     - Upload to Files API                                    │
 │     - Transcribe (voice/video_note)                          │
+│     - Set upload_context = user's text                       │
 │                                                              │
 │  2. ProcessedMessageQueue (200ms batching)                   │
 │                                                              │
@@ -231,10 +187,12 @@ None found.
 │                                                              │
 │  1. Cache-first reads (user, messages, files)               │
 │  2. Build context (format_unified_files_section)            │
+│     - Shows file context for model understanding             │
 │  3. Claude API call (streaming)                              │
 │  4. Tool execution loop                                      │
 │     - Pre-check balance for paid tools                       │
 │     - Execute tools in parallel                              │
+│     - Store files with context in exec_cache                 │
 │     - Handle _file_contents (immediate delivery)             │
 │  5. Write-behind queue (messages, stats)                     │
 └─────────────────────────────────────────────────────────────┘
