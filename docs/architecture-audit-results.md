@@ -16,18 +16,17 @@
 
 ### Issues Found
 
-#### A1. Performance: SCAN for pending files (Priority: Medium)
+#### A1. Performance: SCAN for pending files ✅ FIXED
 ```python
-# In exec_cache.py:get_pending_files_for_thread()
-# Currently: SCAN exec:meta:* → filter by thread_id
-# Problem: O(n) where n = ALL pending files across ALL threads
+# Was: SCAN exec:meta:* → filter by thread_id (O(n))
+# Now: SMEMBERS exec:thread:{thread_id} → batch GET (O(1))
 ```
 
-**Recommendation:** Add per-thread index
-```
-exec:thread:{thread_id} → SET of temp_ids
-```
-Then O(1) lookup per thread.
+**Implementation:**
+- Added `exec:thread:{thread_id}` SET index
+- `store_exec_file()` adds to index with SADD
+- `delete_exec_file()` removes from index with SREM
+- `get_pending_files_for_thread()` uses SMEMBERS + lazy cleanup
 
 #### A2. No file state transitions (Priority: Low)
 Files have states: pending → delivered (or expired)
@@ -37,8 +36,9 @@ Currently no explicit state machine, relies on:
 
 **Status:** Works correctly, but could be more explicit.
 
-### Verdict: ✅ Good architecture
+### Verdict: ✅ Excellent architecture
 The unified file visibility (`format_unified_files_section`) solves the main concern.
+Thread index optimization implemented for O(1) pending files lookup.
 
 ---
 
@@ -172,29 +172,28 @@ Review and update all docs in `docs/` directory.
 
 | Area | Status | Issues |
 |------|--------|--------|
-| File Architecture | ✅ Good | A1: SCAN performance |
+| File Architecture | ✅ Excellent | A1: ✅ Fixed (thread index) |
 | Message Pipeline | ✅ Excellent | None |
 | Payment System | ✅ Good | None |
 | Caching | ✅ Good | D1: TTL tuning optional |
 | Tools | ✅ Good | None |
-| Documentation | ⚠️ Needs Update | F1: Outdated docs |
+| Documentation | ✅ Updated | F1: ✅ Fixed |
 
 ### Critical Issues
 None found.
 
-### Recommended Actions
+### Completed Actions
 
-1. **[Optional] A1: Add thread index for pending files**
-   - Create `exec:thread:{thread_id}` SET
-   - Update `store_exec_file()` to add to SET
-   - Update `get_pending_files_for_thread()` to use SMEMBERS
-   - Estimated: 2 hours
+1. **✅ A1: Thread index for pending files**
+   - Created `exec:thread:{thread_id}` SET
+   - Updated `store_exec_file()` to SADD
+   - Updated `delete_exec_file()` to SREM
+   - Updated `get_pending_files_for_thread()` to use SMEMBERS
 
-2. **[Should] F1: Update documentation**
-   - Review all docs/phase-*.md
-   - Remove references to deleted files
-   - Update test counts and dates
-   - Estimated: 1-2 hours
+2. **✅ F1: Updated documentation**
+   - Compressed CLAUDE.md (1046 → 171 lines)
+   - Updated docs/README.md with current phase status
+   - Removed DevOps Agent references
 
 ---
 

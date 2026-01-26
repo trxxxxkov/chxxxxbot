@@ -397,8 +397,15 @@ class TestDeleteExecFile:
 
     @pytest.mark.asyncio
     async def test_delete_exec_file_success(self, mock_redis, sample_temp_id):
-        """Test successful deletion."""
+        """Test successful deletion with thread index cleanup."""
+        # File has thread_id, so it should be removed from index
+        metadata = {
+            "temp_id": sample_temp_id,
+            "thread_id": 42,
+        }
+        mock_redis.get.return_value = json.dumps(metadata).encode()
         mock_redis.delete.return_value = 2  # Both keys deleted
+        mock_redis.srem.return_value = 1  # Removed from index
 
         with patch("cache.exec_cache.get_redis", return_value=mock_redis):
             result = await delete_exec_file(sample_temp_id)
@@ -407,11 +414,14 @@ class TestDeleteExecFile:
             exec_file_key(sample_temp_id),
             exec_meta_key(sample_temp_id),
         )
+        # Should also remove from thread index
+        mock_redis.srem.assert_called_once()
         assert result is True
 
     @pytest.mark.asyncio
     async def test_delete_exec_file_not_found(self, mock_redis, sample_temp_id):
         """Test deletion when file doesn't exist."""
+        mock_redis.get.return_value = None  # No metadata
         mock_redis.delete.return_value = 0
 
         with patch("cache.exec_cache.get_redis", return_value=mock_redis):
@@ -516,7 +526,7 @@ class TestGetPendingFilesForThread:
 
     @pytest.mark.asyncio
     async def test_get_pending_files_success(self, mock_redis):
-        """Test retrieving pending files for a thread."""
+        """Test retrieving pending files for a thread using thread index."""
         # Simulate two files for thread 42
         metadata1 = {
             "temp_id": "exec_abc12345",
@@ -532,33 +542,27 @@ class TestGetPendingFilesForThread:
             "created_at": 1100.0,
             "expires_at": 2100.0,
         }
-        # File for different thread
-        metadata3 = {
-            "temp_id": "exec_ghi11111",
-            "filename": "other.txt",
-            "thread_id": 99,
-            "created_at": 1200.0,
-            "expires_at": 2200.0,
+
+        # Mock SMEMBERS returning temp_ids from thread index
+        mock_redis.smembers.return_value = {
+            b"exec_abc12345",
+            b"exec_def67890",
         }
 
-        # Mock SCAN returning all keys, then cursor=0 to stop
-        mock_redis.scan.return_value = (
-            0,  # cursor=0 means complete
-            [
-                b"exec:meta:exec_abc12345", b"exec:meta:exec_def67890",
-                b"exec:meta:exec_ghi11111"
-            ],
-        )
-        mock_redis.get.side_effect = [
-            json.dumps(metadata1).encode(),
-            json.dumps(metadata2).encode(),
-            json.dumps(metadata3).encode(),
-        ]
+        # Mock GET for each metadata key
+        async def mock_get(key):
+            if "exec_abc12345" in key:
+                return json.dumps(metadata1).encode()
+            if "exec_def67890" in key:
+                return json.dumps(metadata2).encode()
+            return None
+
+        mock_redis.get.side_effect = mock_get
 
         with patch("cache.exec_cache.get_redis", return_value=mock_redis):
             result = await get_pending_files_for_thread(42)
 
-        # Should only include files for thread 42
+        # Should include both files, sorted by created_at
         assert len(result) == 2
         assert result[0]["temp_id"] == "exec_abc12345"  # Older first
         assert result[1]["temp_id"] == "exec_def67890"
@@ -566,7 +570,7 @@ class TestGetPendingFilesForThread:
     @pytest.mark.asyncio
     async def test_get_pending_files_empty(self, mock_redis):
         """Test returns empty list when no files for thread."""
-        mock_redis.scan.return_value = (0, [])
+        mock_redis.smembers.return_value = set()  # Empty index
 
         with patch("cache.exec_cache.get_redis", return_value=mock_redis):
             result = await get_pending_files_for_thread(999)
@@ -598,14 +602,18 @@ class TestGetPendingFilesForThread:
             "expires_at": 2000.0,
         }
 
-        mock_redis.scan.return_value = (
-            0,
-            [b"exec:meta:exec_newer", b"exec:meta:exec_older"],
-        )
-        mock_redis.get.side_effect = [
-            json.dumps(metadata1).encode(),
-            json.dumps(metadata2).encode(),
-        ]
+        # Mock SMEMBERS returning temp_ids
+        mock_redis.smembers.return_value = {b"exec_newer", b"exec_older"}
+
+        # Mock GET for each metadata key
+        async def mock_get(key):
+            if "exec_newer" in key:
+                return json.dumps(metadata1).encode()
+            if "exec_older" in key:
+                return json.dumps(metadata2).encode()
+            return None
+
+        mock_redis.get.side_effect = mock_get
 
         with patch("cache.exec_cache.get_redis", return_value=mock_redis):
             result = await get_pending_files_for_thread(42)
@@ -625,14 +633,19 @@ class TestGetPendingFilesForThread:
             "expires_at": 2000.0,
         }
 
-        mock_redis.scan.return_value = (
-            0,
-            [b"exec:meta:exec_valid", b"exec:meta:exec_corrupt"],
-        )
-        mock_redis.get.side_effect = [
-            json.dumps(valid_metadata).encode(),
-            b"not valid json",  # Corrupted entry
-        ]
+        # Mock SMEMBERS returning temp_ids (including one with corrupt data)
+        mock_redis.smembers.return_value = {b"exec_valid", b"exec_corrupt"}
+        mock_redis.srem.return_value = 1  # For stale cleanup
+
+        # Mock GET for each metadata key
+        async def mock_get(key):
+            if "exec_valid" in key:
+                return json.dumps(valid_metadata).encode()
+            if "exec_corrupt" in key:
+                return b"not valid json"  # Corrupted entry
+            return None
+
+        mock_redis.get.side_effect = mock_get
 
         with patch("cache.exec_cache.get_redis", return_value=mock_redis):
             result = await get_pending_files_for_thread(42)

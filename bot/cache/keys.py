@@ -126,3 +126,18 @@ def exec_meta_key(temp_id: str) -> str:
         Redis key string (e.g., "exec:meta:exec_abc123_plot.png").
     """
     return f"exec:meta:{temp_id}"
+
+
+def exec_thread_index_key(thread_id: int) -> str:
+    """Generate key for thread's pending files index.
+
+    This SET contains temp_ids of all pending files for a thread.
+    Used for O(1) lookup instead of SCAN.
+
+    Args:
+        thread_id: Internal thread ID (from threads table).
+
+    Returns:
+        Redis key string (e.g., "exec:thread:789").
+    """
+    return f"exec:thread:{thread_id}"

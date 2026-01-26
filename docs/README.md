@@ -76,13 +76,23 @@ Documents are organized by development phase for easy navigation.
 | File | Description | Status |
 |------|-------------|--------|
 | [phase-2.1-payment-system.md](phase-2.1-payment-system.md) | Payment system: user balance, Telegram Stars integration, admin tools, cost tracking | **implemented** |
-| [phase-2.2-devops-agent.md](phase-2.2-devops-agent.md) | DevOps Agent: self-healing bot with Agent SDK, auto-fix errors, feature development via Telegram, GitHub PRs | **planned** |
+| [phase-2.3-tool-cost-precheck.md](phase-2.3-tool-cost-precheck.md) | Tool cost pre-check: balance validation before paid tool execution | **implemented** |
+| [phase-2.5-generation-stop.md](phase-2.5-generation-stop.md) | Generation stop: /stop command, new message cancellation, partial payment | **implemented** |
 
 ### Phase 3: Infrastructure
 
 | File | Description | Status |
 |------|-------------|--------|
 | [phase-3-infrastructure.md](phase-3-infrastructure.md) | Monitoring (Grafana, Loki, Prometheus), database admin (CloudBeaver) | **implemented** |
+| [phase-3.2-redis-cache.md](phase-3.2-redis-cache.md) | Redis caching: user data, messages, files, cache-aside pattern | **implemented** |
+| [phase-3.3-cache-first-plan.md](phase-3.3-cache-first-plan.md) | Cache-first architecture: write-behind, circuit breaker, alerting | **implemented** |
+| [phase-3.4-flexible-file-delivery.md](phase-3.4-flexible-file-delivery.md) | Flexible file delivery: preview_file, sequential delivery | **implemented** |
+
+### Architecture
+
+| File | Description | Status |
+|------|-------------|--------|
+| [architecture-audit-results.md](architecture-audit-results.md) | Full architecture audit results (2026-01-26) | **current** |
 
 ---
 
@@ -152,11 +162,15 @@ Documents are organized by development phase for easy navigation.
 - Cost tracking for all APIs
 - Refund support (30-day window)
 
-### Phase 2.2: DevOps Agent 📋
-- Agent SDK integration (autonomous code editing)
-- Self-healing (auto-fix errors from logs)
-- Feature development via Telegram (/agent add feature)
-- GitHub integration (create PRs, merge, deploy)
+### Phase 2.3: Tool Cost Pre-check ✅
+- Balance validation before paid tools
+- Simple rule: balance < 0 → reject
+- 6 paid tools protected
+
+### Phase 2.5: Generation Stop ✅
+- /stop command and new message cancellation
+- Partial payment for interrupted generations
+- GenerationTracker singleton
 
 ### Phase 3.1: Monitoring ✅
 - Grafana + Prometheus metrics
@@ -164,8 +178,20 @@ Documents are organized by development phase for easy navigation.
 - CloudBeaver database UI
 - Pre-configured dashboards
 
-### Phase 3.2: Cache 📋
-- Redis caching (planned)
+### Phase 3.2: Redis Cache ✅
+- User, thread, messages, files caching
+- Cache-aside with graceful degradation
+- 1-hour TTL with proper invalidation
+
+### Phase 3.3: Cache-First Architecture ✅
+- Write-behind queue (5s flush, batch 100)
+- Circuit breaker (3 failures → 30s timeout)
+- Grafana alerting rules
+
+### Phase 3.4: Flexible File Delivery ✅
+- preview_file tool for data inspection
+- Sequential delivery mode
+- Turn break handling
 
 ---
 

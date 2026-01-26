@@ -26,6 +26,7 @@ from cache.keys import exec_file_key
 from cache.keys import EXEC_FILE_MAX_SIZE
 from cache.keys import EXEC_FILE_TTL
 from cache.keys import exec_meta_key
+from cache.keys import exec_thread_index_key
 from utils.metrics import record_cache_operation
 from utils.metrics import record_redis_operation_time
 from utils.structured_logging import get_logger
@@ -222,6 +223,13 @@ async def store_exec_file(
         meta_key = exec_meta_key(temp_id)
         await redis.setex(meta_key, EXEC_FILE_TTL, json.dumps(metadata))
 
+        # Add to thread index for O(1) lookup (if thread_id provided)
+        if thread_id is not None:
+            thread_key = exec_thread_index_key(thread_id)
+            await redis.sadd(thread_key, temp_id)
+            # Set TTL on index (same as file TTL, refreshed on each add)
+            await redis.expire(thread_key, EXEC_FILE_TTL)
+
         elapsed = time.time() - start_time
         record_redis_operation_time("set", elapsed)
 
@@ -329,6 +337,8 @@ async def get_exec_meta(temp_id: str) -> Optional[dict]:
 async def delete_exec_file(temp_id: str) -> bool:
     """Delete execution output file from Redis.
 
+    Also removes from thread index if thread_id was set.
+
     Args:
         temp_id: Temporary file ID.
 
@@ -341,15 +351,31 @@ async def delete_exec_file(temp_id: str) -> bool:
         return False
 
     try:
-        file_key = exec_file_key(temp_id)
+        # Get metadata first to know thread_id for index cleanup
         meta_key = exec_meta_key(temp_id)
+        meta_data = await redis.get(meta_key)
+        thread_id = None
+        if meta_data:
+            try:
+                metadata = json.loads(meta_data.decode("utf-8"))
+                thread_id = metadata.get("thread_id")
+            except (json.JSONDecodeError, AttributeError):
+                pass
 
+        # Delete file and metadata
+        file_key = exec_file_key(temp_id)
         deleted = await redis.delete(file_key, meta_key)
+
+        # Remove from thread index if thread_id was set
+        if thread_id is not None:
+            thread_key = exec_thread_index_key(thread_id)
+            await redis.srem(thread_key, temp_id)
 
         logger.debug(
             "exec_cache.file_deleted",
             temp_id=temp_id,
             keys_deleted=deleted,
+            thread_id=thread_id,
         )
 
         return deleted > 0
@@ -366,7 +392,7 @@ async def delete_exec_file(temp_id: str) -> bool:
 async def get_pending_files_for_thread(thread_id: int) -> List[dict]:
     """Get all pending (not yet delivered) files for a thread.
 
-    Scans exec:meta:* keys for files belonging to this thread.
+    Uses thread index (SET) for O(1) lookup instead of SCAN.
     Files are ordered by creation time (oldest first).
 
     Args:
@@ -390,39 +416,47 @@ async def get_pending_files_for_thread(thread_id: int) -> List[dict]:
         return []
 
     try:
-        # Scan for all exec:meta:* keys
-        # We use SCAN instead of KEYS for production safety
+        # Get temp_ids from thread index (O(1) lookup)
+        thread_key = exec_thread_index_key(thread_id)
+        temp_ids = await redis.smembers(thread_key)
+
+        if not temp_ids:
+            logger.debug("exec_cache.get_pending_files.empty",
+                         thread_id=thread_id)
+            return []
+
+        # Batch get metadata for all temp_ids
         pending_files: List[dict] = []
-        cursor = 0
+        stale_ids: List[str] = []  # IDs in index but metadata expired
 
-        while True:
-            cursor, keys = await redis.scan(
-                cursor=cursor,
-                match="exec:meta:*",
-                count=100,
-            )
+        for temp_id_bytes in temp_ids:
+            temp_id = (temp_id_bytes.decode("utf-8") if isinstance(
+                temp_id_bytes, bytes) else temp_id_bytes)
 
-            for key in keys:
-                try:
-                    data = await redis.get(key)
-                    if data is None:
-                        continue
+            try:
+                meta_key = exec_meta_key(temp_id)
+                data = await redis.get(meta_key)
 
-                    metadata = json.loads(data.decode("utf-8"))
-
-                    # Filter by thread_id
-                    if metadata.get("thread_id") == thread_id:
-                        pending_files.append(metadata)
-
-                except Exception as e:  # pylint: disable=broad-exception-caught
-                    logger.debug("exec_cache.get_pending_files.parse_error",
-                                 key=key,
-                                 error=str(e))
+                if data is None:
+                    # Metadata expired but still in index - mark for cleanup
+                    stale_ids.append(temp_id)
                     continue
 
-            # cursor=0 means scan complete
-            if cursor == 0:
-                break
+                metadata = json.loads(data.decode("utf-8"))
+                pending_files.append(metadata)
+
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                logger.debug("exec_cache.get_pending_files.parse_error",
+                             temp_id=temp_id,
+                             error=str(e))
+                continue
+
+        # Lazy cleanup: remove stale IDs from index
+        if stale_ids:
+            await redis.srem(thread_key, *stale_ids)
+            logger.debug("exec_cache.get_pending_files.cleanup",
+                         thread_id=thread_id,
+                         stale_count=len(stale_ids))
 
         # Sort by created_at (oldest first)
         pending_files.sort(key=lambda f: f.get("created_at", 0))
