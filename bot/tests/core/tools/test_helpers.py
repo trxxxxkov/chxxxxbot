@@ -133,6 +133,50 @@ class TestFormatFilesSection:
         assert "file_1" in result
         assert "file_2" in result
 
+    def test_upload_context_displayed(self):
+        """Test that upload_context is displayed for files."""
+        mock_file = Mock()
+        mock_file.filename = "homework.jpg"
+        mock_file.file_type = FileType.IMAGE
+        mock_file.file_size = 1024
+        mock_file.uploaded_at = datetime.now(timezone.utc)
+        mock_file.claude_file_id = "file_homework"
+        mock_file.upload_context = "Here's my math homework"
+
+        result = format_files_section([mock_file])
+
+        assert "Here's my math homework" in result
+        assert 'context: "Here\'s my math homework"' in result
+
+    def test_upload_context_truncated(self):
+        """Test that long upload_context is truncated."""
+        mock_file = Mock()
+        mock_file.filename = "doc.pdf"
+        mock_file.file_type = FileType.PDF
+        mock_file.file_size = 5000
+        mock_file.uploaded_at = datetime.now(timezone.utc)
+        mock_file.claude_file_id = "file_doc"
+        mock_file.upload_context = "A" * 150  # > 100 chars
+
+        result = format_files_section([mock_file])
+
+        # Should show first 100 chars + "..."
+        assert "A" * 100 + "..." in result
+
+    def test_upload_context_none_not_shown(self):
+        """Test that None upload_context is not shown."""
+        mock_file = Mock()
+        mock_file.filename = "test.jpg"
+        mock_file.file_type = FileType.IMAGE
+        mock_file.file_size = 1024
+        mock_file.uploaded_at = datetime.now(timezone.utc)
+        mock_file.claude_file_id = "file_test"
+        mock_file.upload_context = None
+
+        result = format_files_section([mock_file])
+
+        assert "context:" not in result
+
 
 class TestExtractToolUses:
     """Tests for extract_tool_uses() function."""

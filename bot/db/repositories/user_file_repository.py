@@ -265,7 +265,7 @@ class UserFileRepository(BaseRepository[UserFile]):
 
     async def get_recent_files(self,
                                source: Optional[FileSource] = None,
-                               limit: int = 50) -> list[UserFile]:
+                               limit: int = 100) -> list[UserFile]:
         """Get recent files, optionally filtered by source.
 
         Args:
