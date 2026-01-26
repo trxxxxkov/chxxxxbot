@@ -213,6 +213,7 @@ def _run_sandbox_sync(  # pylint: disable=too-many-locals,too-many-statements
 async def execute_python(code: str,
                          bot: 'Bot',
                          session: 'AsyncSession',
+                         thread_id: Optional[int] = None,
                          file_inputs: Optional[List[Dict[str, str]]] = None,
                          requirements: Optional[str] = None,
                          timeout: Optional[float] = 3600.0) -> Dict[str, Any]:
@@ -363,6 +364,7 @@ async def execute_python(code: str,
                     content=content,
                     mime_type=mime_type,
                     execution_id=execution_id,
+                    thread_id=thread_id,
                 )
 
                 if metadata:

@@ -62,12 +62,9 @@ def split_text_smart(text: str,
 
 def compose_system_prompt(global_prompt: str, custom_prompt: str | None,
                           files_context: str | None) -> str:
-    """Compose system prompt from 3 levels.
+    """Compose system prompt from 3 levels (legacy single-string version).
 
-    Phase 1.4.2 architecture:
-    - GLOBAL_SYSTEM_PROMPT (always cached) - base instructions
-    - User.custom_prompt (cached) - personal preferences
-    - Thread.files_context (NOT cached) - available files list
+    DEPRECATED: Use compose_system_prompt_blocks() for optimal caching.
 
     Args:
         global_prompt: Base system prompt (same for all users).
@@ -86,3 +83,59 @@ def compose_system_prompt(global_prompt: str, custom_prompt: str | None,
         parts.append(files_context)
 
     return "\n\n".join(parts)
+
+
+def compose_system_prompt_blocks(
+    global_prompt: str,
+    custom_prompt: str | None,
+    files_context: str | None,
+) -> list[dict]:
+    """Compose system prompt as separate blocks for optimal caching.
+
+    Multi-block caching strategy:
+    - GLOBAL_SYSTEM_PROMPT: cached (same for all users, ~8K tokens)
+    - User.custom_prompt: cached (rarely changes per user)
+    - Thread.files_context: NOT cached (changes per request)
+
+    This allows Anthropic to cache static parts while dynamic parts
+    (files list) can change without invalidating the cache.
+
+    Args:
+        global_prompt: Base system prompt (same for all users).
+        custom_prompt: User's personal instructions (or None).
+        files_context: List of files in thread (or None).
+
+    Returns:
+        List of system prompt blocks for Anthropic API.
+        Each block has: {"type": "text", "text": "...", "cache_control"?: {...}}
+    """
+    blocks = []
+
+    # Block 1: GLOBAL_SYSTEM_PROMPT - always cached (≥1024 tokens)
+    blocks.append({
+        "type": "text",
+        "text": global_prompt,
+        "cache_control": {
+            "type": "ephemeral"
+        }
+    })
+
+    # Block 2: User custom prompt - cached if ≥1024 tokens
+    if custom_prompt:
+        estimated_tokens = len(custom_prompt) // 4
+        if estimated_tokens >= 1024:
+            blocks.append({
+                "type": "text",
+                "text": custom_prompt,
+                "cache_control": {
+                    "type": "ephemeral"
+                }
+            })
+        else:
+            blocks.append({"type": "text", "text": custom_prompt})
+
+    # Block 3: Files context - NEVER cached (dynamic per request)
+    if files_context:
+        blocks.append({"type": "text", "text": files_context})
+
+    return blocks

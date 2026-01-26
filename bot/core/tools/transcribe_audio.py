@@ -28,10 +28,12 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-async def transcribe_audio(file_id: str,
-                           bot: 'Bot',
-                           session: 'AsyncSession',
-                           language: str = "auto") -> Dict[str, Any]:
+async def transcribe_audio(
+        file_id: str,
+        bot: 'Bot',
+        session: 'AsyncSession',
+        thread_id: int | None = None,  # pylint: disable=unused-argument
+        language: str = "auto") -> Dict[str, Any]:
     """Transcribe audio using OpenAI Whisper API.
 
     Uses OpenAI's Whisper model to convert speech to text from audio/video
@@ -43,6 +45,7 @@ async def transcribe_audio(file_id: str,
         file_id: Claude file_id (from Available files list in conversation).
         bot: Telegram Bot instance for downloading files.
         session: Database session for querying file metadata.
+        thread_id: Thread ID (unused, for interface consistency).
         language: Language code for better accuracy (e.g., "ru", "en", "es")
             or "auto" for automatic detection. Default: "auto".
 

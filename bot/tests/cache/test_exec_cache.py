@@ -12,6 +12,7 @@ from cache.exec_cache import delete_exec_file
 from cache.exec_cache import generate_temp_id
 from cache.exec_cache import get_exec_file
 from cache.exec_cache import get_exec_meta
+from cache.exec_cache import get_pending_files_for_thread
 from cache.exec_cache import store_exec_file
 from cache.keys import exec_file_key
 from cache.keys import EXEC_FILE_MAX_SIZE
@@ -443,3 +444,199 @@ class TestExecCacheKeys:
         key = exec_meta_key(temp_id)
 
         assert key == f"exec:meta:{temp_id}"
+
+
+class TestStoreExecFileWithThreadId:
+    """Tests for storing files with thread_id tracking."""
+
+    @pytest.fixture
+    def mock_redis(self):
+        """Create mock Redis client."""
+        return AsyncMock()
+
+    @pytest.fixture
+    def sample_content(self):
+        """Sample file content."""
+        return b"test output content"
+
+    @pytest.mark.asyncio
+    async def test_store_exec_file_with_thread_id(self, mock_redis,
+                                                  sample_content):
+        """Test storage includes thread_id in metadata."""
+        with patch("cache.exec_cache.get_redis", return_value=mock_redis):
+            result = await store_exec_file(
+                filename="chart.png",
+                content=sample_content,
+                mime_type="image/png",
+                thread_id=12345,
+            )
+
+        assert result is not None
+        assert result["thread_id"] == 12345
+
+    @pytest.mark.asyncio
+    async def test_store_exec_file_thread_id_none(self, mock_redis,
+                                                  sample_content):
+        """Test storage works without thread_id (backward compat)."""
+        with patch("cache.exec_cache.get_redis", return_value=mock_redis):
+            result = await store_exec_file(
+                filename="chart.png",
+                content=sample_content,
+                mime_type="image/png",
+            )
+
+        assert result is not None
+        assert result["thread_id"] is None
+
+    @pytest.mark.asyncio
+    async def test_store_exec_file_with_both_ids(self, mock_redis,
+                                                 sample_content):
+        """Test storage with both execution_id and thread_id."""
+        with patch("cache.exec_cache.get_redis", return_value=mock_redis):
+            result = await store_exec_file(
+                filename="output.csv",
+                content=sample_content,
+                mime_type="text/csv",
+                execution_id="exec123",
+                thread_id=42,
+            )
+
+        assert result is not None
+        assert result["execution_id"] == "exec123"
+        assert result["thread_id"] == 42
+
+
+class TestGetPendingFilesForThread:
+    """Tests for getting pending files by thread_id."""
+
+    @pytest.fixture
+    def mock_redis(self):
+        """Create mock Redis client."""
+        return AsyncMock()
+
+    @pytest.mark.asyncio
+    async def test_get_pending_files_success(self, mock_redis):
+        """Test retrieving pending files for a thread."""
+        # Simulate two files for thread 42
+        metadata1 = {
+            "temp_id": "exec_abc12345",
+            "filename": "chart.png",
+            "thread_id": 42,
+            "created_at": 1000.0,
+            "expires_at": 2000.0,
+        }
+        metadata2 = {
+            "temp_id": "exec_def67890",
+            "filename": "data.csv",
+            "thread_id": 42,
+            "created_at": 1100.0,
+            "expires_at": 2100.0,
+        }
+        # File for different thread
+        metadata3 = {
+            "temp_id": "exec_ghi11111",
+            "filename": "other.txt",
+            "thread_id": 99,
+            "created_at": 1200.0,
+            "expires_at": 2200.0,
+        }
+
+        # Mock SCAN returning all keys, then cursor=0 to stop
+        mock_redis.scan.return_value = (
+            0,  # cursor=0 means complete
+            [
+                b"exec:meta:exec_abc12345", b"exec:meta:exec_def67890",
+                b"exec:meta:exec_ghi11111"
+            ],
+        )
+        mock_redis.get.side_effect = [
+            json.dumps(metadata1).encode(),
+            json.dumps(metadata2).encode(),
+            json.dumps(metadata3).encode(),
+        ]
+
+        with patch("cache.exec_cache.get_redis", return_value=mock_redis):
+            result = await get_pending_files_for_thread(42)
+
+        # Should only include files for thread 42
+        assert len(result) == 2
+        assert result[0]["temp_id"] == "exec_abc12345"  # Older first
+        assert result[1]["temp_id"] == "exec_def67890"
+
+    @pytest.mark.asyncio
+    async def test_get_pending_files_empty(self, mock_redis):
+        """Test returns empty list when no files for thread."""
+        mock_redis.scan.return_value = (0, [])
+
+        with patch("cache.exec_cache.get_redis", return_value=mock_redis):
+            result = await get_pending_files_for_thread(999)
+
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_get_pending_files_redis_unavailable(self):
+        """Test returns empty list when Redis unavailable."""
+        with patch("cache.exec_cache.get_redis", return_value=None):
+            result = await get_pending_files_for_thread(42)
+
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_get_pending_files_sorted_by_time(self, mock_redis):
+        """Test files are sorted by creation time (oldest first)."""
+        # Files in reverse chronological order
+        metadata1 = {
+            "temp_id": "exec_newer",
+            "thread_id": 42,
+            "created_at": 3000.0,
+            "expires_at": 4000.0,
+        }
+        metadata2 = {
+            "temp_id": "exec_older",
+            "thread_id": 42,
+            "created_at": 1000.0,
+            "expires_at": 2000.0,
+        }
+
+        mock_redis.scan.return_value = (
+            0,
+            [b"exec:meta:exec_newer", b"exec:meta:exec_older"],
+        )
+        mock_redis.get.side_effect = [
+            json.dumps(metadata1).encode(),
+            json.dumps(metadata2).encode(),
+        ]
+
+        with patch("cache.exec_cache.get_redis", return_value=mock_redis):
+            result = await get_pending_files_for_thread(42)
+
+        # Older should be first
+        assert len(result) == 2
+        assert result[0]["temp_id"] == "exec_older"
+        assert result[1]["temp_id"] == "exec_newer"
+
+    @pytest.mark.asyncio
+    async def test_get_pending_files_handles_parse_error(self, mock_redis):
+        """Test gracefully handles corrupted metadata."""
+        valid_metadata = {
+            "temp_id": "exec_valid",
+            "thread_id": 42,
+            "created_at": 1000.0,
+            "expires_at": 2000.0,
+        }
+
+        mock_redis.scan.return_value = (
+            0,
+            [b"exec:meta:exec_valid", b"exec:meta:exec_corrupt"],
+        )
+        mock_redis.get.side_effect = [
+            json.dumps(valid_metadata).encode(),
+            b"not valid json",  # Corrupted entry
+        ]
+
+        with patch("cache.exec_cache.get_redis", return_value=mock_redis):
+            result = await get_pending_files_for_thread(42)
+
+        # Should only include valid entry
+        assert len(result) == 1
+        assert result[0]["temp_id"] == "exec_valid"

@@ -139,6 +139,7 @@ async def generate_image(  # pylint: disable=unused-argument,too-many-locals
     prompt: str,
     bot: 'Bot',
     session: 'AsyncSession',
+    thread_id: int | None = None,
     aspect_ratio: str = "1:1",
     image_size: str = "2K",
 ) -> Dict[str, Any]:
@@ -148,6 +149,7 @@ async def generate_image(  # pylint: disable=unused-argument,too-many-locals
         prompt: Image description (English, max 480 tokens).
         bot: Telegram Bot instance for sending generated image to user.
         session: Database session for saving file metadata.
+        thread_id: Thread ID (unused, for interface consistency).
         aspect_ratio: Image aspect ratio (1:1, 3:4, 4:3, 9:16, 16:9).
         image_size: Resolution (1K, 2K, 4K).
 

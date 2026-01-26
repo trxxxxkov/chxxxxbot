@@ -38,12 +38,14 @@ class ContextManager:
         """
         self.provider = provider
 
-    async def build_context(self,
-                            messages: List[Message],
-                            model_context_window: int,
-                            system_prompt: str,
-                            max_output_tokens: int,
-                            buffer_percent: float = 0.10) -> List[Message]:
+    async def build_context(
+        self,
+        messages: List[Message],
+        model_context_window: int,
+        system_prompt: str | int,
+        max_output_tokens: int,
+        buffer_percent: float = 0.10,
+    ) -> List[Message]:
         """Build context that fits in model's window.
 
         Includes as many messages as possible from history while staying
@@ -52,7 +54,8 @@ class ContextManager:
         Args:
             messages: All messages from thread (oldest first).
             model_context_window: Max tokens for model.
-            system_prompt: System prompt text.
+            system_prompt: System prompt text OR pre-computed character length
+                (for multi-block prompts, pass total length as int).
             max_output_tokens: Tokens reserved for response.
             buffer_percent: Safety buffer (0.0-1.0).
 
@@ -68,7 +71,11 @@ class ContextManager:
                     max_output=max_output_tokens)
 
         # Calculate available tokens for history
-        system_tokens = await self.provider.get_token_count(system_prompt)
+        # Accept either string (legacy) or int (pre-computed length for multi-block)
+        if isinstance(system_prompt, int):
+            system_tokens = system_prompt // 4  # Estimate from char count
+        else:
+            system_tokens = await self.provider.get_token_count(system_prompt)
         buffer_tokens = int(model_context_window * buffer_percent)
         available_tokens = (model_context_window - system_tokens -
                             max_output_tokens - buffer_tokens)

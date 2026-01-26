@@ -104,6 +104,7 @@ async def deliver_file(
     temp_id: str,
     bot: 'Bot',  # pylint: disable=unused-argument
     session: 'AsyncSession',  # pylint: disable=unused-argument
+    thread_id: int | None = None,  # pylint: disable=unused-argument
     caption: str | None = None,
     sequential: bool = False,
 ) -> Dict[str, Any]:

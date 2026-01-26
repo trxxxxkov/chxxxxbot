@@ -20,7 +20,7 @@ from io import BytesIO
 from pathlib import Path
 import subprocess
 import tempfile
-from typing import Any, Dict, TYPE_CHECKING
+from typing import Any, Dict, Optional, TYPE_CHECKING
 import uuid
 
 from cache.exec_cache import store_exec_file
@@ -349,6 +349,7 @@ async def render_latex(
     latex: str,
     bot: 'Bot',
     session: 'AsyncSession',
+    thread_id: Optional[int] = None,
     dpi: int = 200,
 ) -> Dict[str, Any]:
     """Render LaTeX to PNG and cache for model-decided delivery.
@@ -357,6 +358,7 @@ async def render_latex(
         latex: LaTeX code to render (fragment or full document).
         bot: Telegram Bot instance (unused, for interface consistency).
         session: Database session (unused, for interface consistency).
+        thread_id: Thread ID for associating file with conversation.
         dpi: Resolution in dots per inch (150-300, default 200).
 
     Returns:
@@ -434,6 +436,7 @@ async def render_latex(
             content=image_bytes,
             mime_type="image/png",
             execution_id=temp_id.split('_')[1],  # uuid part
+            thread_id=thread_id,
         )
 
         if metadata is None:

@@ -80,7 +80,9 @@ class LLMRequest(BaseModel):
 
     Attributes:
         messages: Conversation history (chronological order, oldest first).
-        system_prompt: System prompt (instructions for LLM behavior).
+        system_prompt: System prompt - either string (legacy) or list of blocks
+            (multi-block caching). List format allows separate cache_control
+            per block for optimal caching.
         model: Model identifier (e.g., "claude-sonnet-4-5-20250514").
         max_tokens: Maximum tokens to generate in response.
         temperature: Sampling temperature (0.0-2.0, higher = more random).
@@ -89,8 +91,10 @@ class LLMRequest(BaseModel):
 
     messages: List[Message] = Field(
         ..., description="Conversation history (oldest first)")
-    system_prompt: Optional[str] = Field(
-        None, description="System prompt for LLM behavior")
+    system_prompt: Optional[Union[str, List[Dict[str, Any]]]] = Field(
+        None,
+        description="System prompt - string or list of blocks for multi-caching"
+    )
     model: str = Field(..., description="Model identifier")
     max_tokens: int = Field(default=64000,
                             ge=1,

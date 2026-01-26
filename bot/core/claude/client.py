@@ -142,20 +142,26 @@ class ClaudeProvider(LLMProvider):
                         tool_count=len(request.tools))
 
         # System prompt with conditional caching
+        # Supports both string (legacy) and list of blocks (multi-block caching)
         if request.system_prompt:
-            estimated_tokens = len(request.system_prompt) // 4
-            use_caching = estimated_tokens >= 1024
-
-            if use_caching:
-                api_params["system"] = [{
-                    "type": "text",
-                    "text": request.system_prompt,
-                    "cache_control": {
-                        "type": "ephemeral"
-                    }
-                }]
-            else:
+            if isinstance(request.system_prompt, list):
+                # Multi-block format - already has cache_control per block
                 api_params["system"] = request.system_prompt
+            else:
+                # Legacy string format - apply single-block caching
+                estimated_tokens = len(request.system_prompt) // 4
+                use_caching = estimated_tokens >= 1024
+
+                if use_caching:
+                    api_params["system"] = [{
+                        "type": "text",
+                        "text": request.system_prompt,
+                        "cache_control": {
+                            "type": "ephemeral"
+                        }
+                    }]
+                else:
+                    api_params["system"] = request.system_prompt
 
         # Effort parameter for Opus 4.5
         if model_config.has_capability("effort"):
@@ -378,34 +384,36 @@ class ClaudeProvider(LLMProvider):
         # Only works with non-streaming messages.create()
 
         # Phase 1.4.2: System prompt with conditional caching
-        # Minimum 1024 tokens required for caching (Sonnet 4.5 limitation)
-        # Automatically enables when system prompt grows (e.g., with tool descriptions)
+        # Supports both string (legacy) and list of blocks (multi-block caching)
         if request.system_prompt:
-            # Estimate tokens (~4 chars per token)
-            estimated_tokens = len(request.system_prompt) // 4
-            use_caching = estimated_tokens >= 1024
-
-            if use_caching:
-                # Phase 1.5 Stage 6: Use 1-hour cache TTL for better cost efficiency
-                # 1-hour cache is 2x more expensive to write but lasts 12x longer
-                # For shared bot cache (all users), this saves ~41% vs 5-minute TTL
-                api_params["system"] = [{
-                    "type": "text",
-                    "text": request.system_prompt,
-                    "cache_control": {
-                        "type": "ephemeral",
-                        "ttl": "1h"  # 1-hour cache instead of default 5 minutes
-                    }
-                }]
-                logger.info("claude.prompt_caching.enabled",
-                            estimated_tokens=estimated_tokens,
-                            ttl="1h")
-            else:
-                # Plain string format (no caching for small prompts)
+            if isinstance(request.system_prompt, list):
+                # Multi-block format - already has cache_control per block
                 api_params["system"] = request.system_prompt
-                logger.info("claude.prompt_caching.disabled",
-                            estimated_tokens=estimated_tokens,
-                            required_tokens=1024)
+                logger.info("claude.prompt_caching.multi_block",
+                            block_count=len(request.system_prompt))
+            else:
+                # Legacy string format - apply single-block caching
+                estimated_tokens = len(request.system_prompt) // 4
+                use_caching = estimated_tokens >= 1024
+
+                if use_caching:
+                    # Use 1-hour cache TTL for better cost efficiency
+                    api_params["system"] = [{
+                        "type": "text",
+                        "text": request.system_prompt,
+                        "cache_control": {
+                            "type": "ephemeral",
+                            "ttl": "1h"
+                        }
+                    }]
+                    logger.info("claude.prompt_caching.enabled",
+                                estimated_tokens=estimated_tokens,
+                                ttl="1h")
+                else:
+                    api_params["system"] = request.system_prompt
+                    logger.info("claude.prompt_caching.disabled",
+                                estimated_tokens=estimated_tokens,
+                                required_tokens=1024)
 
         # Reset state before new request to prevent stale data on errors
         self.last_message = None
@@ -796,21 +804,27 @@ class ClaudeProvider(LLMProvider):
             api_params["tools"] = request.tools
 
         # System prompt with conditional caching
+        # Supports both string (legacy) and list of blocks (multi-block caching)
         if request.system_prompt:
-            estimated_tokens = len(request.system_prompt) // 4
-            use_caching = estimated_tokens >= 1024
-
-            if use_caching:
-                api_params["system"] = [{
-                    "type": "text",
-                    "text": request.system_prompt,
-                    "cache_control": {
-                        "type": "ephemeral",
-                        "ttl": "1h"
-                    }
-                }]
-            else:
+            if isinstance(request.system_prompt, list):
+                # Multi-block format - already has cache_control per block
                 api_params["system"] = request.system_prompt
+            else:
+                # Legacy string format - apply single-block caching
+                estimated_tokens = len(request.system_prompt) // 4
+                use_caching = estimated_tokens >= 1024
+
+                if use_caching:
+                    api_params["system"] = [{
+                        "type": "text",
+                        "text": request.system_prompt,
+                        "cache_control": {
+                            "type": "ephemeral",
+                            "ttl": "1h"
+                        }
+                    }]
+                else:
+                    api_params["system"] = request.system_prompt
 
         # NOTE: Effort parameter NOT supported in streaming API
         # Only works with non-streaming messages.create()

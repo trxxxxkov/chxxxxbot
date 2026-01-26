@@ -13,6 +13,7 @@ NO __init__.py - use direct import:
 from datetime import datetime
 from datetime import timezone
 import json
+import time
 from typing import Any, Dict, List, Optional
 
 import anthropic
@@ -302,6 +303,161 @@ def format_files_section(files: List[Any]) -> str:
     logger.debug("tools.helpers.format_files_section",
                  file_count=len(files),
                  types=list(by_type.keys()),
+                 section_length=len(result))
+
+    return result
+
+
+def format_ttl_remaining(expires_at: float) -> str:
+    """Format TTL remaining as human-readable string.
+
+    Args:
+        expires_at: Unix timestamp when file expires.
+
+    Returns:
+        Human-readable TTL string (e.g., "25 minutes").
+    """
+    now = time.time()
+    remaining = expires_at - now
+
+    if remaining <= 0:
+        return "expired"
+
+    if remaining < 60:
+        return f"{int(remaining)} seconds"
+    if remaining < 3600:
+        minutes = int(remaining / 60)
+        return f"{minutes} minute{'s' if minutes > 1 else ''}"
+
+    hours = int(remaining / 3600)
+    return f"{hours} hour{'s' if hours > 1 else ''}"
+
+
+def format_unified_files_section(
+    delivered_files: List[Any],
+    pending_files: List[Dict[str, Any]],
+) -> str:
+    """Format unified files section for system prompt.
+
+    Creates a formatted section showing both delivered files (from database)
+    and pending files (from exec_cache). This allows Claude to see ALL files
+    in the conversation and work with them uniformly.
+
+    Args:
+        delivered_files: List of UserFile/CachedUserFile from database.
+            These are files already sent to user (user uploads + delivered).
+        pending_files: List of metadata dicts from exec_cache.
+            These are generated files not yet delivered to user.
+
+    Returns:
+        Formatted string for system prompt (empty if no files).
+
+    Examples:
+        >>> section = format_unified_files_section(delivered, pending)
+        >>> print(section)
+        === AVAILABLE FILES (delivered to user) ===
+        ...
+        === PENDING FILES (not yet delivered) ===
+        ...
+    """
+    if not delivered_files and not pending_files:
+        return ""
+
+    lines: List[str] = []
+
+    # === AVAILABLE FILES (delivered to user) ===
+    if delivered_files:
+        lines.append("=== AVAILABLE FILES (delivered to user) ===")
+        lines.append("")
+
+        # Group by type
+        by_type: Dict[str, List[Any]] = {}
+        for file in delivered_files:
+            file_type = file.file_type.value
+            if file_type not in by_type:
+                by_type[file_type] = []
+            by_type[file_type].append(file)
+
+        # Order: images first, then PDFs, then others
+        type_order = [
+            "image", "pdf", "document", "audio", "voice", "video", "generated"
+        ]
+
+        for file_type in type_order:
+            if file_type not in by_type:
+                continue
+            type_files = by_type[file_type]
+
+            lines.append(f"{file_type.upper()} files ({len(type_files)}):")
+            for file in type_files:
+                # Get source tag [user] / [assistant]
+                source_tag = "[user]"
+                if hasattr(file, 'source') and file.source:
+                    source_tag = f"[{file.source.value}]"
+
+                file_info = (
+                    f"  - {file.filename} "
+                    f"({format_size(file.file_size)}, "
+                    f"{format_time_ago(file.uploaded_at)}) {source_tag}")
+                lines.append(file_info)
+                lines.append(f"    file_id: {file.claude_file_id}")
+
+        # Add any types not in order
+        for file_type, type_files in by_type.items():
+            if file_type in type_order:
+                continue
+            lines.append(f"\n{file_type.upper()} files ({len(type_files)}):")
+            for file in type_files:
+                source_tag = "[user]"
+                if hasattr(file, 'source') and file.source:
+                    source_tag = f"[{file.source.value}]"
+
+                file_info = (
+                    f"  - {file.filename} "
+                    f"({format_size(file.file_size)}, "
+                    f"{format_time_ago(file.uploaded_at)}) {source_tag}")
+                lines.append(file_info)
+                lines.append(f"    file_id: {file.claude_file_id}")
+
+        lines.append("")
+        lines.append("How to work with AVAILABLE files:")
+        lines.append("- IMAGE/PDF: use analyze_image(file_id) or "
+                     "analyze_pdf(file_id)")
+        lines.append("- AUDIO/VOICE/VIDEO: use transcribe_audio(file_id)")
+        lines.append("- Other: use execute_python with file_inputs")
+        lines.append("")
+
+    # === PENDING FILES (not yet delivered) ===
+    if pending_files:
+        lines.append("=== PENDING FILES (not yet delivered) ===")
+        lines.append("")
+
+        for pf in pending_files:
+            ttl_str = format_ttl_remaining(pf.get("expires_at", 0))
+            size_str = format_size(pf.get("size_bytes", 0))
+
+            lines.append(f"  - {pf.get('filename', 'unknown')} ({size_str})")
+            lines.append(f"    temp_id: {pf.get('temp_id', 'unknown')}")
+            lines.append(f"    preview: {pf.get('preview', 'No preview')}")
+            lines.append(f"    expires in: {ttl_str}")
+            lines.append("")
+
+        lines.append("How to work with PENDING files:")
+        lines.append("- To send to user: deliver_file(temp_id)")
+        lines.append("- To preview: preview_file(temp_id)")
+        lines.append("- WARNING: Pending files expire in 1 hour!")
+        lines.append("")
+
+    # Summary
+    total_available = len(delivered_files) if delivered_files else 0
+    total_pending = len(pending_files) if pending_files else 0
+    lines.append(f"Total: {total_available} available, {total_pending} pending")
+
+    result = "\n".join(lines)
+
+    logger.debug("tools.helpers.format_unified_files_section",
+                 delivered_count=total_available,
+                 pending_count=total_pending,
                  section_length=len(result))
 
     return result

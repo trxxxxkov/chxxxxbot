@@ -24,7 +24,7 @@ NO __init__.py - use direct import:
     from core.tools.registry import TOOLS, execute_tool, get_tool_definitions
 """
 
-from typing import Any, Dict, List, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from aiogram import Bot
@@ -221,6 +221,7 @@ async def execute_tool(
     tool_input: Dict[str, Any],
     bot: 'Bot',
     session: 'AsyncSession',
+    thread_id: Optional[int] = None,
 ) -> Dict[str, str]:
     """Execute a tool by name with given input.
 
@@ -232,6 +233,8 @@ async def execute_tool(
         tool_input: Tool input parameters as dictionary.
         bot: Telegram Bot instance for downloading user files.
         session: Database session for querying file metadata.
+        thread_id: Optional thread ID for associating generated files
+            with the conversation (used by execute_python, render_latex).
 
     Returns:
         Tool execution result as dictionary.
@@ -272,7 +275,12 @@ async def execute_tool(
     try:
         # Execute tool (all tools are async)
         if tool.needs_bot_session:
-            result = await executor(bot=bot, session=session, **tool_input)
+            result = await executor(
+                bot=bot,
+                session=session,
+                thread_id=thread_id,
+                **tool_input,
+            )
         else:
             result = await executor(**tool_input)
 

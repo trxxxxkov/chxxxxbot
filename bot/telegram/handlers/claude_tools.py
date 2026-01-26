@@ -174,7 +174,11 @@ async def execute_single_tool_safe(
             }
 
     try:
-        result = await execute_tool(tool_name, tool_input, bot, session)
+        result = await execute_tool(tool_name,
+                                    tool_input,
+                                    bot,
+                                    session,
+                                    thread_id=thread_id)
         duration = time.time() - start_time
 
         # Add metadata for post-processing

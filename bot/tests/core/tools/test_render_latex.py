@@ -180,13 +180,18 @@ class TestRenderLatexWithMockedCache:
     def mock_store_exec_file(self):
         """Mock store_exec_file to return predictable metadata."""
 
-        async def _store(filename, content, mime_type, execution_id):
+        async def _store(filename,
+                         content,
+                         mime_type,
+                         execution_id,
+                         thread_id=None):
             return {
                 "temp_id": f"exec_{execution_id}_{filename}",
                 "filename": filename,
                 "size_bytes": len(content),
                 "mime_type": mime_type,
                 "preview": f"Image 200x100 (RGB), {len(content)/1024:.1f} KB",
+                "thread_id": thread_id,
             }
 
         return _store
@@ -397,13 +402,18 @@ class TestRenderLatexErrors:
     async def test_invalid_dpi_uses_default(self):
         """Test that invalid dpi uses default value."""
 
-        async def _store(filename, content, mime_type, execution_id):
+        async def _store(filename,
+                         content,
+                         mime_type,
+                         execution_id,
+                         thread_id=None):
             return {
                 "temp_id": f"exec_{execution_id}_{filename}",
                 "filename": filename,
                 "size_bytes": len(content),
                 "mime_type": mime_type,
                 "preview": "test",
+                "thread_id": thread_id,
             }
 
         with patch('core.tools.render_latex.store_exec_file', new=_store):
@@ -505,7 +515,11 @@ class TestOutputFileFormat:
     async def test_filename_format(self):
         """Test that filename follows expected format."""
 
-        async def _store(filename, content, mime_type, execution_id):
+        async def _store(filename,
+                         content,
+                         mime_type,
+                         execution_id,
+                         thread_id=None):
             return {
                 "temp_id": f"exec_{execution_id}_{filename}",
                 "filename": filename,
@@ -533,7 +547,11 @@ class TestOutputFileFormat:
     async def test_mime_type_is_png(self):
         """Test that mime_type is image/png."""
 
-        async def _store(filename, content, mime_type, execution_id):
+        async def _store(filename,
+                         content,
+                         mime_type,
+                         execution_id,
+                         thread_id=None):
             return {
                 "temp_id": f"exec_{execution_id}_{filename}",
                 "filename": filename,
@@ -555,7 +573,11 @@ class TestOutputFileFormat:
     async def test_temp_id_format(self):
         """Test that temp_id has expected format."""
 
-        async def _store(filename, content, mime_type, execution_id):
+        async def _store(filename,
+                         content,
+                         mime_type,
+                         execution_id,
+                         thread_id=None):
             return {
                 "temp_id": f"exec_{execution_id}_{filename}",
                 "filename": filename,

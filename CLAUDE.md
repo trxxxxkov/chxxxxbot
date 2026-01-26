@@ -683,6 +683,17 @@ Plan → Documentation in docs/ → Implementation → Update docs if needed
 
 **Never:** Implementation first, then documentation. Always document BEFORE coding.
 
+**Ask Questions About Trade-offs:**
+When encountering decisions with multiple equivalent approaches and no objectively better solution, ALWAYS ask the user before proceeding. Examples include:
+- Performance vs. simplicity trade-offs
+- Different architectural patterns with equal merit
+- Naming conventions that are not established in the codebase
+- Behavior in edge cases that could reasonably go either way
+- User experience choices (verbosity, format, ordering)
+- Parameter defaults that depend on user preferences
+
+DO NOT silently pick one option when multiple equivalent choices exist. The user should make these decisions.
+
 **`docs/` folder:**
 - Stores plans and architecture for each component
 - Source of truth for architectural decisions

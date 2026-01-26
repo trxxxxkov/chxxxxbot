@@ -6,6 +6,7 @@ Tests helper functions for tool use integration.
 from datetime import datetime
 from datetime import timedelta
 from datetime import timezone
+import time
 from unittest.mock import AsyncMock
 from unittest.mock import Mock
 
@@ -15,6 +16,8 @@ from core.tools.helpers import format_files_section
 from core.tools.helpers import format_size
 from core.tools.helpers import format_time_ago
 from core.tools.helpers import format_tool_results
+from core.tools.helpers import format_ttl_remaining
+from core.tools.helpers import format_unified_files_section
 from core.tools.helpers import get_available_files
 from db.models.user_file import FileSource
 from db.models.user_file import FileType
@@ -257,3 +260,191 @@ class TestGetAvailableFiles:
                                           user_file_repo=mock_repo)
 
         assert files == []
+
+
+class TestFormatTtlRemaining:
+    """Tests for format_ttl_remaining() function."""
+
+    def test_expired(self):
+        """Test expired TTL."""
+        past = time.time() - 100
+        assert format_ttl_remaining(past) == "expired"
+
+    def test_seconds(self):
+        """Test TTL in seconds."""
+        future = time.time() + 45
+        result = format_ttl_remaining(future)
+        assert "seconds" in result
+
+    def test_minutes(self):
+        """Test TTL in minutes."""
+        future = time.time() + 25 * 60 + 30  # 25+ minutes
+        result = format_ttl_remaining(future)
+        assert "minutes" in result
+        # Should be around 25 minutes (can be 24-26 due to timing)
+        assert any(f"{m} minute" in result for m in range(24, 27))
+
+    def test_single_minute(self):
+        """Test TTL of 1 minute."""
+        future = time.time() + 90  # 1.5 minutes
+        result = format_ttl_remaining(future)
+        assert "1 minute" in result and "minutes" not in result
+
+    def test_hours(self):
+        """Test TTL in hours."""
+        future = time.time() + 2 * 3600 + 60  # 2+ hours
+        result = format_ttl_remaining(future)
+        assert "hour" in result
+
+
+class TestFormatUnifiedFilesSection:
+    """Tests for format_unified_files_section() function."""
+
+    def test_empty_both(self):
+        """Test with no files of any kind."""
+        result = format_unified_files_section([], [])
+        assert result == ""
+
+    def test_delivered_files_only(self):
+        """Test with only delivered files."""
+        mock_file = Mock()
+        mock_file.filename = "image.jpg"
+        mock_file.file_type = FileType.IMAGE
+        mock_file.file_size = 1024
+        mock_file.uploaded_at = datetime.now(timezone.utc)
+        mock_file.claude_file_id = "file_abc123"
+        mock_file.source = FileSource.USER
+
+        result = format_unified_files_section([mock_file], [])
+
+        assert "=== AVAILABLE FILES (delivered to user) ===" in result
+        assert "image.jpg" in result
+        assert "[user]" in result
+        assert "file_abc123" in result
+        assert "PENDING FILES" not in result
+        assert "Total: 1 available, 0 pending" in result
+
+    def test_pending_files_only(self):
+        """Test with only pending files."""
+        pending = [{
+            "temp_id": "exec_abc123",
+            "filename": "chart.png",
+            "size_bytes": 2048,
+            "preview": "Image 800x600 (RGB)",
+            "expires_at": time.time() + 25 * 60,
+        }]
+
+        result = format_unified_files_section([], pending)
+
+        assert "=== PENDING FILES (not yet delivered) ===" in result
+        assert "chart.png" in result
+        assert "exec_abc123" in result
+        assert "Image 800x600 (RGB)" in result
+        assert "AVAILABLE FILES" not in result
+        assert "Total: 0 available, 1 pending" in result
+
+    def test_both_delivered_and_pending(self):
+        """Test with both delivered and pending files."""
+        mock_file = Mock()
+        mock_file.filename = "uploaded.pdf"
+        mock_file.file_type = FileType.PDF
+        mock_file.file_size = 5000
+        mock_file.uploaded_at = datetime.now(timezone.utc)
+        mock_file.claude_file_id = "file_xyz789"
+        mock_file.source = FileSource.ASSISTANT
+
+        pending = [{
+            "temp_id": "exec_def456",
+            "filename": "output.csv",
+            "size_bytes": 1000,
+            "preview": "CSV file, 50 rows",
+            "expires_at": time.time() + 50 * 60,
+        }]
+
+        result = format_unified_files_section([mock_file], pending)
+
+        assert "=== AVAILABLE FILES (delivered to user) ===" in result
+        assert "=== PENDING FILES (not yet delivered) ===" in result
+        assert "uploaded.pdf" in result
+        assert "[assistant]" in result
+        assert "output.csv" in result
+        assert "exec_def456" in result
+        assert "Total: 1 available, 1 pending" in result
+
+    def test_file_source_tags(self):
+        """Test that source tags are correctly displayed."""
+        user_file = Mock()
+        user_file.filename = "user_upload.jpg"
+        user_file.file_type = FileType.IMAGE
+        user_file.file_size = 1024
+        user_file.uploaded_at = datetime.now(timezone.utc)
+        user_file.claude_file_id = "file_user"
+        user_file.source = FileSource.USER
+
+        assistant_file = Mock()
+        assistant_file.filename = "generated.png"
+        assistant_file.file_type = FileType.GENERATED
+        assistant_file.file_size = 2048
+        assistant_file.uploaded_at = datetime.now(timezone.utc)
+        assistant_file.claude_file_id = "file_assistant"
+        assistant_file.source = FileSource.ASSISTANT
+
+        result = format_unified_files_section([user_file, assistant_file], [])
+
+        assert "[user]" in result
+        assert "[assistant]" in result
+
+    def test_instructions_included(self):
+        """Test that usage instructions are included."""
+        mock_file = Mock()
+        mock_file.filename = "test.jpg"
+        mock_file.file_type = FileType.IMAGE
+        mock_file.file_size = 1024
+        mock_file.uploaded_at = datetime.now(timezone.utc)
+        mock_file.claude_file_id = "file_test"
+        mock_file.source = FileSource.USER
+
+        pending = [{
+            "temp_id": "exec_test",
+            "filename": "output.txt",
+            "size_bytes": 100,
+            "preview": "Text file",
+            "expires_at": time.time() + 30 * 60,
+        }]
+
+        result = format_unified_files_section([mock_file], pending)
+
+        # Instructions for available files
+        assert "analyze_image" in result
+        assert "analyze_pdf" in result
+
+        # Instructions for pending files
+        assert "deliver_file" in result
+        assert "preview_file" in result
+
+    def test_multiple_pending_files(self):
+        """Test with multiple pending files."""
+        pending = [
+            {
+                "temp_id": "exec_1",
+                "filename": "chart1.png",
+                "size_bytes": 1000,
+                "preview": "Chart 1",
+                "expires_at": time.time() + 20 * 60,
+            },
+            {
+                "temp_id": "exec_2",
+                "filename": "chart2.png",
+                "size_bytes": 2000,
+                "preview": "Chart 2",
+                "expires_at": time.time() + 25 * 60,
+            },
+        ]
+
+        result = format_unified_files_section([], pending)
+
+        assert "chart1.png" in result
+        assert "chart2.png" in result
+        assert "exec_1" in result
+        assert "exec_2" in result
+        assert "Total: 0 available, 2 pending" in result

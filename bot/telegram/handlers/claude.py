@@ -31,6 +31,7 @@ from aiogram.exceptions import TelegramRetryAfter
 if TYPE_CHECKING:
     from telegram.pipeline.models import ProcessedMessage
 
+from cache.exec_cache import get_pending_files_for_thread
 import config
 from config import CLAUDE_TOKEN_BUFFER_PERCENT
 from config import DRAFT_KEEPALIVE_INTERVAL
@@ -50,8 +51,8 @@ from core.exceptions import ToolValidationError
 from core.models import LLMRequest
 from core.models import Message
 from core.tools.helpers import extract_tool_uses
-from core.tools.helpers import format_files_section
 from core.tools.helpers import format_tool_results
+from core.tools.helpers import format_unified_files_section
 from core.tools.helpers import get_available_files
 from core.tools.registry import execute_tool
 from core.tools.registry import get_tool_definitions
@@ -74,7 +75,7 @@ from telegram.context.formatter import ContextFormatter
 from telegram.draft_streaming import DraftManager
 from telegram.generation_tracker import generation_context
 from telegram.handlers.claude_files import process_generated_files
-from telegram.handlers.claude_helpers import compose_system_prompt
+from telegram.handlers.claude_helpers import compose_system_prompt_blocks
 from telegram.handlers.claude_helpers import split_text_smart
 from telegram.handlers.claude_tools import charge_for_tool
 from telegram.handlers.claude_tools import execute_single_tool_safe
@@ -796,18 +797,25 @@ async def _process_message_batch(thread_id: int,
                 return
 
             # 3.5. Get available files for this thread (Phase 1.5)
+            # Unified file architecture: fetch both delivered and pending files
             logger.debug("claude_handler.creating_file_repo",
                          thread_id=thread_id)
             user_file_repo = UserFileRepository(session)
+
+            # Get delivered files from database
             logger.debug("claude_handler.calling_get_available_files",
                          thread_id=thread_id,
                          repo_type=type(user_file_repo).__name__)
             available_files = await get_available_files(thread_id,
                                                         user_file_repo)
 
+            # Get pending files from exec_cache (not yet delivered)
+            pending_files = await get_pending_files_for_thread(thread_id)
+
             logger.info("claude_handler.files_retrieved",
                         thread_id=thread_id,
-                        file_count=len(available_files))
+                        delivered_count=len(available_files),
+                        pending_count=len(pending_files))
 
             # 4. Get thread history (includes newly saved messages)
             # Limit to 500 most recent messages for performance
@@ -828,22 +836,32 @@ async def _process_message_batch(thread_id: int,
                          model_id=user.model_id,
                          model_name=model_config.display_name)
 
-            # Phase 1.5: Generate files section for system prompt
-            files_section = format_files_section(
-                available_files) if available_files else None
+            # Unified file architecture: Generate files section for system prompt
+            # Includes both delivered files (from DB) and pending files (from cache)
+            files_section = format_unified_files_section(
+                available_files, pending_files) if (available_files or
+                                                    pending_files) else None
 
-            # Phase 1.4.2: Compose 3-level system prompt (+ Phase 1.5 files)
-            composed_prompt = compose_system_prompt(
+            # Compose 3-level system prompt with multi-block caching
+            # GLOBAL (cached) + user custom (cached if large) + files (NOT cached)
+            system_prompt_blocks = compose_system_prompt_blocks(
                 global_prompt=GLOBAL_SYSTEM_PROMPT,
                 custom_prompt=user.custom_prompt,
                 files_context=files_section)
+
+            # Calculate total length for logging
+            total_prompt_length = sum(
+                len(block.get("text", "")) for block in system_prompt_blocks)
 
             logger.info("claude_handler.system_prompt_composed",
                         thread_id=thread_id,
                         telegram_thread_id=thread.thread_id,
                         has_custom_prompt=user.custom_prompt is not None,
                         has_files_context=files_section is not None,
-                        total_length=len(composed_prompt))
+                        delivered_files=len(available_files),
+                        pending_files=len(pending_files),
+                        block_count=len(system_prompt_blocks),
+                        total_length=total_prompt_length)
 
             # Convert DB messages to LLM messages with context formatting
             # Uses ContextFormatter to include reply/quote/forward context
@@ -852,10 +870,11 @@ async def _process_message_batch(thread_id: int,
             llm_messages = await formatter.format_conversation_with_files(
                 history, session)
 
+            # Build context using total prompt length for token estimation
             context = await context_mgr.build_context(
                 messages=llm_messages,
                 model_context_window=model_config.context_window,
-                system_prompt=composed_prompt,
+                system_prompt=total_prompt_length,  # Pass length for estimation
                 max_output_tokens=model_config.max_output,
                 buffer_percent=CLAUDE_TOKEN_BUFFER_PERCENT)
 
@@ -864,12 +883,12 @@ async def _process_message_batch(thread_id: int,
                         included_messages=len(context),
                         total_messages=len(llm_messages))
 
-            # 6. Prepare Claude request (Phase 1.5: tools always available)
-            # Server-side tools (web_search, web_fetch) work without files
-            # Client-side tools (analyze_image, analyze_pdf) require uploaded files
+            # 6. Prepare Claude request with multi-block cached system prompt
+            # GLOBAL (cached) + user custom (cached if large) + files (NOT cached)
             request = LLMRequest(
                 messages=context,
-                system_prompt=composed_prompt,
+                system_prompt=
+                system_prompt_blocks,  # Multi-block for optimal caching
                 model=user.model_id,
                 max_tokens=model_config.max_output,
                 temperature=config.CLAUDE_TEMPERATURE,
@@ -1014,7 +1033,7 @@ async def _process_message_batch(thread_id: int,
 
                 # Estimate input tokens from context
                 # (system prompt + messages sent to Claude)
-                context_chars = len(composed_prompt)
+                context_chars = total_prompt_length
                 for msg in context:
                     if isinstance(msg.content, str):
                         context_chars += len(msg.content)
@@ -1025,8 +1044,8 @@ async def _process_message_batch(thread_id: int,
                 estimated_input_tokens = context_chars // 4
 
                 # Calculate partial cost with cache assumption
-                # System prompt is likely cached (5-min TTL), use cache pricing
-                system_prompt_tokens = len(composed_prompt) // 4
+                # System prompt is likely cached (multi-block), use cache pricing
+                system_prompt_tokens = total_prompt_length // 4
                 user_context_tokens = max(
                     0, estimated_input_tokens - system_prompt_tokens)
 

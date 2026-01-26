@@ -18,7 +18,7 @@ NO __init__.py - use direct import:
 
 import json
 import time
-from typing import Any, Optional
+from typing import Any, List, Optional
 import uuid
 
 from cache.client import get_redis
@@ -161,6 +161,7 @@ async def store_exec_file(
     content: bytes,
     mime_type: str,
     execution_id: Optional[str] = None,
+    thread_id: Optional[int] = None,
 ) -> Optional[dict]:
     """Store execution output file in Redis.
 
@@ -169,6 +170,7 @@ async def store_exec_file(
         content: File content as bytes.
         mime_type: MIME type of the file.
         execution_id: Optional execution ID for grouping.
+        thread_id: Optional thread ID for associating file with conversation.
 
     Returns:
         Metadata dict with temp_id if stored successfully, None otherwise.
@@ -205,6 +207,7 @@ async def store_exec_file(
             "mime_type": mime_type,
             "preview": preview,
             "execution_id": execution_id,
+            "thread_id": thread_id,
             "created_at": time.time(),
             "expires_at": time.time() + EXEC_FILE_TTL,
         }
@@ -358,3 +361,81 @@ async def delete_exec_file(temp_id: str) -> bool:
             error=str(e),
         )
         return False
+
+
+async def get_pending_files_for_thread(thread_id: int) -> List[dict]:
+    """Get all pending (not yet delivered) files for a thread.
+
+    Scans exec:meta:* keys for files belonging to this thread.
+    Files are ordered by creation time (oldest first).
+
+    Args:
+        thread_id: Thread ID to filter files by.
+
+    Returns:
+        List of metadata dicts for pending files. Each dict contains:
+        - temp_id: Temporary ID for delivery
+        - filename: Original filename
+        - size_bytes: File size
+        - mime_type: MIME type
+        - preview: Human-readable preview
+        - created_at: Unix timestamp
+        - expires_at: Unix timestamp when file expires
+    """
+    redis = await get_redis()
+
+    if redis is None:
+        logger.warning("exec_cache.get_pending_files.redis_unavailable",
+                       thread_id=thread_id)
+        return []
+
+    try:
+        # Scan for all exec:meta:* keys
+        # We use SCAN instead of KEYS for production safety
+        pending_files: List[dict] = []
+        cursor = 0
+
+        while True:
+            cursor, keys = await redis.scan(
+                cursor=cursor,
+                match="exec:meta:*",
+                count=100,
+            )
+
+            for key in keys:
+                try:
+                    data = await redis.get(key)
+                    if data is None:
+                        continue
+
+                    metadata = json.loads(data.decode("utf-8"))
+
+                    # Filter by thread_id
+                    if metadata.get("thread_id") == thread_id:
+                        pending_files.append(metadata)
+
+                except Exception as e:  # pylint: disable=broad-exception-caught
+                    logger.debug("exec_cache.get_pending_files.parse_error",
+                                 key=key,
+                                 error=str(e))
+                    continue
+
+            # cursor=0 means scan complete
+            if cursor == 0:
+                break
+
+        # Sort by created_at (oldest first)
+        pending_files.sort(key=lambda f: f.get("created_at", 0))
+
+        logger.info("exec_cache.get_pending_files.success",
+                    thread_id=thread_id,
+                    file_count=len(pending_files))
+
+        return pending_files
+
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        logger.error("exec_cache.get_pending_files.error",
+                     thread_id=thread_id,
+                     error=str(e),
+                     exc_info=True)
+        return []

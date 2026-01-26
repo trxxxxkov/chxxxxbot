@@ -772,6 +772,7 @@ async def preview_file(
     file_id: str,
     bot: 'Bot',
     session: 'AsyncSession',
+    thread_id: int | None = None,  # pylint: disable=unused-argument
     question: str = "Describe the content of this file",
     max_rows: int = 20,
     max_chars: int = 5000,
@@ -782,6 +783,7 @@ async def preview_file(
         file_id: File identifier (exec_xxx, file_xxx, or Telegram file_id).
         bot: Telegram bot instance.
         session: Database session.
+        thread_id: Thread ID (unused, for interface consistency).
         question: Question for image/PDF analysis.
         max_rows: Maximum rows for tabular data.
         max_chars: Maximum characters for text files.
