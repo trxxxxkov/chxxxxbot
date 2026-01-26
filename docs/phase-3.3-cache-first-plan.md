@@ -518,8 +518,8 @@ async def _process_message_batch(thread_id: int, messages: list) -> None:
 ### Этап 4: Production Hardening
 13. ✅ Add circuit breaker for Redis (3 failures → 30s timeout)
 14. ✅ Add metrics for write queue depth (bot_write_queue_depth)
-15. [ ] Add alerting for queue backlog
-16. [ ] Load testing
+15. ✅ Add alerting for queue backlog (Grafana provisioned alerts)
+16. [ ] Load testing (manual validation with production traffic)
 
 ---
 
