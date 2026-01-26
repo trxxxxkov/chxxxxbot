@@ -42,6 +42,7 @@ def _user_file_to_dict(uf: UserFile) -> Dict[str, Any]:
         "claude_file_id": uf.claude_file_id,
         "uploaded_at": uf.uploaded_at.isoformat() if uf.uploaded_at else None,
         "source": uf.source.value if uf.source else None,
+        "upload_context": uf.upload_context,
     }
 
 
@@ -104,6 +105,11 @@ class CachedUserFile:
             FileSource  # pylint: disable=import-outside-toplevel
         source_val = self._data.get("source", "user")
         return FileSource(source_val) if source_val else None
+
+    @property
+    def upload_context(self) -> Optional[str]:
+        """Text message sent with the file (helps model understand purpose)."""
+        return self._data.get("upload_context")
 
 
 async def get_available_files(thread_id: int,
@@ -264,6 +270,13 @@ def format_files_section(files: List[Any]) -> str:
             lines.append(file_info)
             lines.append(f"    claude_file_id: {file.claude_file_id}")
 
+            # Show upload context if available (helps identify file purpose)
+            context = getattr(file, 'upload_context', None)
+            if context and isinstance(context, str):
+                truncated = (context[:100] + "...") if len(context) > 100 \
+                    else context
+                lines.append(f"    context: \"{truncated}\"")
+
     # Add any types not in order
     for file_type, type_files in by_type.items():
         if file_type in type_order:
@@ -275,6 +288,13 @@ def format_files_section(files: List[Any]) -> str:
                          f"{format_time_ago(file.uploaded_at)})")
             lines.append(file_info)
             lines.append(f"    claude_file_id: {file.claude_file_id}")
+
+            # Show upload context if available
+            context = getattr(file, 'upload_context', None)
+            if context and isinstance(context, str):
+                truncated = (context[:100] + "...") if len(context) > 100 \
+                    else context
+                lines.append(f"    context: \"{truncated}\"")
 
     lines.append("")
     lines.append(f"Total files available: {len(files)}")
@@ -402,6 +422,14 @@ def format_unified_files_section(
                 lines.append(file_info)
                 lines.append(f"    file_id: {file.claude_file_id}")
 
+                # Show upload context if available (helps identify file purpose)
+                context = getattr(file, 'upload_context', None)
+                if context and isinstance(context, str):
+                    # Truncate long context to keep the list readable
+                    truncated = (context[:100] + "...") if len(context) > 100 \
+                        else context
+                    lines.append(f"    context: \"{truncated}\"")
+
         # Add any types not in order
         for file_type, type_files in by_type.items():
             if file_type in type_order:
@@ -418,6 +446,13 @@ def format_unified_files_section(
                     f"{format_time_ago(file.uploaded_at)}) {source_tag}")
                 lines.append(file_info)
                 lines.append(f"    file_id: {file.claude_file_id}")
+
+                # Show upload context if available
+                context = getattr(file, 'upload_context', None)
+                if context and isinstance(context, str):
+                    truncated = (context[:100] + "...") if len(context) > 100 \
+                        else context
+                    lines.append(f"    context: \"{truncated}\"")
 
         lines.append("")
         lines.append("How to work with AVAILABLE files:")

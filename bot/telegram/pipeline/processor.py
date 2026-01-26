@@ -81,6 +81,10 @@ async def process_batch(
 
             for processed in messages:
                 if processed.files:
+                    # Get text context for all files in this message
+                    # This helps the model understand what each file is about
+                    upload_context = processed.text or None
+
                     for file in processed.files:
                         await file_repo.create(
                             message_id=processed.metadata.message_id,
@@ -96,6 +100,7 @@ async def process_batch(
                             expires_at=datetime.now(timezone.utc) +
                             timedelta(hours=FILES_API_TTL_HOURS),
                             file_metadata=file.metadata,
+                            upload_context=upload_context,
                         )
 
                         logger.info(

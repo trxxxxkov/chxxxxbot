@@ -174,6 +174,14 @@ class UserFile(Base):
         doc="Who created the file (user/assistant)",
     )
 
+    # Upload context - text message that accompanied the file
+    # This helps the model understand what the file is about without analyzing it
+    upload_context: Mapped[Optional[str]] = mapped_column(
+        String,
+        nullable=True,
+        doc="Text message sent with the file (helps model understand purpose)",
+    )
+
     # Optional file metadata (JSON - compatible with PostgreSQL and SQLite)
     # Note: 'metadata' name is reserved by SQLAlchemy, use 'file_metadata'
     file_metadata: Mapped[Optional[dict]] = mapped_column(

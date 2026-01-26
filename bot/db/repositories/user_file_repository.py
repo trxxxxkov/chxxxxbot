@@ -48,6 +48,7 @@ class UserFileRepository(BaseRepository[UserFile]):
         telegram_file_id: Optional[str] = None,
         telegram_file_unique_id: Optional[str] = None,
         file_metadata: Optional[dict] = None,
+        upload_context: Optional[str] = None,
     ) -> UserFile:
         """Create new user file record.
 
@@ -63,6 +64,7 @@ class UserFileRepository(BaseRepository[UserFile]):
             telegram_file_id: Telegram file ID (for user uploads).
             telegram_file_unique_id: Telegram unique file ID.
             file_metadata: Optional metadata (width, height, page_count, etc.).
+            upload_context: Text message sent with the file.
 
         Returns:
             Created UserFile instance.
@@ -78,7 +80,8 @@ class UserFileRepository(BaseRepository[UserFile]):
             ...     expires_at=datetime.now() + timedelta(hours=24),
             ...     source=FileSource.USER,
             ...     telegram_file_id="AgACAgIAAxkB...",
-            ...     metadata={"width": 1920, "height": 1080}
+            ...     metadata={"width": 1920, "height": 1080},
+            ...     upload_context="Here's my math homework"
             ... )
         """
         file = UserFile(
@@ -93,6 +96,7 @@ class UserFileRepository(BaseRepository[UserFile]):
             expires_at=expires_at,
             source=source,
             file_metadata=file_metadata or {},
+            upload_context=upload_context,
         )
 
         self.session.add(file)
