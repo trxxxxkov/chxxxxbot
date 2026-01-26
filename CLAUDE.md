@@ -1018,6 +1018,15 @@ This script:
 - Pre-configured dashboards and datasources
 - Documentation: docs/phase-3-infrastructure.md
 
+**Phase 3.3 (Write-Behind Pattern):** ✅ Complete (2026-01-26)
+- Write-behind queue for async Postgres writes
+- Background flush task (5s interval, batch size 100)
+- Assistant messages queued to Redis, fallback to direct DB
+- User stats updates queued to Redis
+- Prometheus metrics (queue depth, flush duration, flush count)
+- 10 new tests (1286 total tests passing)
+- Documentation: docs/phase-3.3-cache-first-plan.md
+
 **Phase 3.4 (Flexible File Delivery):** ✅ Complete (2026-01-22)
 - preview_file tool for CSV/XLSX/text analysis before delivery
 - Sequential delivery mode (deliver_file with sequential=True)

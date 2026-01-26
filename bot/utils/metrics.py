@@ -189,6 +189,22 @@ REDIS_MEMORY_BYTES = Gauge('bot_redis_memory_bytes',
 REDIS_UPTIME_SECONDS = Gauge('bot_redis_uptime_seconds',
                              'Redis uptime in seconds')
 
+# === Write-Behind Queue Metrics (Phase 3.3) ===
+
+WRITE_QUEUE_DEPTH = Gauge('bot_write_queue_depth',
+                          'Number of pending writes in Redis queue')
+
+WRITE_FLUSH_DURATION = Histogram(
+    'bot_write_flush_seconds',
+    'Time to flush write queue to database',
+    buckets=[0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5])
+
+WRITE_FLUSH_COUNT = Counter(
+    'bot_write_flush_total',
+    'Total writes flushed to database',
+    ['write_type']  # message/user_stats/balance_op/file
+)
+
 # === Helper Functions ===
 
 
@@ -381,6 +397,31 @@ def set_redis_stats(connected_clients: int, used_memory: int,
     REDIS_CONNECTED_CLIENTS.set(connected_clients)
     REDIS_MEMORY_BYTES.set(used_memory)
     REDIS_UPTIME_SECONDS.set(uptime)
+
+
+# === Write-Behind Functions (Phase 3.3) ===
+
+
+def set_write_queue_depth(depth: int) -> None:
+    """Set the current write queue depth.
+
+    Args:
+        depth: Number of pending writes in queue.
+    """
+    WRITE_QUEUE_DEPTH.set(depth)
+
+
+def record_write_flush(duration: float, write_type: str, count: int) -> None:
+    """Record a write flush operation.
+
+    Args:
+        duration: Time taken to flush in seconds.
+        write_type: Type of writes flushed (message/user_stats/balance_op/file).
+        count: Number of writes flushed.
+    """
+    WRITE_FLUSH_DURATION.observe(duration)
+    if count > 0:
+        WRITE_FLUSH_COUNT.labels(write_type=write_type).inc(count)
 
 
 # === HTTP Server ===

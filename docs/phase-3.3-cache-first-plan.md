@@ -500,14 +500,14 @@ async def _process_message_batch(thread_id: int, messages: list) -> None:
 ### Этап 1: Подготовка (без риска)
 1. ✅ Fix files_delivered bug
 2. ✅ Add files cache
-3. [ ] Improve format_files_section for all types
-4. [ ] Add TTFT optimization
+3. ✅ Improve format_files_section for all types (format_unified_files_section)
+4. ✅ Add TTFT optimization (already in session.py)
 
 ### Этап 2: Write-Behind (низкий риск)
-5. [ ] Create write_behind.py module
-6. [ ] Add background flush task
-7. [ ] Queue messages writes (keep DB writes as fallback)
-8. [ ] Queue stats updates
+5. ✅ Create write_behind.py module
+6. ✅ Add background flush task (in main.py)
+7. ✅ Queue messages writes (keep DB writes as fallback)
+8. ✅ Queue stats updates
 
 ### Этап 3: Full Cache-First (medium risk)
 9. [ ] Add cache update functions (vs invalidate)

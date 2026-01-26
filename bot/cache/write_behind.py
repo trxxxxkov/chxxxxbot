@@ -22,6 +22,8 @@ from typing import Any, Dict, List, Optional
 
 from cache.client import get_redis
 from utils.metrics import record_redis_operation_time
+from utils.metrics import record_write_flush
+from utils.metrics import set_write_queue_depth
 from utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
@@ -161,23 +163,28 @@ async def _batch_insert_messages(session, messages: List[Dict]) -> int:
     for msg_data in messages:
         data = msg_data.get("data", {})
         try:
+            # Convert ISO date string to Unix timestamp if needed
+            date_value = data.get("date")
+            if isinstance(date_value, str):
+                date_value = int(datetime.fromisoformat(date_value).timestamp())
+            elif date_value is None:
+                date_value = int(datetime.now(timezone.utc).timestamp())
+
             message = Message(
                 chat_id=data["chat_id"],
                 message_id=data["message_id"],
                 thread_id=data["thread_id"],
                 from_user_id=data.get("from_user_id"),
-                date=datetime.fromisoformat(data["date"]) if isinstance(
-                    data.get("date"), str) else data.get(
-                        "date", datetime.now(timezone.utc)),
+                date=date_value,
                 role=MessageRole(data["role"]),
                 text_content=data.get("text_content"),
                 input_tokens=data.get("input_tokens", 0),
                 output_tokens=data.get("output_tokens", 0),
-                cache_read_tokens=data.get("cache_read_tokens", 0),
-                cache_write_tokens=data.get("cache_write_tokens", 0),
+                # Field mapping: queue uses cache_read/write_tokens,
+                # Message model uses cache_read/creation_input_tokens
+                cache_read_input_tokens=data.get("cache_read_tokens", 0),
+                cache_creation_input_tokens=data.get("cache_write_tokens", 0),
                 thinking_tokens=data.get("thinking_tokens", 0),
-                cost_usd=data.get("cost_usd"),
-                model_id=data.get("model_id"),
                 thinking_blocks=data.get("thinking_blocks"),
             )
             session.add(message)
@@ -293,9 +300,13 @@ async def flush_writes(session) -> int:
     Returns:
         Number of writes flushed.
     """
+    flush_start = time.time()
     writes = await flush_writes_batch()
 
     if not writes:
+        # Update queue depth metric (queue is empty)
+        queue_depth = await get_queue_depth()
+        set_write_queue_depth(queue_depth)
         return 0
 
     # Group by type
@@ -321,6 +332,21 @@ async def flush_writes(session) -> int:
 
     await session.commit()
 
+    # Calculate flush duration and record metrics
+    flush_duration = time.time() - flush_start
+
+    # Record metrics per type
+    if msg_count > 0:
+        record_write_flush(flush_duration, "message", msg_count)
+    if stats_count > 0:
+        record_write_flush(flush_duration, "user_stats", stats_count)
+    if balance_count > 0:
+        record_write_flush(flush_duration, "balance_op", balance_count)
+
+    # Update queue depth after flush
+    queue_depth = await get_queue_depth()
+    set_write_queue_depth(queue_depth)
+
     total = msg_count + stats_count + balance_count
 
     logger.info(
@@ -330,6 +356,8 @@ async def flush_writes(session) -> int:
         stats=stats_count,
         balance_ops=balance_count,
         queue_items=len(writes),
+        flush_duration_ms=round(flush_duration * 1000, 2),
+        remaining_queue_depth=queue_depth,
     )
 
     return total

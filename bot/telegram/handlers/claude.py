@@ -32,6 +32,10 @@ if TYPE_CHECKING:
     from telegram.pipeline.models import ProcessedMessage
 
 from cache.exec_cache import get_pending_files_for_thread
+from cache.thread_cache import invalidate_messages
+from cache.thread_cache import update_cached_messages
+from cache.write_behind import queue_write
+from cache.write_behind import WriteType
 import config
 from config import CLAUDE_TOKEN_BUFFER_PERCENT
 from config import DRAFT_KEEPALIVE_INTERVAL
@@ -1235,41 +1239,77 @@ async def _process_message_batch(thread_id: int,
                             thread_id=thread_id,
                             max_tokens=config.CLAUDE_MAX_TOKENS)
 
-            # 10. Save Claude response (Phase 1.4.3: with thinking blocks)
-            await msg_repo.create_message(
-                chat_id=thread.chat_id,
-                message_id=bot_message.message_id,
-                thread_id=thread_id,
-                from_user_id=None,  # Bot message
-                date=bot_message.date.timestamp(),
-                role=MessageRole.ASSISTANT,
-                text_content=response_text,
-                # Save full thinking blocks with signatures (JSON string)
-                # Required for Extended Thinking context reconstruction
-                thinking_blocks=thinking_blocks_json,
-            )
-
-            # 11. Add token usage for billing (Phase 1.4.2 & 1.4.3)
-            await msg_repo.add_tokens(
-                chat_id=thread.chat_id,
-                message_id=bot_message.message_id,
-                input_tokens=usage.input_tokens,
-                output_tokens=usage.output_tokens,
-                cache_creation_tokens=usage.cache_creation_tokens,
-                cache_read_tokens=usage.cache_read_tokens,
-                thinking_tokens=usage.thinking_tokens,
-            )
-
-            # 12. Update user statistics (Phase 3: metrics)
+            # 10. Save Claude response via write-behind (Phase 3.3)
+            # Queue message write + token usage for background DB flush
             total_tokens = usage.input_tokens + usage.output_tokens
             if usage.thinking_tokens:
                 total_tokens += usage.thinking_tokens
-            await user_repo.increment_stats(
-                telegram_id=user.id,
-                messages=len(messages),
-                tokens=total_tokens,
-            )
 
+            message_data = {
+                "chat_id": thread.chat_id,
+                "message_id": bot_message.message_id,
+                "thread_id": thread_id,
+                "from_user_id": None,  # Bot message
+                "date": bot_message.date.isoformat(),
+                "role": MessageRole.ASSISTANT.value,
+                "text_content": response_text,
+                "thinking_blocks": thinking_blocks_json,
+                # Token usage included in message data
+                "input_tokens": usage.input_tokens,
+                "output_tokens": usage.output_tokens,
+                "cache_read_tokens": usage.cache_read_tokens,
+                "cache_write_tokens": usage.cache_creation_tokens,
+                "thinking_tokens": usage.thinking_tokens,
+                "cost_usd": float(cost_usd),
+                "model_id": user.model_id,
+            }
+
+            queued = await queue_write(WriteType.MESSAGE, message_data)
+            if not queued:
+                # Fallback to direct DB write if Redis unavailable
+                logger.warning("claude_handler.write_behind_fallback",
+                               thread_id=thread_id,
+                               reason="redis_unavailable")
+                await msg_repo.create_message(
+                    chat_id=thread.chat_id,
+                    message_id=bot_message.message_id,
+                    thread_id=thread_id,
+                    from_user_id=None,
+                    date=bot_message.date.timestamp(),
+                    role=MessageRole.ASSISTANT,
+                    text_content=response_text,
+                    thinking_blocks=thinking_blocks_json,
+                )
+                await msg_repo.add_tokens(
+                    chat_id=thread.chat_id,
+                    message_id=bot_message.message_id,
+                    input_tokens=usage.input_tokens,
+                    output_tokens=usage.output_tokens,
+                    cache_creation_tokens=usage.cache_creation_tokens,
+                    cache_read_tokens=usage.cache_read_tokens,
+                    thinking_tokens=usage.thinking_tokens,
+                )
+
+            # 11. Queue user stats update via write-behind (Phase 3.3)
+            stats_data = {
+                "user_id": user.id,
+                "messages": len(messages),
+                "tokens": total_tokens,
+            }
+            stats_queued = await queue_write(WriteType.USER_STATS, stats_data)
+            if not stats_queued:
+                # Fallback to direct DB write
+                await user_repo.increment_stats(
+                    telegram_id=user.id,
+                    messages=len(messages),
+                    tokens=total_tokens,
+                )
+
+            # 12. Invalidate message cache (next read fetches from DB)
+            # This ensures consistency until full cache-first is implemented
+            await invalidate_messages(thread_id)
+
+            # Commit any pending direct writes (fallback path)
             await session.commit()
 
             # Phase 2.1: Charge user for API usage
