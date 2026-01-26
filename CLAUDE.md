@@ -1018,13 +1018,14 @@ This script:
 - Pre-configured dashboards and datasources
 - Documentation: docs/phase-3-infrastructure.md
 
-**Phase 3.3 (Write-Behind Pattern):** ✅ Complete (2026-01-26)
-- Write-behind queue for async Postgres writes
-- Background flush task (5s interval, batch size 100)
-- Assistant messages queued to Redis, fallback to direct DB
-- User stats updates queued to Redis
-- Prometheus metrics (queue depth, flush duration, flush count)
-- 10 new tests (1286 total tests passing)
+**Phase 3.3 (Cache-First Architecture):** ✅ Complete (2026-01-26)
+- Write-behind queue for async Postgres writes (5s flush, batch 100)
+- Cache-first for user data (balance, model_id, custom_prompt)
+- Message history caching (update vs invalidate strategy)
+- Circuit breaker for Redis (3 failures → 30s timeout)
+- Grafana alerting (queue backlog, circuit breaker, cache miss rate)
+- Prometheus metrics (queue depth, cache hits/misses, circuit state)
+- 1301 total tests passing
 - Documentation: docs/phase-3.3-cache-first-plan.md
 
 **Phase 3.4 (Flexible File Delivery):** ✅ Complete (2026-01-22)
