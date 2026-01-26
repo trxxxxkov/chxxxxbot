@@ -189,6 +189,9 @@ REDIS_MEMORY_BYTES = Gauge('bot_redis_memory_bytes',
 REDIS_UPTIME_SECONDS = Gauge('bot_redis_uptime_seconds',
                              'Redis uptime in seconds')
 
+REDIS_CIRCUIT_OPEN = Gauge('bot_redis_circuit_open',
+                           'Redis circuit breaker state (1=open, 0=closed)')
+
 # === Write-Behind Queue Metrics (Phase 3.3) ===
 
 WRITE_QUEUE_DEPTH = Gauge('bot_write_queue_depth',
@@ -397,6 +400,15 @@ def set_redis_stats(connected_clients: int, used_memory: int,
     REDIS_CONNECTED_CLIENTS.set(connected_clients)
     REDIS_MEMORY_BYTES.set(used_memory)
     REDIS_UPTIME_SECONDS.set(uptime)
+
+
+def set_redis_circuit_state(is_open: bool) -> None:
+    """Set Redis circuit breaker state.
+
+    Args:
+        is_open: True if circuit is open (Redis unavailable).
+    """
+    REDIS_CIRCUIT_OPEN.set(1 if is_open else 0)
 
 
 # === Write-Behind Functions (Phase 3.3) ===

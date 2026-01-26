@@ -513,11 +513,11 @@ async def _process_message_batch(thread_id: int, messages: list) -> None:
 9. ✅ Add cache update functions (custom_prompt in user_cache)
 10. ✅ Refactor claude handler to cache-first (user data)
 11. ✅ Message cache: invalidate after user writes, update after assistant
-12. [ ] Add monitoring for cache hit rate (basic metrics already exist)
+12. ✅ Cache hit rate metrics (bot_redis_cache_hits/misses_total)
 
 ### Этап 4: Production Hardening
-13. [ ] Add circuit breaker for Redis
-14. [ ] Add metrics for write queue depth
+13. ✅ Add circuit breaker for Redis (3 failures → 30s timeout)
+14. ✅ Add metrics for write queue depth (bot_write_queue_depth)
 15. [ ] Add alerting for queue backlog
 16. [ ] Load testing
 

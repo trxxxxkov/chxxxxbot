@@ -8,18 +8,21 @@ Key features:
 - Connection pooling with hiredis speedups
 - Graceful degradation on connection failures
 - Automatic reconnection
+- Circuit breaker pattern (stops retries when Redis is down)
 
 NO __init__.py - use direct import:
     from cache.client import get_redis, close_redis
 """
 
 import os
+import time
 from typing import Optional
 
 # isort: off
 import redis.asyncio as redis  # type: ignore[import-untyped]
 from redis.asyncio.connection import ConnectionPool  # type: ignore[import-untyped]
 # isort: on
+from utils.metrics import set_redis_circuit_state
 from utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
@@ -27,6 +30,15 @@ logger = get_logger(__name__)
 # Global client instance (singleton)
 _redis_client: Optional[redis.Redis] = None
 _connection_pool: Optional[ConnectionPool] = None
+
+# Circuit breaker state
+# After CIRCUIT_FAILURE_THRESHOLD consecutive failures, circuit opens
+# Circuit stays open for CIRCUIT_RESET_TIMEOUT seconds before trying again
+CIRCUIT_FAILURE_THRESHOLD = 3
+CIRCUIT_RESET_TIMEOUT = 30.0  # seconds
+
+_circuit_failure_count: int = 0
+_circuit_open_until: float = 0.0  # timestamp when circuit should close
 
 
 def _read_redis_password() -> Optional[str]:
@@ -126,29 +138,120 @@ async def init_redis() -> redis.Redis:
     return _redis_client
 
 
+def _is_circuit_open() -> bool:
+    """Check if circuit breaker is open (Redis unavailable).
+
+    Returns:
+        True if circuit is open (should skip Redis), False otherwise.
+    """
+    global _circuit_open_until  # pylint: disable=global-statement
+    if _circuit_open_until <= 0:
+        return False
+    if time.time() >= _circuit_open_until:
+        # Timeout expired, reset to half-open (try once)
+        _circuit_open_until = 0.0
+        logger.info("redis.circuit_half_open",
+                    msg="Circuit breaker timeout expired, will try Redis")
+        return False
+    return True
+
+
+def _record_success() -> None:
+    """Record successful Redis operation, close circuit if needed."""
+    global _circuit_failure_count  # pylint: disable=global-statement
+    global _circuit_open_until  # pylint: disable=global-statement
+    if _circuit_failure_count > 0 or _circuit_open_until > 0:
+        logger.info("redis.circuit_closed",
+                    previous_failures=_circuit_failure_count)
+        _circuit_failure_count = 0
+        _circuit_open_until = 0.0
+        set_redis_circuit_state(is_open=False)
+
+
+def _record_failure() -> None:
+    """Record failed Redis operation, open circuit if threshold reached."""
+    global _circuit_failure_count  # pylint: disable=global-statement
+    global _circuit_open_until  # pylint: disable=global-statement
+    _circuit_failure_count += 1
+
+    if _circuit_failure_count >= CIRCUIT_FAILURE_THRESHOLD:
+        _circuit_open_until = time.time() + CIRCUIT_RESET_TIMEOUT
+        set_redis_circuit_state(is_open=True)
+        logger.warning(
+            "redis.circuit_opened",
+            failures=_circuit_failure_count,
+            retry_after_seconds=CIRCUIT_RESET_TIMEOUT,
+            msg=f"Circuit breaker opened after {_circuit_failure_count} failures"
+        )
+
+
 async def get_redis() -> Optional[redis.Redis]:
     """Get the Redis client instance.
 
     Returns initialized client or None if not connected.
     Does NOT raise exceptions - returns None for graceful degradation.
 
+    Uses circuit breaker pattern to avoid repeated slow failures:
+    - After 3 consecutive failures, stops trying for 30 seconds
+    - After timeout, tries once (half-open state)
+    - On success, closes circuit and resumes normal operation
+
     Returns:
         Redis client or None if not available.
     """
+    # Check circuit breaker first (fast path when Redis is down)
+    if _is_circuit_open():
+        return None
+
     if _redis_client is None:
         logger.warning("redis.client_not_initialized")
+        _record_failure()
         return None
 
     # Check if connection is alive
     try:
         await _redis_client.ping()
+        _record_success()
         return _redis_client
     except redis.ConnectionError:
         logger.warning("redis.connection_lost")
+        _record_failure()
         return None
     except Exception as e:  # pylint: disable=broad-exception-caught
         logger.warning("redis.ping_failed", error=str(e))
+        _record_failure()
         return None
+
+
+def reset_circuit_breaker() -> None:
+    """Reset circuit breaker to closed state.
+
+    Useful for manual recovery or testing.
+    """
+    global _circuit_failure_count  # pylint: disable=global-statement
+    global _circuit_open_until  # pylint: disable=global-statement
+    _circuit_failure_count = 0
+    _circuit_open_until = 0.0
+    logger.info("redis.circuit_reset", msg="Circuit breaker manually reset")
+
+
+def get_circuit_breaker_state() -> dict:
+    """Get current circuit breaker state.
+
+    Returns:
+        Dict with 'is_open', 'failure_count', 'open_until'.
+    """
+    return {
+        "is_open":
+            _is_circuit_open(),
+        "failure_count":
+            _circuit_failure_count,
+        "open_until":
+            _circuit_open_until,
+        "seconds_until_retry":
+            max(0, _circuit_open_until -
+                time.time()) if _circuit_open_until > 0 else 0,
+    }
 
 
 async def close_redis() -> None:
