@@ -510,9 +510,9 @@ async def _process_message_batch(thread_id: int, messages: list) -> None:
 8. ✅ Queue stats updates
 
 ### Этап 3: Full Cache-First (medium risk)
-9. [ ] Add cache update functions (vs invalidate)
-10. [ ] Refactor claude handler to cache-first
-11. [ ] Remove DB reads from hot path
+9. ✅ Add cache update functions (custom_prompt in user_cache)
+10. ✅ Refactor claude handler to cache-first (user data)
+11. [ ] Remove DB reads from hot path (messages, files)
 12. [ ] Add monitoring for cache hit rate
 
 ### Этап 4: Production Hardening

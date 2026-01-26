@@ -264,3 +264,95 @@ class TestUpdateCachedBalance:
             result = await update_cached_balance(user_id, new_balance)
 
         assert result is False
+
+
+class TestCustomPromptCaching:
+    """Tests for custom_prompt field in user cache."""
+
+    @pytest.fixture
+    def mock_redis(self):
+        """Create mock Redis client."""
+        return AsyncMock()
+
+    @pytest.mark.asyncio
+    async def test_cache_user_with_custom_prompt(self, mock_redis):
+        """Test caching user with custom_prompt."""
+        user_id = 123456
+        custom_prompt = "You are a helpful coding assistant."
+
+        with patch("cache.user_cache.get_redis", return_value=mock_redis):
+            result = await cache_user(
+                user_id=user_id,
+                balance=Decimal("10.0"),
+                model_id="claude:sonnet",
+                first_name="Test",
+                username="testuser",
+                custom_prompt=custom_prompt,
+            )
+
+        assert result is True
+        call_args = mock_redis.setex.call_args
+        cached_json = json.loads(call_args[0][2])
+        assert cached_json["custom_prompt"] == custom_prompt
+
+    @pytest.mark.asyncio
+    async def test_cache_user_without_custom_prompt(self, mock_redis):
+        """Test caching user without custom_prompt."""
+        user_id = 123456
+
+        with patch("cache.user_cache.get_redis", return_value=mock_redis):
+            result = await cache_user(
+                user_id=user_id,
+                balance=Decimal("10.0"),
+                model_id="claude:sonnet",
+                first_name="Test",
+            )
+
+        assert result is True
+        call_args = mock_redis.setex.call_args
+        cached_json = json.loads(call_args[0][2])
+        assert cached_json["custom_prompt"] is None
+
+    @pytest.mark.asyncio
+    async def test_get_cached_user_with_custom_prompt(self, mock_redis):
+        """Test retrieving cached user with custom_prompt."""
+        user_id = 123456
+        mock_redis.get.return_value = json.dumps({
+            "balance": "10.0000",
+            "model_id": "claude:sonnet",
+            "first_name": "Test",
+            "username": "testuser",
+            "custom_prompt": "Be concise and direct.",
+            "cached_at": 1234567890.0,
+        }).encode()
+
+        with patch("cache.user_cache.get_redis", return_value=mock_redis):
+            result = await get_cached_user(user_id)
+
+        assert result is not None
+        assert result["custom_prompt"] == "Be concise and direct."
+
+    @pytest.mark.asyncio
+    async def test_update_preserves_custom_prompt(self, mock_redis):
+        """Test that update_cached_balance preserves custom_prompt."""
+        user_id = 123456
+        custom_prompt = "My custom prompt"
+        mock_redis.get.return_value = json.dumps({
+            "balance": "10.0000",
+            "model_id": "claude:sonnet",
+            "first_name": "Test",
+            "username": "testuser",
+            "custom_prompt": custom_prompt,
+            "cached_at": 1234567890.0,
+        }).encode()
+
+        from cache.user_cache import update_cached_balance
+
+        with patch("cache.user_cache.get_redis", return_value=mock_redis):
+            result = await update_cached_balance(user_id, Decimal("5.0"))
+
+        assert result is True
+        call_args = mock_redis.setex.call_args
+        saved_data = json.loads(call_args[0][2])
+        assert saved_data["custom_prompt"] == custom_prompt
+        assert saved_data["balance"] == "5.0"

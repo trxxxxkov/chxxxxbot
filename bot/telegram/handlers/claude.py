@@ -34,6 +34,9 @@ if TYPE_CHECKING:
 from cache.exec_cache import get_pending_files_for_thread
 from cache.thread_cache import invalidate_messages
 from cache.thread_cache import update_cached_messages
+from cache.user_cache import cache_user
+from cache.user_cache import get_cached_user
+from cache.user_cache import update_cached_balance
 from cache.write_behind import queue_write
 from cache.write_behind import WriteType
 import config
@@ -789,16 +792,49 @@ async def _process_message_batch(thread_id: int,
                          thread_id=thread_id,
                          batch_size=len(messages))
 
-            # 3. Get user for model config and custom prompt
+            # 3. Get user for model config and custom prompt (cache-first)
             user_repo = UserRepository(session)
-            user = await user_repo.get_by_id(thread.user_id)
+            user = None  # Will be loaded from DB if cache miss
+            user_id = thread.user_id  # Telegram user ID
 
-            if not user:
-                logger.error("claude_handler.user_not_found",
-                             user_id=thread.user_id)
-                await first_message.answer(
-                    "User not found. Please contact administrator.")
-                return
+            # Try cache first (Phase 3.3: Cache-First pattern)
+            cached_user = await get_cached_user(user_id)
+
+            if cached_user:
+                # Cache hit - use cached data
+                user_model_id = cached_user["model_id"]
+                user_custom_prompt = cached_user.get("custom_prompt")
+                logger.debug("claude_handler.user_cache_hit",
+                             user_id=user_id,
+                             model_id=user_model_id)
+            else:
+                # Cache miss - load from DB and cache
+                user = await user_repo.get_by_id(user_id)
+
+                if not user:
+                    logger.error("claude_handler.user_not_found",
+                                 user_id=user_id)
+                    await first_message.answer(
+                        "User not found. Please contact administrator.")
+                    return
+
+                # Extract values from user object
+                user_model_id = user.model_id
+                user_custom_prompt = user.custom_prompt
+
+                # Cache user data for next request
+                await cache_user(
+                    user_id=user_id,
+                    balance=user.balance,
+                    model_id=user_model_id,
+                    first_name=user.first_name,
+                    username=user.username,
+                    custom_prompt=user_custom_prompt,
+                )
+
+                logger.debug("claude_handler.user_cache_miss",
+                             user_id=user_id,
+                             model_id=user_model_id)
 
             # 3.5. Get available files for this thread (Phase 1.5)
             # Unified file architecture: fetch both delivered and pending files
@@ -834,10 +870,10 @@ async def _process_message_batch(thread_id: int,
             context_mgr = ContextManager(claude_provider)
 
             # Get model config from user
-            model_config = get_model(user.model_id)
+            model_config = get_model(user_model_id)
 
             logger.debug("claude_handler.using_model",
-                         model_id=user.model_id,
+                         model_id=user_model_id,
                          model_name=model_config.display_name)
 
             # Unified file architecture: Generate files section for system prompt
@@ -850,7 +886,7 @@ async def _process_message_batch(thread_id: int,
             # GLOBAL (cached) + user custom (cached if large) + files (NOT cached)
             system_prompt_blocks = compose_system_prompt_blocks(
                 global_prompt=GLOBAL_SYSTEM_PROMPT,
-                custom_prompt=user.custom_prompt,
+                custom_prompt=user_custom_prompt,
                 files_context=files_section)
 
             # Calculate total length for logging
@@ -860,7 +896,7 @@ async def _process_message_batch(thread_id: int,
             logger.info("claude_handler.system_prompt_composed",
                         thread_id=thread_id,
                         telegram_thread_id=thread.thread_id,
-                        has_custom_prompt=user.custom_prompt is not None,
+                        has_custom_prompt=user_custom_prompt is not None,
                         has_files_context=files_section is not None,
                         delivered_files=len(available_files),
                         pending_files=len(pending_files),
@@ -893,7 +929,7 @@ async def _process_message_batch(thread_id: int,
                 messages=context,
                 system_prompt=
                 system_prompt_blocks,  # Multi-block for optimal caching
-                model=user.model_id,
+                model=user_model_id,
                 max_tokens=model_config.max_output,
                 temperature=config.CLAUDE_TEMPERATURE,
                 tools=get_tool_definitions())  # Always pass tools
@@ -1084,7 +1120,7 @@ async def _process_message_batch(thread_id: int,
                             session, user_repo, balance_op_repo)
 
                         balance_after = await balance_service.charge_user(
-                            user_id=user.id,
+                            user_id=user_id,
                             amount=partial_cost,
                             description=(
                                 f"Claude API (cancelled): "
@@ -1098,22 +1134,25 @@ async def _process_message_batch(thread_id: int,
 
                         logger.info(
                             "claude_handler.cancelled_user_charged",
-                            user_id=user.id,
+                            user_id=user_id,
                             partial_cost_usd=round(partial_cost, 6),
                             balance_after=float(balance_after),
                         )
 
+                        # Update cached balance (Phase 3.3: Cache-First)
+                        await update_cached_balance(user_id, balance_after)
+
                     except Exception as e:  # pylint: disable=broad-exception-caught
                         logger.error(
                             "claude_handler.cancelled_charge_error",
-                            user_id=user.id,
+                            user_id=user_id,
                             partial_cost_usd=round(partial_cost, 6),
                             error=str(e),
                             exc_info=True,
                         )
 
                 # Record metrics for cancelled request
-                record_claude_request(model=user.model_id, success=True)
+                record_claude_request(model=user_model_id, success=True)
                 record_cost(service="claude_cancelled", amount_usd=partial_cost)
 
                 return
@@ -1137,7 +1176,7 @@ async def _process_message_batch(thread_id: int,
                 cost_usd += web_search_cost
                 logger.info(
                     "tools.web_search.user_charged",
-                    user_id=user.id,
+                    user_id=user_id,
                     web_search_requests=usage.web_search_requests,
                     cost_usd=web_search_cost,
                 )
@@ -1158,7 +1197,7 @@ async def _process_message_batch(thread_id: int,
 
             logger.info("claude_handler.response_complete",
                         thread_id=thread_id,
-                        model_id=user.model_id,
+                        model_id=user_model_id,
                         input_tokens=usage.input_tokens,
                         output_tokens=usage.output_tokens,
                         thinking_tokens=usage.thinking_tokens,
@@ -1170,9 +1209,9 @@ async def _process_message_batch(thread_id: int,
                         total_request_ms=round(total_request_ms, 2))
 
             # Record Prometheus metrics
-            record_claude_request(model=user.model_id, success=True)
+            record_claude_request(model=user_model_id, success=True)
             record_claude_tokens(
-                model=user.model_id,
+                model=user_model_id,
                 input_tokens=usage.input_tokens,
                 output_tokens=usage.output_tokens,
                 cache_read_tokens=usage.cache_read_tokens,
@@ -1182,7 +1221,7 @@ async def _process_message_batch(thread_id: int,
             record_message_sent(chat_type=first_message.chat.type)
 
             # Record response time for Prometheus
-            record_claude_response_time(model=user.model_id,
+            record_claude_response_time(model=user_model_id,
                                         seconds=response_duration)
 
             # Record cache metrics (Phase 3.1: Prometheus)
@@ -1261,7 +1300,7 @@ async def _process_message_batch(thread_id: int,
                 "cache_write_tokens": usage.cache_creation_tokens,
                 "thinking_tokens": usage.thinking_tokens,
                 "cost_usd": float(cost_usd),
-                "model_id": user.model_id,
+                "model_id": user_model_id,
             }
 
             queued = await queue_write(WriteType.MESSAGE, message_data)
@@ -1292,7 +1331,7 @@ async def _process_message_batch(thread_id: int,
 
             # 11. Queue user stats update via write-behind (Phase 3.3)
             stats_data = {
-                "user_id": user.id,
+                "user_id": user_id,
                 "messages": len(messages),
                 "tokens": total_tokens,
             }
@@ -1300,7 +1339,7 @@ async def _process_message_batch(thread_id: int,
             if not stats_queued:
                 # Fallback to direct DB write
                 await user_repo.increment_stats(
-                    telegram_id=user.id,
+                    telegram_id=user_id,
                     messages=len(messages),
                     tokens=total_tokens,
                 )
@@ -1320,7 +1359,7 @@ async def _process_message_batch(thread_id: int,
 
                 # Charge user for actual cost
                 balance_after = await balance_service.charge_user(
-                    user_id=user.id,
+                    user_id=user_id,
                     amount=cost_usd,
                     description=(
                         f"Claude API call: {usage.input_tokens} input + "
@@ -1332,18 +1371,21 @@ async def _process_message_batch(thread_id: int,
 
                 logger.info(
                     "claude_handler.user_charged",
-                    user_id=user.id,
-                    model_id=user.model_id,
+                    user_id=user_id,
+                    model_id=user_model_id,
                     cost_usd=round(cost_usd, 6),
                     balance_after=float(balance_after),
                     thread_id=thread_id,
                     message_id=bot_message.message_id,
                 )
 
+                # Update cached balance (Phase 3.3: Cache-First)
+                await update_cached_balance(user_id, balance_after)
+
             except Exception as e:  # pylint: disable=broad-exception-caught
                 logger.error(
                     "claude_handler.charge_user_error",
-                    user_id=user.id,
+                    user_id=user_id,
                     cost_usd=round(cost_usd, 6),
                     error=str(e),
                     exc_info=True,

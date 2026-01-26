@@ -37,6 +37,7 @@ class CachedUserData(TypedDict):
     model_id: str
     first_name: str
     username: Optional[str]
+    custom_prompt: Optional[str]  # User's custom system prompt
     cached_at: float
 
 
@@ -94,6 +95,7 @@ async def cache_user(
     model_id: str,
     first_name: str,
     username: Optional[str] = None,
+    custom_prompt: Optional[str] = None,
 ) -> bool:
     """Cache user data.
 
@@ -103,6 +105,7 @@ async def cache_user(
         model_id: Selected model ID.
         first_name: User's first name.
         username: User's username (optional).
+        custom_prompt: User's custom system prompt (optional).
 
     Returns:
         True if cached successfully, False otherwise.
@@ -121,6 +124,7 @@ async def cache_user(
             "model_id": model_id,
             "first_name": first_name,
             "username": username,
+            "custom_prompt": custom_prompt,
             "cached_at": time.time(),
         }
 
