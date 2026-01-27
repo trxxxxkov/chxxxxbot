@@ -1,7 +1,7 @@
 # Architecture Improvement Plan
 
 **Date:** 2026-01-27
-**Status:** Phase 1-2 Complete, Phase 3.1-3.3 Complete, Phase 3.4 & 4 Pending
+**Status:** Phase 1-3.3 Complete, Phase 3.4 In Progress (modules ready), Phase 4 Pending
 **Based on:** Comprehensive Architecture Audit
 
 ---
@@ -722,9 +722,11 @@ if not await policy.can_use_paid_tool(user_id, tool_name):
 
 ---
 
-### 3.4 Split Streaming Handler
+### 3.4 Split Streaming Handler 🔄
 
 **Проблема:** `_stream_with_unified_events` — 572 строки, 7 return values.
+
+**Статус:** В процессе. Созданы модули, интеграция в claude.py ожидается.
 
 **Решение:** Разбить на компоненты:
 
