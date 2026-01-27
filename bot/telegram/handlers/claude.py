@@ -80,6 +80,7 @@ from db.repositories.user_repository import UserRepository
 from services.balance_service import BalanceService
 from sqlalchemy.ext.asyncio import AsyncSession
 from telegram.chat_action import ActionManager
+from telegram.chat_action import ActionPhase
 from telegram.concurrency_limiter import concurrency_context
 from telegram.concurrency_limiter import ConcurrencyLimitExceeded
 from telegram.context.extractors import extract_message_context
@@ -242,11 +243,15 @@ async def _stream_with_unified_events(
             )
 
             # Stream events with continuous typing indicator
-            # (ActionManager keeps refreshing every 4 seconds until scope exits)
+            # Use manual scope management to exit early when tool_use detected
+            # (stops typing immediately when Claude decides to call a tool)
             # Phase 2.5: Track if cancelled for handling after loop
             was_cancelled = False
+            generating_scope_id = await action_manager.push_scope(
+                ActionPhase.GENERATING)
+            generating_scope_active = True
 
-            async with action_manager.generating():
+            try:
                 async for event in claude_provider.stream_events(iter_request):
                     # Phase 2.5: Check for user cancellation between events
                     if cancel_event.is_set():
@@ -280,6 +285,11 @@ async def _stream_with_unified_events(
                         await stream.handle_text_delta(event.content)
 
                     elif event.type == "tool_use":
+                        # Stop typing immediately when tool is detected
+                        # User requested: no status during tool execution
+                        if generating_scope_active:
+                            await action_manager.pop_scope(generating_scope_id)
+                            generating_scope_active = False
                         await stream.handle_tool_use_start(
                             event.tool_id, event.tool_name)
 
@@ -299,6 +309,10 @@ async def _stream_with_unified_events(
 
                     elif event.type == "stream_complete":
                         stream.handle_stream_complete(event.final_message)
+            finally:
+                # Ensure scope is popped even on error
+                if generating_scope_active:
+                    await action_manager.pop_scope(generating_scope_id)
 
             # Final update for any remaining text
             await stream.update_display()
