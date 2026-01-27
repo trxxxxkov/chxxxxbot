@@ -58,49 +58,52 @@ async def _process_single_file(
         # Context helps model understand what this file is about
         upload_context = file_data.get("context")
 
-        # Step 1: Upload to Files API (parallel with other files)
-        claude_file_id = await upload_to_files_api(
-            file_bytes=file_bytes,
-            filename=filename,
-            mime_type=mime_type,
-        )
-
-        # Determine file type from MIME (centralized conversion)
+        # Determine file type from MIME BEFORE processing
+        # This allows us to show correct action (upload_photo/upload_document)
+        # throughout the entire file handling process
         file_type = mime_to_file_type(mime_type)
 
-        # Step 2: Send to Telegram with continuous action indicator
-        # (keeps indicator alive even if upload takes > 5 seconds)
-        # ActionManager automatically resolves file_type to correct action
-        telegram_file_id = None
-        telegram_file_unique_id = None
+        # Get ActionManager and wrap ENTIRE file processing in uploading scope
+        # This shows correct status during both Files API upload AND Telegram send
         manager = ActionManager.get(first_message.bot, chat_id,
                                     telegram_thread_id)
 
-        if file_type == FileType.IMAGE and mime_type in [
-                "image/jpeg", "image/png", "image/gif", "image/webp"
-        ]:
-            async with manager.uploading(file_type=file_type):
+        async with manager.uploading(file_type=file_type):
+            # Step 1: Upload to Files API
+            claude_file_id = await upload_to_files_api(
+                file_bytes=file_bytes,
+                filename=filename,
+                mime_type=mime_type,
+            )
+
+            # Step 2: Send to Telegram
+            telegram_file_id = None
+            telegram_file_unique_id = None
+
+            if file_type == FileType.IMAGE and mime_type in [
+                    "image/jpeg", "image/png", "image/gif", "image/webp"
+            ]:
                 sent_msg = await first_message.bot.send_photo(
                     chat_id=chat_id,
                     photo=types.BufferedInputFile(file_bytes,
                                                   filename=filename),
                     message_thread_id=telegram_thread_id,
                 )
-            if sent_msg.photo:
-                largest = max(sent_msg.photo, key=lambda p: p.file_size or 0)
-                telegram_file_id = largest.file_id
-                telegram_file_unique_id = largest.file_unique_id
-        else:
-            async with manager.uploading(file_type=file_type):
+                if sent_msg.photo:
+                    largest = max(sent_msg.photo,
+                                  key=lambda p: p.file_size or 0)
+                    telegram_file_id = largest.file_id
+                    telegram_file_unique_id = largest.file_unique_id
+            else:
                 sent_msg = await first_message.bot.send_document(
                     chat_id=chat_id,
                     document=types.BufferedInputFile(file_bytes,
                                                      filename=filename),
                     message_thread_id=telegram_thread_id,
                 )
-            if sent_msg.document:
-                telegram_file_id = sent_msg.document.file_id
-                telegram_file_unique_id = sent_msg.document.file_unique_id
+                if sent_msg.document:
+                    telegram_file_id = sent_msg.document.file_id
+                    telegram_file_unique_id = sent_msg.document.file_unique_id
 
         # Step 3: Save to database
         await user_file_repo.create(
