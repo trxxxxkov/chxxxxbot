@@ -699,17 +699,14 @@ class MessageNormalizer:
         ]
 
 
-# Global singleton instance
-_normalizer: Optional[MessageNormalizer] = None
+from core.singleton import singleton
 
 
+@singleton
 def get_normalizer() -> MessageNormalizer:
     """Get the global normalizer instance.
 
     Returns:
         MessageNormalizer singleton.
     """
-    global _normalizer  # pylint: disable=global-statement
-    if _normalizer is None:
-        _normalizer = MessageNormalizer()
-    return _normalizer
+    return MessageNormalizer()

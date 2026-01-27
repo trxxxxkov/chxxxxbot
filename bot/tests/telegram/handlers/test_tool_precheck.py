@@ -30,8 +30,11 @@ class TestGetUserBalance:
         }
 
         with patch(
-                "telegram.handlers.claude_tools.get_cached_user",
+                "services.balance_policy.get_cached_user",
                 return_value=cached_data,
+        ), patch(
+                "services.balance_policy.get_balance_from_cached",
+                return_value=Decimal("1.50"),
         ):
             balance = await get_user_balance(123, mock_session)
 
@@ -46,44 +49,45 @@ class TestGetUserBalance:
         mock_user.balance = Decimal("-0.50")
 
         mock_repo = MagicMock()
-        mock_repo.get = AsyncMock(return_value=mock_user)
+        mock_repo.get_by_id = AsyncMock(return_value=mock_user)
 
         mock_services = MagicMock()
         mock_services.users = mock_repo
 
         with patch(
-                "telegram.handlers.claude_tools.get_cached_user",
+                "services.balance_policy.get_cached_user",
                 return_value=None,
         ), patch(
-                "telegram.handlers.claude_tools.ServiceFactory",
+                "services.factory.ServiceFactory",
                 return_value=mock_services,
         ):
             mock_session = AsyncMock()
             balance = await get_user_balance(123, mock_session)
 
         assert balance == Decimal("-0.50")
-        mock_repo.get.assert_called_once_with(123)
+        mock_repo.get_by_id.assert_called_once_with(123)
 
     @pytest.mark.asyncio
-    async def test_returns_none_if_user_not_found(self):
-        """Returns None if user not found in cache or database."""
+    async def test_returns_zero_if_user_not_found(self):
+        """Returns 0 if user not found in cache or database."""
         mock_repo = MagicMock()
-        mock_repo.get = AsyncMock(return_value=None)
+        mock_repo.get_by_id = AsyncMock(return_value=None)
 
         mock_services = MagicMock()
         mock_services.users = mock_repo
 
         with patch(
-                "telegram.handlers.claude_tools.get_cached_user",
+                "services.balance_policy.get_cached_user",
                 return_value=None,
         ), patch(
-                "telegram.handlers.claude_tools.ServiceFactory",
+                "services.factory.ServiceFactory",
                 return_value=mock_services,
         ):
             mock_session = AsyncMock()
             balance = await get_user_balance(999, mock_session)
 
-        assert balance is None
+        # BalancePolicy returns 0 for unknown users (fail-open)
+        assert balance == Decimal("0")
 
 
 class TestExecuteSingleToolSafePrecheck:

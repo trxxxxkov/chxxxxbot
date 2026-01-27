@@ -171,17 +171,14 @@ class PendingUploadTracker:
             logger.debug("upload_tracker.reset", chat_id=chat_id)
 
 
-# Global singleton instance
-_upload_tracker: PendingUploadTracker | None = None
+from core.singleton import singleton
 
 
+@singleton
 def get_upload_tracker() -> PendingUploadTracker:
     """Get the global upload tracker instance.
 
     Returns:
         The singleton PendingUploadTracker.
     """
-    global _upload_tracker
-    if _upload_tracker is None:
-        _upload_tracker = PendingUploadTracker()
-    return _upload_tracker
+    return PendingUploadTracker()

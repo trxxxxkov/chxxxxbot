@@ -16,8 +16,6 @@ from typing import Optional
 
 from aiogram import Bot
 from aiogram import types
-from cache.user_cache import get_balance_from_cached
-from cache.user_cache import get_cached_user
 import config
 from core.exceptions import ToolValidationError
 from core.tools.cost_estimator import is_paid_tool
@@ -50,18 +48,11 @@ async def get_user_balance(
     Returns:
         User balance in USD, or None if user not found.
     """
-    # Try cache first
-    cached = await get_cached_user(user_id)
-    if cached:
-        return get_balance_from_cached(cached)
+    from services.balance_policy import get_balance_policy
 
-    # Fallback to database
-    services = ServiceFactory(session)
-    user = await services.users.get(user_id)
-    if user:
-        return user.balance
-
-    return None
+    policy = get_balance_policy()
+    balance = await policy.get_balance(user_id, session)
+    return balance if balance > Decimal("0") else balance
 
 
 async def charge_for_tool(

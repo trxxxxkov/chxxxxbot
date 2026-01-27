@@ -284,19 +284,14 @@ class TopicNamingService:
             return None
 
 
-# Global service instance (can be overridden in tests)
-_topic_naming_service: Optional[TopicNamingService] = None
+from core.singleton import singleton
 
 
+@singleton
 def get_topic_naming_service() -> TopicNamingService:
     """Get or create TopicNamingService instance.
 
     Returns:
         TopicNamingService singleton.
     """
-    global _topic_naming_service  # pylint: disable=global-statement
-
-    if _topic_naming_service is None:
-        _topic_naming_service = TopicNamingService()
-
-    return _topic_naming_service
+    return TopicNamingService()
