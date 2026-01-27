@@ -1182,9 +1182,26 @@ async def _process_message_batch(thread_id: int,
             # (required for Extended Thinking - API needs signatures in context)
             thinking_blocks_json = claude_provider.get_thinking_blocks_json()
 
-            # Calculate Claude API cost
+            # Calculate Claude API cost (including cache tokens!)
+            # See: https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching#pricing
+            # - input_tokens: tokens after last cache breakpoint (full price)
+            # - cache_read_tokens: tokens read from cache (0.1x input price)
+            # - cache_creation_tokens: tokens written to cache (1.25x input price)
+            cache_read_cost = 0.0
+            cache_creation_cost = 0.0
+
+            if usage.cache_read_tokens and model_config.pricing_cache_read:
+                cache_read_cost = ((usage.cache_read_tokens / 1_000_000) *
+                                   model_config.pricing_cache_read)
+
+            if usage.cache_creation_tokens and model_config.pricing_cache_write_5m:
+                cache_creation_cost = (
+                    (usage.cache_creation_tokens / 1_000_000) *
+                    model_config.pricing_cache_write_5m)
+
             cost_usd = (
                 (usage.input_tokens / 1_000_000) * model_config.pricing_input +
+                cache_read_cost + cache_creation_cost +
                 ((usage.output_tokens + usage.thinking_tokens) / 1_000_000) *
                 model_config.pricing_output)
 
@@ -1220,6 +1237,9 @@ async def _process_message_batch(thread_id: int,
                         output_tokens=usage.output_tokens,
                         thinking_tokens=usage.thinking_tokens,
                         cache_read_tokens=usage.cache_read_tokens,
+                        cache_creation_tokens=usage.cache_creation_tokens,
+                        cache_read_cost=round(cache_read_cost, 6),
+                        cache_creation_cost=round(cache_creation_cost, 6),
                         cost_usd=round(cost_usd, 6),
                         response_length=len(response_text),
                         stop_reason=stop_reason,
