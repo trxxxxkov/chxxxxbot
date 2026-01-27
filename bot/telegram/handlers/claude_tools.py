@@ -27,16 +27,15 @@ from db.repositories.balance_operation_repository import \
 from db.repositories.user_repository import UserRepository
 from services.balance_service import BalanceService
 from sqlalchemy.ext.asyncio import AsyncSession
-from telegram.chat_action import ActionManager
 from utils.metrics import record_tool_precheck_rejected
 from utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
 
 
-# Note: Tool execution uses ActionManager.generating() for typing indicator
-# File send actions (upload_photo/document) are shown during actual file send
-# in claude_files.py, not during tool execution
+# Note: Tool execution runs WITHOUT any chat action indicator
+# User requested: no status while tools are running (bot is not "typing")
+# File send actions (upload_photo/document) are shown in claude_files.py
 async def get_user_balance(
     user_id: int,
     session: AsyncSession,
@@ -185,22 +184,16 @@ async def execute_single_tool_safe(
             }
 
     try:
-        # Use ActionManager to keep typing indicator alive during tool execution
-        # (Telegram clears chat action after 5 seconds)
-        if chat_id:
-            manager = ActionManager.get(bot, chat_id, message_thread_id)
-            async with manager.generating():
-                result = await execute_tool(tool_name,
-                                            tool_input,
-                                            bot,
-                                            session,
-                                            thread_id=thread_id)
-        else:
-            result = await execute_tool(tool_name,
-                                        tool_input,
-                                        bot,
-                                        session,
-                                        thread_id=thread_id)
+        # Execute tool WITHOUT chat action indicator
+        # User requested: no status during tool execution (bot is not "typing")
+        # Status will be shown when:
+        # - File is being uploaded (uploading scope in claude_files.py)
+        # - Bot continues writing text (generating scope in claude.py)
+        result = await execute_tool(tool_name,
+                                    tool_input,
+                                    bot,
+                                    session,
+                                    thread_id=thread_id)
         duration = time.time() - start_time
 
         # Add metadata for post-processing
