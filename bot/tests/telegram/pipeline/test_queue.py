@@ -389,38 +389,47 @@ class TestProcessedMessageQueueStats:
     async def test_stats_total_pending(
         self,
         sample_metadata: MessageMetadata,
-        mock_message: MagicMock,
     ) -> None:
-        """Stats track total pending messages."""
-        # Use a slow callback
-        process_event = asyncio.Event()
+        """Stats track total pending messages accumulated during processing."""
+        # Events to coordinate test timing
+        callback_started = asyncio.Event()
+        callback_finish = asyncio.Event()
 
         async def slow_callback(thread_id, messages):
-            await process_event.wait()
+            # Signal that callback has started (processing=True now)
+            callback_started.set()
+            # Wait for test to add more messages
+            await callback_finish.wait()
 
         queue = ProcessedMessageQueue(slow_callback)
 
+        # Create mock without media_group_id to avoid 500ms delay
+        mock_msg = MagicMock()
+        mock_msg.message_id = 100
+        mock_msg.media_group_id = None  # No media group delay
+
         msg = create_media_message(
             sample_metadata,
-            mock_message,
+            mock_msg,
             with_file=True,
         )
 
-        # Start processing
+        # Start processing first message
         task = asyncio.create_task(queue.add(thread_id=1, message=msg))
 
-        # Give time to start
-        await asyncio.sleep(0.01)
+        # Wait for callback to actually start (processing=True)
+        await asyncio.wait_for(callback_started.wait(), timeout=2.0)
 
-        # Add more during processing
-        msg2 = create_text_message("Pending", sample_metadata, mock_message)
+        # Now add second message - it should accumulate since processing=True
+        msg2 = create_text_message("Pending", sample_metadata, mock_msg)
         await queue.add(thread_id=1, message=msg2, immediate=True)
 
+        # Check stats while first batch is still processing
         stats = queue.get_stats()
         assert stats["total_pending_messages"] >= 1
 
         # Cleanup
-        process_event.set()
+        callback_finish.set()
         await task
 
 
