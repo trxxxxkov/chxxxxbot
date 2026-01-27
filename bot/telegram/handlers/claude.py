@@ -3,7 +3,7 @@
 This module provides the core Claude API integration:
 - ClaudeProvider initialization
 - Message batch processing (_process_message_batch)
-- Streaming with tool execution (_stream_with_unified_events)
+- Streaming via StreamingOrchestrator (telegram.streaming.orchestrator)
 - File handling for generated content
 
 The message handling entry point is in telegram.pipeline.handler (unified pipeline).
@@ -43,11 +43,9 @@ from cache.write_behind import queue_write
 from cache.write_behind import WriteType
 import config
 from config import CLAUDE_TOKEN_BUFFER_PERCENT
-from config import DRAFT_KEEPALIVE_INTERVAL
 from config import FILES_API_TTL_HOURS
 from config import get_model
 from config import GLOBAL_SYSTEM_PROMPT
-from config import TOOL_LOOP_MAX_ITERATIONS
 from core.claude.client import ClaudeProvider
 from core.claude.context import ContextManager
 from core.claude.files_api import upload_to_files_api
@@ -76,23 +74,16 @@ from db.repositories.thread_repository import ThreadRepository
 from db.repositories.user_file_repository import UserFileRepository
 from services.factory import ServiceFactory
 from sqlalchemy.ext.asyncio import AsyncSession
-from telegram.chat_action import ActionManager
-from telegram.chat_action import ActionPhase
 from telegram.concurrency_limiter import concurrency_context
 from telegram.concurrency_limiter import ConcurrencyLimitExceeded
 from telegram.context.extractors import extract_message_context
 from telegram.context.formatter import ContextFormatter
-from telegram.draft_streaming import DraftManager
-from telegram.generation_tracker import generation_context
 from telegram.handlers.claude_files import process_generated_files
 from telegram.handlers.claude_helpers import compose_system_prompt_blocks
 from telegram.handlers.claude_helpers import split_text_smart
-from telegram.handlers.claude_tools import charge_for_tool
-from telegram.handlers.claude_tools import execute_single_tool_safe
 from telegram.streaming import escape_html
-from telegram.streaming import StreamingSession
 from telegram.streaming import strip_tool_markers as _strip_tool_markers
-from telegram.streaming import ToolCall
+from telegram.streaming.orchestrator import StreamingOrchestrator
 from utils.metrics import record_cache_hit
 from utils.metrics import record_cache_miss
 from utils.metrics import record_claude_request
@@ -122,582 +113,6 @@ def init_claude_provider(api_key: str) -> None:
     global claude_provider  # pylint: disable=global-statement
     claude_provider = ClaudeProvider(api_key=api_key)
     logger.info("claude_handler.provider_initialized")
-
-
-# pylint: disable=too-many-locals,too-many-branches,too-many-statements
-# pylint: disable=too-many-nested-blocks,too-many-return-statements
-async def _stream_with_unified_events(
-    request: LLMRequest,
-    first_message: types.Message,
-    thread_id: int,
-    session: AsyncSession,
-    user_file_repo: UserFileRepository,
-    chat_id: int,
-    user_id: int,
-    telegram_thread_id: int | None,
-    continuation_conversation: list | None = None,
-) -> tuple[str, types.Message | None, bool, list | None, bool, int, int]:
-    """Stream response with unified thinking/text/tool handling.
-
-    Uses sendMessageDraft (Bot API 9.3) for streaming without flood control.
-
-    Unified streaming approach:
-    1. Stream thinking and text together via draft updates (animated)
-    2. On tool_use: append [emoji tool_name], execute, continue
-    3. Finalize draft to permanent message at the end
-    4. Return final answer text and final message
-
-    Phase 3.4: Sequential delivery support
-    - If tool returns _force_turn_break, stops iteration early
-    - Returns needs_continuation=True so caller can continue in new call
-    - Conversation state is returned for continuation
-
-    Args:
-        request: LLMRequest with tools configured.
-        first_message: First Telegram message (for replies).
-        thread_id: Thread ID for logging.
-        session: Database session.
-        user_file_repo: UserFileRepository for file handling.
-        chat_id: Telegram chat ID.
-        user_id: User ID.
-        telegram_thread_id: Telegram thread/topic ID.
-        continuation_conversation: If continuing from previous call,
-            the conversation state to resume from.
-
-    Returns:
-        Tuple of (final_answer_text, final_message, needs_continuation,
-                  conversation_state, was_cancelled, thinking_chars, output_chars).
-        - needs_continuation: True if _force_turn_break was triggered
-        - conversation_state: Updated conversation for continuation
-        - was_cancelled: True if user cancelled via /stop or new message
-        - thinking_chars: Character count of thinking (for partial cost estimate)
-        - output_chars: Character count of output text (for partial cost estimate)
-    """
-    max_iterations = TOOL_LOOP_MAX_ITERATIONS
-
-    # Build conversation for tool loop
-    # Use continuation_conversation if resuming, otherwise build from request
-    if continuation_conversation is not None:
-        conversation = continuation_conversation
-        logger.info("stream.unified.continuation",
-                    thread_id=thread_id,
-                    conversation_length=len(conversation))
-    else:
-        conversation = [{
-            "role": msg.role,
-            "content": msg.content
-        } for msg in request.messages]
-
-    logger.info("stream.unified.start",
-                thread_id=thread_id,
-                max_iterations=max_iterations,
-                streaming_method="sendMessageDraft")
-
-    # Get ActionManager for this chat (singleton per chat/thread)
-    action_manager = ActionManager.get(first_message.bot, chat_id,
-                                       telegram_thread_id)
-
-    # Phase 2.5: Generation tracking for /stop command
-    # Combined async with to avoid extra nesting
-    async with (
-        generation_context(chat_id, user_id, telegram_thread_id) as
-        cancel_event,
-        DraftManager(
-            bot=first_message.bot,
-            chat_id=chat_id,
-            topic_id=telegram_thread_id,
-            keepalive_interval=DRAFT_KEEPALIVE_INTERVAL,
-        ) as dm,
-    ):
-        # StreamingSession encapsulates all streaming state
-        # - Display blocks (thinking, text)
-        # - Pending tools
-        # - Last sent text for deduplication
-        stream = StreamingSession(dm, thread_id)
-
-        # Track cumulative output chars across iterations (for partial cost)
-        total_output_chars = 0
-
-        for iteration in range(max_iterations):
-            logger.info("stream.unified.iteration",
-                        thread_id=thread_id,
-                        iteration=iteration + 1)
-
-            # Reset per-iteration state (display persists across iterations)
-            stream.reset_iteration()
-
-            # Create request for this iteration
-            iter_request = LLMRequest(
-                messages=[
-                    Message(role=msg["role"], content=msg["content"])
-                    for msg in conversation
-                ],
-                system_prompt=request.system_prompt,
-                model=request.model,
-                max_tokens=request.max_tokens,
-                temperature=request.temperature,
-                tools=request.tools,
-            )
-
-            # Stream events with continuous typing indicator
-            # Use manual scope management to exit early when tool_use detected
-            # (stops typing immediately when Claude decides to call a tool)
-            # Phase 2.5: Track if cancelled for handling after loop
-            was_cancelled = False
-            generating_scope_id = await action_manager.push_scope(
-                ActionPhase.GENERATING)
-            generating_scope_active = True
-
-            try:
-                async for event in claude_provider.stream_events(iter_request):
-                    # Phase 2.5: Check for user cancellation between events
-                    if cancel_event.is_set():
-                        # Determine current phase for logging
-                        current_phase = "unknown"
-                        if stream.display.total_thinking_length() > 0:
-                            if stream.get_final_text():
-                                current_phase = "text"
-                            else:
-                                current_phase = "thinking"
-                        elif stream.get_final_text():
-                            current_phase = "text"
-
-                        logger.info(
-                            "stream.cancelled_by_user",
-                            thread_id=thread_id,
-                            iteration=iteration + 1,
-                            phase=current_phase,
-                            thinking_length=stream.display.
-                            total_thinking_length(),
-                            text_length=len(stream.get_final_text()),
-                            pending_tools=len(stream.pending_tools),
-                        )
-                        was_cancelled = True
-                        break
-
-                    if event.type == "thinking_delta":
-                        await stream.handle_thinking_delta(event.content)
-
-                    elif event.type == "text_delta":
-                        await stream.handle_text_delta(event.content)
-
-                    elif event.type == "tool_use":
-                        # Stop typing immediately when tool is detected
-                        # User requested: no status during tool execution
-                        if generating_scope_active:
-                            await action_manager.pop_scope(generating_scope_id)
-                            generating_scope_active = False
-                        await stream.handle_tool_use_start(
-                            event.tool_id, event.tool_name)
-
-                    elif event.type == "block_end":
-                        if event.tool_name and event.tool_id:
-                            # Tool input complete
-                            stream.handle_tool_input_complete(
-                                event.tool_id, event.tool_name,
-                                event.tool_input or {})
-                            # Update display with tool marker
-                            await stream.update_display()
-                        else:
-                            await stream.handle_block_end()
-
-                    elif event.type == "message_end":
-                        stream.handle_message_end(event.stop_reason)
-
-                    elif event.type == "stream_complete":
-                        stream.handle_stream_complete(event.final_message)
-            finally:
-                # Ensure scope is popped even on error
-                if generating_scope_active:
-                    await action_manager.pop_scope(generating_scope_id)
-
-            # Final update for any remaining text
-            await stream.update_display()
-
-            # Log iteration stats
-            stream.log_iteration_complete(iteration + 1)
-
-            # Accumulate output chars before any clearing (for partial cost)
-            total_output_chars += stream.get_current_text_length()
-
-            # Phase 2.5: Handle user cancellation
-            if was_cancelled:
-                partial_answer = stream.get_final_text()
-                partial_display = stream.get_final_display()
-
-                # Add interrupted indicator to display (MarkdownV2 format)
-                # In MarkdownV2: _text_ for italic, \[ and \] to escape brackets
-                stopped_suffix = "\n\n_\\[interrupted\\]_"
-                if partial_display.strip():
-                    partial_display = partial_display + stopped_suffix
-                else:
-                    partial_display = "_\\[interrupted\\]_"
-
-                # Finalize draft with partial content
-                final_message = None
-                try:
-                    final_message = await dm.current.finalize(
-                        final_text=partial_display)
-                except Exception as e:  # pylint: disable=broad-exception-caught
-                    logger.error("stream.cancelled.finalize_failed",
-                                 thread_id=thread_id,
-                                 error=str(e))
-
-                # Get thinking chars for partial cost estimate
-                thinking_chars = stream.display.total_thinking_length()
-
-                logger.info(
-                    "stream.unified.stopped_by_user",
-                    thread_id=thread_id,
-                    partial_answer_length=len(partial_answer),
-                    partial_display_length=len(partial_display),
-                    thinking_chars=thinking_chars,
-                    finalized=final_message is not None,
-                )
-
-                # Return with was_cancelled=True and chars for partial billing
-                return (partial_answer, final_message, False, None, True,
-                        thinking_chars, total_output_chars)
-
-            if stream.stop_reason in ("end_turn", "pause_turn"):
-                # Final answer
-                final_answer = stream.get_final_text()
-                final_display = stream.get_final_display()
-
-                logger.info("stream.unified.complete",
-                            thread_id=thread_id,
-                            total_iterations=iteration + 1,
-                            final_answer_length=len(final_answer),
-                            stop_reason=stream.stop_reason,
-                            had_thinking=stream.display.total_thinking_length()
-                            > 0)
-
-                # Finalize draft to permanent message
-                final_message = None
-                if final_display.strip():
-                    try:
-                        final_message = await dm.current.finalize(
-                            final_text=final_display)
-                    except Exception as e:  # pylint: disable=broad-exception-caught
-                        logger.error("stream.draft_finalize_failed",
-                                     thread_id=thread_id,
-                                     error=str(e))
-                else:
-                    await dm.current.clear()
-
-                # No continuation needed - final answer (chars=0, not used for billing)
-                return final_answer, final_message, False, None, False, 0, 0
-
-            if stream.stop_reason == "tool_use" and stream.pending_tools:
-                # Execute all tools in PARALLEL, process results AS COMPLETED
-                pending_tools = stream.pending_tools
-                tool_names = [t.name for t in pending_tools]
-                logger.info("stream.unified.executing_tools_parallel",
-                            thread_id=thread_id,
-                            tool_count=len(pending_tools),
-                            tool_names=tool_names)
-
-                # Create indexed tasks for as_completed processing
-                async def _indexed_tool_task(idx: int, tool: ToolCall) -> tuple:
-                    """Execute tool and return (index, result) for ordering."""
-                    result = await execute_single_tool_safe(
-                        tool_name=tool.name,
-                        tool_input=tool.input,
-                        bot=first_message.bot,
-                        session=session,
-                        thread_id=thread_id,
-                        user_id=user_id,
-                        chat_id=first_message.chat.id,
-                        message_thread_id=first_message.message_thread_id,
-                    )
-                    return (idx, result)
-
-                tool_tasks = [
-                    _indexed_tool_task(idx, tool)
-                    for idx, tool in enumerate(pending_tools)
-                ]
-
-                # Process results as they complete (not waiting for all)
-                results = [None] * len(pending_tools)  # Preserve order
-                first_file_committed = False
-                force_turn_break = False  # Phase 3.4: sequential delivery
-                turn_break_tool = None
-
-                for coro in asyncio.as_completed(tool_tasks):
-                    idx, result = await coro
-                    tool = pending_tools[idx]
-                    tool_duration = result.get("_duration", 0)
-                    is_error = bool(result.get("error"))
-
-                    if not is_error:
-                        # Send file immediately when ready
-                        # IMPORTANT: process_generated_files adds files_delivered
-                        # to result dict, so we must call it BEFORE creating
-                        # clean_result
-                        # Phase 2.5: Skip file delivery if user cancelled
-                        if result.get(
-                                "_file_contents") and not cancel_event.is_set():
-                            if not first_file_committed:
-                                # Commit text BEFORE first file
-                                await stream.commit_for_files()
-                                first_file_committed = True
-                            # Send file immediately
-                            await process_generated_files(
-                                result, first_message, thread_id, session,
-                                user_file_repo, chat_id, user_id,
-                                telegram_thread_id)
-                        elif result.get(
-                                "_file_contents") and cancel_event.is_set():
-                            logger.info(
-                                "stream.unified.file_skipped_cancelled",
-                                thread_id=thread_id,
-                                tool_name=tool.name,
-                            )
-
-                        # Phase 3.4: Check for sequential delivery
-                        if result.get("_force_turn_break"):
-                            force_turn_break = True
-                            turn_break_tool = tool.name
-                            logger.info(
-                                "stream.unified.turn_break_requested",
-                                thread_id=thread_id,
-                                tool_name=tool.name,
-                            )
-
-                    # Clean up metadata keys AFTER process_generated_files
-                    # so files_delivered is included in tool result
-                    clean_result = {
-                        k: v for k, v in result.items() if not k.startswith("_")
-                    }
-                    if is_error:
-                        clean_result["error"] = result["error"]
-
-                    if not is_error:
-                        # Charge user for tool cost
-                        if "cost_usd" in clean_result:
-                            await charge_for_tool(session, user_id, tool.name,
-                                                  clean_result,
-                                                  first_message.message_id)
-
-                        record_tool_call(tool_name=tool.name,
-                                         success=True,
-                                         duration=tool_duration)
-                        if "cost_usd" in clean_result:
-                            record_cost(service=tool.name,
-                                        amount_usd=float(
-                                            clean_result["cost_usd"]))
-
-                            # Queue tool call to database for detailed tracking
-                            # Only if we have detailed token info
-                            if "_model_id" in result:
-                                tool_call_data = {
-                                    "user_id":
-                                        user_id,
-                                    "chat_id":
-                                        chat_id,
-                                    "thread_id":
-                                        thread_id,
-                                    "message_id":
-                                        first_message.message_id,
-                                    "tool_name":
-                                        tool.name,
-                                    "model_id":
-                                        result["_model_id"],
-                                    "input_tokens":
-                                        result.get("_input_tokens", 0),
-                                    "output_tokens":
-                                        result.get("_output_tokens", 0),
-                                    "cache_read_tokens":
-                                        result.get("_cache_read_tokens", 0),
-                                    "cache_creation_tokens":
-                                        result.get("_cache_creation_tokens", 0),
-                                    "cost_usd":
-                                        float(clean_result["cost_usd"]),
-                                    "duration_ms":
-                                        int(tool_duration *
-                                            1000) if tool_duration else None,
-                                    "success":
-                                        True,
-                                }
-                                await queue_write(WriteType.TOOL_CALL,
-                                                  tool_call_data)
-                    else:
-                        record_tool_call(tool_name=tool.name,
-                                         success=False,
-                                         duration=tool_duration)
-                        record_error(error_type="tool_execution",
-                                     handler=tool.name)
-
-                    results[idx] = clean_result
-
-                # Convert results list (filled via as_completed)
-                raw_results = results
-
-                # Add system messages AFTER files (so they appear after photos)
-                for idx, result in enumerate(raw_results):
-                    tool = pending_tools[idx]
-                    is_error = bool(result.get("error"))
-
-                    if not is_error:
-                        clean_result = {
-                            k: v
-                            for k, v in result.items()
-                            if not k.startswith("_")
-                        }
-                        tool_system_msg = get_tool_system_message(
-                            tool.name, tool.input, clean_result)
-                        if tool_system_msg:
-                            stream.add_system_message(tool_system_msg)
-
-                # Update display after all tools processed
-                await stream.update_display()
-
-                # Format tool results
-                tool_uses = [{
-                    "id": t.tool_id,
-                    "name": t.name
-                } for t in pending_tools]
-                tool_results = format_tool_results(tool_uses, results)
-
-                # Add to conversation using captured message from session
-                captured_msg = stream.captured_message
-                if captured_msg and captured_msg.content:
-                    serialized_content = []
-                    for block in captured_msg.content:
-                        if hasattr(block, 'model_dump'):
-                            serialized_content.append(block.model_dump())
-                        else:
-                            serialized_content.append(block)
-                    conversation.append({
-                        "role": "assistant",
-                        "content": serialized_content
-                    })
-                    conversation.append({
-                        "role": "user",
-                        "content": tool_results
-                    })
-                else:
-                    logger.error("stream.unified.no_assistant_message",
-                                 thread_id=thread_id,
-                                 tool_count=len(pending_tools))
-                    await dm.current.clear()
-                    return (
-                        "⚠️ Tool execution error: missing assistant context",
-                        None, False, None, False, 0, 0)
-
-                # Update display with system messages
-                await stream.update_display()
-
-                logger.info("stream.unified.tool_results_added",
-                            thread_id=thread_id,
-                            tool_count=len(pending_tools))
-
-                # Phase 2.5: Check for cancellation after tool execution
-                # User may have pressed /stop while tools were running
-                if cancel_event.is_set():
-                    logger.info(
-                        "stream.cancelled_after_tools",
-                        thread_id=thread_id,
-                        iteration=iteration + 1,
-                        tools_completed=len(pending_tools),
-                        tool_names=tool_names,
-                    )
-
-                    partial_answer = stream.get_final_text()
-                    partial_display = stream.get_final_display()
-
-                    # Add interrupted indicator
-                    stopped_suffix = "\n\n_\\[interrupted\\]_"
-                    if partial_display.strip():
-                        partial_display = partial_display + stopped_suffix
-                    else:
-                        partial_display = "_\\[interrupted\\]_"
-
-                    # Finalize draft with partial content
-                    final_message = None
-                    try:
-                        final_message = await dm.current.finalize(
-                            final_text=partial_display)
-                    except Exception as e:  # pylint: disable=broad-exception-caught
-                        logger.error(
-                            "stream.cancelled_after_tools.finalize_failed",
-                            thread_id=thread_id,
-                            error=str(e))
-
-                    # Get thinking chars for partial cost estimate
-                    thinking_chars = stream.display.total_thinking_length()
-                    return (partial_answer, final_message, False, None, True,
-                            thinking_chars, total_output_chars)
-
-                # Phase 3.4: Handle sequential delivery turn break
-                if force_turn_break:
-                    logger.info("stream.unified.forcing_turn_break",
-                                thread_id=thread_id,
-                                triggered_by=turn_break_tool)
-
-                    # Get current partial answer
-                    partial_answer = stream.get_final_text()
-                    partial_display = stream.get_final_display()
-
-                    # Finalize current draft
-                    final_message = None
-                    if partial_display.strip():
-                        try:
-                            final_message = await dm.current.finalize(
-                                final_text=partial_display)
-                        except Exception as e:  # pylint: disable=broad-exception-caught
-                            logger.error("stream.turn_break.finalize_failed",
-                                         thread_id=thread_id,
-                                         error=str(e))
-
-                    # Return with continuation needed
-                    # Conversation state is passed so caller can continue
-                    return (partial_answer, final_message, True, conversation,
-                            False, 0, 0)
-
-            else:
-                # Unexpected stop reason
-                logger.warning("stream.unified.unexpected_stop",
-                               thread_id=thread_id,
-                               stop_reason=stream.stop_reason)
-
-                final_answer = stream.get_final_text()
-                if not final_answer:
-                    final_answer = f"⚠️ Unexpected stop: {stream.stop_reason}"
-
-                final_display = stream.get_final_display()
-                if final_display:
-                    await dm.current.update(final_display, force=True)
-                else:
-                    await dm.current.update(escape_html(
-                        f"⚠️ Unexpected stop: {stream.stop_reason}"),
-                                            force=True)
-
-                # Finalize draft
-                try:
-                    final_message = await dm.current.finalize()
-                except Exception:  # pylint: disable=broad-exception-caught
-                    final_message = None
-
-                return final_answer, final_message, False, None, False, 0, 0
-
-        # Max iterations exceeded (DraftManager will cleanup on exit)
-        logger.error("stream.unified.max_iterations",
-                     thread_id=thread_id,
-                     max_iterations=max_iterations)
-
-        error_msg = (
-            f"⚠️ Tool loop exceeded maximum iterations ({max_iterations}). "
-            "The task might be too complex.")
-
-        # Finalize draft with error message
-        try:
-            await dm.current.update(error_msg)
-            final_message = await dm.current.finalize()
-        except Exception:  # pylint: disable=broad-exception-caught
-            final_message = None
-
-        return error_msg, final_message, False, None, False, 0, 0
 
 
 async def _send_with_retry(
@@ -1072,7 +487,7 @@ async def _process_batch_with_session(
                         tool_count=len(request.tools) if request.tools else 0)
 
             # 7. Show typing indicator (only when starting processing)
-            # Note: ActionManager in _stream_with_unified_events will maintain it,
+            # StreamingOrchestrator will maintain the indicator during streaming,
             # but we send initial one here for immediate user feedback
             from telegram.chat_action import send_action
             await send_action(first_message.bot, first_message.chat.id,
@@ -1100,23 +515,31 @@ async def _process_batch_with_session(
                 thinking_chars = 0  # Track thinking chars for partial payment
                 output_chars = 0  # Track output chars for partial payment
                 for continuation_idx in range(max_continuations + 1):
-                    (response_text, bot_message, needs_continuation,
-                     conversation_state, was_cancelled, iter_thinking_chars,
-                     iter_output_chars) = await _stream_with_unified_events(
-                         request=request,
-                         first_message=first_message,
-                         thread_id=thread_id,
-                         session=session,
-                         user_file_repo=user_file_repo,
-                         chat_id=thread.chat_id,
-                         user_id=thread.user_id,
-                         telegram_thread_id=thread.thread_id,
-                         continuation_conversation=continuation_conversation,
-                     )
+                    # Use StreamingOrchestrator for cleaner streaming flow
+                    orchestrator = StreamingOrchestrator(
+                        request=request,
+                        first_message=first_message,
+                        thread_id=thread_id,
+                        session=session,
+                        user_file_repo=user_file_repo,
+                        chat_id=thread.chat_id,
+                        user_id=thread.user_id,
+                        telegram_thread_id=thread.thread_id,
+                        continuation_conversation=continuation_conversation,
+                        claude_provider=claude_provider,
+                    )
+                    result = await orchestrator.stream()
+
+                    # Extract values from StreamResult
+                    response_text = result.text
+                    bot_message = result.message
+                    needs_continuation = result.needs_continuation
+                    conversation_state = result.conversation
+                    was_cancelled = result.was_cancelled
 
                     # Accumulate chars across iterations for partial billing
-                    thinking_chars += iter_thinking_chars
-                    output_chars += iter_output_chars
+                    thinking_chars += result.thinking_chars
+                    output_chars += result.output_chars
 
                     # Collect response parts
                     if response_text:
@@ -1202,7 +625,7 @@ async def _process_batch_with_session(
             # Estimate cost from accumulated text and charge user
             if was_cancelled:
                 # Estimate tokens from accumulated chars (~4 chars per token)
-                # output_chars accumulated from _stream_with_unified_events
+                # output_chars accumulated from StreamingOrchestrator
                 estimated_output_tokens = output_chars // 4
                 estimated_thinking_tokens = thinking_chars // 4
 
