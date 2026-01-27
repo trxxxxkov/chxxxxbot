@@ -1,13 +1,47 @@
-"""Custom exceptions for LLM providers.
+"""Custom exceptions for the bot.
 
-This module defines custom exceptions for error handling across all LLM
-providers. Allows consistent error handling and user-friendly error messages.
+This module defines custom exceptions for error handling:
+- BotError: Base class with log_level and user_message
+- LLMError: LLM-specific errors (rate limit, timeout, etc.)
+- ToolValidationError: Tool input validation failures
 
-NO __init__.py - use direct import: from core.exceptions import LLMError
+Phase 4.3: Standardized error classification system.
+
+NO __init__.py - use direct import:
+    from core.exceptions import LLMError, BotError, ToolExecutionError
 """
 
 
-class LLMError(Exception):
+class BotError(Exception):
+    """Base class for all bot errors.
+
+    Phase 4.3: Provides consistent error handling with:
+    - recoverable: Whether to retry or fail permanently
+    - user_message: Safe message to show to user
+    - log_level: Appropriate logging level
+
+    Usage:
+        try:
+            await do_something()
+        except BotError as e:
+            logger.log(e.log_level, "error", error=str(e))
+            await message.answer(e.user_message)
+    """
+
+    recoverable: bool = True
+    user_message: str = "An error occurred. Please try again."
+    log_level: str = "warning"
+
+    def __init__(self, message: str = None):
+        """Initialize BotError.
+
+        Args:
+            message: Technical error message (for logs).
+        """
+        super().__init__(message or self.user_message)
+
+
+class LLMError(BotError):
     """Base exception for all LLM-related errors.
 
     All custom LLM exceptions inherit from this class, allowing
@@ -140,3 +174,121 @@ class ToolValidationError(Exception):
         """
         super().__init__(message)
         self.tool_name = tool_name
+
+
+# ============================================================================
+# Phase 4.3: Additional error types for consistent handling
+# ============================================================================
+
+
+class ToolExecutionError(BotError):
+    """Tool failed to execute.
+
+    Raised when a tool execution fails (external API error, timeout, etc.).
+    This is recoverable - user can try again.
+    """
+
+    recoverable = True
+    user_message = "Tool execution failed. Please try again."
+    log_level = "warning"
+
+    def __init__(self, message: str, tool_name: str):
+        """Initialize ToolExecutionError.
+
+        Args:
+            message: Technical error message.
+            tool_name: Name of the tool that failed.
+        """
+        super().__init__(message)
+        self.tool_name = tool_name
+
+
+class ExternalAPIError(BotError):
+    """External API error (not LLM).
+
+    Raised when external services (E2B, Gemini, etc.) fail.
+    May be recoverable depending on the error.
+    """
+
+    recoverable = True
+    user_message = "External service temporarily unavailable. Please try again."
+    log_level = "warning"
+
+    def __init__(self, message: str, service: str):
+        """Initialize ExternalAPIError.
+
+        Args:
+            message: Technical error message.
+            service: Name of the failed service.
+        """
+        super().__init__(message)
+        self.service = service
+
+
+class CacheError(BotError):
+    """Redis cache operation failed.
+
+    Raised when cache operations fail. Operations should continue
+    with database fallback.
+    """
+
+    recoverable = True
+    user_message = "Please try again."
+    log_level = "warning"
+
+
+class DatabaseError(BotError):
+    """Database operation failed.
+
+    Raised when database operations fail. This is a more serious
+    error that may not be recoverable.
+    """
+
+    recoverable = False
+    user_message = "Service temporarily unavailable. Please try again later."
+    log_level = "error"
+
+
+class ConfigurationError(BotError):
+    """Configuration or setup error.
+
+    Raised when configuration is missing or invalid.
+    Not recoverable without admin intervention.
+    """
+
+    recoverable = False
+    user_message = "Service configuration error. Please contact administrator."
+    log_level = "error"
+
+
+class ConcurrencyError(BotError):
+    """Concurrency limit exceeded.
+
+    Raised when user exceeds concurrent request limit.
+    Recoverable after other requests complete.
+    """
+
+    recoverable = True
+    user_message = "Too many requests. Please wait for current request to finish."
+    log_level = "info"  # Expected behavior, not an error
+
+
+class FileProcessingError(BotError):
+    """File processing failed.
+
+    Raised when file upload, download, or processing fails.
+    """
+
+    recoverable = True
+    user_message = "Failed to process file. Please try again."
+    log_level = "warning"
+
+    def __init__(self, message: str, filename: str = None):
+        """Initialize FileProcessingError.
+
+        Args:
+            message: Technical error message.
+            filename: Name of the file that failed.
+        """
+        super().__init__(message)
+        self.filename = filename

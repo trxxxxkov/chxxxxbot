@@ -3,11 +3,18 @@
 This module provides the get_or_create_thread helper function used by
 the unified pipeline to resolve database threads.
 
+Phase 4.1: Includes cache warming for new threads to avoid cache miss
+on first message.
+
 NO __init__.py - use direct import:
     from telegram.thread_resolver import get_or_create_thread
 """
 
 from aiogram import types
+from cache.thread_cache import cache_files
+from cache.thread_cache import cache_messages
+from cache.thread_cache import cache_thread
+from cache.user_cache import cache_user
 from db.models.thread import Thread
 from db.repositories.chat_repository import ChatRepository
 from db.repositories.thread_repository import ThreadRepository
@@ -100,6 +107,10 @@ async def get_or_create_thread(message: types.Message,
                 telegram_thread_id=message.message_thread_id,
             )
 
+        # Phase 4.1: Cache warming for new threads
+        # Pre-populate caches to avoid cache miss on first message
+        await _warm_caches(thread, user)
+
     # Log message received for dashboard tracking
     logger.info("claude_handler.message_received",
                 chat_id=chat_id,
@@ -117,3 +128,41 @@ async def get_or_create_thread(message: types.Message,
                  telegram_thread_id=message.message_thread_id)
 
     return thread
+
+
+async def _warm_caches(thread: Thread, user) -> None:
+    """Pre-populate caches for new thread.
+
+    Phase 4.1: Cache warming to avoid cache miss on first message.
+    Called when a new thread is created.
+
+    Args:
+        thread: Newly created thread.
+        user: User who owns the thread.
+    """
+    try:
+        # Cache thread data
+        await cache_thread(thread)
+
+        # Cache empty message history (new thread has no messages yet)
+        await cache_messages(thread.id, [])
+
+        # Cache empty files list (new thread has no files yet)
+        await cache_files(thread.id, [])
+
+        # Cache user data for fast balance checks
+        await cache_user(user)
+
+        logger.debug(
+            "thread_resolver.caches_warmed",
+            thread_id=thread.id,
+            user_id=thread.user_id,
+        )
+
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        # Cache warming is optimization, don't fail on errors
+        logger.warning(
+            "thread_resolver.cache_warming_failed",
+            thread_id=thread.id,
+            error=str(e),
+        )
