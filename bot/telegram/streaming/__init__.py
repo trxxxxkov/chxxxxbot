@@ -25,8 +25,10 @@ from telegram.streaming.formatting import format_final_text
 from telegram.streaming.formatting import strip_tool_markers
 from telegram.streaming.session import StreamingSession
 from telegram.streaming.types import BlockType
+from telegram.streaming.types import CancellationReason
 from telegram.streaming.types import DisplayBlock
 from telegram.streaming.types import FileDelivery
+from telegram.streaming.types import StreamResult
 from telegram.streaming.types import ToolCall
 
 __all__ = [
@@ -35,6 +37,8 @@ __all__ = [
     "DisplayBlock",
     "ToolCall",
     "FileDelivery",
+    "StreamResult",
+    "CancellationReason",
     # Display management
     "DisplayManager",
     # Formatting

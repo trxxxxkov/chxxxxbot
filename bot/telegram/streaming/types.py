@@ -69,3 +69,47 @@ class FileDelivery:
     content: bytes
     mime_type: str
     source_tool: str
+
+
+class CancellationReason(str, Enum):
+    """Reason for stream cancellation.
+
+    Using str mixin allows direct string comparison and JSON serialization.
+    """
+
+    STOP_COMMAND = "stop_command"
+    NEW_MESSAGE = "new_message"
+    MAX_ITERATIONS = "max_iterations"
+    ERROR = "error"
+
+
+@dataclass
+class StreamResult:  # pylint: disable=too-many-instance-attributes
+    """Result of streaming operation.
+
+    Returned by StreamingOrchestrator.stream() to provide all information
+    needed by the caller for billing, logging, and response handling.
+
+    Attributes:
+        text: Final text content (without thinking).
+        display_text: Formatted display text (may include thinking markers).
+        message: Final Telegram message (if finalized).
+        needs_continuation: True if tool requested turn break.
+        was_cancelled: True if user cancelled generation.
+        cancellation_reason: Why generation was cancelled.
+        conversation: Updated conversation state for continuation.
+        thinking_chars: Character count of thinking (for partial cost).
+        output_chars: Character count of output text (for partial cost).
+        iterations: Number of tool loop iterations completed.
+    """
+
+    text: str
+    display_text: str
+    message: Any = None
+    needs_continuation: bool = False
+    was_cancelled: bool = False
+    cancellation_reason: "CancellationReason | None" = None
+    conversation: "list[dict] | None" = None
+    thinking_chars: int = 0
+    output_chars: int = 0
+    iterations: int = 0
