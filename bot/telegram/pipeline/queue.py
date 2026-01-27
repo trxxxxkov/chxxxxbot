@@ -184,6 +184,10 @@ class ProcessedMessageQueue:
             if queue.timer_task and not queue.timer_task.done():
                 queue.timer_task.cancel()
 
+            # Check if this is part of a media group
+            media_group_id = getattr(message.original_message, 'media_group_id',
+                                     None)
+
             # Determine reason for immediate processing
             reason = "explicit" if immediate else (
                 "media" if message.has_media else "standalone_text")
@@ -193,8 +197,24 @@ class ProcessedMessageQueue:
                 thread_id=thread_id,
                 reason=reason,
                 has_media=message.has_media,
+                media_group_id=media_group_id,
                 text_length=len(message.text) if message.text else 0,
             )
+
+            # If part of media group, wait for other messages in the group
+            if media_group_id:
+                logger.info(
+                    "processed_queue.media_group_detected",
+                    thread_id=thread_id,
+                    media_group_id=media_group_id,
+                )
+                # Short delay to collect other media from the group
+                await asyncio.sleep(0.5)  # 500ms
+                # Wait for pending normalizations (other files in group)
+                chat_id = message.metadata.chat_id
+                await self._wait_for_pending_normalizations(chat_id,
+                                                            timeout=3.0)
+
             await self._process_batch(thread_id)
             return
 
