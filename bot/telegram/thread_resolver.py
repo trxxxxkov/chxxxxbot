@@ -90,6 +90,16 @@ async def get_or_create_thread(message: types.Message,
                     user_id=user_id,
                     telegram_thread_id=message.message_thread_id)
 
+        # Bot API 9.3: Set needs_topic_naming for new topics
+        # Topics exist in: private chats with topics enabled, or forum supergroups
+        if message.message_thread_id is not None:
+            thread.needs_topic_naming = True
+            logger.debug(
+                "thread_resolver.topic_needs_naming",
+                thread_id=thread.id,
+                telegram_thread_id=message.message_thread_id,
+            )
+
     # Log message received for dashboard tracking
     logger.info("claude_handler.message_received",
                 chat_id=chat_id,

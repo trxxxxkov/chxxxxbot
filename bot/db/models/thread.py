@@ -12,6 +12,7 @@ from typing import Optional
 from db.models.base import Base
 from db.models.base import TimestampMixin
 from sqlalchemy import BigInteger
+from sqlalchemy import Boolean
 from sqlalchemy import ForeignKey
 from sqlalchemy import Index
 from sqlalchemy import Integer
@@ -45,8 +46,9 @@ class Thread(Base, TimestampMixin):
         chat_id: Which chat this thread belongs to.
         user_id: Which user this thread belongs to.
         thread_id: Telegram thread/topic ID (NULL for main chat).
-        title: Thread title (manual or from first message).
+        title: Thread title (manual or LLM-generated).
         files_context: List of files available in this thread.
+        needs_topic_naming: Whether topic needs LLM-generated name.
         created_at: When thread started (from TimestampMixin).
         updated_at: Last message timestamp (from TimestampMixin).
     """
@@ -97,6 +99,16 @@ class Thread(Base, TimestampMixin):
         nullable=True,
         doc="Auto-generated list of files available in this thread. "
         "Added to system prompt. NOT cached (changes frequently).",
+    )
+
+    # Bot API 9.3: Topic naming for private chats with topics
+    needs_topic_naming: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+        doc="Whether this topic needs LLM-generated name. "
+        "Set True on creation, False after naming.",
     )
 
     # Indexes and constraints

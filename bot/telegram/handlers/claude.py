@@ -1567,6 +1567,42 @@ async def _process_batch_with_session(
                         input_tokens=usage.input_tokens,
                         output_tokens=usage.output_tokens)
 
+            # Bot API 9.3: Generate topic name after first response
+            # Awaited (not fire-and-forget) to ensure session is available
+            # Naming is fast (~200ms with Haiku), response already sent to user
+            if thread.needs_topic_naming:
+                # Extract first user message text for naming context
+                first_user_text = ""
+                for msg in messages:
+                    if msg.text:
+                        first_user_text = msg.text
+                        break
+                    if msg.transcript:
+                        first_user_text = msg.transcript.text
+                        break
+
+                if first_user_text:
+                    # Import here to avoid circular imports
+                    from services.topic_naming import \
+                        get_topic_naming_service  # pylint: disable=import-outside-toplevel
+
+                    topic_naming = get_topic_naming_service()
+                    try:
+                        await topic_naming.maybe_name_topic(
+                            bot=first_message.bot,
+                            thread=thread,
+                            user_message=first_user_text,
+                            bot_response=response_text,
+                            session=session,
+                        )
+                    except Exception as naming_error:  # pylint: disable=broad-exception-caught
+                        # Log but don't fail - naming is not critical
+                        logger.warning(
+                            "claude_handler.topic_naming_failed",
+                            thread_id=thread_id,
+                            error=str(naming_error),
+                        )
+
     except ContextWindowExceededError as e:
         logger.error("claude_handler.context_exceeded",
                      thread_id=thread_id,

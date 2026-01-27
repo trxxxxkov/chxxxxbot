@@ -62,6 +62,12 @@ TOOL_COST_PRECHECK_ENABLED = True  # Pre-check balance before paid tools
 MAX_CONCURRENT_GENERATIONS_PER_USER = 5  # Max parallel Claude API calls per user
 CONCURRENCY_QUEUE_TIMEOUT = 300.0  # Max seconds to wait in queue (5 minutes)
 
+# Topic naming settings (Bot API 9.3: topics in private chats)
+# Automatically generates topic names using LLM after first bot response
+TOPIC_NAMING_ENABLED = True
+TOPIC_NAMING_MODEL = "claude-haiku-4-5-20251001"  # Haiku is cheap (~$0.0003/title)
+TOPIC_NAMING_MAX_TOKENS = 30  # Title is short (2-6 words)
+
 
 @dataclass
 class ModelConfig:  # pylint: disable=too-many-instance-attributes

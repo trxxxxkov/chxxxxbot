@@ -1,0 +1,228 @@
+"""Topic naming service for LLM-generated topic titles.
+
+Bot API 9.3 added topics in private chats. This service generates
+meaningful topic names based on conversation context.
+
+Workflow:
+1. User creates topic in Telegram (auto-generated name)
+2. User sends first message → Thread created with needs_topic_naming=True
+3. Bot responds → maybe_name_topic() called
+4. LLM generates title → bot.edit_forum_topic() applies it
+5. Thread.needs_topic_naming = False
+
+NO __init__.py - use direct import:
+    from services.topic_naming import TopicNamingService
+"""
+
+from typing import Optional
+
+from aiogram import Bot
+import config
+from core.clients import get_anthropic_async_client
+from db.models.thread import Thread
+from sqlalchemy.ext.asyncio import AsyncSession
+from utils.structured_logging import get_logger
+
+logger = get_logger(__name__)
+
+# System prompt for title generation
+# Follows Claude 4 best practices: explicit instructions, examples, context
+TOPIC_NAMING_SYSTEM_PROMPT = """Generate a short, descriptive title for a chat topic.
+
+<context>
+You are naming a Telegram chat topic based on the user's first message and the bot's response.
+The title will be displayed in the Telegram UI as the topic name.
+</context>
+
+<requirements>
+- Length: 2-6 words (max 50 characters)
+- Language: Match the user's language
+- Style: Concise noun phrase or short sentence
+- Focus: Capture the main subject or task, not generic greetings
+</requirements>
+
+<examples>
+User: "Помоги написать резюме для Junior Python разработчика"
+Bot: "Конечно! Давайте создадим резюме..."
+Title: "Резюме Junior Python"
+
+User: "What's the difference between async and await in Python?"
+Bot: "Great question! In Python, async/await..."
+Title: "Python async/await"
+
+User: "Сделай презентацию про машинное обучение для школьников"
+Bot: "Отличная задача! Создам презентацию..."
+Title: "ML презентация для школы"
+
+User: "Привет! Как дела?"
+Bot: "Привет! Всё отлично, чем могу помочь?"
+Title: "Новый чат"
+
+User: "Debug this React component that's not rendering"
+Bot: "I see the issue. The component..."
+Title: "React rendering bug"
+</examples>
+
+Output ONLY the title, nothing else."""
+
+
+class TopicNamingService:
+    """Service for generating and applying LLM-based topic names."""
+
+    def __init__(
+        self,
+        model: Optional[str] = None,
+        max_tokens: Optional[int] = None,
+    ):
+        """Initialize TopicNamingService.
+
+        Args:
+            model: Model to use for generation. Default: config.TOPIC_NAMING_MODEL
+            max_tokens: Max tokens for title. Default: config.TOPIC_NAMING_MAX_TOKENS
+        """
+        self.model = model or config.TOPIC_NAMING_MODEL
+        self.max_tokens = max_tokens or config.TOPIC_NAMING_MAX_TOKENS
+
+    async def generate_title(
+        self,
+        user_message: str,
+        bot_response: str,
+    ) -> str:
+        """Generate topic title from conversation context.
+
+        Args:
+            user_message: First user message in the topic.
+            bot_response: Bot's response to the message.
+
+        Returns:
+            Generated title (2-6 words, max 50 chars).
+        """
+        # Truncate to save tokens (first 300 chars is enough for context)
+        user_text = user_message[:300]
+        bot_text = bot_response[:300]
+
+        client = get_anthropic_async_client()
+
+        response = await client.messages.create(
+            model=self.model,
+            max_tokens=self.max_tokens,
+            system=TOPIC_NAMING_SYSTEM_PROMPT,
+            messages=[{
+                "role": "user",
+                "content": f"User: {user_text}\nBot: {bot_text}"
+            }],
+        )
+
+        title = response.content[0].text.strip()
+
+        # Remove quotes if LLM wrapped the title
+        if title.startswith('"') and title.endswith('"'):
+            title = title[1:-1]
+        if title.startswith("'") and title.endswith("'"):
+            title = title[1:-1]
+
+        # Enforce max length (Telegram limit: 128, but we want shorter)
+        return title[:50]
+
+    async def maybe_name_topic(
+        self,
+        bot: Bot,
+        thread: Thread,
+        user_message: str,
+        bot_response: str,
+        session: AsyncSession,
+    ) -> Optional[str]:
+        """Generate and apply topic name if needed.
+
+        This is a fire-and-forget operation. Errors are logged but don't
+        break the main flow.
+
+        Args:
+            bot: Telegram Bot instance.
+            thread: Thread to name.
+            user_message: First user message.
+            bot_response: Bot's response.
+            session: Database session.
+
+        Returns:
+            Generated title if applied, None otherwise.
+        """
+        # Check if naming is needed
+        if not thread.needs_topic_naming:
+            return None
+
+        # Check if feature is enabled
+        if not config.TOPIC_NAMING_ENABLED:
+            logger.debug("topic_naming.disabled")
+            return None
+
+        # Check if this is a topic (has thread_id)
+        if thread.thread_id is None:
+            logger.debug("topic_naming.not_a_topic", thread_id=thread.id)
+            thread.needs_topic_naming = False
+            return None
+
+        try:
+            # Generate title
+            title = await self.generate_title(user_message, bot_response)
+
+            logger.info(
+                "topic_naming.title_generated",
+                thread_id=thread.id,
+                telegram_thread_id=thread.thread_id,
+                title=title,
+                model=self.model,
+            )
+
+            # Apply title via Telegram API
+            await bot.edit_forum_topic(
+                chat_id=thread.chat_id,
+                message_thread_id=thread.thread_id,
+                name=title,
+            )
+
+            logger.info(
+                "topic_naming.title_applied",
+                thread_id=thread.id,
+                chat_id=thread.chat_id,
+                telegram_thread_id=thread.thread_id,
+                title=title,
+            )
+
+            # Update thread in database
+            thread.title = title
+            thread.needs_topic_naming = False
+
+            # Note: session.commit() is handled by the caller or context manager
+
+            return title
+
+        except Exception as e:
+            # Log error but don't break the main flow
+            logger.warning(
+                "topic_naming.failed",
+                thread_id=thread.id,
+                telegram_thread_id=thread.thread_id,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+            # Keep needs_topic_naming=True to retry next time
+            return None
+
+
+# Global service instance (can be overridden in tests)
+_topic_naming_service: Optional[TopicNamingService] = None
+
+
+def get_topic_naming_service() -> TopicNamingService:
+    """Get or create TopicNamingService instance.
+
+    Returns:
+        TopicNamingService singleton.
+    """
+    global _topic_naming_service  # pylint: disable=global-statement
+
+    if _topic_naming_service is None:
+        _topic_naming_service = TopicNamingService()
+
+    return _topic_naming_service
