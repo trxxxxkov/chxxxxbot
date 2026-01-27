@@ -59,7 +59,10 @@ Redis caching layer for bot performance optimization. Caches frequently accessed
 }
 ```
 
-**TTL:** 60 seconds
+**TTL:** 3600 seconds (1 hour)
+
+**Update Strategy:** Balance updated in-place via `update_cached_balance()` after charge.
+Full invalidation only on model change or payment.
 
 **Invalidation:** After any balance change (charge, payment, refund, admin topup)
 
@@ -89,9 +92,9 @@ Redis caching layer for bot performance optimization. Caches frequently accessed
 }
 ```
 
-**TTL:** 600 seconds (10 minutes)
+**TTL:** 3600 seconds (1 hour)
 
-**Invalidation:** TTL expiry only (threads rarely change)
+**Invalidation:** TTL expiry only (threads rarely change, title updated via topic naming)
 
 **Files:**
 - `cache/thread_cache.py` - Cache functions
@@ -122,9 +125,12 @@ Redis caching layer for bot performance optimization. Caches frequently accessed
 }
 ```
 
-**TTL:** 300 seconds (5 minutes)
+**TTL:** 3600 seconds (1 hour)
 
-**Invalidation:** After new message creation
+**Update Strategy:** Messages appended in-place via `update_cached_messages()`.
+Full invalidation only when needed for consistency.
+
+**Invalidation:** After new message creation (or atomic append)
 
 **Files:**
 - `cache/thread_cache.py` - Cache functions
@@ -280,7 +286,9 @@ curl -s http://localhost:8000/metrics | grep redis
 
 | Cache | TTL | Reason |
 |-------|-----|--------|
-| User | 60s | Balance changes frequently |
-| Thread | 600s | Rarely changes |
-| Messages | 300s | Balance between freshness and performance |
+| User | 3600s | Balance updated in-place, not invalidated |
+| Thread | 3600s | Rarely changes, title updated via topic naming |
+| Messages | 3600s | Appended in-place, optimal for LLM context |
 | File bytes | 3600s | Files are immutable |
+| Exec files | 3600s | Generated files, consumed once |
+| Sandbox | 3600s | E2B sandbox reuse between calls |

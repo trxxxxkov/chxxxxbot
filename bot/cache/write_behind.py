@@ -35,6 +35,10 @@ WRITE_QUEUE_KEY = "write:queue"
 FLUSH_INTERVAL = 5  # seconds between flushes
 BATCH_SIZE = 100  # max writes per flush
 
+# Retry configuration
+MAX_RETRY_ATTEMPTS = 3  # max retries before discarding
+RETRY_BACKOFF_BASE = 2  # exponential backoff base (seconds)
+
 
 class WriteType(str, Enum):
     """Type of write operation."""
@@ -117,6 +121,61 @@ async def get_queue_depth() -> int:
         return 0
 
 
+async def requeue_failed_items(failed_items: List[Dict[str, Any]]) -> int:
+    """Re-queue failed items for retry with exponential backoff.
+
+    Items that have exceeded MAX_RETRY_ATTEMPTS are discarded.
+
+    Args:
+        failed_items: List of write payloads that failed processing.
+
+    Returns:
+        Number of items successfully re-queued.
+    """
+    redis = await get_redis()
+    if redis is None:
+        return 0
+
+    requeued = 0
+    for item in failed_items:
+        retry_count = item.get("retry_count", 0) + 1
+
+        if retry_count > MAX_RETRY_ATTEMPTS:
+            # Max retries exceeded - discard item
+            logger.error(
+                "write_behind.item_discarded_max_retries",
+                write_type=item.get("type"),
+                retry_count=retry_count,
+                data_keys=list(item.get("data", {}).keys()),
+            )
+            continue
+
+        # Add retry metadata
+        item["retry_count"] = retry_count
+        item["retry_after"] = time.time() + (RETRY_BACKOFF_BASE**retry_count)
+
+        try:
+            # Push to end of queue (will be processed after current items)
+            await redis.rpush(WRITE_QUEUE_KEY, json.dumps(item))
+            requeued += 1
+
+            logger.warning(
+                "write_behind.item_requeued",
+                write_type=item.get("type"),
+                retry_count=retry_count,
+                backoff_seconds=RETRY_BACKOFF_BASE**retry_count,
+            )
+
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.error(
+                "write_behind.requeue_error",
+                write_type=item.get("type"),
+                error=str(e),
+            )
+
+    return requeued
+
+
 async def flush_writes_batch() -> List[Dict[str, Any]]:
     """Get batch of writes from queue for processing.
 
@@ -142,7 +201,10 @@ async def flush_writes_batch() -> List[Dict[str, Any]]:
         return writes
 
 
-async def _batch_insert_messages(session, messages: List[Dict]) -> int:
+async def _batch_insert_messages(
+    session,
+    messages: List[Dict],
+) -> tuple[int, List[Dict]]:
     """Batch insert messages to database.
 
     Args:
@@ -150,7 +212,7 @@ async def _batch_insert_messages(session, messages: List[Dict]) -> int:
         messages: List of message dicts from queue.
 
     Returns:
-        Number of messages inserted.
+        Tuple of (success_count, failed_items).
     """
     from datetime import datetime  # pylint: disable=import-outside-toplevel
     from datetime import timezone  # pylint: disable=import-outside-toplevel
@@ -161,6 +223,8 @@ async def _batch_insert_messages(session, messages: List[Dict]) -> int:
         MessageRole  # pylint: disable=import-outside-toplevel
 
     count = 0
+    failed = []
+
     for msg_data in messages:
         data = msg_data.get("data", {})
         try:
@@ -198,11 +262,15 @@ async def _batch_insert_messages(session, messages: List[Dict]) -> int:
                 error=str(e),
                 data_keys=list(data.keys()),
             )
+            failed.append(msg_data)
 
-    return count
+    return count, failed
 
 
-async def _batch_update_stats(session, stats: List[Dict]) -> int:
+async def _batch_update_stats(
+    session,
+    stats: List[Dict],
+) -> tuple[int, List[Dict]]:
     """Batch update user stats in database.
 
     Args:
@@ -210,16 +278,19 @@ async def _batch_update_stats(session, stats: List[Dict]) -> int:
         stats: List of stats update dicts from queue.
 
     Returns:
-        Number of stats updated.
+        Tuple of (success_count, failed_items).
     """
     from db.repositories.user_repository import \
         UserRepository  # pylint: disable=import-outside-toplevel
 
     user_repo = UserRepository(session)
     count = 0
+    failed = []
 
     # Group by user_id
     by_user: Dict[int, Dict[str, int]] = {}
+    user_items: Dict[int, List[Dict]] = {}  # Track original items per user
+
     for stat_data in stats:
         data = stat_data.get("data", {})
         user_id = data.get("user_id")
@@ -228,9 +299,11 @@ async def _batch_update_stats(session, stats: List[Dict]) -> int:
 
         if user_id not in by_user:
             by_user[user_id] = {"messages": 0, "tokens": 0}
+            user_items[user_id] = []
 
         by_user[user_id]["messages"] += data.get("messages", 0)
         by_user[user_id]["tokens"] += data.get("tokens", 0)
+        user_items[user_id].append(stat_data)
 
     # Update each user
     for user_id, totals in by_user.items():
@@ -245,11 +318,16 @@ async def _batch_update_stats(session, stats: List[Dict]) -> int:
                 user_id=user_id,
                 error=str(e),
             )
+            # Add all items for this user to failed list
+            failed.extend(user_items.get(user_id, []))
 
-    return count
+    return count, failed
 
 
-async def _batch_insert_balance_ops(session, balance_ops: List[Dict]) -> int:
+async def _batch_insert_balance_ops(
+    session,
+    balance_ops: List[Dict],
+) -> tuple[int, List[Dict]]:
     """Batch insert balance operations to database.
 
     Args:
@@ -257,7 +335,7 @@ async def _batch_insert_balance_ops(session, balance_ops: List[Dict]) -> int:
         balance_ops: List of balance operation dicts from queue.
 
     Returns:
-        Number of operations inserted.
+        Tuple of (success_count, failed_items).
     """
     from decimal import Decimal  # pylint: disable=import-outside-toplevel
 
@@ -267,6 +345,8 @@ async def _batch_insert_balance_ops(session, balance_ops: List[Dict]) -> int:
         OperationType  # pylint: disable=import-outside-toplevel
 
     count = 0
+    failed = []
+
     for op_data in balance_ops:
         data = op_data.get("data", {})
         try:
@@ -288,11 +368,15 @@ async def _batch_insert_balance_ops(session, balance_ops: List[Dict]) -> int:
                 error=str(e),
                 data_keys=list(data.keys()),
             )
+            failed.append(op_data)
 
-    return count
+    return count, failed
 
 
-async def _batch_insert_tool_calls(session, tool_calls: List[Dict]) -> int:
+async def _batch_insert_tool_calls(
+    session,
+    tool_calls: List[Dict],
+) -> tuple[int, List[Dict]]:
     """Batch insert tool calls to database.
 
     Args:
@@ -300,7 +384,7 @@ async def _batch_insert_tool_calls(session, tool_calls: List[Dict]) -> int:
         tool_calls: List of tool call dicts from queue.
 
     Returns:
-        Number of tool calls inserted.
+        Tuple of (success_count, failed_items).
     """
     from decimal import Decimal  # pylint: disable=import-outside-toplevel
 
@@ -308,6 +392,8 @@ async def _batch_insert_tool_calls(session, tool_calls: List[Dict]) -> int:
         ToolCall  # pylint: disable=import-outside-toplevel
 
     count = 0
+    failed = []
+
     for call_data in tool_calls:
         data = call_data.get("data", {})
         try:
@@ -335,20 +421,22 @@ async def _batch_insert_tool_calls(session, tool_calls: List[Dict]) -> int:
                 error=str(e),
                 data_keys=list(data.keys()),
             )
+            failed.append(call_data)
 
-    return count
+    return count, failed
 
 
 async def flush_writes(session) -> int:
-    """Flush queued writes to Postgres.
+    """Flush queued writes to Postgres with retry support.
 
-    Called by background task periodically.
+    Called by background task periodically. Failed items are re-queued
+    with exponential backoff for retry.
 
     Args:
         session: Database session.
 
     Returns:
-        Number of writes flushed.
+        Number of writes successfully flushed.
     """
     flush_start = time.time()
     writes = await flush_writes_batch()
@@ -359,40 +447,92 @@ async def flush_writes(session) -> int:
         set_write_queue_depth(queue_depth)
         return 0
 
+    # Filter out items that are not yet ready for retry
+    current_time = time.time()
+    ready_writes = []
+    delayed_writes = []
+
+    for w in writes:
+        retry_after = w.get("retry_after", 0)
+        if retry_after <= current_time:
+            ready_writes.append(w)
+        else:
+            delayed_writes.append(w)
+
+    # Re-queue delayed items immediately (they'll be skipped again)
+    if delayed_writes:
+        await requeue_failed_items(delayed_writes)
+
+    if not ready_writes:
+        queue_depth = await get_queue_depth()
+        set_write_queue_depth(queue_depth)
+        return 0
+
     # Group by type
-    messages = [w for w in writes if w.get("type") == WriteType.MESSAGE.value]
-    stats = [w for w in writes if w.get("type") == WriteType.USER_STATS.value]
+    messages = [
+        w for w in ready_writes if w.get("type") == WriteType.MESSAGE.value
+    ]
+    stats = [
+        w for w in ready_writes if w.get("type") == WriteType.USER_STATS.value
+    ]
     balance_ops = [
-        w for w in writes if w.get("type") == WriteType.BALANCE_OP.value
+        w for w in ready_writes if w.get("type") == WriteType.BALANCE_OP.value
     ]
     tool_calls = [
-        w for w in writes if w.get("type") == WriteType.TOOL_CALL.value
+        w for w in ready_writes if w.get("type") == WriteType.TOOL_CALL.value
     ]
 
-    # Process each type
+    # Process each type, collecting failed items
     msg_count = 0
     stats_count = 0
     balance_count = 0
     tool_count = 0
+    all_failed: List[Dict] = []
 
     if messages:
-        msg_count = await _batch_insert_messages(session, messages)
+        msg_count, msg_failed = await _batch_insert_messages(session, messages)
+        all_failed.extend(msg_failed)
 
     if stats:
-        stats_count = await _batch_update_stats(session, stats)
+        stats_count, stats_failed = await _batch_update_stats(session, stats)
+        all_failed.extend(stats_failed)
 
     if balance_ops:
-        balance_count = await _batch_insert_balance_ops(session, balance_ops)
+        balance_count, balance_failed = await _batch_insert_balance_ops(
+            session, balance_ops)
+        all_failed.extend(balance_failed)
 
     if tool_calls:
-        tool_count = await _batch_insert_tool_calls(session, tool_calls)
+        tool_count, tool_failed = await _batch_insert_tool_calls(
+            session, tool_calls)
+        all_failed.extend(tool_failed)
 
-    await session.commit()
+    # Try to commit
+    try:
+        await session.commit()
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        logger.error(
+            "write_behind.commit_failed",
+            error=str(e),
+            items_count=len(ready_writes),
+        )
+        # Rollback and re-queue all items for retry
+        await session.rollback()
+        all_failed = ready_writes
+
+    # Re-queue failed items for retry
+    if all_failed:
+        requeued = await requeue_failed_items(all_failed)
+        logger.warning(
+            "write_behind.items_requeued",
+            failed_count=len(all_failed),
+            requeued_count=requeued,
+        )
 
     # Calculate flush duration and record metrics
     flush_duration = time.time() - flush_start
 
-    # Record metrics per type
+    # Record metrics per type (only successful)
     if msg_count > 0:
         record_write_flush(flush_duration, "message", msg_count)
     if stats_count > 0:
@@ -415,7 +555,8 @@ async def flush_writes(session) -> int:
         stats=stats_count,
         balance_ops=balance_count,
         tool_calls=tool_count,
-        queue_items=len(writes),
+        queue_items=len(ready_writes),
+        failed_items=len(all_failed),
         flush_duration_ms=round(flush_duration * 1000, 2),
         remaining_queue_depth=queue_depth,
     )

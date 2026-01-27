@@ -7,14 +7,18 @@ accessed during Claude requests:
 
 Uses cache-aside pattern with TTL-based expiration.
 
-TTLs:
-- Thread: 600 seconds (10 minutes)
-- Messages: 300 seconds (5 minutes)
+TTLs (all 1 hour for optimal cache hit rate):
+- Thread: 3600 seconds (rarely changes)
+- Messages: 3600 seconds (appended in-place, invalidated on full rebuild)
+
+Message updates use atomic Lua script to prevent race conditions
+when multiple processes append messages concurrently.
 
 NO __init__.py - use direct import:
     from cache.thread_cache import (
         get_cached_thread, cache_thread, invalidate_thread,
-        get_cached_messages, cache_messages, invalidate_messages
+        get_cached_messages, cache_messages, invalidate_messages,
+        append_message_atomic
     )
 """
 
@@ -213,6 +217,38 @@ async def invalidate_thread(
 
 # === Messages Cache ===
 
+# Lua script for atomic message append
+# Prevents race conditions when multiple processes append messages concurrently
+# Uses cjson for JSON parsing (built into Redis)
+APPEND_MESSAGE_LUA = """
+local key = KEYS[1]
+local new_message_json = ARGV[1]
+local ttl = tonumber(ARGV[2])
+local timestamp = ARGV[3]
+
+-- Get existing data
+local data = redis.call('GET', key)
+if not data then
+    return 0  -- Cache miss, caller should rebuild cache
+end
+
+-- Parse existing cache
+local cached = cjson.decode(data)
+local messages = cached.messages or {}
+
+-- Append new message
+local new_message = cjson.decode(new_message_json)
+table.insert(messages, new_message)
+
+-- Update cache
+cached.messages = messages
+cached.cached_at = tonumber(timestamp)
+
+-- Save with TTL refresh
+redis.call('SETEX', key, ttl, cjson.encode(cached))
+return 1  -- Success
+"""
+
 
 async def get_cached_messages(internal_thread_id: int) -> Optional[list[dict]]:
     """Get cached message history for a thread.
@@ -356,21 +392,22 @@ async def invalidate_messages(internal_thread_id: int) -> bool:
         return False
 
 
-async def update_cached_messages(
+async def append_message_atomic(
     internal_thread_id: int,
     new_message: dict[str, Any],
 ) -> bool:
-    """Add a message to cached history without full invalidation.
+    """Atomically append a message to cached history.
 
-    Useful for cache-first pattern: append message to cache after
-    sending to user, queue write to database.
+    Uses Lua script to prevent race conditions when multiple processes
+    append messages concurrently. This is the preferred method for
+    adding messages to cache.
 
     Args:
         internal_thread_id: Internal thread ID (from database).
         new_message: Message dict to append.
 
     Returns:
-        True if updated successfully, False if cache miss or error.
+        True if appended successfully, False if cache miss or error.
     """
     start_time = time.time()
     redis = await get_redis()
@@ -380,46 +417,64 @@ async def update_cached_messages(
 
     try:
         key = messages_key(internal_thread_id)
-        data = await redis.get(key)
 
-        if data is None:
-            # Cache miss - can't update
+        # Execute Lua script atomically
+        result = await redis.eval(
+            APPEND_MESSAGE_LUA,
+            1,  # number of keys
+            key,  # KEYS[1]
+            json.dumps(new_message),  # ARGV[1] - new message as JSON
+            str(MESSAGES_TTL),  # ARGV[2] - TTL
+            str(time.time()),  # ARGV[3] - timestamp
+        )
+
+        elapsed = time.time() - start_time
+        record_redis_operation_time("atomic_append", elapsed)
+
+        if result == 0:
+            # Cache miss - Lua script returned 0
             logger.debug(
-                "messages_cache.update_miss",
+                "messages_cache.atomic_append_miss",
                 thread_id=internal_thread_id,
             )
             return False
 
-        cached = json.loads(data.decode("utf-8"))
-        messages = cached.get("messages", [])
-
-        # Append new message
-        messages.append(new_message)
-
-        # Update cache
-        cached["messages"] = messages
-        cached["cached_at"] = time.time()
-
-        await redis.setex(key, MESSAGES_TTL, json.dumps(cached))
-
-        elapsed = time.time() - start_time
-        record_redis_operation_time("update", elapsed)
-
         logger.debug(
-            "messages_cache.updated",
+            "messages_cache.atomic_append_success",
             thread_id=internal_thread_id,
-            new_count=len(messages),
+            elapsed_ms=round(elapsed * 1000, 2),
         )
 
         return True
 
     except Exception as e:  # pylint: disable=broad-exception-caught
         logger.warning(
-            "messages_cache.update_error",
+            "messages_cache.atomic_append_error",
             thread_id=internal_thread_id,
             error=str(e),
+            error_type=type(e).__name__,
         )
         return False
+
+
+# Backward compatibility alias
+async def update_cached_messages(
+    internal_thread_id: int,
+    new_message: dict[str, Any],
+) -> bool:
+    """Add a message to cached history (backward compatibility).
+
+    This function is an alias for append_message_atomic().
+    New code should use append_message_atomic() directly.
+
+    Args:
+        internal_thread_id: Internal thread ID (from database).
+        new_message: Message dict to append.
+
+    Returns:
+        True if updated successfully, False if cache miss or error.
+    """
+    return await append_message_atomic(internal_thread_id, new_message)
 
 
 # === Files Cache ===
