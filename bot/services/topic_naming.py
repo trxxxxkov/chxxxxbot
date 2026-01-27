@@ -47,7 +47,7 @@ The title will be displayed in the Telegram UI as the topic name.
 </context>
 
 <requirements>
-- Length: 2-6 words (max 50 characters)
+- Length: 3-6 words (max 50 characters)
 - Language: Match the user's language
 - Style: Concise noun phrase or short sentence
 - Focus: Capture the main subject or task, not generic greetings
