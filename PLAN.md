@@ -1,7 +1,7 @@
 # Architecture Improvement Plan
 
 **Date:** 2026-01-27
-**Status:** Phase 1-2 Complete, Phase 3-4 Pending
+**Status:** Phase 1-2 Complete, Phase 3.1-3.3 Complete, Phase 3.4 & 4 Pending
 **Based on:** Comprehensive Architecture Audit
 
 ---
@@ -417,7 +417,7 @@ await services.balance.charge_user(user_id, amount, description)
 
 ---
 
-### 3.2 Унификация Singleton Pattern
+### 3.2 Унификация Singleton Pattern ✅
 
 **Проблема:** 3 разных паттерна синглтонов в коде.
 
@@ -540,7 +540,7 @@ def get_claude_provider() -> ClaudeProvider:
 
 ---
 
-### 3.3 Extract BalancePolicy
+### 3.3 Extract BalancePolicy ✅
 
 **Проблема:** Логика проверки баланса в 4 местах с разными подходами.
 
