@@ -28,6 +28,7 @@ from core.mime_types import is_pdf_mime
 from core.mime_types import is_video_mime
 from core.pricing import calculate_whisper_cost
 from core.pricing import cost_to_float
+from telegram.chat_action import send_action
 from telegram.context.extractors import extract_message_context
 from telegram.context.extractors import get_sender_display
 from telegram.pipeline.models import MediaType
@@ -122,19 +123,32 @@ class MessageNormalizer:
         transcript: Optional[TranscriptInfo] = None
         transcription_charged = False
 
+        # Send appropriate chat action for media processing
         if message.voice:
+            await send_action(message.bot, message.chat.id, "record_voice",
+                              message.message_thread_id)
             transcript, transcription_charged = await self._process_voice(
                 message)
         elif message.video_note:
+            await send_action(message.bot, message.chat.id, "record_video",
+                              message.message_thread_id)
             transcript, transcription_charged = await self._process_video_note(
                 message)
         elif message.audio:
+            await send_action(message.bot, message.chat.id, "upload_voice",
+                              message.message_thread_id)
             files = await self._process_audio(message)
         elif message.video:
+            await send_action(message.bot, message.chat.id, "upload_video",
+                              message.message_thread_id)
             files = await self._process_video(message)
         elif message.photo:
+            await send_action(message.bot, message.chat.id, "upload_photo",
+                              message.message_thread_id)
             files = await self._process_photo(message)
         elif message.document:
+            await send_action(message.bot, message.chat.id, "upload_document",
+                              message.message_thread_id)
             files = await self._process_document(message)
 
         processed = ProcessedMessage(

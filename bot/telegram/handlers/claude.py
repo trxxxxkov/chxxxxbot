@@ -388,6 +388,8 @@ async def _stream_with_unified_events(
                         session=session,
                         thread_id=thread_id,
                         user_id=user_id,
+                        chat_id=first_message.chat.id,
+                        message_thread_id=first_message.message_thread_id,
                     )
                     return (idx, result)
 

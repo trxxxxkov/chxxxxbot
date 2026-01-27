@@ -14,6 +14,7 @@ from decimal import Decimal
 import time
 from typing import Optional
 
+from aiogram import Bot
 from aiogram import types
 from cache.user_cache import get_balance_from_cached
 from cache.user_cache import get_cached_user
@@ -26,10 +27,30 @@ from db.repositories.balance_operation_repository import \
 from db.repositories.user_repository import UserRepository
 from services.balance_service import BalanceService
 from sqlalchemy.ext.asyncio import AsyncSession
+from telegram.chat_action import ChatAction
+from telegram.chat_action import send_action
 from utils.metrics import record_tool_precheck_rejected
 from utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
+
+# Map tool names to appropriate chat actions
+TOOL_CHAT_ACTIONS: dict[str, ChatAction] = {
+    # Image/media tools
+    "generate_image": "upload_photo",
+    "analyze_image": "upload_photo",
+    "analyze_pdf": "upload_document",
+    "render_latex": "upload_photo",
+    # Audio tools
+    "transcribe_audio": "record_voice",
+    # File tools
+    "execute_python": "typing",
+    "deliver_file": "upload_document",
+    "preview_file": "upload_photo",
+    # Default for others
+    "web_search": "typing",
+    "web_fetch": "typing",
+}
 
 
 async def get_user_balance(
@@ -109,10 +130,12 @@ async def charge_for_tool(
 async def execute_single_tool_safe(
     tool_name: str,
     tool_input: dict,
-    bot: types.Message,
+    bot: Bot,
     session: AsyncSession,
     thread_id: int,
     user_id: int,
+    chat_id: Optional[int] = None,
+    message_thread_id: Optional[int] = None,
 ) -> dict:
     """Execute a single tool with error handling for parallel execution.
 
@@ -124,6 +147,8 @@ async def execute_single_tool_safe(
     - If balance < 0 and tool is paid, rejects with structured error
     - Claude should inform user to top up with /pay command
 
+    Sends appropriate chat action (typing indicator) before execution.
+
     Args:
         tool_name: Name of the tool to execute.
         tool_input: Tool input parameters.
@@ -131,6 +156,8 @@ async def execute_single_tool_safe(
         session: Database session.
         thread_id: Thread ID for logging.
         user_id: User ID for balance pre-check.
+        chat_id: Chat ID for typing indicator (optional).
+        message_thread_id: Forum topic ID for typing indicator (optional).
 
     Returns:
         Dict with result or error. Always includes:
@@ -144,6 +171,11 @@ async def execute_single_tool_safe(
     logger.info("tools.parallel.executing",
                 thread_id=thread_id,
                 tool_name=tool_name)
+
+    # Send appropriate chat action for this tool
+    if chat_id:
+        action = TOOL_CHAT_ACTIONS.get(tool_name, "typing")
+        await send_action(bot, chat_id, action, message_thread_id)
 
     # Phase 2.3: Balance pre-check for paid tools
     if config.TOOL_COST_PRECHECK_ENABLED and is_paid_tool(tool_name):

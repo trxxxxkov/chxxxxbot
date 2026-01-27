@@ -21,6 +21,7 @@ from db.models.user_file import FileSource
 from db.models.user_file import FileType
 from db.repositories.user_file_repository import UserFileRepository
 from sqlalchemy.ext.asyncio import AsyncSession
+from telegram.chat_action import send_action
 from utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
@@ -82,6 +83,9 @@ async def _process_single_file(
         if file_type == FileType.IMAGE and mime_type in [
                 "image/jpeg", "image/png", "image/gif", "image/webp"
         ]:
+            # Show uploading photo indicator
+            await send_action(first_message.bot, chat_id, "upload_photo",
+                              telegram_thread_id)
             sent_msg = await first_message.bot.send_photo(
                 chat_id=chat_id,
                 photo=types.BufferedInputFile(file_bytes, filename=filename),
@@ -92,6 +96,9 @@ async def _process_single_file(
                 telegram_file_id = largest.file_id
                 telegram_file_unique_id = largest.file_unique_id
         else:
+            # Show uploading document indicator
+            await send_action(first_message.bot, chat_id, "upload_document",
+                              telegram_thread_id)
             sent_msg = await first_message.bot.send_document(
                 chat_id=chat_id,
                 document=types.BufferedInputFile(file_bytes, filename=filename),
