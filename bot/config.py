@@ -58,6 +58,10 @@ DRAFT_KEEPALIVE_INTERVAL = 5.0  # Keep draft visible during long operations (sec
 TOOL_LOOP_MAX_ITERATIONS = 100  # Max tool calls per request
 TOOL_COST_PRECHECK_ENABLED = True  # Pre-check balance before paid tools
 
+# Concurrency limits (per user)
+MAX_CONCURRENT_GENERATIONS_PER_USER = 5  # Max parallel Claude API calls per user
+CONCURRENCY_QUEUE_TIMEOUT = 300.0  # Max seconds to wait in queue (5 minutes)
+
 
 @dataclass
 class ModelConfig:  # pylint: disable=too-many-instance-attributes

@@ -79,6 +79,8 @@ from db.repositories.user_file_repository import UserFileRepository
 from db.repositories.user_repository import UserRepository
 from services.balance_service import BalanceService
 from sqlalchemy.ext.asyncio import AsyncSession
+from telegram.concurrency_limiter import concurrency_context
+from telegram.concurrency_limiter import ConcurrencyLimitExceeded
 from telegram.context.extractors import extract_message_context
 from telegram.context.formatter import ContextFormatter
 from telegram.draft_streaming import DraftManager
@@ -726,9 +728,6 @@ async def _process_message_batch(thread_id: int,
         thread_id: Database thread ID.
         messages: List of ProcessedMessage objects (all I/O complete).
     """
-    # Start timing for total request
-    total_request_start = time.perf_counter()
-
     if not messages:
         logger.warning("claude_handler.empty_batch", thread_id=thread_id)
         return
@@ -763,6 +762,65 @@ async def _process_message_batch(thread_id: int,
     # Record batch metrics (Phase 3.1: Prometheus)
     if len(messages) > 1:
         record_messages_batched(len(messages))
+
+    # Extract user_id from first message for concurrency limiting
+    # Done before DB session to avoid holding connection while waiting in queue
+    user_id_for_limit = messages[0].metadata.user_id
+
+    # Acquire concurrency slot (may block if user has too many active generations)
+    # This is outside the main try to handle ConcurrencyLimitExceeded separately
+    try:
+        async with concurrency_context(user_id_for_limit,
+                                       thread_id) as queue_pos:
+            if queue_pos > 0:
+                logger.info(
+                    "claude_handler.waited_in_queue",
+                    user_id=user_id_for_limit,
+                    thread_id=thread_id,
+                    queue_position=queue_pos,
+                )
+
+            # Main processing inside concurrency context
+            await _process_batch_with_session(
+                thread_id=thread_id,
+                messages=messages,
+                first_message=first_message,
+            )
+
+    except ConcurrencyLimitExceeded as e:
+        logger.warning(
+            "claude_handler.concurrency_limit_exceeded",
+            thread_id=thread_id,
+            user_id=e.user_id,
+            queue_position=e.queue_position,
+            wait_time=round(e.wait_time, 2),
+        )
+        record_error(error_type="concurrency_limit", handler="claude")
+
+        await first_message.answer(
+            f"⚠️ Too many requests.\n\n"
+            f"You have too many pending messages. "
+            f"Please wait for current generations to complete.\n\n"
+            f"Queue position: {e.queue_position}, waited: {e.wait_time:.0f}s")
+
+
+async def _process_batch_with_session(
+    thread_id: int,
+    messages: list['ProcessedMessage'],
+    first_message: types.Message,
+) -> None:
+    """Process batch with database session.
+
+    Extracted from _process_message_batch to allow clean concurrency wrapping.
+    Contains all the main processing logic.
+
+    Args:
+        thread_id: Database thread ID.
+        messages: List of ProcessedMessage objects.
+        first_message: First Telegram message for replies.
+    """
+    # Start timing for total request
+    total_request_start = time.perf_counter()
 
     try:
         # Create new database session for this batch
