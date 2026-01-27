@@ -1,7 +1,7 @@
 # Architecture Improvement Plan
 
 **Date:** 2026-01-27
-**Status:** Planning
+**Status:** Phase 1-2 Complete, Phase 3-4 Pending
 **Based on:** Comprehensive Architecture Audit
 
 ---
@@ -15,9 +15,9 @@ Audit выявил 3 категории проблем:
 
 ---
 
-## Phase 1: Critical Fixes (P0)
+## Phase 1: Critical Fixes (P0) — ✅ COMPLETE
 
-### 1.1 TTL Mismatch Fix
+### 1.1 TTL Mismatch Fix ✅
 
 **Проблема:** Документация утверждает `messages TTL=300s`, `threads TTL=600s`, но код использует `3600s`.
 
@@ -41,7 +41,7 @@ MESSAGES_TTL = 3600  # 1 hour
 
 ---
 
-### 1.2 Atomic Message Cache Updates
+### 1.2 Atomic Message Cache Updates ✅
 
 **Проблема:** Race condition в `thread_cache.py:359-423`:
 ```python
@@ -105,7 +105,7 @@ async def append_message_atomic(
 
 ---
 
-### 1.3 Write-Behind Retry Logic
+### 1.3 Write-Behind Retry Logic ✅
 
 **Проблема:** `write_behind.py` теряет данные при ошибке flush:
 ```python
@@ -162,9 +162,9 @@ async def _flush_batch(self, items: list[WriteItem]) -> None:
 
 ---
 
-## Phase 2: Documentation Updates (P1)
+## Phase 2: Documentation Updates (P1) — ✅ COMPLETE
 
-### 2.1 Update CLAUDE.md File Structure
+### 2.1 Update CLAUDE.md File Structure ✅
 
 **Проблема:** Отсутствует `telegram/pipeline/` — ключевая архитектура.
 
@@ -187,7 +187,7 @@ async def _flush_batch(self, items: list[WriteItem]) -> None:
 
 ---
 
-### 2.2 Update phase-1.2-database.md
+### 2.2 Update phase-1.2-database.md ✅
 
 **Проблема:** Отсутствуют 5 моделей и 5 репозиториев.
 
@@ -225,9 +225,9 @@ async def _flush_batch(self, items: list[WriteItem]) -> None:
 
 ---
 
-### 2.3 Update CLAUDE.md Tools Table
+### 2.3 Update CLAUDE.md Tools Table ✅
 
-**Проблема:** Показано 9 инструментов, реально 11.
+**Проблема:** Показано 9 инструментов, реально 10.
 
 **Обновить таблицу:**
 
@@ -254,7 +254,7 @@ async def _flush_batch(self, items: list[WriteItem]) -> None:
 
 ---
 
-### 2.4 Update phase-1.5-agent-tools.md
+### 2.4 Update phase-1.5-agent-tools.md ✅
 
 **Проблема:** execute_python показан как "TODO/pending", но полностью реализован.
 

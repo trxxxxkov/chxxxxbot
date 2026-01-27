@@ -761,38 +761,24 @@ def analyze_pdf(claude_file_id: str, question: str, pages: str = "all") -> str:
 
 ---
 
-## Code Execution (External Service)
+## Code Execution (E2B) — IMPLEMENTED
 
-**Decision:** Use external code execution service instead of Claude's built-in tool.
+**Decision:** Use E2B Code Interpreter for code execution.
 
-**Why not Claude's code execution:**
+**Why E2B was chosen:**
+- ✅ Full internet access (HTTP requests, API calls)
+- ✅ Pip install any package
+- ✅ Sandboxed Python environment
+- ✅ File system I/O (input files from Files API, output files to users)
+- ✅ Reasonable pricing ($0.000036/second)
+- ✅ Good SDK and documentation
+
+**Why not Claude's built-in code execution:**
 - ❌ No internet access (cannot make API calls, pip install packages)
 - ❌ Limited to pre-installed libraries
 - ❌ Not suitable for universal bot use cases
 
-**Alternative: E2B or Modal**
-
-To be decided during Phase 1.5 implementation. Options:
-
-**Option A: E2B (e2b.dev)** - Recommended
-- Code interpreter API with internet access
-- Sandboxed Python/Node.js environments
-- File system access
-- Pip install any packages
-- Pay-as-you-go pricing
-
-**Option B: Modal (modal.com)**
-- Serverless containers
-- GPU support (for ML tasks)
-- Custom Docker images
-- Internet access
-- Free tier + pay per second
-
-**Option C: Self-hosted Docker**
-- Full control
-- More complex to maintain
-
-### execute_python Tool (Implementation pending)
+### execute_python Tool — IMPLEMENTED
 
 ```python
 # bot/core/tools/execute_python.py
@@ -844,59 +830,24 @@ def execute_python(
         JSON string with stdout, stderr, and return_code from execution.
     """
 
-    try:
-        logger.info(
-            "execute_python_called",
-            code_length=len(code),
-            requirements=requirements,
-            timeout=timeout
-        )
-
-        # TODO: Implement with chosen service (E2B/Modal)
-        # Example with E2B:
-        # sandbox = Sandbox()
-        # if requirements:
-        #     sandbox.run_code(f"pip install {' '.join(requirements)}")
-        # result = sandbox.run_code(code, timeout=timeout)
-
-        # Placeholder implementation
-        return json.dumps({
-            "stdout": "Code execution not yet implemented. Choose E2B or Modal in Phase 1.5.",
-            "stderr": "",
-            "return_code": 0
-        })
-
-    except Exception as e:
-        logger.error(
-            "execute_python_failed",
-            error=str(e),
-            exc_info=True
-        )
-        raise
+    # Full implementation in bot/core/tools/execute_python.py (800+ lines)
+    # Key features:
+    # - E2B Code Interpreter sandbox
+    # - Pip package installation
+    # - File I/O (upload inputs, download outputs)
+    # - Timeout handling (default 3 min, max 1 hour)
+    # - Sandbox reuse between calls (cached in Redis)
+    # - Output file caching with preview generation
 ```
 
-### Service Evaluation Criteria (Phase 1.5)
+**Implementation Details (bot/core/tools/execute_python.py):**
 
-When choosing between E2B, Modal, or self-hosted:
-
-**Evaluate:**
-1. **Pricing** - cost per execution, free tier limits
-2. **Latency** - cold start time, execution speed
-3. **Reliability** - uptime, SLA guarantees
-4. **Features** - file system, GPU, package management
-5. **Integration** - SDK quality, documentation
-6. **Security** - isolation, sandboxing, monitoring
-7. **Maintenance** - self-hosted vs managed
-
-**Testing during Phase 1.5:**
-- Benchmark simple execution (print hello)
-- Test pip install custom packages
-- Test HTTP requests
-- Test file I/O
-- Measure cold start vs warm start
-- Compare pricing for expected usage
-
-**Final decision documented in Phase 1.5 after implementation.**
+- **Sandbox Management:** Lazy initialization with Redis caching for reuse
+- **File Input:** Downloads from Files API → uploads to sandbox `/tmp/inputs/`
+- **File Output:** Scans `/tmp/` for new files → uploads to Files API → sends to user
+- **Cost:** $0.000036/second (~$0.13/hour)
+- **Timeout:** Default 180s, max 3600s
+- **Packages:** Any pip package can be installed on demand
 
 ---
 
@@ -1320,17 +1271,22 @@ Phase 1.5 implements multimodal support and tools using:
 - Eager upload, selective processing
 - 24-hour lifecycle, automatic cleanup
 
-**Tool Runner** - Simple implementation:
-- @beta_tool decorator for all tools
-- Automatic tool loop and error handling
-- Streaming support
+**Unified Tool Architecture** - ToolConfig pattern:
+- Each tool module exports TOOL_CONFIG with metadata
+- Registry consolidates all tools in single TOOLS dict
+- Streaming support with tool execution loop
 
-**Tools** - 5 total:
-- web_search (server-side, Claude) - $0.01/search
-- web_fetch (server-side, Claude) - FREE (tokens only)
-- analyze_image (custom, vision) - tokens only
-- analyze_pdf (custom, PDF support) - tokens only
-- execute_python (custom, external service - E2B or Modal)
+**Tools** - 10 total:
+- `analyze_image` (custom, vision) - Paid (tokens)
+- `analyze_pdf` (custom, PDF support) - Paid (tokens)
+- `transcribe_audio` (custom, Whisper API) - Paid ($0.006/min)
+- `generate_image` (custom, Gemini) - Paid ($0.134-0.240/image)
+- `render_latex` (custom, local pdflatex) - Free
+- `execute_python` (custom, E2B) - Paid ($0.000036/sec)
+- `preview_file` (custom, vision for images/PDF) - Free/Paid
+- `deliver_file` (custom, file delivery) - Free
+- `web_search` (server-side, Anthropic) - Paid ($0.01/search)
+- `web_fetch` (server-side, Anthropic) - Free (tokens only)
 
 **Best Practices** (from Phase 1.4):
 - Detailed tool descriptions (3-4+ sentences)
@@ -1339,4 +1295,4 @@ Phase 1.5 implements multimodal support and tools using:
 - Default parallel tool behavior
 - Pass errors to Claude
 
-Ready to implement after Phase 1.4 documentation review is complete.
+**Status:** ✅ COMPLETE (2026-01-10)

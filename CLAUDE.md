@@ -19,6 +19,13 @@ chxxxxbot/
 │   ├── config.py               # Settings, model registry, system prompt
 │   ├── telegram/
 │   │   ├── handlers/           # Message handlers (claude.py is main)
+│   │   ├── pipeline/           # Unified message processing
+│   │   │   ├── handler.py      # Entry point, batching
+│   │   │   ├── processor.py    # Core processing logic
+│   │   │   ├── normalizer.py   # Message normalization
+│   │   │   ├── models.py       # ProcessedMessage, UploadedFile
+│   │   │   ├── queue.py        # Message queue management
+│   │   │   └── tracker.py      # Upload tracking
 │   │   ├── middlewares/        # Logging, database, balance check
 │   │   ├── keyboards/          # Inline/reply keyboards
 │   │   └── loader.py           # Bot initialization
@@ -27,7 +34,7 @@ chxxxxbot/
 │   │   ├── tools/              # Tool implementations
 │   │   ├── message_queue.py    # 200ms batching for split messages
 │   │   └── pricing.py          # Cost calculation
-│   ├── services/               # Payment, balance services
+│   ├── services/               # Payment, balance, topic naming services
 │   ├── db/
 │   │   ├── models/             # User, Chat, Thread, Message, Payment, etc.
 │   │   └── repositories/       # CRUD operations
@@ -55,7 +62,7 @@ chxxxxbot/
 - **Extended Thinking:** 16K budget tokens for complex reasoning
 - **Prompt Caching:** 5-minute ephemeral cache (10x cost reduction)
 
-### Tools (9 total)
+### Tools (10 total)
 | Tool | Purpose | Cost |
 |------|---------|------|
 | `analyze_image` | Vision analysis via Files API | Paid |
@@ -63,10 +70,13 @@ chxxxxbot/
 | `execute_python` | E2B sandbox with file I/O | Paid |
 | `generate_image` | Google Gemini image generation | Paid |
 | `transcribe_audio` | Whisper speech-to-text | Paid |
-| `web_search` | Internet search | Paid |
-| `web_fetch` | Fetch URL content | Free |
+| `web_search` | Internet search (server-side) | Paid |
+| `web_fetch` | Fetch URL content (server-side) | Free |
 | `render_latex` | LaTeX to PNG | Free |
-| `deliver_file` / `preview_file` | File delivery control | Free |
+| `preview_file` | Preview cached file before delivery | Free* |
+| `deliver_file` | Send cached file to user | Free |
+
+*`preview_file` is free for text/CSV, paid for images/PDFs (uses Vision API)
 
 ### File Handling
 - **Input:** Any file type (images, PDFs, audio, video, documents)
@@ -79,11 +89,17 @@ chxxxxbot/
 - **Tool Cost Control:** Rejects paid tools when balance < 0
 - **Generation Stop:** /stop or new message cancels, charges partial usage
 
+### Topic Naming
+- **Auto-naming:** Topics automatically named based on first user message
+- **LLM-based:** Uses Claude Haiku for intelligent title generation (3-6 words)
+- **Cost:** ~$0.0003 per title (500 input + 50 output tokens)
+
 ### Caching (Redis)
-- **User data:** balance, model_id, custom_prompt (TTL 60s)
-- **Messages:** Thread history (TTL 300s)
+- **User data:** balance, model_id, custom_prompt (TTL 3600s)
+- **Thread:** Active thread lookup (TTL 3600s)
+- **Messages:** Thread history with atomic append (TTL 3600s)
 - **Files:** Binary cache (TTL 3600s, max 20MB)
-- **Write-behind:** Async Postgres writes (5s flush, batch 100)
+- **Write-behind:** Async Postgres writes (5s flush, batch 100, retry on failure)
 - **Circuit breaker:** 3 failures → 30s timeout
 
 ### Monitoring
@@ -129,11 +145,12 @@ chxxxxbot/
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `telegram/handlers/claude.py` | ~2000 | Main message handler, streaming, tools |
-| `telegram/handlers/files.py` | ~700 | File upload processing |
-| `telegram/handlers/media_handlers.py` | ~600 | Voice/audio/video handlers |
-| `core/tools/registry.py` | ~400 | Tool definitions and dispatch |
-| `cache/write_behind.py` | ~200 | Async DB write queue |
+| `telegram/handlers/claude.py` | ~1700 | Main message handler, streaming, tools |
+| `telegram/pipeline/handler.py` | ~360 | Unified message processing entry point |
+| `telegram/pipeline/normalizer.py` | ~700 | Message normalization, file downloads |
+| `core/tools/registry.py` | ~330 | Tool definitions and dispatch |
+| `cache/write_behind.py` | ~620 | Async DB write queue with retry |
+| `core/tools/execute_python.py` | ~950 | E2B sandbox code execution |
 
 ---
 
@@ -158,7 +175,13 @@ docker compose build bot && docker compose up -d bot
 
 ## Known Architecture Issues
 
-> To be filled after audit
+Based on audit (2026-01-27):
+- **Service initialization duplication** — Same repo/service setup in 5+ places
+- **Singleton patterns inconsistent** — 3 different patterns across codebase
+- **Streaming handler too large** — `_stream_with_unified_events` is 500+ lines
+- **Balance check logic scattered** — Duplicated in middleware, handlers, tools
+
+See `PLAN.md` for improvement roadmap.
 
 ---
 

@@ -14,17 +14,25 @@ PostgreSQL database layer with SQLAlchemy 2.0 async ORM, repository pattern, and
 # Engine
 from db.engine import init_db, dispose_db, get_session_factory
 
-# Models
+# Models (8 total)
 from db.models.user import User
 from db.models.chat import Chat
 from db.models.thread import Thread
 from db.models.message import Message, MessageRole
+from db.models.user_file import UserFile
+from db.models.payment import Payment
+from db.models.balance_operation import BalanceOperation
+from db.models.tool_call import ToolCall
 
-# Repositories
+# Repositories (8 total)
 from db.repositories.user_repository import UserRepository
 from db.repositories.chat_repository import ChatRepository
 from db.repositories.thread_repository import ThreadRepository
 from db.repositories.message_repository import MessageRepository
+from db.repositories.user_file_repository import UserFileRepository
+from db.repositories.payment_repository import PaymentRepository
+from db.repositories.balance_operation_repository import BalanceOperationRepository
+from db.repositories.tool_call_repository import ToolCallRepository
 ```
 
 **NO __init__.py files** - Python 3.12+ namespace packages with direct imports.
@@ -359,6 +367,122 @@ thread_id → threads.id ON DELETE SET NULL
 
 ---
 
+### UserFile Model (bot/db/models/user_file.py)
+
+**Purpose:** Stores uploaded files via Claude Files API with Telegram file_id mapping.
+
+**Primary Key:** `id` (auto-increment BIGSERIAL)
+
+**Key Fields:**
+```python
+id: int                       # Internal ID (auto-increment)
+thread_id: int                # FK → threads.id
+filename: str                 # Original filename
+file_type: str                # MIME type
+file_size: int                # Size in bytes
+telegram_file_id: str         # Telegram file_id for re-download
+claude_file_id: Optional[str] # Claude Files API ID
+content_hash: str             # SHA-256 hash for deduplication
+is_available: bool            # Still available in Claude Files API
+created_at: datetime          # Upload timestamp
+expires_at: Optional[datetime] # Claude file expiration (24h TTL)
+```
+
+**Indexes:**
+- `idx_user_files_thread` on thread_id
+- `idx_user_files_claude_id` on claude_file_id (unique, partial)
+- `idx_user_files_content_hash` on content_hash
+
+---
+
+### Payment Model (bot/db/models/payment.py)
+
+**Purpose:** Records Telegram Stars payments for balance top-up.
+
+**Primary Key:** `id` (auto-increment BIGSERIAL)
+
+**Key Fields:**
+```python
+id: int                              # Internal ID
+user_id: int                         # FK → users.id
+telegram_payment_charge_id: str      # Telegram payment ID (unique)
+provider_payment_charge_id: str      # Provider payment ID
+total_amount: int                    # Amount in Stars
+currency: str                        # "XTR" (Stars)
+usd_amount: Decimal                  # Converted USD amount
+status: PaymentStatus                # PENDING, COMPLETED, REFUNDED
+created_at: datetime                 # Payment timestamp
+```
+
+**PaymentStatus Enum:**
+```python
+class PaymentStatus(str, enum.Enum):
+    PENDING = "pending"
+    COMPLETED = "completed"
+    REFUNDED = "refunded"
+```
+
+**Indexes:**
+- `idx_payments_user` on user_id
+- `idx_payments_telegram_charge` on telegram_payment_charge_id (unique)
+
+---
+
+### BalanceOperation Model (bot/db/models/balance_operation.py)
+
+**Purpose:** Audit trail for all balance changes (charges, payments, refunds, admin topups).
+
+**Primary Key:** `id` (auto-increment BIGSERIAL)
+
+**Key Fields:**
+```python
+id: int                      # Internal ID
+user_id: int                 # FK → users.id
+amount: Decimal              # Change amount (positive or negative)
+balance_before: Decimal      # Balance before operation
+balance_after: Decimal       # Balance after operation
+operation_type: str          # "charge", "payment", "refund", "admin_topup"
+description: str             # Human-readable description
+reference_id: Optional[str]  # Related entity ID (payment_id, thread_id)
+created_at: datetime         # Operation timestamp
+```
+
+**Indexes:**
+- `idx_balance_ops_user` on user_id
+- `idx_balance_ops_created` on created_at
+- `idx_balance_ops_type` on operation_type
+
+---
+
+### ToolCall Model (bot/db/models/tool_call.py)
+
+**Purpose:** Records tool executions for analytics and debugging.
+
+**Primary Key:** `id` (auto-increment BIGSERIAL)
+
+**Key Fields:**
+```python
+id: int                      # Internal ID
+thread_id: int               # FK → threads.id
+user_id: int                 # FK → users.id
+tool_name: str               # Tool identifier (e.g., "execute_python")
+tool_input: dict             # JSONB - input parameters
+tool_output: Optional[dict]  # JSONB - output result
+status: str                  # "success", "error", "timeout"
+duration_ms: int             # Execution time in milliseconds
+cost_usd: Optional[Decimal]  # Estimated cost
+error_message: Optional[str] # Error details if failed
+created_at: datetime         # Execution timestamp
+```
+
+**Indexes:**
+- `idx_tool_calls_thread` on thread_id
+- `idx_tool_calls_user` on user_id
+- `idx_tool_calls_tool_name` on tool_name
+- `idx_tool_calls_status` on status
+
+---
+
 ## Repositories (bot/db/repositories/)
 
 Repository pattern provides abstraction layer for database operations. Ready for Redis caching in Phase 3.
@@ -631,6 +755,143 @@ async def save_telegram_message(
 
 ---
 
+### UserFileRepository (bot/db/repositories/user_file_repository.py)
+
+**Key Methods:**
+
+```python
+from db.repositories.user_file_repository import UserFileRepository
+
+file_repo = UserFileRepository(session)
+
+# Create file record
+file = await file_repo.create(
+    thread_id=1,
+    filename="image.png",
+    file_type="image/png",
+    file_size=102400,
+    telegram_file_id="AgACAgIAAxkBAAI...",
+    content_hash="sha256_hash",
+)
+
+# Get file by Claude ID
+file = await file_repo.get_by_claude_id("file-abc123")
+
+# Get files for thread
+files = await file_repo.get_thread_files(thread_id=1, is_available=True)
+
+# Mark file as expired
+await file_repo.mark_expired(file_id=1)
+```
+
+---
+
+### PaymentRepository (bot/db/repositories/payment_repository.py)
+
+**Key Methods:**
+
+```python
+from db.repositories.payment_repository import PaymentRepository
+
+payment_repo = PaymentRepository(session)
+
+# Create payment record
+payment = await payment_repo.create(
+    user_id=123,
+    telegram_payment_charge_id="charge_123",
+    provider_payment_charge_id="provider_456",
+    total_amount=100,  # Stars
+    usd_amount=Decimal("2.00"),
+)
+
+# Get payment by Telegram charge ID
+payment = await payment_repo.get_by_telegram_charge_id("charge_123")
+
+# Get user payments
+payments = await payment_repo.get_user_payments(user_id=123, limit=10)
+
+# Mark as refunded
+await payment_repo.mark_refunded(payment_id=1)
+```
+
+---
+
+### BalanceOperationRepository (bot/db/repositories/balance_operation_repository.py)
+
+**Key Methods:**
+
+```python
+from db.repositories.balance_operation_repository import BalanceOperationRepository
+
+balance_op_repo = BalanceOperationRepository(session)
+
+# Record balance operation
+operation = await balance_op_repo.create(
+    user_id=123,
+    amount=Decimal("-0.05"),
+    balance_before=Decimal("10.00"),
+    balance_after=Decimal("9.95"),
+    operation_type="charge",
+    description="Claude API call",
+    reference_id="thread_1",
+)
+
+# Get user's balance history
+operations = await balance_op_repo.get_user_operations(
+    user_id=123,
+    limit=50,
+    offset=0,
+)
+
+# Get operations by type
+charges = await balance_op_repo.get_by_type(
+    user_id=123,
+    operation_type="charge",
+    limit=100,
+)
+```
+
+---
+
+### ToolCallRepository (bot/db/repositories/tool_call_repository.py)
+
+**Key Methods:**
+
+```python
+from db.repositories.tool_call_repository import ToolCallRepository
+
+tool_repo = ToolCallRepository(session)
+
+# Record tool call
+tool_call = await tool_repo.create(
+    thread_id=1,
+    user_id=123,
+    tool_name="execute_python",
+    tool_input={"code": "print('hello')"},
+    status="pending",
+)
+
+# Update with result
+await tool_repo.update_result(
+    tool_call_id=1,
+    tool_output={"stdout": "hello"},
+    status="success",
+    duration_ms=1500,
+    cost_usd=Decimal("0.001"),
+)
+
+# Get thread tool calls
+calls = await tool_repo.get_thread_calls(thread_id=1, limit=50)
+
+# Get tool usage stats
+stats = await tool_repo.get_tool_stats(
+    user_id=123,
+    since=datetime.now() - timedelta(days=30),
+)
+```
+
+---
+
 ## Database Middleware (bot/telegram/middlewares/database_middleware.py)
 
 **Purpose:** Automatic session management for all handlers.
@@ -692,6 +953,10 @@ from db.models.user import User
 from db.models.chat import Chat
 from db.models.thread import Thread
 from db.models.message import Message
+from db.models.user_file import UserFile
+from db.models.payment import Payment
+from db.models.balance_operation import BalanceOperation
+from db.models.tool_call import ToolCall
 ```
 
 **Commands (run from project root):**
