@@ -4,22 +4,22 @@ Bot API 9.3 added topics in private chats. This service generates
 meaningful topic names based on conversation context.
 
 Workflow:
-1. User creates topic in Telegram (auto-generated name)
+1. User creates topic in Telegram (auto-generated name from first letters)
 2. User sends first message → Thread created with needs_topic_naming=True
-3. Bot responds → maybe_name_topic() called
-4. Check balance → if insufficient, skip LLM and keep default name
-5. LLM generates title → charge user → bot.edit_forum_topic() applies it
-6. Thread.needs_topic_naming = False
+3. Bot responds (user had balance) → maybe_name_topic() called
+4. LLM generates title → charge user → bot.edit_forum_topic() applies it
+5. Thread.needs_topic_naming = False
+
+If bot doesn't respond (command or insufficient balance), topic keeps
+the default Telegram name.
 
 NO __init__.py - use direct import:
     from services.topic_naming import TopicNamingService
 """
 
-from decimal import Decimal
 from typing import Optional
 
 from aiogram import Bot
-from cache.user_cache import get_cached_user
 from cache.user_cache import update_cached_balance
 import config
 from core.clients import get_anthropic_async_client
@@ -95,22 +95,6 @@ class TopicNamingService:
         self.model = model or config.TOPIC_NAMING_MODEL
         self.max_tokens = max_tokens or config.TOPIC_NAMING_MAX_TOKENS
 
-    async def _check_balance(self, user_id: int) -> bool:
-        """Check if user has positive balance for topic naming.
-
-        Args:
-            user_id: Telegram user ID.
-
-        Returns:
-            True if user can afford topic naming, False otherwise.
-        """
-        cached_user = await get_cached_user(user_id)
-        if cached_user:
-            return cached_user.balance > Decimal("0")
-
-        # If not cached, assume we can proceed (will check in charge)
-        return True
-
     async def generate_title(
         self,
         user_message: str,
@@ -168,11 +152,13 @@ class TopicNamingService:
     ) -> Optional[str]:
         """Generate and apply topic name if needed.
 
+        Called after bot's first response in a topic. Since the bot
+        responded, user had sufficient balance for the main response,
+        so we can proceed with topic naming (~$0.0003).
+
         This operation:
-        - Checks user balance before LLM call
         - Charges user for the API call
         - Records metrics for Grafana
-        - Falls back to keeping default name if balance insufficient
 
         Args:
             bot: Telegram Bot instance.
@@ -200,18 +186,6 @@ class TopicNamingService:
             return None
 
         user_id = thread.user_id
-
-        # Check balance before LLM call
-        has_balance = await self._check_balance(user_id)
-        if not has_balance:
-            logger.info(
-                "topic_naming.skipped_insufficient_balance",
-                thread_id=thread.id,
-                user_id=user_id,
-            )
-            # Keep default Telegram name, mark as done
-            thread.needs_topic_naming = False
-            return None
 
         try:
             # Generate title
