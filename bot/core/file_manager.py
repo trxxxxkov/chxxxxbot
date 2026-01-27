@@ -175,6 +175,10 @@ class FileManager:
     ) -> dict[str, bytes]:
         """Download multiple files in parallel by Claude file_id.
 
+        Two-phase approach to avoid SQLAlchemy concurrent session errors:
+        1. Sequential: Resolve all claude_file_ids to telegram_file_ids via DB
+        2. Parallel: Download all files from Telegram simultaneously
+
         Args:
             file_infos: List of dicts with 'file_id' and optional 'name' keys.
             use_cache: Check Redis cache first. Defaults to True.
@@ -183,7 +187,8 @@ class FileManager:
             Dict mapping filename to content bytes.
 
         Raises:
-            Exception: First exception encountered during downloads.
+            ValueError: If any file not found in database.
+            TelegramAPIError: If any download fails.
         """
         if not file_infos:
             return {}
@@ -193,20 +198,50 @@ class FileManager:
             count=len(file_infos),
         )
 
-        async def download_one(file_info: dict) -> tuple[str, bytes]:
+        # Import here to avoid circular dependencies
+        from db.repositories.user_file_repository import \
+            UserFileRepository  # pylint: disable=import-outside-toplevel
+
+        # Phase 1: Sequential DB queries to resolve telegram_file_ids
+        # (SQLAlchemy AsyncSession doesn't support concurrent operations)
+        repo = UserFileRepository(self.session)
+        resolved_files: list[tuple[str, str]] = []  # (name, telegram_file_id)
+
+        for file_info in file_infos:
+            claude_file_id = file_info["file_id"]
+            name = file_info.get("name", claude_file_id)
+
+            file_record = await repo.get_by_claude_file_id(claude_file_id)
+
+            if not file_record:
+                raise ValueError(
+                    f"File not found in database: {claude_file_id}")
+
+            if not file_record.telegram_file_id:
+                raise ValueError(
+                    f"No telegram_file_id for file {claude_file_id} ({name}). "
+                    "Cannot download from Telegram.")
+
+            resolved_files.append((name, file_record.telegram_file_id))
+
+        logger.debug(
+            "file_manager.resolved_all",
+            count=len(resolved_files),
+        )
+
+        # Phase 2: Parallel downloads from Telegram
+        # (This is safe - only uses Bot API, no DB session)
+        async def download_one(name: str,
+                               telegram_file_id: str) -> tuple[str, bytes]:
             """Download single file and return (name, content)."""
-            file_id = file_info["file_id"]
-            name = file_info.get("name", file_id)
-            content = await self.download_by_claude_id(
-                file_id,
-                filename=name,
+            content = await self.download_by_telegram_id(
+                telegram_file_id,
                 use_cache=use_cache,
             )
             return name, content
 
-        # Download all in parallel
         results = await asyncio.gather(
-            *[download_one(fi) for fi in file_infos],
+            *[download_one(name, tg_id) for name, tg_id in resolved_files],
             return_exceptions=True,
         )
 
