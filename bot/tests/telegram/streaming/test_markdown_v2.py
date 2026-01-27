@@ -1186,3 +1186,57 @@ class TestFixTruncatedMd2:
         result = fix_truncated_md2(r"\*not bold")
         # Should not add closing * because \* is escaped
         assert result == r"\*not bold"
+
+    def test_leading_special_char_escaped(self):
+        """Leading special chars that lost their backslash should be escaped."""
+        from telegram.streaming.markdown_v2 import fix_truncated_md2
+
+        # Truncation cut after \, leaving ( unescaped at start
+        # Input is already-rendered MarkdownV2 with interior chars escaped
+        result = fix_truncated_md2(r"(formula\)")
+        assert result == r"\(formula\)"
+
+        # Truncation cut after \, leaving = unescaped at start
+        result = fix_truncated_md2("=5")
+        assert result == r"\=5"
+
+        # Truncation cut after \, leaving + unescaped at start
+        result = fix_truncated_md2("+1")
+        assert result == r"\+1"
+
+    def test_leading_special_char_after_ellipsis(self):
+        """Special chars after ellipsis from truncation should be escaped."""
+        from telegram.streaming.markdown_v2 import fix_truncated_md2
+
+        # Ellipsis + truncated content starting with (
+        # Interior chars already escaped in rendered MarkdownV2
+        result = fix_truncated_md2(r"…(formula\)")
+        assert result == r"…\(formula\)"
+
+        # Ellipsis + truncated content starting with =
+        result = fix_truncated_md2("…=5 text")
+        assert result == r"…\=5 text"
+
+    def test_already_escaped_not_double_escaped(self):
+        """Already escaped chars should not be double-escaped."""
+        from telegram.streaming.markdown_v2 import fix_truncated_md2
+
+        # Already escaped (
+        result = fix_truncated_md2(r"\(formula\)")
+        assert result == r"\(formula\)"
+
+        # Ellipsis followed by already escaped
+        result = fix_truncated_md2(r"…\(formula\)")
+        assert result == r"…\(formula\)"
+
+    def test_formatting_markers_not_escaped(self):
+        """Formatting markers should not be escaped as leading chars."""
+        from telegram.streaming.markdown_v2 import fix_truncated_md2
+
+        # * is a formatting marker, should not be escaped
+        result = fix_truncated_md2("*bold text")
+        assert result == "*bold text*"
+
+        # _ is a formatting marker, should not be escaped
+        result = fix_truncated_md2("_italic text")
+        assert result == "_italic text_"

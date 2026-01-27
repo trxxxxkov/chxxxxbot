@@ -703,8 +703,9 @@ def fix_truncated_md2(text: str) -> str:
     """Fix MarkdownV2 text that was truncated mid-formatting.
 
     When text is truncated after rendering, it may have:
-    1. Trailing backslash from cut escape sequence
-    2. Unclosed formatting markers
+    1. Trailing backslash from cut escape sequence (end truncation)
+    2. Leading special char that lost its escape (beginning truncation)
+    3. Unclosed formatting markers
 
     This function repairs such damage to produce valid MarkdownV2.
 
@@ -719,10 +720,27 @@ def fix_truncated_md2(text: str) -> str:
 
     result = text
 
-    # Fix 1: Remove trailing backslash (truncated escape sequence)
+    # Fix 1a: Remove trailing backslash (truncated escape sequence)
     # A trailing \ would cause parse error
     while result.endswith("\\"):
         result = result[:-1]
+
+    # Fix 1b: Escape leading special character that lost its backslash
+    # When truncating from beginning, we may cut right after a \, leaving
+    # an unescaped special character at the start.
+    # Only escape non-formatting chars: ()>#+-={}[]!.
+    # Do NOT escape formatting markers: _*~`| (they have semantic meaning)
+    non_formatting_special = "()>#+-={}[]!."
+    if result:
+        # Check first character - only escape non-formatting special chars
+        if result[0] in non_formatting_special:
+            result = "\\" + result
+        # Check character after ellipsis (common truncation pattern: …(text)
+        elif result.startswith("…") and len(result) > 1:
+            # Only escape if not already escaped (…\ means next char is escaped)
+            if result[1] != "\\" and result[1] in non_formatting_special:
+                # Insert escape after ellipsis: …( -> …\(
+                result = "…\\" + result[1:]
 
     # Fix 2: Close unclosed formatting by counting markers
     # For MarkdownV2, we need balanced: *, _, __, ~, ||, `, ```
