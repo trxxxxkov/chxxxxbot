@@ -43,6 +43,7 @@ class WriteType(str, Enum):
     USER_STATS = "user_stats"
     BALANCE_OP = "balance_op"
     FILE = "file"
+    TOOL_CALL = "tool_call"
 
 
 async def queue_write(write_type: WriteType, data: Dict[str, Any]) -> bool:
@@ -186,6 +187,8 @@ async def _batch_insert_messages(session, messages: List[Dict]) -> int:
                 cache_creation_input_tokens=data.get("cache_write_tokens", 0),
                 thinking_tokens=data.get("thinking_tokens", 0),
                 thinking_blocks=data.get("thinking_blocks"),
+                model_id=data.get("model_id"),  # Track which model was used
+                created_at=date_value,
             )
             session.add(message)
             count += 1
@@ -289,6 +292,53 @@ async def _batch_insert_balance_ops(session, balance_ops: List[Dict]) -> int:
     return count
 
 
+async def _batch_insert_tool_calls(session, tool_calls: List[Dict]) -> int:
+    """Batch insert tool calls to database.
+
+    Args:
+        session: Database session.
+        tool_calls: List of tool call dicts from queue.
+
+    Returns:
+        Number of tool calls inserted.
+    """
+    from decimal import Decimal  # pylint: disable=import-outside-toplevel
+
+    from db.models.tool_call import \
+        ToolCall  # pylint: disable=import-outside-toplevel
+
+    count = 0
+    for call_data in tool_calls:
+        data = call_data.get("data", {})
+        try:
+            tool_call = ToolCall(
+                user_id=data["user_id"],
+                chat_id=data["chat_id"],
+                thread_id=data.get("thread_id"),
+                message_id=data.get("message_id"),
+                tool_name=data["tool_name"],
+                model_id=data["model_id"],
+                input_tokens=data.get("input_tokens", 0),
+                output_tokens=data.get("output_tokens", 0),
+                cache_read_tokens=data.get("cache_read_tokens", 0),
+                cache_creation_tokens=data.get("cache_creation_tokens", 0),
+                cost_usd=Decimal(str(data["cost_usd"])),
+                duration_ms=data.get("duration_ms"),
+                success=data.get("success", True),
+                error_message=data.get("error_message"),
+            )
+            session.add(tool_call)
+            count += 1
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.error(
+                "write_behind.tool_call_insert_error",
+                error=str(e),
+                data_keys=list(data.keys()),
+            )
+
+    return count
+
+
 async def flush_writes(session) -> int:
     """Flush queued writes to Postgres.
 
@@ -315,11 +365,15 @@ async def flush_writes(session) -> int:
     balance_ops = [
         w for w in writes if w.get("type") == WriteType.BALANCE_OP.value
     ]
+    tool_calls = [
+        w for w in writes if w.get("type") == WriteType.TOOL_CALL.value
+    ]
 
     # Process each type
     msg_count = 0
     stats_count = 0
     balance_count = 0
+    tool_count = 0
 
     if messages:
         msg_count = await _batch_insert_messages(session, messages)
@@ -329,6 +383,9 @@ async def flush_writes(session) -> int:
 
     if balance_ops:
         balance_count = await _batch_insert_balance_ops(session, balance_ops)
+
+    if tool_calls:
+        tool_count = await _batch_insert_tool_calls(session, tool_calls)
 
     await session.commit()
 
@@ -342,12 +399,14 @@ async def flush_writes(session) -> int:
         record_write_flush(flush_duration, "user_stats", stats_count)
     if balance_count > 0:
         record_write_flush(flush_duration, "balance_op", balance_count)
+    if tool_count > 0:
+        record_write_flush(flush_duration, "tool_call", tool_count)
 
     # Update queue depth after flush
     queue_depth = await get_queue_depth()
     set_write_queue_depth(queue_depth)
 
-    total = msg_count + stats_count + balance_count
+    total = msg_count + stats_count + balance_count + tool_count
 
     logger.info(
         "write_behind.flushed",
@@ -355,6 +414,7 @@ async def flush_writes(session) -> int:
         messages=msg_count,
         stats=stats_count,
         balance_ops=balance_count,
+        tool_calls=tool_count,
         queue_items=len(writes),
         flush_duration_ms=round(flush_duration * 1000, 2),
         remaining_queue_depth=queue_depth,

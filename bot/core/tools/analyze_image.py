@@ -24,7 +24,7 @@ RETRY_DELAY_SECONDS = 2.0
 RETRYABLE_STATUS_CODES = {500, 502, 503, 504, 529}
 
 
-async def analyze_image(claude_file_id: str, question: str) -> Dict[str, str]:
+async def analyze_image(claude_file_id: str, question: str) -> Dict[str, Any]:
     """Analyze an image using Claude's vision capabilities.
 
     Uses Claude Vision API to analyze images uploaded via Files API.
@@ -108,7 +108,13 @@ async def analyze_image(claude_file_id: str, question: str) -> Dict[str, str]:
             return {
                 "analysis": analysis,
                 "tokens_used": str(tokens_used),
-                "cost_usd": f"{cost_to_float(cost_usd):.6f}"
+                "cost_usd": f"{cost_to_float(cost_usd):.6f}",
+                # Detailed token info for cost tracking
+                "_model_id": model_id,
+                "_input_tokens": input_tokens,
+                "_output_tokens": output_tokens,
+                "_cache_read_tokens": 0,
+                "_cache_creation_tokens": 0,
             }
 
         except APIStatusError as e:

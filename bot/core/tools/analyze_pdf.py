@@ -26,7 +26,7 @@ RETRYABLE_STATUS_CODES = {500, 502, 503, 504, 529}
 
 async def analyze_pdf(claude_file_id: str,
                       question: str,
-                      pages: str = "all") -> Dict[str, str]:
+                      pages: str = "all") -> Dict[str, Any]:
     """Analyze a PDF document using Claude's vision and text extraction.
 
     Uses Claude PDF API to analyze PDFs uploaded via Files API.
@@ -135,7 +135,13 @@ async def analyze_pdf(claude_file_id: str,
                 "analysis": analysis,
                 "tokens_used": str(tokens_used),
                 "cached_tokens": str(cache_read_tokens),
-                "cost_usd": f"{cost_to_float(cost_usd):.6f}"
+                "cost_usd": f"{cost_to_float(cost_usd):.6f}",
+                # Detailed token info for cost tracking
+                "_model_id": model_id,
+                "_input_tokens": input_tokens,
+                "_output_tokens": output_tokens,
+                "_cache_read_tokens": cache_read_tokens or 0,
+                "_cache_creation_tokens": cache_creation_tokens or 0,
             }
 
         except APIStatusError as e:

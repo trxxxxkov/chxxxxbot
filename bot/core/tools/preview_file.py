@@ -494,7 +494,13 @@ async def _preview_image_with_vision(
                 "content": analysis,
                 "tokens_used": str(input_tokens + output_tokens),
                 "cost_usd": f"{cost_to_float(cost_usd):.6f}",
-                "message": "Image analyzed with Claude Vision"
+                "message": "Image analyzed with Claude Vision",
+                # Detailed token info for cost tracking
+                "_model_id": VISION_MODEL_ID,
+                "_input_tokens": input_tokens,
+                "_output_tokens": output_tokens,
+                "_cache_read_tokens": 0,
+                "_cache_creation_tokens": 0,
             }
 
         except APIStatusError as e:
@@ -563,7 +569,13 @@ async def _preview_pdf_with_vision(
                 "content": analysis,
                 "tokens_used": str(input_tokens + output_tokens),
                 "cost_usd": f"{cost_to_float(cost_usd):.6f}",
-                "message": "PDF analyzed with Claude"
+                "message": "PDF analyzed with Claude",
+                # Detailed token info for cost tracking
+                "_model_id": VISION_MODEL_ID,
+                "_input_tokens": input_tokens,
+                "_output_tokens": output_tokens,
+                "_cache_read_tokens": 0,
+                "_cache_creation_tokens": 0,
             }
 
         except APIStatusError as e:

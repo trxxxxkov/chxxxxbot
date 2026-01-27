@@ -463,6 +463,41 @@ async def _stream_with_unified_events(
                             record_cost(service=tool.name,
                                         amount_usd=float(
                                             clean_result["cost_usd"]))
+
+                            # Queue tool call to database for detailed tracking
+                            # Only if we have detailed token info
+                            if "_model_id" in result:
+                                tool_call_data = {
+                                    "user_id":
+                                        user_id,
+                                    "chat_id":
+                                        chat_id,
+                                    "thread_id":
+                                        thread_id,
+                                    "message_id":
+                                        first_message.message_id,
+                                    "tool_name":
+                                        tool.name,
+                                    "model_id":
+                                        result["_model_id"],
+                                    "input_tokens":
+                                        result.get("_input_tokens", 0),
+                                    "output_tokens":
+                                        result.get("_output_tokens", 0),
+                                    "cache_read_tokens":
+                                        result.get("_cache_read_tokens", 0),
+                                    "cache_creation_tokens":
+                                        result.get("_cache_creation_tokens", 0),
+                                    "cost_usd":
+                                        float(clean_result["cost_usd"]),
+                                    "duration_ms":
+                                        int(tool_duration *
+                                            1000) if tool_duration else None,
+                                    "success":
+                                        True,
+                                }
+                                await queue_write(WriteType.TOOL_CALL,
+                                                  tool_call_data)
                     else:
                         record_tool_call(tool_name=tool.name,
                                          success=False,

@@ -288,6 +288,13 @@ class Message(Base):
         doc="Extended thinking content (can be large, full reasoning)",
     )
 
+    # Model tracking for cost attribution
+    model_id: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        doc="Model used for this response (e.g., claude-sonnet-4-5)",
+    )
+
     # Timestamp (no TimestampMixin - we have date from Telegram)
     # But add created_at for record creation tracking
     # Note: No server_default for cross-database compatibility
