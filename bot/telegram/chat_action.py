@@ -71,10 +71,16 @@ async def send_action(
             action=action,
             message_thread_id=message_thread_id,
         )
+        logger.info(
+            "chat_action.sent",
+            chat_id=chat_id,
+            action=action,
+            thread_id=message_thread_id,
+        )
         return True
     except Exception as e:  # pylint: disable=broad-exception-caught
         # Don't fail the operation if chat action fails
-        logger.debug(
+        logger.warning(
             "chat_action.failed",
             chat_id=chat_id,
             action=action,

@@ -28,6 +28,7 @@ from db.repositories.user_repository import UserRepository
 from services.balance_service import BalanceService
 from sqlalchemy.ext.asyncio import AsyncSession
 from telegram.chat_action import ChatAction
+from telegram.chat_action import continuous_action
 from telegram.chat_action import send_action
 from utils.metrics import record_tool_precheck_rejected
 from utils.structured_logging import get_logger
@@ -172,11 +173,6 @@ async def execute_single_tool_safe(
                 thread_id=thread_id,
                 tool_name=tool_name)
 
-    # Send appropriate chat action for this tool
-    if chat_id:
-        action = TOOL_CHAT_ACTIONS.get(tool_name, "typing")
-        await send_action(bot, chat_id, action, message_thread_id)
-
     # Phase 2.3: Balance pre-check for paid tools
     if config.TOOL_COST_PRECHECK_ENABLED and is_paid_tool(tool_name):
         balance = await get_user_balance(user_id, session)
@@ -205,12 +201,26 @@ async def execute_single_tool_safe(
                 "_duration": duration,
             }
 
+    # Get appropriate chat action for this tool
+    action = TOOL_CHAT_ACTIONS.get(tool_name, "typing")
+
     try:
-        result = await execute_tool(tool_name,
-                                    tool_input,
-                                    bot,
-                                    session,
-                                    thread_id=thread_id)
+        # Use continuous_action to keep indicator alive during long operations
+        # (Telegram clears chat action after 5 seconds)
+        if chat_id:
+            async with continuous_action(bot, chat_id, action,
+                                         message_thread_id):
+                result = await execute_tool(tool_name,
+                                            tool_input,
+                                            bot,
+                                            session,
+                                            thread_id=thread_id)
+        else:
+            result = await execute_tool(tool_name,
+                                        tool_input,
+                                        bot,
+                                        session,
+                                        thread_id=thread_id)
         duration = time.time() - start_time
 
         # Add metadata for post-processing

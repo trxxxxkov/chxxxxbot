@@ -79,6 +79,7 @@ from db.repositories.user_file_repository import UserFileRepository
 from db.repositories.user_repository import UserRepository
 from services.balance_service import BalanceService
 from sqlalchemy.ext.asyncio import AsyncSession
+from telegram.chat_action import send_action
 from telegram.concurrency_limiter import concurrency_context
 from telegram.concurrency_limiter import ConcurrencyLimitExceeded
 from telegram.context.extractors import extract_message_context
@@ -219,6 +220,11 @@ async def _stream_with_unified_events(
             logger.info("stream.unified.iteration",
                         thread_id=thread_id,
                         iteration=iteration + 1)
+
+            # Send typing indicator at start of each iteration
+            # (especially important after tool execution when continuing text)
+            await send_action(first_message.bot, chat_id, "typing",
+                              telegram_thread_id)
 
             # Reset per-iteration state (display persists across iterations)
             stream.reset_iteration()
