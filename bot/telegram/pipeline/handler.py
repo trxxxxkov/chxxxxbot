@@ -23,6 +23,7 @@ from telegram.pipeline.models import ProcessedMessage
 from telegram.pipeline.models import TranscriptInfo
 from telegram.pipeline.normalizer import get_normalizer
 from telegram.pipeline.queue import ProcessedMessageQueue
+from telegram.pipeline.tracker import get_media_group_tracker
 from telegram.pipeline.tracker import get_tracker
 from telegram.thread_resolver import get_or_create_thread
 from utils.metrics import record_message_received
@@ -134,6 +135,12 @@ async def handle_message(message: types.Message, session: AsyncSession) -> None:
     # before processing (e.g., forwarded text + photo arrive separately)
     tracker = get_tracker()
     await tracker.start(chat_id, message.message_id)
+
+    # Track media group if present (for smart waiting)
+    media_group_id = getattr(message, 'media_group_id', None)
+    if media_group_id:
+        media_group_tracker = get_media_group_tracker()
+        await media_group_tracker.register(str(media_group_id))
 
     handler_start = time.perf_counter()
 

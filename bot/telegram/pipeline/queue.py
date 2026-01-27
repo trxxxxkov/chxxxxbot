@@ -100,10 +100,10 @@ class ProcessedMessageQueue:
         """Check if message might be part of a split message sequence.
 
         Split messages happen when user types a long message that Telegram
-        splits into multiple parts. Heuristics:
+        splits into multiple parts (~4096 char limit). Heuristics:
         - Ends with "..." or "…" → likely continues
-        - Very short (< 30 chars) → might be split part
         - Ends mid-sentence (no punctuation) → might continue
+        - Ends with sentence punctuation → likely complete
 
         Args:
             text: Message text to analyze.
@@ -122,16 +122,14 @@ class ProcessedMessageQueue:
         if text.endswith(('...', '…', '-', '—')):
             return True
 
-        # Very short messages without ending punctuation might be split
-        if len(text) < 30 and not text[-1] in '.!?»"\')}]。！？':
-            return True
-
         # Messages ending with sentence-ending punctuation are likely complete
         if text[-1] in '.!?»"\')}]。！？':
             return False
 
-        # Default: longer messages without special markers → likely standalone
-        return len(text) < 100
+        # Messages NOT ending with punctuation might be split by Telegram
+        # (Telegram splits at ~4096 chars, often mid-sentence)
+        # Add 200ms delay to collect potential continuation
+        return True
 
     async def add(
         self,
@@ -148,19 +146,22 @@ class ProcessedMessageQueue:
         """
         queue = self._get_or_create_queue(thread_id)
 
-        # Smart immediate detection:
-        # 1. Media messages → immediate (not split)
-        # 2. Messages that look standalone → immediate (skip 200ms delay)
-        # 3. Messages that might be split → wait for batch
-        looks_split = self._looks_like_split_message(message.text)
-        should_be_immediate = immediate or message.has_media or not looks_split
+        # Batching strategy:
+        # All messages are processed immediately, BUT we wait for pending
+        # normalizations first. This handles:
+        # - Telegram split messages (arrive ~100ms apart)
+        # - Media groups (multiple files)
+        # - Mixed content (text + photo sent together)
+        #
+        # The wait_for_pending_normalizations() call below ensures all
+        # messages that arrived together are collected before processing.
+        should_be_immediate = True  # Always immediate, wait handles batching
 
         logger.debug(
             "processed_queue.add",
             thread_id=thread_id,
             has_text=bool(message.text),
             has_media=message.has_media,
-            looks_split=looks_split,
             immediate=should_be_immediate,
             processing=queue.processing,
             batch_size=len(queue.messages),
@@ -189,8 +190,7 @@ class ProcessedMessageQueue:
                                      None)
 
             # Determine reason for immediate processing
-            reason = "explicit" if immediate else (
-                "media" if message.has_media else "standalone_text")
+            reason = "explicit" if immediate else "media"
 
             logger.info(
                 "processed_queue.immediate",
@@ -201,19 +201,37 @@ class ProcessedMessageQueue:
                 text_length=len(message.text) if message.text else 0,
             )
 
-            # If part of media group, wait for other messages in the group
+            # Wait for other messages that might be arriving together
+            chat_id = message.metadata.chat_id
+            text_length = len(message.text) if message.text else 0
+            is_short_text = text_length < 1000 and not message.has_media
+
             if media_group_id:
+                # Media group: smart wait for all files
+                # Uses MediaGroupTracker to detect when group is complete
+                # (no new files for 300ms = group complete)
                 logger.info(
                     "processed_queue.media_group_detected",
                     thread_id=thread_id,
                     media_group_id=media_group_id,
                 )
-                # Short delay to collect other media from the group
-                await asyncio.sleep(0.5)  # 500ms
-                # Wait for pending normalizations (other files in group)
-                chat_id = message.metadata.chat_id
+                await self._wait_for_media_group(str(media_group_id))
                 await self._wait_for_pending_normalizations(chat_id,
-                                                            timeout=3.0)
+                                                            timeout=10.0)
+            elif is_short_text:
+                # Short text without attachments: process immediately
+                # These are typical user replies, no need to delay
+                # Just quick check for any pending normalizations
+                await self._wait_for_pending_normalizations(chat_id,
+                                                            timeout=0.1)
+            else:
+                # Long text, media, or files: delay to collect related messages
+                # - Long text may be split by Telegram (~100ms between parts)
+                # - Files may come with text description
+                # - Multiple files may arrive together
+                await asyncio.sleep(0.15)  # 150ms
+                await self._wait_for_pending_normalizations(chat_id,
+                                                            timeout=0.2)
 
             await self._process_batch(thread_id)
             return
@@ -266,6 +284,33 @@ class ProcessedMessageQueue:
                 "processed_queue.timer_cancelled_during_wait",
                 thread_id=thread_id,
             )
+
+    async def _wait_for_media_group(
+        self,
+        media_group_id: str,
+        quiet_period: float = 0.3,
+        max_wait: float = 5.0,
+    ) -> None:
+        """Wait for media group to be complete.
+
+        Uses MediaGroupTracker to detect when all files in a group have arrived.
+        Waits until no new files arrive for quiet_period seconds.
+
+        Args:
+            media_group_id: Telegram media group ID.
+            quiet_period: Seconds of silence before group is complete.
+            max_wait: Maximum total wait time.
+        """
+        # Import here to avoid circular dependency
+        from telegram.pipeline.tracker import \
+            get_media_group_tracker  # pylint: disable=import-outside-toplevel
+
+        tracker = get_media_group_tracker()
+        await tracker.wait_for_complete(
+            media_group_id,
+            quiet_period=quiet_period,
+            max_wait=max_wait,
+        )
 
     async def _wait_for_pending_normalizations(
         self,
