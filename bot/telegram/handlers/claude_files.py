@@ -17,11 +17,12 @@ from aiogram import types
 from cache.thread_cache import invalidate_files
 from config import FILES_API_TTL_HOURS
 from core.claude.files_api import upload_to_files_api
+from core.mime_types import mime_to_file_type
 from db.models.user_file import FileSource
 from db.models.user_file import FileType
 from db.repositories.user_file_repository import UserFileRepository
 from sqlalchemy.ext.asyncio import AsyncSession
-from telegram.chat_action import continuous_action
+from telegram.chat_action import ActionManager
 from utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
@@ -64,28 +65,21 @@ async def _process_single_file(
             mime_type=mime_type,
         )
 
-        # Determine file type from MIME
-        if mime_type.startswith("image/"):
-            file_type = FileType.IMAGE
-        elif mime_type == "application/pdf":
-            file_type = FileType.PDF
-        elif mime_type.startswith("audio/"):
-            file_type = FileType.AUDIO
-        elif mime_type.startswith("video/"):
-            file_type = FileType.VIDEO
-        else:
-            file_type = FileType.DOCUMENT
+        # Determine file type from MIME (centralized conversion)
+        file_type = mime_to_file_type(mime_type)
 
         # Step 2: Send to Telegram with continuous action indicator
         # (keeps indicator alive even if upload takes > 5 seconds)
+        # ActionManager automatically resolves file_type to correct action
         telegram_file_id = None
         telegram_file_unique_id = None
+        manager = ActionManager.get(first_message.bot, chat_id,
+                                    telegram_thread_id)
 
         if file_type == FileType.IMAGE and mime_type in [
                 "image/jpeg", "image/png", "image/gif", "image/webp"
         ]:
-            async with continuous_action(first_message.bot, chat_id,
-                                         "upload_photo", telegram_thread_id):
+            async with manager.uploading(file_type=file_type):
                 sent_msg = await first_message.bot.send_photo(
                     chat_id=chat_id,
                     photo=types.BufferedInputFile(file_bytes,
@@ -97,8 +91,7 @@ async def _process_single_file(
                 telegram_file_id = largest.file_id
                 telegram_file_unique_id = largest.file_unique_id
         else:
-            async with continuous_action(first_message.bot, chat_id,
-                                         "upload_document", telegram_thread_id):
+            async with manager.uploading(file_type=file_type):
                 sent_msg = await first_message.bot.send_document(
                     chat_id=chat_id,
                     document=types.BufferedInputFile(file_bytes,

@@ -22,10 +22,7 @@ from aiogram import types
 from cache.file_cache import cache_file
 from core.claude.files_api import upload_to_files_api
 from core.mime_types import detect_mime_type
-from core.mime_types import is_audio_mime
-from core.mime_types import is_image_mime
-from core.mime_types import is_pdf_mime
-from core.mime_types import is_video_mime
+from core.mime_types import mime_to_media_type
 from core.pricing import calculate_whisper_cost
 from core.pricing import cost_to_float
 from telegram.chat_action import send_action
@@ -668,17 +665,8 @@ class MessageNormalizer:
             declared_mime=document.mime_type,
         )
 
-        # Determine file type from MIME
-        if is_pdf_mime(mime_type):
-            file_type = MediaType.PDF
-        elif is_image_mime(mime_type):
-            file_type = MediaType.IMAGE
-        elif is_audio_mime(mime_type):
-            file_type = MediaType.AUDIO
-        elif is_video_mime(mime_type):
-            file_type = MediaType.VIDEO
-        else:
-            file_type = MediaType.DOCUMENT
+        # Determine file type from MIME (centralized conversion)
+        file_type = mime_to_media_type(mime_type)
 
         # Upload to Files API
         claude_file_id = await upload_to_files_api(

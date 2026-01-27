@@ -27,33 +27,16 @@ from db.repositories.balance_operation_repository import \
 from db.repositories.user_repository import UserRepository
 from services.balance_service import BalanceService
 from sqlalchemy.ext.asyncio import AsyncSession
-from telegram.chat_action import ChatAction
-from telegram.chat_action import continuous_action
-from telegram.chat_action import send_action
+from telegram.chat_action import ActionManager
 from utils.metrics import record_tool_precheck_rejected
 from utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
 
-# Map tool names to appropriate chat actions
-TOOL_CHAT_ACTIONS: dict[str, ChatAction] = {
-    # Image/media tools
-    "generate_image": "upload_photo",
-    "analyze_image": "upload_photo",
-    "analyze_pdf": "upload_document",
-    "render_latex": "upload_photo",
-    # Audio tools
-    "transcribe_audio": "record_voice",
-    # File tools
-    "execute_python": "typing",
-    "deliver_file": "upload_document",
-    "preview_file": "upload_photo",
-    # Default for others
-    "web_search": "typing",
-    "web_fetch": "typing",
-}
 
-
+# Note: Tool execution uses ActionManager.generating() for typing indicator
+# File send actions (upload_photo/document) are shown during actual file send
+# in claude_files.py, not during tool execution
 async def get_user_balance(
     user_id: int,
     session: AsyncSession,
@@ -201,15 +184,12 @@ async def execute_single_tool_safe(
                 "_duration": duration,
             }
 
-    # Get appropriate chat action for this tool
-    action = TOOL_CHAT_ACTIONS.get(tool_name, "typing")
-
     try:
-        # Use continuous_action to keep indicator alive during long operations
+        # Use ActionManager to keep typing indicator alive during tool execution
         # (Telegram clears chat action after 5 seconds)
         if chat_id:
-            async with continuous_action(bot, chat_id, action,
-                                         message_thread_id):
+            manager = ActionManager.get(bot, chat_id, message_thread_id)
+            async with manager.generating():
                 result = await execute_tool(tool_name,
                                             tool_input,
                                             bot,

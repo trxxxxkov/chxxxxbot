@@ -8,9 +8,13 @@ NO __init__.py - use direct import:
 """
 
 import mimetypes
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 import magic
+
+if TYPE_CHECKING:
+    from db.models.user_file import FileType
+    from telegram.pipeline.models import MediaType
 from utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
@@ -360,3 +364,83 @@ def is_text_mime(mime_type: str) -> bool:
     return (normalized.startswith('text/') or normalized
             in ('application/json', 'application/jsonl', 'application/x-ndjson',
                 'application/xml', 'application/yaml', 'application/toml'))
+
+
+def mime_to_media_type(mime_type: str) -> "MediaType":
+    """Convert MIME type to MediaType enum.
+
+    Centralizes MIME → MediaType conversion logic previously duplicated
+    in normalizer.py and claude_files.py.
+
+    Uses existing is_*_mime() helper functions for consistent detection.
+
+    Args:
+        mime_type: MIME type string.
+
+    Returns:
+        MediaType enum value.
+
+    Examples:
+        >>> mime_to_media_type('image/png')
+        MediaType.IMAGE
+        >>> mime_to_media_type('audio/mpeg')
+        MediaType.AUDIO
+        >>> mime_to_media_type('application/pdf')
+        MediaType.PDF
+    """
+    # Import here to avoid circular dependency
+    # (MediaType is in telegram.pipeline.models which may import core modules)
+    from telegram.pipeline.models import MediaType
+
+    normalized = normalize_mime_type(mime_type)
+
+    if is_pdf_mime(normalized):
+        return MediaType.PDF
+    elif is_image_mime(normalized):
+        return MediaType.IMAGE
+    elif is_audio_mime(normalized):
+        return MediaType.AUDIO
+    elif is_video_mime(normalized):
+        return MediaType.VIDEO
+    else:
+        return MediaType.DOCUMENT
+
+
+def mime_to_file_type(mime_type: str) -> "FileType":
+    """Convert MIME type to FileType enum (database model).
+
+    Convenience function that combines mime_to_media_type() with
+    MediaType → FileType conversion. Useful for claude_files.py
+    where FileType is needed directly.
+
+    Args:
+        mime_type: MIME type string.
+
+    Returns:
+        FileType enum value.
+
+    Examples:
+        >>> mime_to_file_type('image/png')
+        FileType.IMAGE
+        >>> mime_to_file_type('audio/mpeg')
+        FileType.AUDIO
+        >>> mime_to_file_type('application/pdf')
+        FileType.PDF
+    """
+    # Import here to avoid circular dependency
+    from db.models.user_file import FileType
+    from telegram.pipeline.models import MediaType
+
+    media_type = mime_to_media_type(mime_type)
+
+    # Mapping from processor.py:_media_type_to_file_type
+    mapping = {
+        MediaType.VOICE: FileType.VOICE,
+        MediaType.VIDEO_NOTE: FileType.VIDEO,
+        MediaType.AUDIO: FileType.AUDIO,
+        MediaType.VIDEO: FileType.VIDEO,
+        MediaType.IMAGE: FileType.IMAGE,
+        MediaType.PDF: FileType.PDF,
+        MediaType.DOCUMENT: FileType.DOCUMENT,
+    }
+    return mapping.get(media_type, FileType.DOCUMENT)

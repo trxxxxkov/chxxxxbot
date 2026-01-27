@@ -79,7 +79,7 @@ from db.repositories.user_file_repository import UserFileRepository
 from db.repositories.user_repository import UserRepository
 from services.balance_service import BalanceService
 from sqlalchemy.ext.asyncio import AsyncSession
-from telegram.chat_action import send_action
+from telegram.chat_action import ActionManager
 from telegram.concurrency_limiter import concurrency_context
 from telegram.concurrency_limiter import ConcurrencyLimitExceeded
 from telegram.context.extractors import extract_message_context
@@ -195,6 +195,10 @@ async def _stream_with_unified_events(
                 max_iterations=max_iterations,
                 streaming_method="sendMessageDraft")
 
+    # Get ActionManager for this chat (singleton per chat/thread)
+    action_manager = ActionManager.get(first_message.bot, chat_id,
+                                       telegram_thread_id)
+
     # Phase 2.5: Generation tracking for /stop command
     # Combined async with to avoid extra nesting
     async with (
@@ -221,11 +225,6 @@ async def _stream_with_unified_events(
                         thread_id=thread_id,
                         iteration=iteration + 1)
 
-            # Send typing indicator at start of each iteration
-            # (especially important after tool execution when continuing text)
-            await send_action(first_message.bot, chat_id, "typing",
-                              telegram_thread_id)
-
             # Reset per-iteration state (display persists across iterations)
             stream.reset_iteration()
 
@@ -242,61 +241,64 @@ async def _stream_with_unified_events(
                 tools=request.tools,
             )
 
-            # Stream events (DraftManager handles cleanup via context manager)
+            # Stream events with continuous typing indicator
+            # (ActionManager keeps refreshing every 4 seconds until scope exits)
             # Phase 2.5: Track if cancelled for handling after loop
             was_cancelled = False
 
-            async for event in claude_provider.stream_events(iter_request):
-                # Phase 2.5: Check for user cancellation between events
-                if cancel_event.is_set():
-                    # Determine current phase for logging
-                    current_phase = "unknown"
-                    if stream.display.total_thinking_length() > 0:
-                        if stream.get_final_text():
+            async with action_manager.generating():
+                async for event in claude_provider.stream_events(iter_request):
+                    # Phase 2.5: Check for user cancellation between events
+                    if cancel_event.is_set():
+                        # Determine current phase for logging
+                        current_phase = "unknown"
+                        if stream.display.total_thinking_length() > 0:
+                            if stream.get_final_text():
+                                current_phase = "text"
+                            else:
+                                current_phase = "thinking"
+                        elif stream.get_final_text():
                             current_phase = "text"
+
+                        logger.info(
+                            "stream.cancelled_by_user",
+                            thread_id=thread_id,
+                            iteration=iteration + 1,
+                            phase=current_phase,
+                            thinking_length=stream.display.
+                            total_thinking_length(),
+                            text_length=len(stream.get_final_text()),
+                            pending_tools=len(stream.pending_tools),
+                        )
+                        was_cancelled = True
+                        break
+
+                    if event.type == "thinking_delta":
+                        await stream.handle_thinking_delta(event.content)
+
+                    elif event.type == "text_delta":
+                        await stream.handle_text_delta(event.content)
+
+                    elif event.type == "tool_use":
+                        await stream.handle_tool_use_start(
+                            event.tool_id, event.tool_name)
+
+                    elif event.type == "block_end":
+                        if event.tool_name and event.tool_id:
+                            # Tool input complete
+                            stream.handle_tool_input_complete(
+                                event.tool_id, event.tool_name,
+                                event.tool_input or {})
+                            # Update display with tool marker
+                            await stream.update_display()
                         else:
-                            current_phase = "thinking"
-                    elif stream.get_final_text():
-                        current_phase = "text"
+                            await stream.handle_block_end()
 
-                    logger.info(
-                        "stream.cancelled_by_user",
-                        thread_id=thread_id,
-                        iteration=iteration + 1,
-                        phase=current_phase,
-                        thinking_length=stream.display.total_thinking_length(),
-                        text_length=len(stream.get_final_text()),
-                        pending_tools=len(stream.pending_tools),
-                    )
-                    was_cancelled = True
-                    break
+                    elif event.type == "message_end":
+                        stream.handle_message_end(event.stop_reason)
 
-                if event.type == "thinking_delta":
-                    await stream.handle_thinking_delta(event.content)
-
-                elif event.type == "text_delta":
-                    await stream.handle_text_delta(event.content)
-
-                elif event.type == "tool_use":
-                    await stream.handle_tool_use_start(event.tool_id,
-                                                       event.tool_name)
-
-                elif event.type == "block_end":
-                    if event.tool_name and event.tool_id:
-                        # Tool input complete
-                        stream.handle_tool_input_complete(
-                            event.tool_id, event.tool_name, event.tool_input or
-                            {})
-                        # Update display with tool marker
-                        await stream.update_display()
-                    else:
-                        await stream.handle_block_end()
-
-                elif event.type == "message_end":
-                    stream.handle_message_end(event.stop_reason)
-
-                elif event.type == "stream_complete":
-                    stream.handle_stream_complete(event.final_message)
+                    elif event.type == "stream_complete":
+                        stream.handle_stream_complete(event.final_message)
 
             # Final update for any remaining text
             await stream.update_display()
@@ -1059,8 +1061,11 @@ async def _process_batch_with_session(
                         tool_count=len(request.tools) if request.tools else 0)
 
             # 7. Show typing indicator (only when starting processing)
-            await first_message.bot.send_chat_action(first_message.chat.id,
-                                                     "typing")
+            # Note: ActionManager in _stream_with_unified_events will maintain it,
+            # but we send initial one here for immediate user feedback
+            from telegram.chat_action import send_action
+            await send_action(first_message.bot, first_message.chat.id,
+                              "typing", thread.thread_id)
 
             # Start timing for response metrics
             request_start_time = time.perf_counter()

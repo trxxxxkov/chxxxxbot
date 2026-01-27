@@ -329,8 +329,10 @@ class TestMessageNormalizerDocument:
 
     @pytest.mark.asyncio
     @patch("telegram.pipeline.normalizer.upload_to_files_api")
-    @patch("telegram.pipeline.normalizer.is_pdf_mime", return_value=True)
-    @patch("telegram.pipeline.normalizer.is_image_mime", return_value=False)
+    @patch(
+        "telegram.pipeline.normalizer.mime_to_media_type",
+        return_value=MediaType.PDF,
+    )
     @patch(
         "telegram.pipeline.normalizer.detect_mime_type",
         return_value="application/pdf",
@@ -338,8 +340,7 @@ class TestMessageNormalizerDocument:
     async def test_process_pdf_document(
         self,
         mock_detect: MagicMock,
-        mock_is_image: MagicMock,
-        mock_is_pdf: MagicMock,
+        mock_mime_to_media: MagicMock,
         mock_upload: AsyncMock,
         normalizer: MessageNormalizer,
         mock_message: MagicMock,
@@ -365,8 +366,10 @@ class TestMessageNormalizerDocument:
 
     @pytest.mark.asyncio
     @patch("telegram.pipeline.normalizer.upload_to_files_api")
-    @patch("telegram.pipeline.normalizer.is_pdf_mime", return_value=False)
-    @patch("telegram.pipeline.normalizer.is_image_mime", return_value=False)
+    @patch(
+        "telegram.pipeline.normalizer.mime_to_media_type",
+        return_value=MediaType.DOCUMENT,
+    )
     @patch(
         "telegram.pipeline.normalizer.detect_mime_type",
         return_value="text/plain",
@@ -374,8 +377,7 @@ class TestMessageNormalizerDocument:
     async def test_process_text_document(
         self,
         mock_detect: MagicMock,
-        mock_is_image: MagicMock,
-        mock_is_pdf: MagicMock,
+        mock_mime_to_media: MagicMock,
         mock_upload: AsyncMock,
         normalizer: MessageNormalizer,
         mock_message: MagicMock,

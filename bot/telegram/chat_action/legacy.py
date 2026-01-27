@@ -1,48 +1,27 @@
-"""Chat action utilities for Telegram typing indicators.
+"""Legacy chat action API for backwards compatibility.
 
-This module provides helpers for sending chat actions (typing, uploading, etc.)
-to show users that the bot is working on something.
+This module preserves the original chat action functions to ensure
+existing code continues to work without modification.
 
-Available actions:
-- typing: For text generation
-- upload_photo: For sending photos
-- upload_document: For sending files
-- upload_video: For sending videos
-- upload_voice: For sending voice messages
-- record_voice: For recording voice
-- record_video: For recording video
-- choose_sticker: For sticker selection
-- find_location: For location search
+New code should prefer the ActionManager API:
+    from telegram.chat_action import ActionManager
 
-NO __init__.py - use direct import:
-    from telegram.chat_action import send_action, ChatActionContext
+Legacy API (still supported):
+    from telegram.chat_action import send_action, continuous_action
 """
 
 import asyncio
 from contextlib import asynccontextmanager
-from typing import Literal, Optional, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING
 
 from utils.structured_logging import get_logger
+
+from .types import ChatAction
 
 if TYPE_CHECKING:
     from aiogram import Bot
 
 logger = get_logger(__name__)
-
-# Type alias for chat actions
-ChatAction = Literal[
-    "typing",
-    "upload_photo",
-    "upload_document",
-    "upload_video",
-    "upload_voice",
-    "record_voice",
-    "record_video",
-    "record_video_note",
-    "upload_video_note",
-    "choose_sticker",
-    "find_location",
-]
 
 
 async def send_action(
@@ -71,7 +50,7 @@ async def send_action(
             action=action,
             message_thread_id=message_thread_id,
         )
-        logger.info(
+        logger.debug(
             "chat_action.sent",
             chat_id=chat_id,
             action=action,
