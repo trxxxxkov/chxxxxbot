@@ -34,13 +34,11 @@ DEFAULT_PARSE_MODE: ParseMode = "MarkdownV2"
 MIN_UPDATE_INTERVAL = 0.6
 
 # Default keepalive interval (seconds)
-# Increased to 12s to reduce visual "jitter" during tool execution
-DEFAULT_KEEPALIVE_INTERVAL = 12.0
+DEFAULT_KEEPALIVE_INTERVAL = 6.0
 
 # Minimum time since last update before sending keepalive (seconds)
 # If we recently sent an update, skip keepalive to avoid flood control
-# Increased to 8s to reduce visual "jitter" when Claude is thinking
-MIN_TIME_BEFORE_KEEPALIVE = 8.0
+MIN_TIME_BEFORE_KEEPALIVE = 4.0
 
 
 class DraftManager:
@@ -195,7 +193,7 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
         self._pending_text: Optional[str] = None  # Text waiting to be sent
         self._finalized = False  # Prevents keepalive on finalized drafts
         self._keepalive_task: Optional[Task[None]] = None  # Managed keepalive
-        self._keepalive_interval: float = 12.0  # Default keepalive interval
+        self._keepalive_interval: float = 6.0  # Default keepalive interval
         self._last_parse_mode: Optional[str] = DEFAULT_PARSE_MODE  # Track mode
         self._keepalive_failure_logged = False  # Prevent repeated warnings
 
@@ -247,7 +245,7 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
         self._keepalive_interval = interval
         return self
 
-    def start_keepalive(self, interval: float = 12.0) -> None:
+    def start_keepalive(self, interval: float = 6.0) -> None:
         """Start automatic keepalive task.
 
         Creates a background task that periodically sends keepalive updates
@@ -256,7 +254,7 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
         The task is automatically cancelled when finalize() or clear() is called.
 
         Args:
-            interval: Seconds between keepalive updates (default: 12.0).
+            interval: Seconds between keepalive updates (default: 6.0).
         """
         if self._keepalive_task is not None:
             return  # Already running
