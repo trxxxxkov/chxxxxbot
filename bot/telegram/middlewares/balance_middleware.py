@@ -152,7 +152,7 @@ class BalanceMiddleware(BaseMiddleware):
                     f"To use paid features, please top up your balance.\n"
                     f"Use /pay to purchase balance with Telegram Stars.")
 
-                logger.warning(
+                logger.info(
                     "balance_middleware.cache_hit_blocked",
                     user_id=user_id,
                     balance=float(cached_balance),
@@ -243,7 +243,7 @@ class BalanceMiddleware(BaseMiddleware):
                     f"To use paid features, please top up your balance.\n"
                     f"Use /pay to purchase balance with Telegram Stars.")
 
-                logger.warning(
+                logger.info(
                     "balance_middleware.request_blocked",
                     user_id=user_id,
                     balance=float(balance),
