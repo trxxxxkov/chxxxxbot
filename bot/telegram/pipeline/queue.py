@@ -216,8 +216,10 @@ class ProcessedMessageQueue:
                     media_group_id=media_group_id,
                 )
                 await self._wait_for_media_group(str(media_group_id))
+                # After media group complete, wait for normalizations
+                # 3 seconds is enough: files normalize in parallel (~1-2s each)
                 await self._wait_for_pending_normalizations(chat_id,
-                                                            timeout=10.0)
+                                                            timeout=3.0)
             elif is_short_text:
                 # Short text without attachments: process immediately
                 # These are typical user replies, no need to delay
@@ -230,8 +232,19 @@ class ProcessedMessageQueue:
                 # - Files may come with text description
                 # - Multiple files may arrive together
                 await asyncio.sleep(0.15)  # 150ms
+                # 1 second timeout: enough for photo+text arriving together
                 await self._wait_for_pending_normalizations(chat_id,
-                                                            timeout=0.2)
+                                                            timeout=1.0)
+
+            # Check if another coroutine started processing while we waited
+            # This prevents race condition where multiple coroutines call
+            # _process_batch() after waiting, first one gets messages, rest get empty
+            if queue.processing:
+                logger.debug(
+                    "processed_queue.skip_processing_already_active",
+                    thread_id=thread_id,
+                )
+                return
 
             await self._process_batch(thread_id)
             return
@@ -315,7 +328,7 @@ class ProcessedMessageQueue:
     async def _wait_for_pending_normalizations(
         self,
         chat_id: int,
-        timeout: float = 5.0,
+        timeout: float = 2.0,
     ) -> None:
         """Wait for pending normalizations in a chat.
 
@@ -366,16 +379,29 @@ class ProcessedMessageQueue:
         if not queue:
             return
 
-        # Take messages and clear
-        messages = queue.messages
-        queue.messages = []
-        queue.timer_task = None
-
-        if not messages:
-            logger.warning("processed_queue.empty_batch", thread_id=thread_id)
+        # Check if already processing (race condition protection)
+        # In asyncio, code between await points is atomic, so this check
+        # combined with immediately setting processing=True is safe.
+        if queue.processing:
+            logger.debug(
+                "processed_queue.already_processing",
+                thread_id=thread_id,
+                pending_messages=len(queue.messages),
+            )
             return
 
+        # Take messages and clear atomically (no await between these)
+        messages = queue.messages
+        if not messages:
+            # No messages to process - this can happen if another coroutine
+            # processed them just before us (race condition)
+            logger.debug("processed_queue.no_messages", thread_id=thread_id)
+            return
+
+        # Mark as processing BEFORE clearing messages to prevent race
         queue.processing = True
+        queue.messages = []
+        queue.timer_task = None
         processing_start = time.perf_counter()
 
         # Calculate queue wait times for each message

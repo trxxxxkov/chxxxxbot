@@ -46,7 +46,7 @@ class NormalizationTracker:
             tracker.finish(chat_id, message_id)
 
         # In queue, before processing batch:
-        await tracker.wait_for_chat(chat_id, timeout=3.0)
+        await tracker.wait_for_chat(chat_id, timeout=2.0)
     """
 
     def __init__(self) -> None:
@@ -82,8 +82,9 @@ class NormalizationTracker:
     async def finish(self, chat_id: int, message_id: int) -> None:
         """Mark message as finished normalizing.
 
-        Call this AFTER adding to queue, not after normalizing.
-        This ensures the message is in the queue when wait returns.
+        Call this BEFORE adding to queue, after normalizing.
+        This prevents deadlock where queue.add() waits for pending
+        normalizations but finish() is called after add().
 
         Args:
             chat_id: Telegram chat ID.

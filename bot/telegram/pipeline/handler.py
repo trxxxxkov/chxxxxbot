@@ -143,6 +143,7 @@ async def handle_message(message: types.Message, session: AsyncSession) -> None:
         await media_group_tracker.register(str(media_group_id))
 
     handler_start = time.perf_counter()
+    normalization_finished = False
 
     try:
         # 1. Normalize message (all I/O happens here)
@@ -186,7 +187,14 @@ async def handle_message(message: types.Message, session: AsyncSession) -> None:
             thread_resolve_ms=round(thread_resolve_ms, 2),
         )
 
-        # 4. Add to queue
+        # 4. Mark normalization complete BEFORE adding to queue
+        # This must happen before queue.add() because add() waits for
+        # pending normalizations. If we wait until finally block, we get
+        # deadlock: all messages wait for each other's finish().
+        await tracker.finish(chat_id, message.message_id)
+        normalization_finished = True
+
+        # 5. Add to queue
         queue = get_queue()
         await queue.add(thread_id=thread.id, message=processed)
 
@@ -228,9 +236,10 @@ async def handle_message(message: types.Message, session: AsyncSession) -> None:
             pass  # Ignore send errors
 
     finally:
-        # Mark this message as finished (AFTER adding to queue)
-        # This allows the queue to know when all messages are ready
-        await tracker.finish(chat_id, message.message_id)
+        # Mark normalization complete if not already done
+        # (in case of error before step 4)
+        if not normalization_finished:
+            await tracker.finish(chat_id, message.message_id)
 
 
 def _get_content_type(message: types.Message) -> str:  # pylint: disable=too-many-return-statements
