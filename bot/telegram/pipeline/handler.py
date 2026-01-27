@@ -305,26 +305,19 @@ async def _charge_transcription(
     """
     from decimal import Decimal  # pylint: disable=import-outside-toplevel
 
-    from db.repositories.balance_operation_repository import \
-        BalanceOperationRepository  # pylint: disable=import-outside-toplevel
-    from db.repositories.user_repository import \
-        UserRepository  # pylint: disable=import-outside-toplevel
-    from services.balance_service import \
-        BalanceService  # pylint: disable=import-outside-toplevel
+    from services.factory import \
+        ServiceFactory  # pylint: disable=import-outside-toplevel
     from telegram.pipeline.models import \
         TranscriptInfo  # pylint: disable=import-outside-toplevel
 
     try:
         whisper_cost = Decimal(str(transcript.cost_usd))
-
-        user_repo = UserRepository(session)
-        balance_op_repo = BalanceOperationRepository(session)
-        balance_service = BalanceService(session, user_repo, balance_op_repo)
+        services = ServiceFactory(session)
 
         duration = int(transcript.duration_seconds)
         description = f"Whisper API: {content_type} transcription, {duration}s"
 
-        await balance_service.charge_user(
+        await services.balance.charge_user(
             user_id=user_id,
             amount=whisper_cost,
             description=description,

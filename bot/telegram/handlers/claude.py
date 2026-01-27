@@ -70,14 +70,11 @@ from db.engine import get_session
 from db.models.message import MessageRole
 from db.models.user_file import FileSource
 from db.models.user_file import FileType
-from db.repositories.balance_operation_repository import \
-    BalanceOperationRepository
 from db.repositories.chat_repository import ChatRepository
 from db.repositories.message_repository import MessageRepository
 from db.repositories.thread_repository import ThreadRepository
 from db.repositories.user_file_repository import UserFileRepository
-from db.repositories.user_repository import UserRepository
-from services.balance_service import BalanceService
+from services.factory import ServiceFactory
 from sqlalchemy.ext.asyncio import AsyncSession
 from telegram.chat_action import ActionManager
 from telegram.chat_action import ActionPhase
@@ -916,7 +913,7 @@ async def _process_batch_with_session(
                          batch_size=len(messages))
 
             # 3. Get user for model config and custom prompt (cache-first)
-            user_repo = UserRepository(session)
+            services = ServiceFactory(session)
             user = None  # Will be loaded from DB if cache miss
             user_id = thread.user_id  # Telegram user ID
 
@@ -932,7 +929,7 @@ async def _process_batch_with_session(
                              model_id=user_model_id)
             else:
                 # Cache miss - load from DB and cache
-                user = await user_repo.get_by_id(user_id)
+                user = await services.users.get_by_id(user_id)
 
                 if not user:
                     logger.error("claude_handler.user_not_found",
@@ -1253,11 +1250,7 @@ async def _process_batch_with_session(
                 # Charge user for partial usage (tools already charged separately)
                 if partial_cost > 0:
                     try:
-                        balance_op_repo = BalanceOperationRepository(session)
-                        balance_service = BalanceService(
-                            session, user_repo, balance_op_repo)
-
-                        balance_after = await balance_service.charge_user(
+                        balance_after = await services.balance.charge_user(
                             user_id=user_id,
                             amount=partial_cost,
                             description=(
@@ -1496,7 +1489,7 @@ async def _process_batch_with_session(
             stats_queued = await queue_write(WriteType.USER_STATS, stats_data)
             if not stats_queued:
                 # Fallback to direct DB write
-                await user_repo.increment_stats(
+                await services.users.increment_stats(
                     telegram_id=user_id,
                     messages=len(messages),
                     tokens=total_tokens,
@@ -1521,12 +1514,8 @@ async def _process_batch_with_session(
 
             # Phase 2.1: Charge user for API usage
             try:
-                balance_op_repo = BalanceOperationRepository(session)
-                balance_service = BalanceService(session, user_repo,
-                                                 balance_op_repo)
-
                 # Charge user for actual cost
-                balance_after = await balance_service.charge_user(
+                balance_after = await services.balance.charge_user(
                     user_id=user_id,
                     amount=cost_usd,
                     description=(

@@ -18,10 +18,7 @@ from cache.user_cache import cache_user
 from cache.user_cache import get_balance_from_cached
 from cache.user_cache import get_cached_user
 from config import MINIMUM_BALANCE_FOR_REQUEST
-from db.repositories.balance_operation_repository import \
-    BalanceOperationRepository
-from db.repositories.user_repository import UserRepository
-from services.balance_service import BalanceService
+from services.factory import ServiceFactory
 from utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
@@ -175,19 +172,17 @@ class BalanceMiddleware(BaseMiddleware):
             return await handler(event, data)
 
         # Create services
-        user_repo = UserRepository(session)
-        balance_op_repo = BalanceOperationRepository(session)
-        balance_service = BalanceService(session, user_repo, balance_op_repo)
+        services = ServiceFactory(session)
 
         # Check balance from database
         try:
-            can_request, user_exists = await balance_service.can_make_request(
+            can_request, user_exists = await services.balance.can_make_request(
                 user_id)
 
             if not user_exists:
                 # Auto-register user (like /start does)
                 from_user = message.from_user
-                user, was_created = await user_repo.get_or_create(
+                user, was_created = await services.users.get_or_create(
                     telegram_id=from_user.id,
                     is_bot=from_user.is_bot,
                     first_name=from_user.first_name,
@@ -217,10 +212,10 @@ class BalanceMiddleware(BaseMiddleware):
 
                 # Re-check balance after registration
                 can_request, user_exists = \
-                    await balance_service.can_make_request(user_id)
+                    await services.balance.can_make_request(user_id)
             else:
                 # User exists, cache their data for future requests
-                user = await user_repo.get_by_id(user_id)
+                user = await services.users.get_by_id(user_id)
                 if user:
                     await cache_user(
                         user_id=user.id,
@@ -235,7 +230,7 @@ class BalanceMiddleware(BaseMiddleware):
 
             if not can_request:
                 # Block request - insufficient balance
-                balance = await balance_service.get_balance(user_id)
+                balance = await services.balance.get_balance(user_id)
 
                 await message.answer(
                     f"❌ <b>Insufficient balance</b>\n\n"

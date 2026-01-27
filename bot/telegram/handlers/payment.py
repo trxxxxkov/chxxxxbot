@@ -24,12 +24,7 @@ from config import DEFAULT_OWNER_MARGIN
 from config import MAX_CUSTOM_STARS
 from config import MIN_CUSTOM_STARS
 from config import STARS_PACKAGES
-from db.repositories.balance_operation_repository import \
-    BalanceOperationRepository
-from db.repositories.payment_repository import PaymentRepository
-from db.repositories.user_repository import UserRepository
-from services.balance_service import BalanceService
-from services.payment_service import PaymentService
+from services.factory import ServiceFactory
 from sqlalchemy.ext.asyncio import AsyncSession
 from utils.bot_response import log_bot_response
 from utils.structured_logging import get_logger
@@ -65,8 +60,8 @@ async def cmd_pay(message: Message, state: FSMContext, session: AsyncSession):
     user_id = user.id
 
     # Ensure user exists in database (auto-create if first interaction)
-    user_repo = UserRepository(session)
-    await user_repo.get_or_create(
+    services = ServiceFactory(session)
+    await services.users.get_or_create(
         telegram_id=user.id,
         is_bot=user.is_bot,
         first_name=user.first_name,
@@ -84,15 +79,6 @@ async def cmd_pay(message: Message, state: FSMContext, session: AsyncSession):
     )
 
     # Calculate USD for each package (for display)
-    payment_repo = PaymentRepository(session)
-    balance_op_repo = BalanceOperationRepository(session)
-    payment_service = PaymentService(
-        session,
-        user_repo,
-        payment_repo,
-        balance_op_repo,
-    )
-
     # Create keyboard with packages
     keyboard_buttons = []
 
@@ -101,7 +87,7 @@ async def cmd_pay(message: Message, state: FSMContext, session: AsyncSession):
         label = package["label"]
 
         try:
-            _, credited_usd, _, _, _ = payment_service.calculate_usd_amount(
+            _, credited_usd, _, _, _ = services.payment.calculate_usd_amount(
                 stars, DEFAULT_OWNER_MARGIN)
             button_text = f"{label}: {stars}⭐ → ${credited_usd}"
             callback_data = f"buy_stars:{stars}"
@@ -246,16 +232,11 @@ async def _send_invoice_to_user(
     )
 
     # Create services
-    user_repo = UserRepository(session)
-    payment_repo = PaymentRepository(session)
-    balance_op_repo = BalanceOperationRepository(session)
-
-    payment_service = PaymentService(session, user_repo, payment_repo,
-                                     balance_op_repo)
+    services = ServiceFactory(session)
 
     try:
         # Send invoice via Telegram (all info is in invoice description)
-        await payment_service.send_invoice(
+        await services.payment.send_invoice(
             message.bot,
             user_id,
             stars_amount,
@@ -359,17 +340,11 @@ async def process_successful_payment(message: Message, session: AsyncSession):
     )
 
     # Create services
-    user_repo = UserRepository(session)
-    payment_repo = PaymentRepository(session)
-    balance_op_repo = BalanceOperationRepository(session)
-
-    payment_service = PaymentService(session, user_repo, payment_repo,
-                                     balance_op_repo)
-    balance_service = BalanceService(session, user_repo, balance_op_repo)
+    services = ServiceFactory(session)
 
     try:
         # Process payment (creates Payment record and credits balance)
-        payment_record = await payment_service.process_successful_payment(
+        payment_record = await services.payment.process_successful_payment(
             user_id=user_id,
             telegram_payment_charge_id=payment.telegram_payment_charge_id,
             stars_amount=payment.total_amount,
@@ -378,7 +353,7 @@ async def process_successful_payment(message: Message, session: AsyncSession):
         )
 
         # Get updated balance
-        new_balance = await balance_service.get_balance(user_id)
+        new_balance = await services.balance.get_balance(user_id)
 
         # Send confirmation with transaction ID
         await message.answer(
@@ -443,13 +418,11 @@ async def cmd_refund(message: Message, session: AsyncSession):
     user = message.from_user
     user_id = user.id
 
-    # Create repositories (reused across the handler)
-    user_repo = UserRepository(session)
-    payment_repo = PaymentRepository(session)
-    balance_op_repo = BalanceOperationRepository(session)
+    # Create services
+    services = ServiceFactory(session)
 
     # Ensure user exists in database (should exist if they made a payment, but be safe)
-    await user_repo.get_or_create(
+    await services.users.get_or_create(
         telegram_id=user.id,
         is_bot=user.is_bot,
         first_name=user.first_name,
@@ -481,13 +454,9 @@ async def cmd_refund(message: Message, session: AsyncSession):
         transaction_id=transaction_id,
     )
 
-    payment_service = PaymentService(session, user_repo, payment_repo,
-                                     balance_op_repo)
-    balance_service = BalanceService(session, user_repo, balance_op_repo)
-
     try:
         # Process refund (validates and updates database)
-        payment_record = await payment_service.process_refund(
+        payment_record = await services.payment.process_refund(
             user_id, transaction_id)
 
         # Call Telegram API to refund Stars
@@ -510,7 +479,7 @@ async def cmd_refund(message: Message, session: AsyncSession):
             return
 
         # Get updated balance
-        new_balance = await balance_service.get_balance(user_id)
+        new_balance = await services.balance.get_balance(user_id)
 
         # Send confirmation
         await message.answer(
@@ -575,8 +544,8 @@ async def cmd_balance(message: Message, session: AsyncSession):
     user_id = user.id
 
     # Ensure user exists in database (auto-create if first interaction)
-    user_repo = UserRepository(session)
-    await user_repo.get_or_create(
+    services = ServiceFactory(session)
+    await services.users.get_or_create(
         telegram_id=user.id,
         is_bot=user.is_bot,
         first_name=user.first_name,
@@ -592,16 +561,13 @@ async def cmd_balance(message: Message, session: AsyncSession):
         user_id=user_id,
     )
 
-    # Create services (user_repo already created above)
-    balance_op_repo = BalanceOperationRepository(session)
-    balance_service = BalanceService(session, user_repo, balance_op_repo)
-
     try:
         # Get balance
-        balance = await balance_service.get_balance(user_id)
+        balance = await services.balance.get_balance(user_id)
 
         # Get recent history
-        operations = await balance_service.get_balance_history(user_id, limit=5)
+        operations = await services.balance.get_balance_history(user_id,
+                                                                limit=5)
 
         # Format history
         history_lines = []

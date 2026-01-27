@@ -14,11 +14,8 @@ from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
 import config
-from db.repositories.balance_operation_repository import \
-    BalanceOperationRepository
 from db.repositories.thread_repository import ThreadRepository
-from db.repositories.user_repository import UserRepository
-from services.balance_service import BalanceService
+from services.factory import ServiceFactory
 from sqlalchemy.ext.asyncio import AsyncSession
 from utils.structured_logging import get_logger
 
@@ -113,13 +110,11 @@ async def cmd_topup(message: Message, session: AsyncSession):
     )
 
     # Create services
-    user_repo = UserRepository(session)
-    balance_op_repo = BalanceOperationRepository(session)
-    balance_service = BalanceService(session, user_repo, balance_op_repo)
+    services = ServiceFactory(session)
 
     try:
         # Perform topup
-        balance_before, balance_after = await balance_service.admin_topup(
+        balance_before, balance_after = await services.balance.admin_topup(
             admin_user_id=user_id,
             target_user_id=target_user_id,
             target_username=target_username,

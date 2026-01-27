@@ -22,10 +22,7 @@ import config
 from core.exceptions import ToolValidationError
 from core.tools.cost_estimator import is_paid_tool
 from core.tools.registry import execute_tool
-from db.repositories.balance_operation_repository import \
-    BalanceOperationRepository
-from db.repositories.user_repository import UserRepository
-from services.balance_service import BalanceService
+from services.factory import ServiceFactory
 from sqlalchemy.ext.asyncio import AsyncSession
 from utils.metrics import record_tool_precheck_rejected
 from utils.structured_logging import get_logger
@@ -59,8 +56,8 @@ async def get_user_balance(
         return get_balance_from_cached(cached)
 
     # Fallback to database
-    user_repo = UserRepository(session)
-    user = await user_repo.get(user_id)
+    services = ServiceFactory(session)
+    user = await services.users.get(user_id)
     if user:
         return user.balance
 
@@ -85,11 +82,9 @@ async def charge_for_tool(
     """
     try:
         tool_cost_usd = Decimal(str(result["cost_usd"]))
-        user_repo = UserRepository(session)
-        balance_op_repo = BalanceOperationRepository(session)
-        balance_service = BalanceService(session, user_repo, balance_op_repo)
+        services = ServiceFactory(session)
 
-        await balance_service.charge_user(
+        await services.balance.charge_user(
             user_id=user_id,
             amount=tool_cost_usd,
             description=f"Tool: {tool_name}, cost ${result['cost_usd']}",

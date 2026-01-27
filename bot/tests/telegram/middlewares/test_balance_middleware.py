@@ -8,7 +8,9 @@ NO __init__.py - use direct import:
 
 from decimal import Decimal
 from unittest.mock import AsyncMock
+from unittest.mock import MagicMock
 from unittest.mock import Mock
+from unittest.mock import patch
 
 from aiogram.types import CallbackQuery
 from aiogram.types import Chat
@@ -368,12 +370,15 @@ class TestBalanceMiddlewareEdgeCases:
         data = {"session": test_session}
 
         # Mock can_make_request to raise an exception (database error)
-        with patch('telegram.middlewares.balance_middleware.BalanceService'
-                  ) as mock_service_class:
-            mock_service = mock_service_class.return_value
-            mock_service.can_make_request = AsyncMock(
-                side_effect=Exception("Database error"))
+        mock_balance_service = MagicMock()
+        mock_balance_service.can_make_request = AsyncMock(
+            side_effect=Exception("Database error"))
 
+        mock_services = MagicMock()
+        mock_services.balance = mock_balance_service
+
+        with patch('telegram.middlewares.balance_middleware.ServiceFactory',
+                   return_value=mock_services):
             # Patch logger.error to avoid rich rendering Mock objects
             with patch('telegram.middlewares.balance_middleware.logger.error'):
                 result = await middleware(mock_handler, mock_message, data)

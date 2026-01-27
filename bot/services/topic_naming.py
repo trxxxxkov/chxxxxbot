@@ -25,10 +25,7 @@ import config
 from core.clients import get_anthropic_async_client
 from core.pricing import calculate_claude_cost
 from db.models.thread import Thread
-from db.repositories.balance_operation_repository import \
-    BalanceOperationRepository
-from db.repositories.user_repository import UserRepository
-from services.balance_service import BalanceService
+from services.factory import ServiceFactory
 from sqlalchemy.ext.asyncio import AsyncSession
 from utils.metrics import record_claude_request
 from utils.metrics import record_claude_tokens
@@ -223,12 +220,9 @@ class TopicNamingService:
 
             # Charge user
             try:
-                user_repo = UserRepository(session)
-                balance_op_repo = BalanceOperationRepository(session)
-                balance_service = BalanceService(session, user_repo,
-                                                 balance_op_repo)
+                services = ServiceFactory(session)
 
-                balance_after = await balance_service.charge_user(
+                balance_after = await services.balance.charge_user(
                     user_id=user_id,
                     amount=cost_usd,
                     description=(f"Topic naming: {input_tokens} input + "

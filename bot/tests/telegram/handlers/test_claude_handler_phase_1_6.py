@@ -167,15 +167,22 @@ async def test_voice_message_transcript_prefix(
         transcript=transcript,
     )
 
+    # Create mock ServiceFactory
+    mock_services = MagicMock()
+    mock_services.threads = mock_thread_repo
+    mock_services.messages = mock_message_repo
+    mock_services.users = mock_user_repo
+    mock_services.files = mock_user_file_repo
+
     with patch('telegram.handlers.claude.get_session') as mock_get_session, \
          patch('telegram.handlers.claude.ThreadRepository',
                return_value=mock_thread_repo), \
          patch('telegram.handlers.claude.MessageRepository',
                return_value=mock_message_repo), \
-         patch('telegram.handlers.claude.UserRepository',
-               return_value=mock_user_repo), \
          patch('telegram.handlers.claude.UserFileRepository',
                return_value=mock_user_file_repo), \
+         patch('telegram.handlers.claude.ServiceFactory',
+               return_value=mock_services), \
          patch('telegram.handlers.claude.claude_provider',
                mock_claude_provider):
 
@@ -221,15 +228,22 @@ async def test_image_with_caption(mock_session, mock_message, sample_metadata,
         files=[file],
     )
 
+    # Create mock ServiceFactory
+    mock_services = MagicMock()
+    mock_services.threads = mock_thread_repo
+    mock_services.messages = mock_message_repo
+    mock_services.users = mock_user_repo
+    mock_services.files = mock_user_file_repo
+
     with patch('telegram.handlers.claude.get_session') as mock_get_session, \
          patch('telegram.handlers.claude.ThreadRepository',
                return_value=mock_thread_repo), \
          patch('telegram.handlers.claude.MessageRepository',
                return_value=mock_message_repo), \
-         patch('telegram.handlers.claude.UserRepository',
-               return_value=mock_user_repo), \
          patch('telegram.handlers.claude.UserFileRepository',
                return_value=mock_user_file_repo), \
+         patch('telegram.handlers.claude.ServiceFactory',
+               return_value=mock_services), \
          patch('telegram.handlers.claude.claude_provider',
                mock_claude_provider):
 
@@ -269,15 +283,22 @@ async def test_image_without_caption(mock_session, mock_message,
         files=[file],
     )
 
+    # Create mock ServiceFactory
+    mock_services = MagicMock()
+    mock_services.threads = mock_thread_repo
+    mock_services.messages = mock_message_repo
+    mock_services.users = mock_user_repo
+    mock_services.files = mock_user_file_repo
+
     with patch('telegram.handlers.claude.get_session') as mock_get_session, \
          patch('telegram.handlers.claude.ThreadRepository',
                return_value=mock_thread_repo), \
          patch('telegram.handlers.claude.MessageRepository',
                return_value=mock_message_repo), \
-         patch('telegram.handlers.claude.UserRepository',
-               return_value=mock_user_repo), \
          patch('telegram.handlers.claude.UserFileRepository',
                return_value=mock_user_file_repo), \
+         patch('telegram.handlers.claude.ServiceFactory',
+               return_value=mock_services), \
          patch('telegram.handlers.claude.claude_provider',
                mock_claude_provider):
 
@@ -312,15 +333,22 @@ async def test_regular_text_message(mock_session, mock_message, sample_metadata,
         original_message=mock_message,
     )
 
+    # Create mock ServiceFactory
+    mock_services = MagicMock()
+    mock_services.threads = mock_thread_repo
+    mock_services.messages = mock_message_repo
+    mock_services.users = mock_user_repo
+    mock_services.files = mock_user_file_repo
+
     with patch('telegram.handlers.claude.get_session') as mock_get_session, \
          patch('telegram.handlers.claude.ThreadRepository',
                return_value=mock_thread_repo), \
          patch('telegram.handlers.claude.MessageRepository',
                return_value=mock_message_repo), \
-         patch('telegram.handlers.claude.UserRepository',
-               return_value=mock_user_repo), \
          patch('telegram.handlers.claude.UserFileRepository',
                return_value=mock_user_file_repo), \
+         patch('telegram.handlers.claude.ServiceFactory',
+               return_value=mock_services), \
          patch('telegram.handlers.claude.claude_provider',
                mock_claude_provider):
 

@@ -48,12 +48,15 @@ class TestGetUserBalance:
         mock_repo = MagicMock()
         mock_repo.get = AsyncMock(return_value=mock_user)
 
+        mock_services = MagicMock()
+        mock_services.users = mock_repo
+
         with patch(
                 "telegram.handlers.claude_tools.get_cached_user",
                 return_value=None,
         ), patch(
-                "telegram.handlers.claude_tools.UserRepository",
-                return_value=mock_repo,
+                "telegram.handlers.claude_tools.ServiceFactory",
+                return_value=mock_services,
         ):
             mock_session = AsyncMock()
             balance = await get_user_balance(123, mock_session)
@@ -67,12 +70,15 @@ class TestGetUserBalance:
         mock_repo = MagicMock()
         mock_repo.get = AsyncMock(return_value=None)
 
+        mock_services = MagicMock()
+        mock_services.users = mock_repo
+
         with patch(
                 "telegram.handlers.claude_tools.get_cached_user",
                 return_value=None,
         ), patch(
-                "telegram.handlers.claude_tools.UserRepository",
-                return_value=mock_repo,
+                "telegram.handlers.claude_tools.ServiceFactory",
+                return_value=mock_services,
         ):
             mock_session = AsyncMock()
             balance = await get_user_balance(999, mock_session)
