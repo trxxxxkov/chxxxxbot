@@ -66,8 +66,10 @@ Use default (parallel) when:
 
 <workflow>
 1. execute_python/render_latex → output_files with temp_id
-2. (Optional) preview_file(temp_id) for CSV/XLSX verification
-3. deliver_file(temp_id) or deliver_file(temp_id, sequential=true)
+2. preview_file(file_id="exec_xxx") to verify (REQUIRED after negative feedback)
+   - Works for ALL file types: images, PDFs, CSV/XLSX, text
+   - Does NOT send to user — safe to use for verification
+3. deliver_file(temp_id) — sends to user after verification
 </workflow>
 
 <cache_expiry>

@@ -37,20 +37,26 @@ def _run_sandbox_sync(  # pylint: disable=too-many-locals,too-many-statements
     downloaded_files: Dict[str, bytes],
     requirements: Optional[str],
     timeout: float,
-) -> Tuple[Dict[str, Any], float]:
+    cached_sandbox_id: Optional[str] = None,
+) -> Tuple[Dict[str, Any], float, Optional[str]]:
     """Run code in E2B sandbox synchronously.
 
     This function is designed to be called via asyncio.to_thread() to avoid
     blocking the event loop during sandbox operations.
+
+    Supports sandbox reuse: if cached_sandbox_id is provided, attempts to
+    reconnect to existing sandbox. On success, packages and files persist.
 
     Args:
         code: Python code to execute.
         downloaded_files: Pre-downloaded files as {filename: bytes}.
         requirements: Optional pip packages to install.
         timeout: Execution timeout in seconds.
+        cached_sandbox_id: Optional sandbox ID to reconnect to.
 
     Returns:
-        Tuple of (result_dict, sandbox_duration_seconds).
+        Tuple of (result_dict, sandbox_duration_seconds, sandbox_id).
+        sandbox_id is returned for caching (sandbox is NOT killed on success).
     """
     import os  # pylint: disable=import-outside-toplevel
     import time  # pylint: disable=import-outside-toplevel
@@ -59,12 +65,32 @@ def _run_sandbox_sync(  # pylint: disable=too-many-locals,too-many-statements
     os.environ["E2B_API_KEY"] = api_key
 
     sandbox_start_time = time.time()
+    sandbox = None
+    reused = False
 
-    # Manual sandbox lifecycle management to handle cleanup errors gracefully.
-    # Using context manager causes cleanup errors to lose all execution results.
-    sandbox = Sandbox.create()
+    # Try to reconnect to existing sandbox if cached
+    if cached_sandbox_id:
+        try:
+            sandbox = Sandbox.connect(cached_sandbox_id)
+            reused = True
+            logger.info("tools.execute_python.sandbox_reused",
+                        sandbox_id=cached_sandbox_id)
+        except Exception as reconnect_error:
+            logger.warning("tools.execute_python.sandbox_reconnect_failed",
+                           sandbox_id=cached_sandbox_id,
+                           error=str(reconnect_error))
+            sandbox = None
+
+    # Create new sandbox if no cached or reconnect failed
+    if sandbox is None:
+        sandbox = Sandbox.create()
+        logger.info("tools.execute_python.sandbox_created",
+                    sandbox_id=sandbox.sandbox_id)
+
+    execution_failed = False
     try:
         # Upload pre-downloaded files to sandbox
+        # Always upload files (even on reuse) as user may have new files
         if downloaded_files:
             sandbox.commands.run("mkdir -p /tmp/inputs")
 
@@ -74,12 +100,15 @@ def _run_sandbox_sync(  # pylint: disable=too-many-locals,too-many-statements
                 logger.info("tools.execute_python.file_uploaded_to_sandbox",
                             filename=filename,
                             sandbox_path=sandbox_path,
-                            size_bytes=len(file_content))
+                            size_bytes=len(file_content),
+                            reused_sandbox=reused)
 
         # Install pip packages if specified
+        # On reused sandbox, packages may already be installed but pip handles this
         if requirements:
             logger.info("tools.execute_python.installing_packages",
-                        requirements=requirements)
+                        requirements=requirements,
+                        reused_sandbox=reused)
             install_output = sandbox.commands.run(f"pip install {requirements}")
             logger.info("tools.execute_python.packages_installed",
                         exit_code=install_output.exit_code,
@@ -195,18 +224,27 @@ def _run_sandbox_sync(  # pylint: disable=too-many-locals,too-many-statements
         if generated_files:
             result["_raw_files"] = generated_files
 
-        return result, sandbox_duration
+        # Return sandbox_id for caching (do NOT kill on success)
+        return result, sandbox_duration, sandbox.sandbox_id
+
+    except Exception as exec_error:
+        # Mark execution as failed so we kill sandbox in finally
+        execution_failed = True
+        raise exec_error
 
     finally:
-        # Attempt to kill sandbox, but don't let cleanup errors lose our results.
-        # E2B infrastructure issues (timeouts, port errors) can cause kill() to fail
-        # even when execution completed successfully.
-        try:
-            sandbox.kill()
-        except Exception as cleanup_error:  # pylint: disable=broad-exception-caught
-            # Log as warning, not error - this is a cleanup issue, not execution failure
-            logger.warning("tools.execute_python.sandbox_cleanup_failed",
-                           error=str(cleanup_error))
+        # Only kill sandbox on execution failure to avoid stale state
+        # On success, sandbox is kept alive for reuse (E2B auto-expires after idle)
+        if execution_failed:
+            try:
+                sandbox.kill()
+                logger.info("tools.execute_python.sandbox_killed_on_error")
+            except Exception as cleanup_error:  # pylint: disable=broad-exception-caught
+                logger.warning("tools.execute_python.sandbox_cleanup_failed",
+                               error=str(cleanup_error))
+        else:
+            logger.debug("tools.execute_python.sandbox_kept_alive",
+                         sandbox_id=sandbox.sandbox_id)
 
 
 # pylint: disable=too-many-locals,too-many-statements
@@ -307,7 +345,16 @@ async def execute_python(code: str,
                 "cost_usd": "0.000000",
             }
 
-        # Step 1: Download all input files IN PARALLEL before sandbox
+        # Step 1: Check for cached sandbox (allows reuse between calls)
+        # pylint: disable=import-outside-toplevel
+        from cache.sandbox_cache import cache_sandbox
+        from cache.sandbox_cache import get_cached_sandbox
+        from cache.sandbox_cache import invalidate_sandbox
+        cached_sandbox_id = None
+        if thread_id:
+            cached_sandbox_id = await get_cached_sandbox(thread_id)
+
+        # Step 2: Download all input files IN PARALLEL before sandbox
         # This allows event loop to handle keepalive during downloads
         # Phase 3.2+: Using unified FileManager for all downloads
         downloaded_files: Dict[str, bytes] = {}
@@ -316,29 +363,41 @@ async def execute_python(code: str,
                         file_count=len(file_inputs))
 
             # Use FileManager for parallel downloads with caching
-            from core.file_manager import \
-                FileManager  # pylint: disable=import-outside-toplevel
+            from core.file_manager import FileManager
             file_manager = FileManager(bot, session)
             downloaded_files = await file_manager.download_many_by_claude_id(
                 file_inputs,
                 use_cache=True,
             )
 
-        # Step 2: Run sandbox in thread pool to avoid blocking event loop
+        # Step 3: Run sandbox in thread pool to avoid blocking event loop
         # This allows keepalive updates during long sandbox operations
-        result, sandbox_duration = await asyncio.to_thread(
-            _run_sandbox_sync,
-            code,
-            downloaded_files,
-            requirements,
-            timeout or 3600.0,
-        )
+        # Pass cached_sandbox_id for reuse (faster iterations)
+        try:
+            result, sandbox_duration, sandbox_id = await asyncio.to_thread(
+                _run_sandbox_sync,
+                code,
+                downloaded_files,
+                requirements,
+                timeout or 3600.0,
+                cached_sandbox_id,
+            )
 
-        # Step 3: Add cost to result
+            # Cache sandbox for reuse on success
+            if thread_id and sandbox_id:
+                await cache_sandbox(thread_id, sandbox_id)
+
+        except Exception as sandbox_error:
+            # Invalidate cached sandbox on error (stale state)
+            if thread_id:
+                await invalidate_sandbox(thread_id)
+            raise sandbox_error
+
+        # Step 4: Add cost to result
         cost_usd = calculate_e2b_cost(sandbox_duration)
         result["cost_usd"] = f"{cost_to_float(cost_usd):.6f}"
 
-        # Step 4: Process generated files - store in Redis cache IN PARALLEL
+        # Step 5: Process generated files - store in Redis cache IN PARALLEL
         # Phase 3.2+: Model decides whether to deliver files to user
         # Phase 3.2+: Parallelized caching for better latency
         raw_files = result.pop("_raw_files", [])
@@ -524,24 +583,33 @@ Preview helps you understand file content without seeing binary data.
 </file_input_output>
 
 <verification_workflow>
-CRITICAL - VERIFY BEFORE DELIVERING:
+VERIFY BEFORE DELIVERING - especially after negative feedback:
 
-After generating files, VERIFY the result before delivering to user.
+After generating files, verify the result BEFORE delivering to user.
 Verification catches issues that code-level checks miss (corrupted files,
 encoding problems, incomplete conversions, wrong output format).
 
-Verification process:
+**Verification process:**
 1. Check output_files preview (size, dimensions, format info)
-2. If unsure about quality, use validation tools:
-   - For PDFs: analyze_pdf with temp_id (use deliver_file first, then analyze)
-   - For images: analyze_image with temp_id (use deliver_file first, then analyze)
-3. If problems found, iterate with different approach
-4. Only deliver when confident file is correct
+2. For images <1MB: base64 preview is included in tool results — examine it!
+3. If preview insufficient or need detailed analysis:
+   - Use preview_file(file_id="exec_xxx", question="...") for ANY file type
+   - preview_file handles images/PDFs by uploading to Files API internally
+   - This does NOT send the file to user — it's YOUR internal verification
+4. If problems found, iterate with different approach
+5. Only deliver_file when YOU are confident file is correct
 
-Example workflow (PPTX to PDF conversion):
-Turn 1: execute_python → output_files: [{preview: "PDF, 8KB"}] - suspiciously small
-Turn 2: execute_python (try libreoffice) → output_files: [{preview: "PDF, 245KB"}]
-Turn 3: deliver_file(temp_id=...) → sends PDF to user ✓
+**Key point:** preview_file does NOT deliver to user. Use it freely for verification.
+deliver_file is what sends to user — call it only after verification.
+
+**Example workflow (PDF generation with verification):**
+Turn 1: execute_python → output_files: [{temp_id: "exec_abc_out.pdf", preview: "PDF, 8KB"}]
+        Preview shows suspiciously small size
+Turn 2: preview_file(file_id="exec_abc_out.pdf", question="Is this complete?")
+        → "PDF has only 2 pages with placeholder text"
+Turn 3: execute_python (fix code) → output_files: [{preview: "PDF, 245KB"}]
+Turn 4: preview_file → confirms content is correct
+Turn 5: deliver_file(temp_id=...) → sends PDF to user ✓
 </verification_workflow>
 
 <workflow_examples>
@@ -559,13 +627,13 @@ User: "Convert presentation.pptx to PDF"
 </workflow_examples>
 
 <key_features>
-- Secure isolated environment (ephemeral, starts fresh each time)
+- Secure isolated environment with sandbox reuse (packages/files persist within thread)
 - Internet access (API calls, web scraping, downloads)
 - Pip packages (numpy, pandas, matplotlib, requests, pillow, etc.)
 - System packages (libreoffice, ffmpeg, imagemagick, pandoc, etc.)
 - File processing (read/write/convert any format)
 - Return: stdout, stderr, results, output_files metadata
-- Use deliver_file tool to send output files to user
+- Use preview_file to verify output, deliver_file to send to user
 </key_features>
 
 <when_to_use>
@@ -581,7 +649,7 @@ execution, or when user explicitly asks NOT to run code.
 
 <limitations>
 - 1 hour default timeout (3600 seconds, can be reduced for simple tasks)
-- No persistence between calls (fresh sandbox each time)
+- Sandbox reused within thread (packages/files persist up to 1 hour idle)
 - Limited CPU/RAM (1 vCPU, reasonable memory)
 - Headless (no GUI/display output, but can save to files)
 </limitations>

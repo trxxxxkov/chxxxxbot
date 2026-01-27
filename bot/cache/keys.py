@@ -103,6 +103,14 @@ FILE_BYTES_MAX_SIZE = 20 * 1024 * 1024  # 20 MB
 EXEC_FILE_TTL = 3600  # 1 hour (consumed once, then deleted)
 EXEC_FILE_MAX_SIZE = 100 * 1024 * 1024  # 100 MB
 
+# E2B Sandbox reuse cache
+# Sandboxes are expensive to create (~2-5 seconds). By caching sandbox_id:
+# - Packages (apt-get, pip) stay installed between calls
+# - Intermediate files persist for iterative work
+# - Input files don't need re-upload
+# TTL matches EXEC_FILE_TTL so sandbox lives as long as its output files
+SANDBOX_TTL = 3600  # 1 hour (same as exec files)
+
 
 def exec_file_key(temp_id: str) -> str:
     """Generate key for execution output file content.
@@ -141,3 +149,18 @@ def exec_thread_index_key(thread_id: int) -> str:
         Redis key string (e.g., "exec:thread:789").
     """
     return f"exec:thread:{thread_id}"
+
+
+def sandbox_key(thread_id: int) -> str:
+    """Generate key for E2B sandbox cache.
+
+    Stores sandbox_id for reuse between execute_python calls.
+    Allows iterative work without recreating sandbox each time.
+
+    Args:
+        thread_id: Internal thread ID (from threads table).
+
+    Returns:
+        Redis key string (e.g., "sandbox:789").
+    """
+    return f"sandbox:{thread_id}"

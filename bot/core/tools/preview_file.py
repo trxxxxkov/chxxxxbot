@@ -44,41 +44,54 @@ PREVIEW_FILE_TOOL = {
     "name":
         "preview_file",
     "description":
-        """Preview any file content without sending to user.
+        """YOUR internal verification tool — preview ANY file BEFORE delivering to user.
 
 <purpose>
-Universal file preview - see what's in any file before deciding next steps.
-Works with files from execute_python output, user uploads, or Files API.
+See what's in any file before sending to user. Does NOT deliver to user.
+Use this to verify generated content matches user's request before calling deliver_file.
+Works with ALL file types from ALL sources.
 </purpose>
 
 <file_sources>
-- exec_xxx: Files from execute_python (in output_files)
+- exec_xxx: Files from execute_python (images, PDFs, CSV, text, binary)
 - file_xxx: Files already in Claude Files API
 - Telegram file_id: Files from user messages
+
+ALL sources supported — just pass the file_id.
 </file_sources>
 
 <processing_by_type>
 - CSV/XLSX: Shows table with rows (FREE, local parsing)
 - Text/JSON/XML/code: Shows content with line numbers (FREE)
 - Images: Claude Vision describes what's visible (PAID)
+  → For exec_xxx images, auto-uploads to Files API first
 - PDF: Claude PDF analyzes document content (PAID)
+  → For exec_xxx PDFs, auto-uploads to Files API first
 - Audio/Video: Shows metadata, use transcribe_audio for content
 </processing_by_type>
 
+<verification_workflow>
+1. execute_python/render_latex → output_files with temp_id
+2. preview_file(file_id="exec_xxx", question="Does this show...?")
+   → Your internal check, NOT sent to user
+3. If correct: deliver_file(temp_id="exec_xxx") → sends to user
+4. If wrong: regenerate, preview again, then deliver
+</verification_workflow>
+
 <examples>
-1. Check CSV data before sending:
-   preview_file(file_id="exec_abc123", max_rows=5)
+1. Verify generated PDF before sending:
+   preview_file(file_id="exec_abc123", question="Does this PDF have all 5 sections?")
 
-2. See what's in user's image:
-   preview_file(file_id="file_xyz789", question="What objects are visible?")
+2. Check chart data is correct:
+   preview_file(file_id="exec_xyz789", question="Does the chart show Q1-Q4 2024 data?")
 
-3. Analyze PDF structure:
-   preview_file(file_id="AgACAgIAAxk...", question="List all section headers")
+3. Verify CSV export:
+   preview_file(file_id="exec_def456", max_rows=5)
 </examples>
 
 <cost>
-FREE for text formats (local parsing).
-PAID for images/PDF (Claude Vision API).
+FREE for text/CSV/XLSX (local parsing).
+PAID for images/PDF (Claude Vision API, ~$0.003-0.01).
 </cost>""",
     "input_schema": {
         "type": "object",
