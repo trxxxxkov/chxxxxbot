@@ -164,11 +164,14 @@ class CommandMiddleware(BaseMiddleware):
                 thread_id=topic_id,  # Telegram topic ID
             )
             if thread_created:
+                # Bot API 9.3: Mark topic for LLM naming after first model response
+                thread.needs_topic_naming = True
                 logger.debug(
                     "command.topic_registered",
                     chat_id=chat_id,
                     topic_id=topic_id,
                     thread_id=thread.id,
+                    needs_topic_naming=True,
                 )
 
             # Commit all changes
