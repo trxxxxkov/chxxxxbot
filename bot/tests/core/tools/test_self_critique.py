@@ -189,8 +189,7 @@ class TestCostTracker:
         # Add tool costs
         tracker.add_tool_cost("execute_python", Decimal("0.01"))
 
-        with patch(
-                "core.tools.self_critique.calculate_claude_cost") as mock_calc:
+        with patch("core.cost_tracker.calculate_claude_cost") as mock_calc:
             mock_calc.return_value = Decimal("0.05")
 
             total = tracker.calculate_total_cost()
@@ -529,17 +528,22 @@ class TestToolConfig:
 
 
 class TestSubagentToolRouting:
-    """Tests for _execute_subagent_tool function."""
+    """Tests for _execute_subagent_tool function.
+
+    These tests mock execute_tool from registry since _execute_subagent_tool
+    now delegates to it (DRY refactoring).
+    """
 
     @pytest.mark.asyncio
     async def test_route_execute_python(self, mock_bot, mock_session):
-        """Test routing to execute_python tool."""
+        """Test routing to execute_python tool via execute_tool."""
         from core.tools.self_critique import _execute_subagent_tool
         from core.tools.self_critique import CostTracker
 
         cost_tracker = CostTracker(model_id="test", user_id=123)
 
-        with patch("core.tools.execute_python.execute_python") as mock_exec:
+        # Mock execute_tool from registry (imported inside _execute_subagent_tool)
+        with patch("core.tools.registry.execute_tool") as mock_exec:
             mock_exec.return_value = {"output": "Hello", "execution_time": 0.5}
 
             result = await _execute_subagent_tool(
@@ -551,21 +555,27 @@ class TestSubagentToolRouting:
                 thread_id=1,
                 cost_tracker=cost_tracker)
 
-            mock_exec.assert_called_once()
+            mock_exec.assert_called_once_with(
+                tool_name="execute_python",
+                tool_input={"code": "print('Hello')"},
+                bot=mock_bot,
+                session=mock_session,
+                thread_id=1,
+            )
             assert result["type"] == "tool_result"
             assert result["tool_use_id"] == "toolu_123"
             assert "Hello" in result["content"]
 
     @pytest.mark.asyncio
     async def test_route_preview_file(self, mock_bot, mock_session):
-        """Test routing to preview_file tool."""
+        """Test routing to preview_file tool via execute_tool."""
         from core.tools.self_critique import _execute_subagent_tool
         from core.tools.self_critique import CostTracker
 
         cost_tracker = CostTracker(model_id="test", user_id=123)
 
-        with patch("core.tools.preview_file.preview_file") as mock_preview:
-            mock_preview.return_value = {
+        with patch("core.tools.registry.execute_tool") as mock_exec:
+            mock_exec.return_value = {
                 "success": "true",
                 "content": "File content here"
             }
@@ -579,20 +589,20 @@ class TestSubagentToolRouting:
                 thread_id=1,
                 cost_tracker=cost_tracker)
 
-            mock_preview.assert_called_once()
+            mock_exec.assert_called_once()
             assert result["type"] == "tool_result"
             assert "File content" in result["content"]
 
     @pytest.mark.asyncio
     async def test_route_analyze_image(self, mock_bot, mock_session):
-        """Test routing to analyze_image tool."""
+        """Test routing to analyze_image tool and cost tracking."""
         from core.tools.self_critique import _execute_subagent_tool
         from core.tools.self_critique import CostTracker
 
         cost_tracker = CostTracker(model_id="test", user_id=123)
 
-        with patch("core.tools.analyze_image.analyze_image") as mock_analyze:
-            mock_analyze.return_value = {
+        with patch("core.tools.registry.execute_tool") as mock_exec:
+            mock_exec.return_value = {
                 "description": "A chart showing data",
                 "cost_usd": 0.01
             }
@@ -609,30 +619,35 @@ class TestSubagentToolRouting:
                 thread_id=1,
                 cost_tracker=cost_tracker)
 
-            mock_analyze.assert_called_once()
+            mock_exec.assert_called_once()
             assert result["type"] == "tool_result"
-            # Check cost was tracked
+            # Check cost was tracked from result["cost_usd"]
             assert len(cost_tracker.tool_costs) == 1
             assert cost_tracker.tool_costs[0][0] == "analyze_image"
 
     @pytest.mark.asyncio
     async def test_route_unknown_tool(self, mock_bot, mock_session):
-        """Test routing unknown tool returns error."""
+        """Test routing unknown tool returns error via execute_tool ValueError."""
         from core.tools.self_critique import _execute_subagent_tool
         from core.tools.self_critique import CostTracker
 
         cost_tracker = CostTracker(model_id="test", user_id=123)
 
-        result = await _execute_subagent_tool(tool_name="unknown_tool",
-                                              tool_input={},
-                                              tool_use_id="toolu_xxx",
-                                              bot=mock_bot,
-                                              session=mock_session,
-                                              thread_id=1,
-                                              cost_tracker=cost_tracker)
+        # execute_tool raises ValueError for unknown tools
+        with patch("core.tools.registry.execute_tool") as mock_exec:
+            mock_exec.side_effect = ValueError("Tool 'unknown_tool' not found")
 
-        assert result["type"] == "tool_result"
-        assert "Unknown tool" in result["content"]
+            result = await _execute_subagent_tool(tool_name="unknown_tool",
+                                                  tool_input={},
+                                                  tool_use_id="toolu_xxx",
+                                                  bot=mock_bot,
+                                                  session=mock_session,
+                                                  thread_id=1,
+                                                  cost_tracker=cost_tracker)
+
+            assert result["type"] == "tool_result"
+            assert result["is_error"] is True
+            assert "not found" in result["content"]
 
     @pytest.mark.asyncio
     async def test_tool_error_handling(self, mock_bot, mock_session):
@@ -642,7 +657,7 @@ class TestSubagentToolRouting:
 
         cost_tracker = CostTracker(model_id="test", user_id=123)
 
-        with patch("core.tools.execute_python.execute_python") as mock_exec:
+        with patch("core.tools.registry.execute_tool") as mock_exec:
             mock_exec.side_effect = Exception("Sandbox error")
 
             result = await _execute_subagent_tool(
@@ -899,7 +914,7 @@ class TestToolLoopIntegration:
              patch("db.repositories.user_repository.UserRepository"), \
              patch("db.repositories.balance_operation_repository.BalanceOperationRepository"), \
              patch("telegram.handlers.claude.claude_provider") as mock_provider, \
-             patch("core.tools.execute_python.execute_python") as mock_exec_python:
+             patch("core.tools.registry.execute_tool") as mock_exec_tool:
 
             mock_config = Mock()
             mock_config.model_id = "claude-opus-4-5-20251101"
@@ -916,7 +931,8 @@ class TestToolLoopIntegration:
                 side_effect=[mock_response_1, mock_response_2])
             mock_provider.client = mock_client
 
-            mock_exec_python.return_value = {
+            # Mock execute_tool from registry
+            mock_exec_tool.return_value = {
                 "output": "Test passed!",
                 "execution_time": 0.1
             }
@@ -930,8 +946,8 @@ class TestToolLoopIntegration:
 
             assert result["verdict"] == "PASS"
             assert result["iterations"] == 2
-            # Verify execute_python was called
-            mock_exec_python.assert_called_once()
+            # Verify execute_tool was called (via registry)
+            mock_exec_tool.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_parallel_tool_execution(self, mock_bot, mock_session):
@@ -987,8 +1003,7 @@ class TestToolLoopIntegration:
              patch("db.repositories.user_repository.UserRepository"), \
              patch("db.repositories.balance_operation_repository.BalanceOperationRepository"), \
              patch("telegram.handlers.claude.claude_provider") as mock_provider, \
-             patch("core.tools.execute_python.execute_python") as mock_exec, \
-             patch("core.tools.preview_file.preview_file") as mock_preview:
+             patch("core.tools.registry.execute_tool") as mock_exec_tool:
 
             mock_config = Mock()
             mock_config.model_id = "claude-opus-4-5-20251101"
@@ -1005,8 +1020,15 @@ class TestToolLoopIntegration:
                 side_effect=[mock_response_1, mock_response_2])
             mock_provider.client = mock_client
 
-            mock_exec.return_value = {"output": "OK", "execution_time": 0.1}
-            mock_preview.return_value = {"content": "File OK"}
+            # Mock execute_tool to return different results based on tool name
+            def mock_tool_dispatch(tool_name, tool_input, **kwargs):
+                if tool_name == "execute_python":
+                    return {"output": "OK", "execution_time": 0.1}
+                elif tool_name == "preview_file":
+                    return {"content": "File OK"}
+                return {"error": "Unknown tool"}
+
+            mock_exec_tool.side_effect = mock_tool_dispatch
 
             result = await execute_self_critique(user_request="Test",
                                                  content="Content",
@@ -1015,9 +1037,8 @@ class TestToolLoopIntegration:
                                                  user_id=12345)
 
             assert result["verdict"] == "PASS"
-            # Both tools should have been called
-            mock_exec.assert_called_once()
-            mock_preview.assert_called_once()
+            # Both tools should have been called via execute_tool
+            assert mock_exec_tool.call_count == 2
 
 
 # =============================================================================
@@ -1060,7 +1081,7 @@ class TestMaxIterations:
              patch("db.repositories.user_repository.UserRepository"), \
              patch("db.repositories.balance_operation_repository.BalanceOperationRepository"), \
              patch("telegram.handlers.claude.claude_provider") as mock_provider, \
-             patch("core.tools.execute_python.execute_python") as mock_exec:
+             patch("core.tools.registry.execute_tool") as mock_exec_tool:
 
             mock_config = Mock()
             mock_config.model_id = "claude-opus-4-5-20251101"
@@ -1077,7 +1098,10 @@ class TestMaxIterations:
             mock_client.messages.create = AsyncMock(return_value=mock_response)
             mock_provider.client = mock_client
 
-            mock_exec.return_value = {"output": "OK", "execution_time": 0.01}
+            mock_exec_tool.return_value = {
+                "output": "OK",
+                "execution_time": 0.01
+            }
 
             result = await execute_self_critique(
                 user_request="Infinite loop test",
@@ -1117,7 +1141,7 @@ class TestCostCharging:
              patch("db.repositories.user_repository.UserRepository"), \
              patch("db.repositories.balance_operation_repository.BalanceOperationRepository"), \
              patch("telegram.handlers.claude.claude_provider") as mock_provider, \
-             patch("core.tools.self_critique.calculate_claude_cost") as mock_calc:
+             patch("core.cost_tracker.calculate_claude_cost") as mock_calc:
 
             mock_config = Mock()
             mock_config.model_id = "claude-opus-4-5-20251101"
@@ -1186,8 +1210,8 @@ class TestCostCharging:
              patch("db.repositories.user_repository.UserRepository"), \
              patch("db.repositories.balance_operation_repository.BalanceOperationRepository"), \
              patch("telegram.handlers.claude.claude_provider") as mock_provider, \
-             patch("core.tools.execute_python.execute_python") as mock_exec, \
-             patch("core.tools.self_critique.calculate_claude_cost") as mock_calc, \
+             patch("core.tools.registry.execute_tool") as mock_exec_tool, \
+             patch("core.cost_tracker.calculate_claude_cost") as mock_calc, \
              patch("core.tools.self_critique.calculate_e2b_cost") as mock_e2b:
 
             mock_config = Mock()
@@ -1205,8 +1229,8 @@ class TestCostCharging:
                 side_effect=[mock_response_1, mock_response_2])
             mock_provider.client = mock_client
 
-            # Tool costs
-            mock_exec.return_value = {"output": "1", "execution_time": 2.0}
+            # Mock execute_tool to return result with execution_time
+            mock_exec_tool.return_value = {"output": "1", "execution_time": 2.0}
             mock_e2b.return_value = Decimal("0.0001")  # 2 seconds * $0.00005
 
             # API costs

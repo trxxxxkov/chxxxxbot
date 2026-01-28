@@ -27,9 +27,16 @@ from typing import Any, Awaitable, Callable, Optional, TYPE_CHECKING
 
 # AsyncAnthropic client obtained from global claude_provider
 from config import get_model
+from core.cost_tracker import CostTracker as BaseCostTracker
 from core.pricing import calculate_claude_cost
 from core.pricing import calculate_e2b_cost
+# Import tool definitions from existing modules (DRY - don't duplicate)
+from core.tools.analyze_image import ANALYZE_IMAGE_TOOL
+from core.tools.analyze_pdf import ANALYZE_PDF_TOOL
 from core.tools.base import ToolConfig
+from core.tools.execute_python import EXECUTE_PYTHON_TOOL
+from core.tools.preview_file import PREVIEW_FILE_TOOL
+# Note: execute_tool imported inside _execute_subagent_tool to avoid circular import
 from utils.structured_logging import get_logger
 
 if TYPE_CHECKING:
@@ -49,11 +56,14 @@ VERIFICATION_MODEL_ID = "claude:opus"
 MIN_BALANCE_FOR_CRITIQUE = Decimal("0.50")
 
 # Maximum iterations for subagent tool loop
-# High limit to allow extensive web searching for fact verification
-MAX_SUBAGENT_ITERATIONS = 40
+# Keep low - self_critique should be quick: analyze, maybe run 1-2 tools, return verdict
+MAX_SUBAGENT_ITERATIONS = 8
 
-# Extended thinking budget for deep analysis (doubled for thorough verification)
-THINKING_BUDGET_TOKENS = 16000
+# Extended thinking budget - enough for analysis but not excessive
+THINKING_BUDGET_TOKENS = 10000
+
+# Cost cap - stop if estimated cost exceeds this threshold
+MAX_COST_USD = Decimal("0.50")
 
 # =============================================================================
 # Prometheus Metrics
@@ -93,368 +103,99 @@ except ImportError:
 # =============================================================================
 
 CRITICAL_REVIEWER_SYSTEM_PROMPT = """<identity>
-You are a CRITICAL REVIEWER conducting adversarial verification of another
-Claude's output. Your role is to find FLAWS, ERRORS, and GAPS - not to
-validate or praise. You operate in a separate context with fresh perspective.
+You are a code reviewer verifying another Claude's output.
+Your job: find flaws, errors, and gaps - not praise.
 </identity>
 
-<adversarial_mindset>
-ASSUME the content you're reviewing MAY BE WRONG. This is crucial because:
-- The original Claude may have made reasoning errors
-- Code may have bugs that weren't caught
-- The response may not actually answer what the user asked
-- There may be edge cases or assumptions that were missed
+<cost_awareness>
+This verification costs the user money. Be efficient.
+- Complete verification in 1-3 tool calls maximum
+- Do not search for documentation of standard libraries (numpy, pandas, requests)
+- Do not verify every single fact - focus on claims that seem suspicious
+- Do not use web_search unless you have a specific fact to verify
+- Trust your knowledge for common programming patterns
+</cost_awareness>
 
-Your job is to DISPROVE correctness, not confirm it.
-A "PASS" verdict should only be given when you genuinely couldn't find
-significant issues despite actively trying to find them.
+<available_tools>
+- execute_python: Run code to test - use this for code verification
+- preview_file: Check generated files
+- analyze_image/analyze_pdf: For visual content (costs money - use sparingly)
+- web_search: Only for specific suspicious facts (not routine library checks)
+- web_fetch: Only if web_search found something that needs full reading
+</available_tools>
 
-DO NOT:
-- Praise the work ("great job", "well done")
-- Give benefit of the doubt
-- Assume things work without verification
-- Skip checking because something "looks correct"
+<verification_approach>
+1. Read the user request and response carefully
+2. Identify the most likely failure points (1-2 max)
+3. Verify only those points:
+   - For code: run it with execute_python, test edge cases
+   - For facts: only search if something seems wrong or outdated
+   - For files: preview if needed
+4. Return verdict immediately after verification
 
-DO:
-- Actively search for errors
-- Test edge cases
-- Verify claims through execution
-- Question every assumption
-- Compare output against user's actual request
-</adversarial_mindset>
+Avoid:
+- Searching for every library mentioned
+- Cross-referencing multiple sources
+- Verifying things that look correct
+- Making multiple iterations when one suffices
+</verification_approach>
 
-<verification_tools>
-You have access to powerful verification tools. USE THEM ACTIVELY.
-Don't just read and assess - VERIFY through execution and testing.
-
-Available tools:
-- execute_python: Run code to test claims, reproduce results, check edge cases,
-  write unit tests, debug step-by-step, create visualizations
-- preview_file: Examine any file - images, PDFs, CSV, text, code
-- analyze_image: Deep vision analysis of images
-- analyze_pdf: Analyze PDF content and structure
-- web_search: Search the internet to verify facts, check claims, find
-  authoritative sources. USE EXTENSIVELY for fact-checking!
-- web_fetch: Fetch and read full content of web pages (documentation, articles).
-  Use after web_search to read complete documentation pages.
-</verification_tools>
-
-<parallel_tool_execution>
-If you intend to call multiple tools and there are no dependencies between the
-tool calls, make ALL independent tool calls in parallel. Maximize use of parallel
-tool calls to increase speed and efficiency.
-
-Examples of parallel execution:
-- Checking code AND visualizing output → parallel
-- Running tests for multiple functions → parallel
-- Analyzing multiple files → parallel
-- Searching for multiple facts simultaneously → parallel (HIGHLY RECOMMENDED)
-- Verifying library docs AND running tests → parallel
-
-However, if some tool calls depend on previous calls to inform parameters, call
-those tools sequentially. Never use placeholders or guess missing parameters.
-</parallel_tool_execution>
-
-<thinking_guidance>
-After receiving tool results, carefully reflect on their quality and determine
-optimal next steps before proceeding. Use your thinking to:
-- Plan which verifications to run next based on findings
-- Iterate based on new information
-- Track confidence levels in your assessments
-- Self-critique your own verification approach
-
-For complex verification tasks, develop competing hypotheses about potential
-issues and systematically test each one. Update your confidence as you gather
-evidence.
-</thinking_guidance>
-
-<verification_workflow>
-Follow this systematic approach:
-
-1. UNDERSTAND THE REQUEST
-   - Read the original user request carefully
-   - What EXACTLY did they ask for?
-   - What would a correct response look like?
-
-2. EXAMINE THE CONTENT
-   - Read the provided content/code/reasoning
-   - Note any immediate concerns or red flags
-   - Identify claims that need verification
-
-3. ACTIVE VERIFICATION (use tools!)
-   For CODE:
-   - Write and run tests, especially edge cases
-   - Step through logic manually
-   - Check for off-by-one errors, null handling, type issues
-   - Verify output format matches expectations
-
-   For DATA/CALCULATIONS:
-   - Re-compute key calculations
-   - Create visualizations to spot anomalies
-   - Check for statistical errors
-
-   For REASONING:
-   - Trace each logical step
-   - Look for hidden assumptions
-   - Check if conclusions follow from premises
-
-   For FILES:
-   - Use preview_file/analyze_image/analyze_pdf
-   - Verify content matches what was requested
-   - Check formatting, completeness
-
-   For FACTS/CLAIMS:
-   - USE WEB_SEARCH EXTENSIVELY to verify factual claims
-   - Search for authoritative sources (official docs, Wikipedia, etc.)
-   - Cross-reference multiple sources
-   - Check dates, numbers, names, technical specifications
-   - Don't trust the original response's facts without verification
-
-   For CODE WITH EXTERNAL LIBRARIES/APIs:
-   - ALWAYS search for the OFFICIAL documentation of libraries used
-   - Verify API methods, parameters, and return types are CURRENT
-   - Check if the library version implied is up-to-date
-   - Search for "[library] changelog" or "[library] migration guide"
-   - Look for deprecation warnings or breaking changes
-   - Verify correct import paths and package names
-   - Check if there are newer, better alternatives
-   - Example searches: "pandas read_csv parameters 2024", "requests library
-     timeout parameter", "numpy array creation best practices"
-
-   CRITICAL: Libraries evolve! Code that worked 6 months ago may be:
-   - Using deprecated functions
-   - Missing new required parameters
-   - Using old import paths
-   - Incompatible with current versions
-
-4. ALIGNMENT CHECK
-   - Does the output ACTUALLY answer the user's request?
-   - Not "sort of" or "mostly" - EXACTLY?
-   - Are there missing parts the user asked for?
-
-5. COMPILE FINDINGS
-   - List all issues found with severity
-   - Provide specific locations (line numbers, paragraphs)
-   - Give actionable recommendations
-</verification_workflow>
+<after_tool_use>
+After receiving tool results, briefly reflect on what you learned and determine
+if you have enough information to return a verdict. If yes, return it immediately.
+Only continue to another tool call if the results revealed a specific issue that
+needs further investigation.
+</after_tool_use>
 
 <output_format>
-After verification, respond with a JSON object ONLY:
+Return a JSON object ONLY (no other text):
 
 {
   "verdict": "PASS" | "FAIL" | "NEEDS_IMPROVEMENT",
-  "alignment_score": <0-100, how well does output match user's request>,
-  "confidence": <0-100, how confident are you in this assessment>,
-  "issues": [
-    {
-      "severity": "critical" | "major" | "minor",
-      "category": "accuracy" | "completeness" | "logic" | "user_intent" |
-                  "code_correctness" | "formatting" | "edge_cases" |
-                  "api_outdated" | "factual_error" | "security",
-      "description": "<specific description of the issue>",
-      "location": "<where in the content: line number, paragraph, file name>",
-      "evidence": "<what you found that proves this is an issue>"
-    }
-  ],
-  "verification_methods_used": [
-    "<list what you actually did: ran_tests, visualized_data, etc.>"
-  ],
-  "recommendations": [
-    "<specific actionable fix for each issue>"
-  ],
-  "summary": "<2-3 sentence summary of your findings>"
+  "alignment_score": 0-100,
+  "confidence": 0-100,
+  "issues": [{"severity": "critical|major|minor", "description": "...", "location": "..."}],
+  "recommendations": ["..."],
+  "summary": "1-2 sentences"
 }
-
-IMPORTANT: Your entire response must be valid JSON. No text before or after.
 </output_format>
 
 <rating_guidelines>
-Be HARSH but FAIR. Users need honest feedback.
-
-FAIL (alignment < 50):
-- Critical errors that make the output wrong or unusable
-- Fundamentally misunderstands user's request
-- Code that doesn't work or produces wrong results
-- Major logical flaws in reasoning
-
-NEEDS_IMPROVEMENT (alignment 50-80):
-- Partially correct but has notable gaps
-- Minor bugs or edge case failures
-- Missing some requested features
-- Reasoning is sound but incomplete
-
-PASS (alignment > 80):
-- You actively tried to find issues but couldn't find significant ones
-- Output genuinely answers the user's request
-- Code works correctly including edge cases
-- Reasoning is sound and complete
-
-Remember: A false "PASS" wastes user's time and money.
-A harsh but accurate "FAIL" helps them get better results.
-</rating_guidelines>
-
-<web_search_strategy>
-Use web_search EXTENSIVELY for verification. Search proactively and often.
-After finding relevant URLs, use web_fetch to read full documentation pages.
-
-WORKFLOW: web_search → find URLs → web_fetch to read full content
-
-For FACTUAL CLAIMS:
-- Search for authoritative sources (Wikipedia, official docs, academic papers)
-- Cross-reference at least 2-3 sources for important facts
-- Check dates, numbers, names, technical specifications
-- Search: "[topic] fact check", "[claim] true or false"
-- Use web_fetch to read Wikipedia articles or reference pages in full
-
-For CODE/LIBRARIES:
-- ALWAYS search for official documentation of any library mentioned
-- Search: "[library] official documentation [year]"
-- Search: "[library] changelog", "[library] breaking changes"
-- Search: "[function name] deprecated", "[library] migration guide"
-- Use web_fetch to read the FULL documentation page, not just snippets!
-- Verify import paths, method signatures, parameter names
-- Check if there are newer/better alternatives
-
-For APIs:
-- Search: "[API name] documentation [year]"
-- Search: "[API] rate limits", "[API] authentication"
-- Use web_fetch to read the COMPLETE API reference
-- Verify endpoint URLs, required headers, response formats
-- Check for version changes or deprecations
-
-IMPORTANT: Don't trust your training data for library/API information!
-Libraries change frequently. ALWAYS verify against current documentation.
-Use web_fetch to read full docs - search snippets are often incomplete!
-</web_search_strategy>
-
-<context_awareness>
-You have a limited context window for this verification task.
-Focus on the most important verifications first.
-If you run out of context, provide your best assessment based on what you verified.
-</context_awareness>"""
+FAIL: Critical errors, wrong output, doesn't answer the question
+NEEDS_IMPROVEMENT: Partially correct, minor bugs, missing parts
+PASS: Works correctly, answers the question
+</rating_guidelines>"""
 
 # =============================================================================
 # Tools available to the subagent
 # =============================================================================
 
 # Server-side tools (Anthropic handles execution)
+# Keep limits LOW - each use adds tokens to context and costs money
 WEB_SEARCH_TOOL = {
     "type": "web_search_20250305",
     "name": "web_search",
-    "max_uses": 100,  # Allow extensive searches for thorough fact-checking
+    "max_uses": 5,  # Only for specific fact-checking, not routine verification
 }
 
 WEB_FETCH_TOOL = {
     "type": "web_fetch_20250910",
     "name": "web_fetch",
-    "max_uses": 50,  # Allow fetching documentation pages
+    "max_uses": 3,  # Sparingly - each fetch adds up to 20K tokens to context
     "citations": {
         "enabled": True
     },
-    "max_content_tokens": 50000,  # Reasonable limit for docs
+    "max_content_tokens": 20000,  # Reduced from 50K to limit context bloat
 }
 
-SUBAGENT_TOOLS = [{
-    "name": "execute_python",
-    "description":
-        "Execute Python code for testing, debugging, or visualization. "
-        "Use this to: write and run tests, step through code, create plots, "
-        "verify calculations, check edge cases. "
-        "Files are saved to /tmp/ and can be examined with preview_file.",
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "code": {
-                "type": "string",
-                "description": "Python code to execute"
-            },
-            "requirements": {
-                "type":
-                    "array",
-                "items": {
-                    "type": "string"
-                },
-                "description":
-                    "pip packages to install (e.g., ['numpy', 'pandas'])"
-            }
-        },
-        "required": ["code"]
-    }
-}, {
-    "name": "preview_file",
-    "description":
-        "Preview any file content. Works with exec_xxx (sandbox files), "
-        "file_xxx (Files API), or telegram file_id. "
-        "Use for: checking generated files, examining data, reviewing code. "
-        "For images/PDFs, provide a question for Vision analysis.",
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "file_id": {
-                "type":
-                    "string",
-                "description":
-                    "File ID to preview (exec_xxx, file_xxx, or telegram file_id)"
-            },
-            "question": {
-                "type":
-                    "string",
-                "description":
-                    "For images/PDFs: what to analyze (e.g., 'Is this chart correct?')"
-            },
-            "max_rows": {
-                "type": "integer",
-                "description": "For CSV/XLSX: max rows to show (default: 20)"
-            },
-            "max_chars": {
-                "type": "integer",
-                "description": "For text files: max characters (default: 5000)"
-            }
-        },
-        "required": ["file_id"]
-    }
-}, {
-    "name": "analyze_image",
-    "description": "Deep vision analysis of images using Claude Vision. "
-                   "Use when you need detailed examination of image content.",
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "claude_file_id": {
-                "type": "string",
-                "description": "File ID of image (file_xxx format)"
-            },
-            "question": {
-                "type":
-                    "string",
-                "description":
-                    "What to analyze (e.g., 'Check if this chart shows correct data')"
-            }
-        },
-        "required": ["claude_file_id", "question"]
-    }
-}, {
-    "name":
-        "analyze_pdf",
-    "description":
-        "Analyze PDF document content and structure using Claude Vision.",
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "claude_file_id": {
-                "type": "string",
-                "description": "File ID of PDF (file_xxx format)"
-            },
-            "question": {
-                "type":
-                    "string",
-                "description":
-                    "What to analyze (e.g., 'Verify the calculations in this document')"
-            }
-        },
-        "required": ["claude_file_id", "question"]
-    }
-}]
+# Reuse tool definitions from existing modules (DRY principle)
+# These are the same tools available to the main agent
+SUBAGENT_TOOLS = [
+    EXECUTE_PYTHON_TOOL,
+    PREVIEW_FILE_TOOL,
+    ANALYZE_IMAGE_TOOL,
+    ANALYZE_PDF_TOOL,
+]
 
 # =============================================================================
 # Tool Definition
@@ -549,45 +290,27 @@ Returns structured verdict: PASS, FAIL, or NEEDS_IMPROVEMENT with specific issue
 }
 
 # =============================================================================
-# Cost Tracker
+# Cost Tracker with Prometheus Metrics
 # =============================================================================
 
 
-class CostTracker:
-    """Track costs for self_critique subagent.
+def _create_cost_tracker(model_id: str, user_id: int) -> BaseCostTracker:
+    """Create CostTracker with Prometheus metrics callbacks.
 
-    Accumulates:
-    - Opus API token costs (input + output + thinking)
-    - Tool execution costs (E2B sandbox, Vision API for files)
+    Uses the shared CostTracker from core.cost_tracker with
+    self_critique-specific Prometheus metrics.
 
-    On finalize: charges user and records Prometheus metrics.
+    Args:
+        model_id: Model identifier for pricing.
+        user_id: User ID for logging.
+
+    Returns:
+        Configured CostTracker instance.
     """
 
-    def __init__(self, model_id: str, user_id: int):
-        """Initialize cost tracker.
-
-        Args:
-            model_id: Model identifier (e.g., 'claude-opus-4-5-20251101').
-            user_id: User ID for logging.
-        """
-        self.model_id = model_id
-        self.user_id = user_id
-
-        self.total_input_tokens = 0
-        self.total_output_tokens = 0
-        self.total_thinking_tokens = 0
-        self.tool_costs: list[tuple[str, Decimal]] = []
-
-    def add_api_usage(self,
-                      input_tokens: int,
-                      output_tokens: int,
-                      thinking_tokens: int = 0) -> None:
-        """Track API token usage."""
-        self.total_input_tokens += input_tokens
-        self.total_output_tokens += output_tokens
-        self.total_thinking_tokens += thinking_tokens
-
-        # Record Prometheus metrics
+    def on_api_usage(input_tokens: int, output_tokens: int,
+                     thinking_tokens: int) -> None:
+        """Record API usage in Prometheus."""
         if METRICS_AVAILABLE:
             SELF_CRITIQUE_TOKENS.labels(token_type='input').inc(input_tokens)
             SELF_CRITIQUE_TOKENS.labels(token_type='output').inc(output_tokens)
@@ -595,90 +318,29 @@ class CostTracker:
                 SELF_CRITIQUE_TOKENS.labels(
                     token_type='thinking').inc(thinking_tokens)
 
-    def add_tool_cost(self, tool_name: str, cost: Decimal) -> None:
-        """Track tool execution cost."""
-        self.tool_costs.append((tool_name, cost))
-
+    def on_tool_cost(tool_name: str, cost: Decimal) -> None:
+        """Record tool usage in Prometheus."""
         if METRICS_AVAILABLE:
             SELF_CRITIQUE_TOOLS.labels(tool_name=tool_name).inc()
 
-    def calculate_total_cost(self) -> Decimal:
-        """Calculate total cost in USD."""
-        # Token costs (Opus pricing)
-        token_cost = calculate_claude_cost(
-            model_id=self.model_id,
-            input_tokens=self.total_input_tokens,
-            output_tokens=self.total_output_tokens,
-            thinking_tokens=self.total_thinking_tokens,
-        )
-
-        # Tool costs
-        tool_cost = sum(cost for _, cost in self.tool_costs)
-
-        return token_cost + tool_cost
-
-    async def finalize_and_charge(self,
-                                  session: 'AsyncSession',
-                                  user_id: int,
-                                  verdict: str = "UNKNOWN",
-                                  iterations: int = 1) -> Decimal:
-        """Finalize tracking, charge user, record metrics.
-
-        Args:
-            session: Database session.
-            user_id: User to charge.
-            verdict: Verification verdict for metrics.
-            iterations: Number of tool loop iterations.
-
-        Returns:
-            Total cost charged in USD.
-        """
-        # Import here to avoid circular imports
-        from db.repositories.balance_operation_repository import \
-            BalanceOperationRepository
-        from db.repositories.user_repository import UserRepository
-        from services.balance_service import BalanceService
-
-        total_cost = self.calculate_total_cost()
-
-        # Charge user
-        user_repo = UserRepository(session)
-        balance_op_repo = BalanceOperationRepository(session)
-        balance_service = BalanceService(session, user_repo, balance_op_repo)
-
-        tool_cost_sum = sum(cost for _, cost in self.tool_costs)
-        description = (
-            f"self_critique verification (Opus): "
-            f"{self.total_input_tokens} in, {self.total_output_tokens} out, "
-            f"{self.total_thinking_tokens} thinking, "
-            f"tools: ${float(tool_cost_sum):.4f}")
-
-        await balance_service.charge_user(
-            user_id=user_id,
-            amount=total_cost,
-            description=description,
-        )
-
-        # Record Prometheus metrics
+    def on_finalize(verdict: str, iterations: int, cost: Decimal) -> None:
+        """Record final metrics in Prometheus."""
         if METRICS_AVAILABLE:
             SELF_CRITIQUE_REQUESTS.labels(verdict=verdict).inc()
-            SELF_CRITIQUE_COST.observe(float(total_cost))
+            SELF_CRITIQUE_COST.observe(float(cost))
             SELF_CRITIQUE_ITERATIONS.observe(iterations)
 
-        logger.info("self_critique.cost_charged",
-                    user_id=user_id,
-                    total_cost=float(total_cost),
-                    input_tokens=self.total_input_tokens,
-                    output_tokens=self.total_output_tokens,
-                    thinking_tokens=self.total_thinking_tokens,
-                    tool_costs=[
-                        (name, float(cost)) for name, cost in self.tool_costs
-                    ],
-                    verdict=verdict,
-                    iterations=iterations)
+    return BaseCostTracker(
+        model_id=model_id,
+        user_id=user_id,
+        on_api_usage=on_api_usage,
+        on_tool_cost=on_tool_cost,
+        on_finalize=on_finalize,
+    )
 
-        return total_cost
 
+# Alias for backward compatibility in tests
+CostTracker = BaseCostTracker
 
 # =============================================================================
 # Helper Functions
@@ -746,10 +408,17 @@ async def _execute_subagent_tool(
     bot: 'Bot',
     session: 'AsyncSession',
     thread_id: Optional[int],
-    cost_tracker: CostTracker,
+    cost_tracker: BaseCostTracker,
     on_tool_start: Optional[Callable[[str], Awaitable[None]]] = None,
 ) -> dict[str, Any]:
-    """Execute a tool call from the subagent and track costs."""
+    """Execute a tool call from the subagent and track costs.
+
+    Uses execute_tool from registry for unified tool dispatch (DRY principle).
+    Only adds cost tracking specific to self_critique context.
+    """
+    # Import here to avoid circular import (registry imports self_critique)
+    from core.tools.registry import execute_tool
+
     logger.debug("self_critique.tool_call",
                  tool_name=tool_name,
                  tool_input_keys=list(tool_input.keys()))
@@ -764,83 +433,17 @@ async def _execute_subagent_tool(
                            error=str(e))
 
     try:
-        # Import tool executors here to avoid circular imports
-        from core.tools.analyze_image import analyze_image
-        from core.tools.analyze_pdf import analyze_pdf
-        from core.tools.execute_python import execute_python
-        from core.tools.preview_file import preview_file
+        # Use unified execute_tool from registry (DRY - no switch-case duplication)
+        result = await execute_tool(
+            tool_name=tool_name,
+            tool_input=tool_input,
+            bot=bot,
+            session=session,
+            thread_id=thread_id,
+        )
 
-        result: dict[str, Any] = {}
-
-        if tool_name == "execute_python":
-            result = await execute_python(
-                code=tool_input["code"],
-                requirements=tool_input.get("requirements"),
-                bot=bot,
-                session=session,
-                thread_id=thread_id)
-            # Track E2B cost
-            if "execution_time" in result:
-                e2b_cost = calculate_e2b_cost(result["execution_time"])
-                cost_tracker.add_tool_cost("execute_python", e2b_cost)
-                # Log for Grafana (appears in E2B panel)
-                logger.info("tools.loop.user_charged_for_tool",
-                            tool_name="execute_python",
-                            cost_usd=float(e2b_cost),
-                            source="self_critique")
-
-        elif tool_name == "preview_file":
-            result = await preview_file(file_id=tool_input["file_id"],
-                                        question=tool_input.get("question"),
-                                        max_rows=tool_input.get("max_rows"),
-                                        max_chars=tool_input.get("max_chars"),
-                                        bot=bot,
-                                        session=session,
-                                        thread_id=thread_id)
-            # Vision API cost tracked by preview_file itself
-            if "cost_usd" in result:
-                cost = Decimal(str(result["cost_usd"]))
-                cost_tracker.add_tool_cost("preview_file", cost)
-                # Log for Grafana (appears in Anthropic panel via analyze tools)
-                logger.info("tools.loop.user_charged_for_tool",
-                            tool_name="preview_file",
-                            cost_usd=float(cost),
-                            source="self_critique")
-
-        elif tool_name == "analyze_image":
-            result = await analyze_image(
-                claude_file_id=tool_input["claude_file_id"],
-                question=tool_input["question"],
-                bot=bot,
-                session=session)
-            # Vision API cost
-            if "cost_usd" in result:
-                cost = Decimal(str(result["cost_usd"]))
-                cost_tracker.add_tool_cost("analyze_image", cost)
-                # Log for Grafana (appears in Anthropic panel)
-                logger.info("tools.loop.user_charged_for_tool",
-                            tool_name="analyze_image",
-                            cost_usd=float(cost),
-                            source="self_critique")
-
-        elif tool_name == "analyze_pdf":
-            result = await analyze_pdf(
-                claude_file_id=tool_input["claude_file_id"],
-                question=tool_input["question"],
-                bot=bot,
-                session=session)
-            # Vision API cost
-            if "cost_usd" in result:
-                cost = Decimal(str(result["cost_usd"]))
-                cost_tracker.add_tool_cost("analyze_pdf", cost)
-                # Log for Grafana (appears in Anthropic panel)
-                logger.info("tools.loop.user_charged_for_tool",
-                            tool_name="analyze_pdf",
-                            cost_usd=float(cost),
-                            source="self_critique")
-
-        else:
-            result = {"error": f"Unknown tool: {tool_name}"}
+        # Track costs for self_critique billing
+        _track_tool_cost(tool_name, result, cost_tracker)
 
         return {
             "type":
@@ -864,12 +467,37 @@ async def _execute_subagent_tool(
         }
 
 
+def _track_tool_cost(tool_name: str, result: dict[str, Any],
+                     cost_tracker: BaseCostTracker) -> None:
+    """Track tool execution cost for self_critique billing.
+
+    Extracts cost from tool result and adds to cost tracker.
+    Also logs for Grafana dashboards.
+    """
+    cost: Optional[Decimal] = None
+
+    if tool_name == "execute_python" and "execution_time" in result:
+        # E2B sandbox cost based on execution time
+        cost = calculate_e2b_cost(result["execution_time"])
+    elif "cost_usd" in result:
+        # Tools that report their own cost (preview_file, analyze_image, analyze_pdf)
+        cost = Decimal(str(result["cost_usd"]))
+
+    if cost is not None and cost > 0:
+        cost_tracker.add_tool_cost(tool_name, cost)
+        # Log for Grafana (appears in appropriate panel based on tool)
+        logger.info("tools.loop.user_charged_for_tool",
+                    tool_name=tool_name,
+                    cost_usd=float(cost),
+                    source="self_critique")
+
+
 # =============================================================================
 # Main Executor
 # =============================================================================
 
 
-async def execute_self_critique(
+async def execute_self_critique(  # pylint: disable=too-many-return-statements
     user_request: str,
     content: Optional[str] = None,
     file_ids: Optional[list[str]] = None,
@@ -881,6 +509,7 @@ async def execute_self_critique(
     thread_id: Optional[int] = None,
     user_id: int,
     on_subagent_tool: Optional[Callable[[str], Awaitable[None]]] = None,
+    anthropic_client: Optional[Any] = None,
 ) -> dict[str, Any]:
     """Execute critical self-verification subagent.
 
@@ -899,15 +528,15 @@ async def execute_self_critique(
         user_id: User ID for balance check and cost tracking.
         on_subagent_tool: Optional callback called when subagent uses a tool.
             Used to update display with tool progress.
+        anthropic_client: Optional Anthropic client for dependency injection.
+            If not provided, falls back to global claude_provider.
+            Useful for testing and custom client configurations.
 
     Returns:
         Structured verification result with verdict, issues, recommendations.
     """
-    # Import here to avoid circular imports
-    from db.repositories.balance_operation_repository import \
-        BalanceOperationRepository
-    from db.repositories.user_repository import UserRepository
-    from services.balance_service import BalanceService
+    # Use ServiceFactory for cleaner service initialization (DRY)
+    from services.factory import ServiceFactory
 
     # Always use Opus for verification
     model_config = get_model(VERIFICATION_MODEL_ID)
@@ -919,10 +548,9 @@ async def execute_self_critique(
                 file_count=len(file_ids) if file_ids else 0)
 
     # 1. Check balance (minimum $0.50 to start)
-    user_repo = UserRepository(session)
-    balance_op_repo = BalanceOperationRepository(session)
-    balance_service = BalanceService(session, user_repo, balance_op_repo)
-    balance = await balance_service.get_balance(user_id)
+    # Use ServiceFactory for cleaner initialization (DRY - no manual repo creation)
+    services = ServiceFactory(session)
+    balance = await services.balance.get_balance(user_id)
 
     if balance < MIN_BALANCE_FOR_CRITIQUE:
         logger.info("self_critique.insufficient_balance",
@@ -940,7 +568,9 @@ async def execute_self_critique(
         }
 
     # 2. Initialize cost tracking
-    cost_tracker = CostTracker(model_id=model_config.model_id, user_id=user_id)
+    # Use factory to create CostTracker with Prometheus metrics
+    cost_tracker = _create_cost_tracker(model_id=model_config.model_id,
+                                        user_id=user_id)
 
     # 3. Build verification context
     verification_context = _build_verification_context(
@@ -950,27 +580,32 @@ async def execute_self_critique(
         verification_hints=verification_hints,
         focus_areas=focus_areas)
 
-    # 4. Get Anthropic client from global provider
-    # Import here to avoid circular imports at module level
-    from telegram.handlers.claude import claude_provider
+    # 4. Get Anthropic client (dependency injection or fallback to global)
+    client = anthropic_client
+    if client is None:
+        # Fallback to global claude_provider for backward compatibility
+        # Import here to avoid circular imports at module level
+        from telegram.handlers.claude import claude_provider
 
-    if claude_provider is None:
-        logger.error("self_critique.provider_not_initialized", user_id=user_id)
-        return {
-            "verdict":
-                "ERROR",
-            "error":
-                "claude_provider_not_initialized",
-            "message":
-                "Claude provider not initialized. Please try again later.",
-            "cost_usd":
-                0.0,
-            "iterations":
-                0
-        }
-
-    client = claude_provider.client
-    logger.debug("self_critique.client_obtained", user_id=user_id)
+        if claude_provider is None:
+            logger.error("self_critique.provider_not_initialized",
+                         user_id=user_id)
+            return {
+                "verdict":
+                    "ERROR",
+                "error":
+                    "claude_provider_not_initialized",
+                "message":
+                    "Claude provider not initialized. Please try again later.",
+                "cost_usd":
+                    0.0,
+                "iterations":
+                    0
+            }
+        client = claude_provider.client
+        logger.debug("self_critique.client_from_provider", user_id=user_id)
+    else:
+        logger.debug("self_critique.client_injected", user_id=user_id)
 
     # 5. Run subagent tool loop
     messages: list[dict[str, Any]] = [{
@@ -1034,6 +669,34 @@ async def execute_self_critique(
                     thinking_tokens=thinking_tokens,
                     source="self_critique")
 
+        # Check cost cap - stop if we're getting too expensive
+        current_cost = cost_tracker.calculate_total_cost()
+        if current_cost >= MAX_COST_USD:
+            logger.warning("self_critique.cost_cap_reached",
+                           user_id=user_id,
+                           current_cost=float(current_cost),
+                           max_cost=float(MAX_COST_USD),
+                           iteration=iteration)
+            # Force end_turn - return partial results
+            total_cost = await cost_tracker.finalize_and_charge(
+                session=session,
+                user_id=user_id,
+                source="self_critique",
+                verdict="COST_CAP",
+                iterations=iteration + 1)
+            return {
+                "verdict":
+                    "COST_CAP",
+                "message":
+                    f"Verification stopped: cost cap ${MAX_COST_USD} reached",
+                "cost_usd":
+                    float(total_cost),
+                "iterations":
+                    iteration + 1,
+                "partial":
+                    True
+            }
+
         # Track web_search costs ($0.01 per search request)
         web_search_requests = getattr(response.usage, 'web_search_requests', 0)
         # Handle None, 0, or missing attribute
@@ -1076,6 +739,7 @@ async def execute_self_critique(
                 total_cost = await cost_tracker.finalize_and_charge(
                     session=session,
                     user_id=user_id,
+                    source="self_critique",
                     verdict=verdict,
                     iterations=iteration + 1)
 
@@ -1105,6 +769,7 @@ async def execute_self_critique(
                 total_cost = await cost_tracker.finalize_and_charge(
                     session=session,
                     user_id=user_id,
+                    source="self_critique",
                     verdict="ERROR",
                     iterations=iteration + 1)
 
@@ -1158,6 +823,7 @@ async def execute_self_critique(
     total_cost = await cost_tracker.finalize_and_charge(
         session=session,
         user_id=user_id,
+        source="self_critique",
         verdict="ERROR",
         iterations=MAX_SUBAGENT_ITERATIONS)
 

@@ -1401,5 +1401,267 @@ docker compose exec bot pytest -x  # fail fast
 
 ---
 
-*Plan created: 2026-01-27*
+---
+
+## Phase 6: Self-Critique Subagent Refactoring — IN PROGRESS
+
+**Date:** 2026-01-28
+**Problem:** `self_critique` cost $2+ per call instead of expected $0.10-0.20
+
+### Root Causes
+
+1. **Aggressive system prompt:**
+   - "USE EXTENSIVELY for fact-checking!"
+   - "ALWAYS search for the OFFICIAL documentation"
+   - Result: 10+ API calls instead of 1-3
+
+2. **Excessive limits:**
+   - `MAX_SUBAGENT_ITERATIONS = 40` (should be ~8)
+   - `web_search max_uses = 100` (should be ~5)
+   - `web_fetch max_uses = 50` (should be ~3)
+
+3. **Architectural issues:**
+   - Duplicated tool definitions (~100 lines)
+   - Duplicated dispatch logic (own switch-case)
+   - No reuse of `execute_tool` from registry
+
+---
+
+### Phase 6.1: Cost Optimization — ✅ COMPLETE
+
+| Parameter | Before | After |
+|-----------|--------|-------|
+| `MAX_SUBAGENT_ITERATIONS` | 40 | 8 |
+| `THINKING_BUDGET_TOKENS` | 16,000 | 10,000 |
+| `web_search max_uses` | 100 | 5 |
+| `web_fetch max_uses` | 50 | 3 |
+| `web_fetch max_content_tokens` | 50,000 | 20,000 |
+| **Cost cap** | none | **$0.50** |
+
+**Expected cost:** $0.05-0.15 per call (15-40x reduction)
+
+---
+
+### Phase 6.2: System Prompt Rewrite — ✅ COMPLETE
+
+Rewrote following [Claude 4 best practices](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-4-best-practices):
+
+- Removed aggressive language ("EXTENSIVELY", "ALWAYS", "CRITICAL")
+- Added `<cost_awareness>` block with context
+- Instruction: "1-3 tool calls maximum"
+- Added `<after_tool_use>` section for interleaved thinking
+
+---
+
+### Phase 6.3: Reuse Tool Definitions — ✅ COMPLETE
+
+**Before (100+ lines of duplication):**
+```python
+SUBAGENT_TOOLS = [{
+    "name": "execute_python",
+    "description": "...",  # copy from execute_python.py
+    "input_schema": {...}
+}, ...]
+```
+
+**After (5 lines - import existing):**
+```python
+from core.tools.execute_python import EXECUTE_PYTHON_TOOL
+from core.tools.preview_file import PREVIEW_FILE_TOOL
+from core.tools.analyze_image import ANALYZE_IMAGE_TOOL
+from core.tools.analyze_pdf import ANALYZE_PDF_TOOL
+
+SUBAGENT_TOOLS = [
+    EXECUTE_PYTHON_TOOL,
+    PREVIEW_FILE_TOOL,
+    ANALYZE_IMAGE_TOOL,
+    ANALYZE_PDF_TOOL,
+]
+```
+
+---
+
+### Phase 6.4: Reuse execute_tool — ✅ COMPLETE
+
+**Before (120+ lines switch-case):**
+```python
+async def _execute_subagent_tool(...):
+    if tool_name == "execute_python":
+        result = await execute_python(...)
+    elif tool_name == "preview_file":
+        result = await preview_file(...)
+    elif tool_name == "analyze_image":
+        result = await analyze_image(...)
+    ...
+```
+
+**After (unified via registry):**
+```python
+async def _execute_subagent_tool(...):
+    from core.tools.registry import execute_tool
+
+    result = await execute_tool(
+        tool_name=tool_name,
+        tool_input=tool_input,
+        bot=bot,
+        session=session,
+        thread_id=thread_id,
+    )
+
+    # Only cost tracking remains
+    _track_tool_cost(tool_name, result, cost_tracker)
+    return {...}
+```
+
+**Tests:** All 46 tests passing after refactoring
+
+---
+
+### Phase 6.5: Dependency Injection for claude_provider — ✅ COMPLETE
+
+**Problem:** Hard dependency on global `claude_provider`:
+```python
+from telegram.handlers.claude import claude_provider
+client = claude_provider.client
+```
+
+**Solution:** Added optional `anthropic_client` parameter with fallback:
+```python
+async def execute_self_critique(
+    ...,
+    anthropic_client: Optional[Any] = None,  # Inject or fallback to global
+) -> dict[str, Any]:
+```
+
+Also migrated to `ServiceFactory` for cleaner service initialization.
+
+**Benefits:**
+- Improved testability
+- Loose coupling
+- Backward compatible (global fallback)
+
+---
+
+### Phase 6.6: Create BaseSubagent Class — ✅ COMPLETE
+
+**Problem:** If another subagent is needed (code_reviewer, fact_checker), ~500 lines must be copied.
+
+**Solution:** Created `core/subagent/base.py`:
+
+```python
+class BaseSubagent:
+    """Base class for LLM subagents with tool loop."""
+
+    def __init__(
+        self,
+        client: AsyncAnthropic,
+        model_id: str,
+        system_prompt: str,
+        tools: list[dict],
+        max_iterations: int = 8,
+        thinking_budget: int = 10000,
+        cost_cap: Decimal = Decimal("0.50"),
+    ):
+        ...
+
+    async def run(self, messages: list[dict]) -> dict[str, Any]:
+        """Run tool loop until completion."""
+        ...
+
+    async def _execute_tools(self, response) -> list[dict]:
+        """Execute tools in parallel. Override for custom behavior."""
+        ...
+
+    def _parse_result(self, response) -> dict:
+        """Parse final result. Override for custom format."""
+        ...
+```
+
+**Usage:**
+```python
+class SelfCritiqueSubagent(BaseSubagent):
+    def _parse_result(self, response) -> dict:
+        # Custom JSON verdict parsing
+        ...
+
+class CodeReviewerSubagent(BaseSubagent):
+    # Future subagent for PR review
+    ...
+```
+
+**Files created:**
+- `core/subagent/__init__.py`
+- `core/subagent/base.py` (~400 lines)
+- `tests/core/subagent/test_base.py` (12 tests)
+
+---
+
+### Phase 6.7: Extract CostTracker — ✅ COMPLETE
+
+**Problem:** `CostTracker` in self_critique.py could be useful elsewhere.
+
+**Solution:** Created `core/cost_tracker.py` with callback support:
+
+```python
+class CostTracker:
+    """Track API and tool costs for billing."""
+    def __init__(self, model_id, user_id,
+                 on_api_usage=None,    # Callback for metrics
+                 on_tool_cost=None,    # Callback for metrics
+                 on_finalize=None):    # Callback for metrics
+        ...
+```
+
+**self_critique.py now uses:**
+```python
+from core.cost_tracker import CostTracker as BaseCostTracker
+
+def _create_cost_tracker(model_id, user_id):
+    # Factory with Prometheus callbacks
+    return BaseCostTracker(
+        model_id=model_id,
+        user_id=user_id,
+        on_api_usage=_prometheus_api_callback,
+        on_tool_cost=_prometheus_tool_callback,
+        on_finalize=_prometheus_finalize_callback,
+    )
+```
+
+**Files created:**
+- `core/cost_tracker.py` (~180 lines)
+- `tests/core/test_cost_tracker.py` (16 tests)
+
+---
+
+### Phase 6 Summary
+
+| Step | Description | Status | Code Reduction |
+|------|-------------|--------|----------------|
+| 6.1 | Cost optimization | ✅ | - |
+| 6.2 | System prompt rewrite | ✅ | - |
+| 6.3 | Reuse tool definitions | ✅ | ~95 lines |
+| 6.4 | Reuse execute_tool | ✅ | ~70 lines |
+| 6.5 | Dependency injection | ✅ | +ServiceFactory |
+| 6.6 | BaseSubagent class | ✅ | Enables reuse |
+| 6.7 | Extract CostTracker | ✅ | Shared module |
+
+**Files changed:**
+- `bot/core/tools/self_critique.py` - main refactoring
+- `bot/tests/core/tools/test_self_critique.py` - updated mocks
+
+**New files created:**
+- `bot/core/cost_tracker.py` - shared CostTracker
+- `bot/core/subagent/base.py` - BaseSubagent for reuse
+- `bot/tests/core/test_cost_tracker.py` - 16 tests
+- `bot/tests/core/subagent/test_base.py` - 12 tests
+
+**Metrics:**
+- Cost per call: $2+ → $0.05-0.15 (expected, 15-40x reduction)
+- Code duplication: ~200 lines → ~35 lines (82% reduction)
+- Tool definitions: duplicated → reused from registry
+- Tests: 62 passing (46 self_critique + 16 cost_tracker)
+
+---
+
+*Plan updated: 2026-01-28*
 *Based on: Comprehensive Architecture Audit*
