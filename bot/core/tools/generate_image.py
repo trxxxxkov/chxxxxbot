@@ -10,6 +10,9 @@ Capabilities:
 - Multi-image composition (up to 14 reference images)
 - Google Search grounding for real-time data visualization
 
+Files are saved to exec_cache for model review before delivery.
+Model can iterate on results or deliver directly to user.
+
 NO __init__.py - use direct import:
     from core.tools.generate_image import (
         generate_image,
@@ -18,11 +21,13 @@ NO __init__.py - use direct import:
 """
 
 import asyncio
+import base64
 from datetime import datetime
 from datetime import UTC
 import io
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
+from cache.exec_cache import store_exec_file
 from core.clients import get_google_client
 from core.pricing import calculate_gemini_image_cost
 from core.pricing import cost_to_float
@@ -38,7 +43,7 @@ logger = get_logger(__name__)
 
 # Tool definition for Claude API
 # Follows Claude 4 best practices: explicit instructions, context for WHY,
-# positive framing, minimal aggressive language
+# positive framing, XML tags for structure
 GENERATE_IMAGE_TOOL = {
     "name":
         "generate_image",
@@ -74,6 +79,17 @@ up-to-date information. The model searches, verifies facts, then generates
 accurate imagery.
 </grounded_mode>
 
+<output_handling>
+Generated images are saved to temporary cache for your review. You receive
+a visual preview to verify the result meets requirements. If the image
+needs adjustments, call generate_image again with refined prompt or
+source_file_ids pointing to the generated image for iterative editing.
+
+When satisfied with the result, use deliver_file(temp_id) to send the
+image to the user. You can also use preview_file(temp_id) for detailed
+analysis before delivery.
+</output_handling>
+
 <prompt_writing>
 Effective prompts describe the scene rather than listing keywords. Include:
 - Subject and main focus with specific details
@@ -101,15 +117,16 @@ image_size: Balance quality against cost
 - 2K for standard quality, suitable for most uses
 - 4K for high detail, print quality, professional assets
 
-source_file_ids: Provide file IDs from Available Files section when editing
+source_file_ids: Provide file IDs from Available Files or Pending Files
 - Single image for direct editing or style transfer
 - Multiple images for composition or identity preservation
 - Up to 14 reference images supported (6 objects + 5 humans max)
+- Accepts both claude_file_id (file_xxx) and temp_id (exec_xxx)
 </parameters_guide>
 
 <cost_info>
 Generation costs $0.134 per image at 1K/2K, $0.240 at 4K resolution.
-Google Search grounding adds approximately $0.01-0.03 per query.
+Google Search grounding adds approximately $0.02 per query.
 Editing uses the same pricing as generation.
 </cost_info>
 
@@ -148,7 +165,7 @@ matplotlib or plotly instead.
                 },
                 "description":
                     "File IDs of images to edit or use as references. "
-                    "From Available Files section. Leave empty for generation."
+                    "From Available Files or Pending Files. Leave empty for generation."
             },
             "use_google_search": {
                 "type": "boolean",
@@ -162,21 +179,15 @@ matplotlib or plotly instead.
 }
 
 
-async def _get_image_from_file_id(
-    file_id: str,
-    session: 'AsyncSession',
-) -> Optional[Image.Image]:
+async def _get_image_from_file_id(file_id: str) -> Optional[Image.Image]:
     """Load image from file ID (Claude Files API or exec_cache).
 
     Args:
         file_id: Either claude_file_id (file_xxx) or temp_id (exec_xxx).
-        session: Database session (unused, for interface consistency).
 
     Returns:
         PIL Image object or None if not found/not image.
     """
-    _ = session  # Unused, kept for interface consistency
-
     try:
         # Check exec_cache first (temporary generated files)
         if file_id.startswith("exec_"):
@@ -192,7 +203,7 @@ async def _get_image_from_file_id(
                         mime_type=meta.get("mime_type") if meta else None)
             return None
 
-        # Download from Claude Files API
+        # Download from Claude Files API (beta.files.download)
         if file_id.startswith("file_"):
             from core.clients import \
                 get_anthropic_client  # pylint: disable=import-outside-toplevel
@@ -201,8 +212,8 @@ async def _get_image_from_file_id(
 
             # Run in thread pool to avoid blocking
             def _download() -> bytes:
-                response = client.files.content(file_id)
-                return response.read()
+                # Use beta.files.download for Files API
+                return client.beta.files.download(file_id=file_id)
 
             content = await asyncio.to_thread(_download)
             return Image.open(io.BytesIO(content))
@@ -234,25 +245,28 @@ async def generate_image(  # pylint: disable=too-many-locals,too-many-branches,t
     2. Editing: Modify existing images (source_file_ids provided)
     3. Grounded: Generate based on real-time web data (use_google_search=True)
 
+    Images are saved to exec_cache for model review. Use deliver_file() to
+    send to user after verification.
+
     Args:
         prompt: Image description or editing instructions (English).
         bot: Telegram Bot instance (unused, for interface consistency).
         session: Database session for file operations.
-        thread_id: Thread ID (unused, for interface consistency).
+        thread_id: Thread ID for exec_cache association.
         aspect_ratio: Image aspect ratio (1:1, 3:4, 4:3, 9:16, 16:9).
         image_size: Resolution (1K, 2K, 4K).
         source_file_ids: File IDs of images to edit/compose (up to 14).
         use_google_search: Ground generation in real-time web data.
 
     Returns:
-        Dictionary with generation result including _file_contents for delivery.
+        Dictionary with generation result including temp_id and preview.
 
     Raises:
         ValueError: If prompt is empty.
         Exception: If generation fails (API error, content policy).
     """
     _ = bot  # Unused
-    _ = thread_id  # Unused
+    _ = session  # Unused
 
     # Determine mode for logging
     mode = "generate"
@@ -281,7 +295,7 @@ async def generate_image(  # pylint: disable=too-many-locals,too-many-branches,t
         if source_file_ids:
             loaded_count = 0
             for file_id in source_file_ids[:14]:  # Max 14 reference images
-                img = await _get_image_from_file_id(file_id, session)
+                img = await _get_image_from_file_id(file_id)
                 if img:
                     contents.append(img)
                     loaded_count += 1
@@ -294,7 +308,8 @@ async def generate_image(  # pylint: disable=too-many-locals,too-many-branches,t
                     "success": "false",
                     "error":
                         "Could not load any source images. Verify file IDs "
-                        "are correct and files are images.",
+                        "are correct and files are images. Use file IDs from "
+                        "Available Files (file_xxx) or Pending Files (exec_xxx).",
                 }
 
             logger.info("tools.generate_image.sources_loaded",
@@ -372,10 +387,45 @@ async def generate_image(  # pylint: disable=too-many-locals,too-many-branches,t
                      if generated_text else "Try a different prompt."),
             }
 
-        # Step 5: Prepare file for delivery
+        # Step 5: Save to exec_cache (NOT auto-deliver)
         action = "edited" if source_file_ids else "generated"
         filename = f"{action}_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}.png"
         mime_type = "image/png"
+
+        # Context describes what this file is
+        prompt_context = prompt[:200] + ("..." if len(prompt) > 200 else "")
+        if source_file_ids:
+            file_context = f"Edited image ({len(source_file_ids)} sources): {prompt_context}"
+        elif use_google_search:
+            file_context = f"Grounded image: {prompt_context}"
+        else:
+            file_context = f"Generated image: {prompt_context}"
+
+        # Store in exec_cache
+        import uuid  # pylint: disable=import-outside-toplevel
+        execution_id = uuid.uuid4().hex[:8]
+
+        metadata = await store_exec_file(
+            filename=filename,
+            content=image_bytes,
+            mime_type=mime_type,
+            context=file_context,
+            execution_id=execution_id,
+            thread_id=thread_id,
+        )
+
+        if not metadata:
+            return {
+                "success": "false",
+                "error": "Failed to cache generated image. Try again.",
+            }
+
+        temp_id = metadata["temp_id"]
+
+        logger.info("tools.generate_image.cached",
+                    temp_id=temp_id,
+                    filename=filename,
+                    size_bytes=len(image_bytes))
 
         # Step 6: Calculate cost
         resolution = "4096x4096" if image_size == "4K" else "2048x2048"
@@ -389,34 +439,45 @@ async def generate_image(  # pylint: disable=too-many-locals,too-many-branches,t
 
         logger.info("tools.generate_image.complete",
                     mode=mode,
+                    temp_id=temp_id,
                     filename=filename,
                     cost_usd=cost_to_float(cost_usd),
                     image_size=image_size,
                     size_bytes=len(image_bytes))
 
-        # Build context description
-        prompt_context = prompt[:200] + ("..." if len(prompt) > 200 else "")
-        if source_file_ids:
-            context = f"Edited image ({len(source_file_ids)} sources): {prompt_context}"
-        elif use_google_search:
-            context = f"Grounded image: {prompt_context}"
-        else:
-            context = f"Generated image: {prompt_context}"
-
+        # Build result with preview for model verification
         result: Dict[str, Any] = {
-            "success":
-                "true",
-            "mode":
-                mode,
-            "cost_usd":
-                f"{cost_to_float(cost_usd):.3f}",
-            "_file_contents": [{
-                "filename": filename,
-                "content": image_bytes,
-                "mime_type": mime_type,
-                "context": context,
-            }],
+            "success": "true",
+            "mode": mode,
+            "cost_usd": f"{cost_to_float(cost_usd):.3f}",
+            "output_file": {
+                "temp_id":
+                    temp_id,
+                "filename":
+                    filename,
+                "size_bytes":
+                    len(image_bytes),
+                "mime_type":
+                    mime_type,
+                "preview":
+                    metadata.get("preview", f"Image {len(image_bytes)} bytes"),
+            },
+            "next_steps":
+                "Review the image preview below. If satisfactory, use "
+                "deliver_file(temp_id) to send to user. For adjustments, "
+                "call generate_image again with refined prompt.",
         }
+
+        # Add image preview for Claude to visually verify
+        # Limited to images under 2MB to avoid context bloat
+        if len(image_bytes) < 2 * 1024 * 1024:
+            result["_image_preview"] = {
+                "data": base64.b64encode(image_bytes).decode('utf-8'),
+                "media_type": mime_type,
+            }
+            logger.info("tools.generate_image.preview_included",
+                        temp_id=temp_id,
+                        size_kb=len(image_bytes) / 1024)
 
         if generated_text:
             result["generated_text"] = generated_text
@@ -459,17 +520,15 @@ def format_generate_image_result(
 
     mode = result.get("mode", "generate")
     resolution = tool_input.get("image_size", "2K")
-    aspect = tool_input.get("aspect_ratio", "")
-    aspect_info = f", {aspect}" if aspect else ""
 
     if "edit" in mode:
-        return f"[🖌️ Изображение отредактировано ({resolution}{aspect_info})]"
+        return f"[🖌️ Изображение отредактировано ({resolution}), ожидает проверки]"
     if "compose" in mode:
-        return f"[🎭 Композиция создана ({resolution}{aspect_info})]"
+        return f"[🎭 Композиция создана ({resolution}), ожидает проверки]"
     if "grounded" in mode:
-        return f"[🌐 Изображение создано с веб-данными ({resolution}{aspect_info})]"
+        return f"[🌐 Изображение с веб-данными ({resolution}), ожидает проверки]"
 
-    return f"[🎨 Изображение создано ({resolution}{aspect_info})]"
+    return f"[🎨 Изображение создано ({resolution}), ожидает проверки]"
 
 
 # Unified tool configuration
