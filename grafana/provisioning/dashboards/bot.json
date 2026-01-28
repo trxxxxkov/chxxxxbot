@@ -529,7 +529,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.user_charged\" | model_id=\"claude:opus\" | unwrap cost_usd [$__interval])) or vector(0)",
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.user_charged\" | model_id=\"claude:opus\" | source!=\"self_critique\" | unwrap cost_usd [$__interval])) or vector(0)",
           "legendFormat": "Claude Opus 4.5",
           "refId": "A"
         },
