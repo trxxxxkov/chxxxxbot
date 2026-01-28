@@ -397,21 +397,6 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "self_critique"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "#DC2626",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
               "options": "Claude Sonnet 4.5"
             },
             "properties": [
@@ -442,7 +427,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "generate_image"
+              "options": "self_critique"
             },
             "properties": [
               {
@@ -457,13 +442,28 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "transcribe_audio"
+              "options": "generate_image"
             },
             "properties": [
               {
                 "id": "color",
                 "value": {
                   "fixedColor": "#7DD3FC",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "transcribe_audio"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#38BDF8",
                   "mode": "fixed"
                 }
               }
@@ -529,15 +529,6 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"self_critique.cost_charged\" | unwrap total_cost [$__interval])) or vector(0)",
-          "legendFormat": "self_critique",
-          "refId": "SC"
-        },
-        {
-          "datasource": {
-            "type": "loki",
-            "uid": "loki"
-          },
           "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.user_charged\" | model_id=\"claude:opus\" | unwrap cost_usd [$__interval])) or vector(0)",
           "legendFormat": "Claude Opus 4.5",
           "refId": "A"
@@ -559,6 +550,15 @@
           "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.user_charged\" | model_id=\"claude:haiku\" | unwrap cost_usd [$__interval])) or vector(0)",
           "legendFormat": "Claude Haiku 4.5",
           "refId": "A3"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"self_critique.cost_charged\" | unwrap total_cost [$__interval])) or vector(0)",
+          "legendFormat": "self_critique",
+          "refId": "SC"
         },
         {
           "datasource": {
