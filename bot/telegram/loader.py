@@ -25,7 +25,7 @@ from telegram.middlewares.command_middleware import \
     CommandMiddleware  # Command logging + topic registration
 from telegram.middlewares.database_middleware import DatabaseMiddleware
 from telegram.middlewares.logging_middleware import LoggingMiddleware
-from telegram.pipeline import handler as unified_handler
+import telegram.pipeline.handler as unified_handler
 from utils.structured_logging import get_logger
 
 logger = get_logger(__name__)

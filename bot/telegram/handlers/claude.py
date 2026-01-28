@@ -491,7 +491,7 @@ async def _process_batch_with_session(
             # 7. Show typing indicator (only when starting processing)
             # StreamingOrchestrator will maintain the indicator during streaming,
             # but we send initial one here for immediate user feedback
-            from telegram.chat_action import send_action
+            from telegram.chat_action.legacy import send_action
             await send_action(first_message.bot, first_message.chat.id,
                               "typing", thread.thread_id)
 

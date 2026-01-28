@@ -36,7 +36,7 @@ def reset_routers():
         start,
         stop_generation,
     )
-    from telegram.pipeline import handler as unified_handler
+    import telegram.pipeline.handler as unified_handler
 
     routers = [
         start.router,
