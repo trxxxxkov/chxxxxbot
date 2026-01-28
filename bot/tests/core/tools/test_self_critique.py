@@ -363,33 +363,30 @@ class TestBalanceCheck:
                                              output_tokens=500)
 
         with patch("core.tools.self_critique.get_model") as mock_get_model, \
-             patch("services.balance_service.BalanceService") as mock_bs_class, \
-             patch("db.repositories.user_repository.UserRepository"), \
-             patch("db.repositories.balance_operation_repository.BalanceOperationRepository"), \
-             patch("telegram.handlers.claude.claude_provider") as mock_provider:
+             patch("services.factory.ServiceFactory") as mock_factory_class:
 
             # Setup model config
             mock_config = Mock()
             mock_config.model_id = "claude-opus-4-5-20251101"
             mock_get_model.return_value = mock_config
 
-            # Setup balance service
-            mock_balance_service = AsyncMock()
-            mock_balance_service.get_balance = AsyncMock(
+            # Setup ServiceFactory
+            mock_factory = Mock()
+            mock_factory.balance.get_balance = AsyncMock(
                 return_value=Decimal("1.00"))
-            mock_balance_service.charge_user = AsyncMock()
-            mock_bs_class.return_value = mock_balance_service
+            mock_factory.balance.charge_user = AsyncMock()
+            mock_factory_class.return_value = mock_factory
 
             # Setup Anthropic client
             mock_client = AsyncMock()
             mock_client.messages.create = AsyncMock(return_value=mock_response)
-            mock_provider.client = mock_client
 
             result = await execute_self_critique(user_request="Test request",
                                                  content="Test content",
                                                  bot=mock_bot,
                                                  session=mock_session,
-                                                 user_id=12345)
+                                                 user_id=12345,
+                                                 anthropic_client=mock_client)
 
             assert result["verdict"] == "PASS"
             assert result["alignment_score"] == 90
@@ -407,30 +404,28 @@ class TestBalanceCheck:
             '{"verdict": "PASS", "alignment_score": 85, "issues": []}')
 
         with patch("core.tools.self_critique.get_model") as mock_get_model, \
-             patch("services.balance_service.BalanceService") as mock_bs_class, \
-             patch("db.repositories.user_repository.UserRepository"), \
-             patch("db.repositories.balance_operation_repository.BalanceOperationRepository"), \
-             patch("telegram.handlers.claude.claude_provider") as mock_provider:
+             patch("services.factory.ServiceFactory") as mock_factory_class:
 
             mock_config = Mock()
             mock_config.model_id = "claude-opus-4-5-20251101"
             mock_get_model.return_value = mock_config
 
-            mock_balance_service = AsyncMock()
+            # Setup ServiceFactory
+            mock_factory = Mock()
             # Exactly at threshold
-            mock_balance_service.get_balance = AsyncMock(
+            mock_factory.balance.get_balance = AsyncMock(
                 return_value=MIN_BALANCE_FOR_CRITIQUE)
-            mock_balance_service.charge_user = AsyncMock()
-            mock_bs_class.return_value = mock_balance_service
+            mock_factory.balance.charge_user = AsyncMock()
+            mock_factory_class.return_value = mock_factory
 
             mock_client = AsyncMock()
             mock_client.messages.create = AsyncMock(return_value=mock_response)
-            mock_provider.client = mock_client
 
             result = await execute_self_critique(user_request="Test",
                                                  bot=mock_bot,
                                                  session=mock_session,
-                                                 user_id=12345)
+                                                 user_id=12345,
+                                                 anthropic_client=mock_client)
 
             # Should proceed (>= threshold)
             assert result["verdict"] == "PASS"
@@ -698,29 +693,26 @@ class TestJSONParsing:
         }))
 
         with patch("core.tools.self_critique.get_model") as mock_get_model, \
-             patch("services.balance_service.BalanceService") as mock_bs_class, \
-             patch("db.repositories.user_repository.UserRepository"), \
-             patch("db.repositories.balance_operation_repository.BalanceOperationRepository"), \
-             patch("telegram.handlers.claude.claude_provider") as mock_provider:
+             patch("services.factory.ServiceFactory") as mock_factory_class:
 
             mock_config = Mock()
             mock_config.model_id = "claude-opus-4-5-20251101"
             mock_get_model.return_value = mock_config
 
-            mock_balance_service = AsyncMock()
-            mock_balance_service.get_balance = AsyncMock(
+            mock_factory = Mock()
+            mock_factory.balance.get_balance = AsyncMock(
                 return_value=Decimal("1.00"))
-            mock_balance_service.charge_user = AsyncMock()
-            mock_bs_class.return_value = mock_balance_service
+            mock_factory.balance.charge_user = AsyncMock()
+            mock_factory_class.return_value = mock_factory
 
             mock_client = AsyncMock()
             mock_client.messages.create = AsyncMock(return_value=mock_response)
-            mock_provider.client = mock_client
 
             result = await execute_self_critique(user_request="Test",
                                                  bot=mock_bot,
                                                  session=mock_session,
-                                                 user_id=12345)
+                                                 user_id=12345,
+                                                 anthropic_client=mock_client)
 
             assert result["verdict"] == "NEEDS_IMPROVEMENT"
             assert result["alignment_score"] == 65
@@ -741,29 +733,26 @@ class TestJSONParsing:
 ```""")
 
         with patch("core.tools.self_critique.get_model") as mock_get_model, \
-             patch("services.balance_service.BalanceService") as mock_bs_class, \
-             patch("db.repositories.user_repository.UserRepository"), \
-             patch("db.repositories.balance_operation_repository.BalanceOperationRepository"), \
-             patch("telegram.handlers.claude.claude_provider") as mock_provider:
+             patch("services.factory.ServiceFactory") as mock_factory_class:
 
             mock_config = Mock()
             mock_config.model_id = "claude-opus-4-5-20251101"
             mock_get_model.return_value = mock_config
 
-            mock_balance_service = AsyncMock()
-            mock_balance_service.get_balance = AsyncMock(
+            mock_factory = Mock()
+            mock_factory.balance.get_balance = AsyncMock(
                 return_value=Decimal("1.00"))
-            mock_balance_service.charge_user = AsyncMock()
-            mock_bs_class.return_value = mock_balance_service
+            mock_factory.balance.charge_user = AsyncMock()
+            mock_factory_class.return_value = mock_factory
 
             mock_client = AsyncMock()
             mock_client.messages.create = AsyncMock(return_value=mock_response)
-            mock_provider.client = mock_client
 
             result = await execute_self_critique(user_request="Test",
                                                  bot=mock_bot,
                                                  session=mock_session,
-                                                 user_id=12345)
+                                                 user_id=12345,
+                                                 anthropic_client=mock_client)
 
             assert result["verdict"] == "FAIL"
             assert result["alignment_score"] == 30
@@ -777,29 +766,26 @@ class TestJSONParsing:
             content_text="This is not JSON at all")
 
         with patch("core.tools.self_critique.get_model") as mock_get_model, \
-             patch("services.balance_service.BalanceService") as mock_bs_class, \
-             patch("db.repositories.user_repository.UserRepository"), \
-             patch("db.repositories.balance_operation_repository.BalanceOperationRepository"), \
-             patch("telegram.handlers.claude.claude_provider") as mock_provider:
+             patch("services.factory.ServiceFactory") as mock_factory_class:
 
             mock_config = Mock()
             mock_config.model_id = "claude-opus-4-5-20251101"
             mock_get_model.return_value = mock_config
 
-            mock_balance_service = AsyncMock()
-            mock_balance_service.get_balance = AsyncMock(
+            mock_factory = Mock()
+            mock_factory.balance.get_balance = AsyncMock(
                 return_value=Decimal("1.00"))
-            mock_balance_service.charge_user = AsyncMock()
-            mock_bs_class.return_value = mock_balance_service
+            mock_factory.balance.charge_user = AsyncMock()
+            mock_factory_class.return_value = mock_factory
 
             mock_client = AsyncMock()
             mock_client.messages.create = AsyncMock(return_value=mock_response)
-            mock_provider.client = mock_client
 
             result = await execute_self_critique(user_request="Test",
                                                  bot=mock_bot,
                                                  session=mock_session,
-                                                 user_id=12345)
+                                                 user_id=12345,
+                                                 anthropic_client=mock_client)
 
             assert result["verdict"] == "ERROR"
             assert result["error"] == "invalid_response_format"
@@ -832,31 +818,28 @@ class TestToolLoopIntegration:
                                              output_tokens=800)
 
         with patch("core.tools.self_critique.get_model") as mock_get_model, \
-             patch("services.balance_service.BalanceService") as mock_bs_class, \
-             patch("db.repositories.user_repository.UserRepository"), \
-             patch("db.repositories.balance_operation_repository.BalanceOperationRepository"), \
-             patch("telegram.handlers.claude.claude_provider") as mock_provider:
+             patch("services.factory.ServiceFactory") as mock_factory_class:
 
             mock_config = Mock()
             mock_config.model_id = "claude-opus-4-5-20251101"
             mock_get_model.return_value = mock_config
 
-            mock_balance_service = AsyncMock()
-            mock_balance_service.get_balance = AsyncMock(
+            mock_factory = Mock()
+            mock_factory.balance.get_balance = AsyncMock(
                 return_value=Decimal("2.00"))
-            mock_balance_service.charge_user = AsyncMock()
-            mock_bs_class.return_value = mock_balance_service
+            mock_factory.balance.charge_user = AsyncMock()
+            mock_factory_class.return_value = mock_factory
 
             mock_client = AsyncMock()
             mock_client.messages.create = AsyncMock(return_value=mock_response)
-            mock_provider.client = mock_client
 
             result = await execute_self_critique(
                 user_request="Write a function to add two numbers",
                 content="def add(a, b): return a + b",
                 bot=mock_bot,
                 session=mock_session,
-                user_id=12345)
+                user_id=12345,
+                anthropic_client=mock_client)
 
             assert result["verdict"] == "PASS"
             assert result["iterations"] == 1
@@ -910,26 +893,22 @@ class TestToolLoopIntegration:
                                                output_tokens=400)
 
         with patch("core.tools.self_critique.get_model") as mock_get_model, \
-             patch("services.balance_service.BalanceService") as mock_bs_class, \
-             patch("db.repositories.user_repository.UserRepository"), \
-             patch("db.repositories.balance_operation_repository.BalanceOperationRepository"), \
-             patch("telegram.handlers.claude.claude_provider") as mock_provider, \
+             patch("services.factory.ServiceFactory") as mock_factory_class, \
              patch("core.tools.registry.execute_tool") as mock_exec_tool:
 
             mock_config = Mock()
             mock_config.model_id = "claude-opus-4-5-20251101"
             mock_get_model.return_value = mock_config
 
-            mock_balance_service = AsyncMock()
-            mock_balance_service.get_balance = AsyncMock(
+            mock_factory = Mock()
+            mock_factory.balance.get_balance = AsyncMock(
                 return_value=Decimal("2.00"))
-            mock_balance_service.charge_user = AsyncMock()
-            mock_bs_class.return_value = mock_balance_service
+            mock_factory.balance.charge_user = AsyncMock()
+            mock_factory_class.return_value = mock_factory
 
             mock_client = AsyncMock()
             mock_client.messages.create = AsyncMock(
                 side_effect=[mock_response_1, mock_response_2])
-            mock_provider.client = mock_client
 
             # Mock execute_tool from registry
             mock_exec_tool.return_value = {
@@ -942,7 +921,8 @@ class TestToolLoopIntegration:
                 content="def add(a, b): return a + b",
                 bot=mock_bot,
                 session=mock_session,
-                user_id=12345)
+                user_id=12345,
+                anthropic_client=mock_client)
 
             assert result["verdict"] == "PASS"
             assert result["iterations"] == 2
@@ -999,26 +979,22 @@ class TestToolLoopIntegration:
             output_tokens=500)
 
         with patch("core.tools.self_critique.get_model") as mock_get_model, \
-             patch("services.balance_service.BalanceService") as mock_bs_class, \
-             patch("db.repositories.user_repository.UserRepository"), \
-             patch("db.repositories.balance_operation_repository.BalanceOperationRepository"), \
-             patch("telegram.handlers.claude.claude_provider") as mock_provider, \
+             patch("services.factory.ServiceFactory") as mock_factory_class, \
              patch("core.tools.registry.execute_tool") as mock_exec_tool:
 
             mock_config = Mock()
             mock_config.model_id = "claude-opus-4-5-20251101"
             mock_get_model.return_value = mock_config
 
-            mock_balance_service = AsyncMock()
-            mock_balance_service.get_balance = AsyncMock(
+            mock_factory = Mock()
+            mock_factory.balance.get_balance = AsyncMock(
                 return_value=Decimal("2.00"))
-            mock_balance_service.charge_user = AsyncMock()
-            mock_bs_class.return_value = mock_balance_service
+            mock_factory.balance.charge_user = AsyncMock()
+            mock_factory_class.return_value = mock_factory
 
             mock_client = AsyncMock()
             mock_client.messages.create = AsyncMock(
                 side_effect=[mock_response_1, mock_response_2])
-            mock_provider.client = mock_client
 
             # Mock execute_tool to return different results based on tool name
             def mock_tool_dispatch(tool_name, tool_input, **kwargs):
@@ -1034,7 +1010,8 @@ class TestToolLoopIntegration:
                                                  content="Content",
                                                  bot=mock_bot,
                                                  session=mock_session,
-                                                 user_id=12345)
+                                                 user_id=12345,
+                                                 anthropic_client=mock_client)
 
             assert result["verdict"] == "PASS"
             # Both tools should have been called via execute_tool
@@ -1051,14 +1028,14 @@ class TestMaxIterations:
 
     @pytest.mark.asyncio
     async def test_max_iterations_reached(self, mock_bot, mock_session):
-        """Test that max iterations limit is enforced."""
+        """Test that max iterations triggers final call without tools."""
         from core.tools.self_critique import execute_self_critique
         from core.tools.self_critique import MAX_SUBAGENT_ITERATIONS
 
         # Create a response that always requests tool use
-        mock_response = Mock()
-        mock_response.stop_reason = "tool_use"
-        mock_response.usage = create_mock_usage(100, 50)
+        mock_tool_response = Mock()
+        mock_tool_response.stop_reason = "tool_use"
+        mock_tool_response.usage = create_mock_usage(100, 50)
 
         mock_tool_use = Mock()
         mock_tool_use.type = "tool_use"
@@ -1074,29 +1051,34 @@ class TestMaxIterations:
                     "code": "pass"
                 }
             })
-        mock_response.content = [mock_tool_use]
+        mock_tool_response.content = [mock_tool_use]
+
+        # Final response (after max iterations, called without tools)
+        mock_final_response = create_mock_response(
+            content_text='{"verdict": "PASS", "alignment_score": 75, '
+            '"issues": [], "summary": "Limited verification"}',
+            input_tokens=200,
+            output_tokens=100)
 
         with patch("core.tools.self_critique.get_model") as mock_get_model, \
-             patch("services.balance_service.BalanceService") as mock_bs_class, \
-             patch("db.repositories.user_repository.UserRepository"), \
-             patch("db.repositories.balance_operation_repository.BalanceOperationRepository"), \
-             patch("telegram.handlers.claude.claude_provider") as mock_provider, \
+             patch("services.factory.ServiceFactory") as mock_factory_class, \
              patch("core.tools.registry.execute_tool") as mock_exec_tool:
 
             mock_config = Mock()
             mock_config.model_id = "claude-opus-4-5-20251101"
             mock_get_model.return_value = mock_config
 
-            mock_balance_service = AsyncMock()
-            mock_balance_service.get_balance = AsyncMock(
+            mock_factory = Mock()
+            mock_factory.balance.get_balance = AsyncMock(
                 return_value=Decimal("5.00"))
-            mock_balance_service.charge_user = AsyncMock()
-            mock_bs_class.return_value = mock_balance_service
+            mock_factory.balance.charge_user = AsyncMock()
+            mock_factory_class.return_value = mock_factory
 
             mock_client = AsyncMock()
-            # Always return tool_use, never end_turn
-            mock_client.messages.create = AsyncMock(return_value=mock_response)
-            mock_provider.client = mock_client
+            # Return tool_use for MAX_SUBAGENT_ITERATIONS, then end_turn for final
+            mock_client.messages.create = AsyncMock(
+                side_effect=[mock_tool_response] * MAX_SUBAGENT_ITERATIONS +
+                [mock_final_response])
 
             mock_exec_tool.return_value = {
                 "output": "OK",
@@ -1107,13 +1089,138 @@ class TestMaxIterations:
                 user_request="Infinite loop test",
                 bot=mock_bot,
                 session=mock_session,
-                user_id=12345)
+                user_id=12345,
+                anthropic_client=mock_client)
 
-            assert result["verdict"] == "ERROR"
-            assert result["error"] == "max_iterations_reached"
-            assert result["iterations"] == MAX_SUBAGENT_ITERATIONS
-            # Should have been called exactly MAX_SUBAGENT_ITERATIONS times
-            assert mock_client.messages.create.call_count == MAX_SUBAGENT_ITERATIONS
+            # Now we get a verdict from final call, not ERROR
+            assert result["verdict"] == "PASS"
+            assert result.get("tool_limit_reached") is True
+            # MAX_SUBAGENT_ITERATIONS + 1 final call
+            assert result["iterations"] == MAX_SUBAGENT_ITERATIONS + 1
+            # Should have been called MAX_SUBAGENT_ITERATIONS + 1 times
+            assert mock_client.messages.create.call_count == MAX_SUBAGENT_ITERATIONS + 1
+
+
+# =============================================================================
+# Cancellation Tests
+# =============================================================================
+
+
+class TestCancellation:
+    """Tests for cancellation via cancel_event."""
+
+    @pytest.mark.asyncio
+    async def test_cancel_event_stops_subagent(self, mock_bot, mock_session):
+        """Test that setting cancel_event stops the subagent."""
+        import asyncio
+
+        from core.tools.self_critique import execute_self_critique
+
+        # Create a cancel event that's already set
+        cancel_event = asyncio.Event()
+        cancel_event.set()
+
+        with patch("core.tools.self_critique.get_model") as mock_get_model, \
+             patch("services.factory.ServiceFactory") as mock_factory_class:
+
+            mock_config = Mock()
+            mock_config.model_id = "claude-opus-4-5-20251101"
+            mock_get_model.return_value = mock_config
+
+            mock_factory = Mock()
+            mock_factory.balance.get_balance = AsyncMock(
+                return_value=Decimal("5.00"))
+            mock_factory.balance.charge_user = AsyncMock()
+            mock_factory_class.return_value = mock_factory
+
+            mock_client = AsyncMock()
+            # Should never be called - cancelled before first iteration
+            mock_client.messages.create = AsyncMock()
+
+            result = await execute_self_critique(user_request="Test request",
+                                                 bot=mock_bot,
+                                                 session=mock_session,
+                                                 user_id=12345,
+                                                 anthropic_client=mock_client,
+                                                 cancel_event=cancel_event)
+
+            assert result["verdict"] == "CANCELLED"
+            assert result["partial"] is True
+            assert result["iterations"] == 0
+            # API should not have been called
+            mock_client.messages.create.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_cancel_mid_iteration(self, mock_bot, mock_session):
+        """Test cancellation during tool loop."""
+        import asyncio
+
+        from core.tools.self_critique import execute_self_critique
+
+        # Create cancel event that will be set after first API call
+        cancel_event = asyncio.Event()
+
+        # First response: tool_use
+        mock_tool_response = Mock()
+        mock_tool_response.stop_reason = "tool_use"
+        mock_tool_response.usage = create_mock_usage(100, 50)
+
+        mock_tool_use = Mock()
+        mock_tool_use.type = "tool_use"
+        mock_tool_use.id = "toolu_1"
+        mock_tool_use.name = "execute_python"
+        mock_tool_use.input = {"code": "pass"}
+        mock_tool_use.model_dump = Mock(
+            return_value={
+                "type": "tool_use",
+                "id": "toolu_1",
+                "name": "execute_python",
+                "input": {
+                    "code": "pass"
+                }
+            })
+        mock_tool_response.content = [mock_tool_use]
+
+        with patch("core.tools.self_critique.get_model") as mock_get_model, \
+             patch("services.factory.ServiceFactory") as mock_factory_class, \
+             patch("core.tools.registry.execute_tool") as mock_exec_tool:
+
+            mock_config = Mock()
+            mock_config.model_id = "claude-opus-4-5-20251101"
+            mock_get_model.return_value = mock_config
+
+            mock_factory = Mock()
+            mock_factory.balance.get_balance = AsyncMock(
+                return_value=Decimal("5.00"))
+            mock_factory.balance.charge_user = AsyncMock()
+            mock_factory_class.return_value = mock_factory
+
+            mock_client = AsyncMock()
+
+            async def api_side_effect(*args, **kwargs):
+                # Set cancel after first call
+                cancel_event.set()
+                return mock_tool_response
+
+            mock_client.messages.create = AsyncMock(side_effect=api_side_effect)
+
+            mock_exec_tool.return_value = {
+                "output": "OK",
+                "execution_time": 0.01
+            }
+
+            result = await execute_self_critique(user_request="Test request",
+                                                 bot=mock_bot,
+                                                 session=mock_session,
+                                                 user_id=12345,
+                                                 anthropic_client=mock_client,
+                                                 cancel_event=cancel_event)
+
+            # Should have stopped after first iteration
+            assert result["verdict"] == "CANCELLED"
+            assert result["partial"] is True
+            # API called once, then cancelled on second iteration
+            assert mock_client.messages.create.call_count == 1
 
 
 # =============================================================================
@@ -1137,36 +1244,33 @@ class TestCostCharging:
             output_tokens=1000)
 
         with patch("core.tools.self_critique.get_model") as mock_get_model, \
-             patch("services.balance_service.BalanceService") as mock_bs_class, \
-             patch("db.repositories.user_repository.UserRepository"), \
-             patch("db.repositories.balance_operation_repository.BalanceOperationRepository"), \
-             patch("telegram.handlers.claude.claude_provider") as mock_provider, \
+             patch("services.factory.ServiceFactory") as mock_factory_class, \
              patch("core.cost_tracker.calculate_claude_cost") as mock_calc:
 
             mock_config = Mock()
             mock_config.model_id = "claude-opus-4-5-20251101"
             mock_get_model.return_value = mock_config
 
-            mock_balance_service = AsyncMock()
-            mock_balance_service.get_balance = AsyncMock(
+            mock_factory = Mock()
+            mock_factory.balance.get_balance = AsyncMock(
                 return_value=Decimal("2.00"))
-            mock_balance_service.charge_user = AsyncMock()
-            mock_bs_class.return_value = mock_balance_service
+            mock_factory.balance.charge_user = AsyncMock()
+            mock_factory_class.return_value = mock_factory
 
             mock_client = AsyncMock()
             mock_client.messages.create = AsyncMock(return_value=mock_response)
-            mock_provider.client = mock_client
 
             mock_calc.return_value = Decimal("0.05")
 
             result = await execute_self_critique(user_request="Test",
                                                  bot=mock_bot,
                                                  session=mock_session,
-                                                 user_id=12345)
+                                                 user_id=12345,
+                                                 anthropic_client=mock_client)
 
             # Verify charge_user was called
-            mock_balance_service.charge_user.assert_called_once()
-            call_args = mock_balance_service.charge_user.call_args
+            mock_factory.balance.charge_user.assert_called_once()
+            call_args = mock_factory.balance.charge_user.call_args
 
             assert call_args.kwargs["user_id"] == 12345
             assert call_args.kwargs["amount"] == Decimal("0.05")
@@ -1206,10 +1310,7 @@ class TestCostCharging:
             output_tokens=300)
 
         with patch("core.tools.self_critique.get_model") as mock_get_model, \
-             patch("services.balance_service.BalanceService") as mock_bs_class, \
-             patch("db.repositories.user_repository.UserRepository"), \
-             patch("db.repositories.balance_operation_repository.BalanceOperationRepository"), \
-             patch("telegram.handlers.claude.claude_provider") as mock_provider, \
+             patch("services.factory.ServiceFactory") as mock_factory_class, \
              patch("core.tools.registry.execute_tool") as mock_exec_tool, \
              patch("core.cost_tracker.calculate_claude_cost") as mock_calc, \
              patch("core.tools.self_critique.calculate_e2b_cost") as mock_e2b:
@@ -1218,16 +1319,15 @@ class TestCostCharging:
             mock_config.model_id = "claude-opus-4-5-20251101"
             mock_get_model.return_value = mock_config
 
-            mock_balance_service = AsyncMock()
-            mock_balance_service.get_balance = AsyncMock(
+            mock_factory = Mock()
+            mock_factory.balance.get_balance = AsyncMock(
                 return_value=Decimal("2.00"))
-            mock_balance_service.charge_user = AsyncMock()
-            mock_bs_class.return_value = mock_balance_service
+            mock_factory.balance.charge_user = AsyncMock()
+            mock_factory_class.return_value = mock_factory
 
             mock_client = AsyncMock()
             mock_client.messages.create = AsyncMock(
                 side_effect=[mock_response_1, mock_response_2])
-            mock_provider.client = mock_client
 
             # Mock execute_tool to return result with execution_time
             mock_exec_tool.return_value = {"output": "1", "execution_time": 2.0}
@@ -1239,11 +1339,12 @@ class TestCostCharging:
             result = await execute_self_critique(user_request="Test",
                                                  bot=mock_bot,
                                                  session=mock_session,
-                                                 user_id=12345)
+                                                 user_id=12345,
+                                                 anthropic_client=mock_client)
 
             # Total cost should be API cost + E2B cost
-            mock_balance_service.charge_user.assert_called_once()
-            charged_amount = mock_balance_service.charge_user.call_args.kwargs[
+            mock_factory.balance.charge_user.assert_called_once()
+            charged_amount = mock_factory.balance.charge_user.call_args.kwargs[
                 "amount"]
 
             # 0.04 (API) + 0.0001 (E2B) = 0.0401

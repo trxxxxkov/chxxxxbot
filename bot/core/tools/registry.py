@@ -291,6 +291,7 @@ async def execute_tool(
                     thread_id=thread_id,
                     user_id=user_id,
                     on_subagent_tool=tool_input.pop("on_subagent_tool", None),
+                    cancel_event=tool_input.pop("cancel_event", None),
                     **tool_input,
                 )
             else:

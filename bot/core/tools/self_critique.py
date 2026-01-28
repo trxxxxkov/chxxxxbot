@@ -109,11 +109,13 @@ Your job: find flaws, errors, and gaps - not praise.
 
 <cost_awareness>
 This verification costs the user money. Be efficient.
-- Complete verification in 1-3 tool calls maximum
+- You have a HARD LIMIT of 8 tool calls total. Plan accordingly.
+- Aim to complete verification in 1-3 tool calls
 - Do not search for documentation of standard libraries (numpy, pandas, requests)
 - Do not verify every single fact - focus on claims that seem suspicious
 - Do not use web_search unless you have a specific fact to verify
 - Trust your knowledge for common programming patterns
+- If you reach the tool limit, you'll be asked to return a verdict with what you know
 </cost_awareness>
 
 <available_tools>
@@ -510,6 +512,7 @@ async def execute_self_critique(  # pylint: disable=too-many-return-statements
     user_id: int,
     on_subagent_tool: Optional[Callable[[str], Awaitable[None]]] = None,
     anthropic_client: Optional[Any] = None,
+    cancel_event: Optional[asyncio.Event] = None,
 ) -> dict[str, Any]:
     """Execute critical self-verification subagent.
 
@@ -531,6 +534,8 @@ async def execute_self_critique(  # pylint: disable=too-many-return-statements
         anthropic_client: Optional Anthropic client for dependency injection.
             If not provided, falls back to global claude_provider.
             Useful for testing and custom client configurations.
+        cancel_event: Optional asyncio.Event for cancellation.
+            If set, subagent will stop and return partial results.
 
     Returns:
         Structured verification result with verdict, issues, recommendations.
@@ -614,6 +619,25 @@ async def execute_self_critique(  # pylint: disable=too-many-return-statements
     }]
 
     for iteration in range(MAX_SUBAGENT_ITERATIONS):
+        # Check for cancellation (user sent /stop or new message)
+        if cancel_event and cancel_event.is_set():
+            logger.info("self_critique.cancelled",
+                        user_id=user_id,
+                        iteration=iteration)
+            total_cost = await cost_tracker.finalize_and_charge(
+                session=session,
+                user_id=user_id,
+                source="self_critique",
+                verdict="CANCELLED",
+                iterations=iteration)
+            return {
+                "verdict": "CANCELLED",
+                "message": "Verification cancelled by user",
+                "cost_usd": float(total_cost),
+                "iterations": iteration,
+                "partial": True
+            }
+
         logger.debug("self_critique.iteration",
                      iteration=iteration,
                      message_count=len(messages))
@@ -816,29 +840,108 @@ async def execute_self_critique(  # pylint: disable=too-many-return-statements
                            stop_reason=response.stop_reason)
             break
 
-    # Max iterations reached
-    logger.warning("self_critique.max_iterations",
-                   iterations=MAX_SUBAGENT_ITERATIONS)
+    # Max iterations reached - make final call WITHOUT tools to force verdict
+    logger.info("self_critique.max_iterations_final_call",
+                iterations=MAX_SUBAGENT_ITERATIONS)
 
-    total_cost = await cost_tracker.finalize_and_charge(
-        session=session,
-        user_id=user_id,
-        source="self_critique",
-        verdict="ERROR",
-        iterations=MAX_SUBAGENT_ITERATIONS)
+    # Add instruction to return verdict with available information
+    messages.append({
+        "role": "user",
+        "content":
+            "You've reached the tool usage limit. Return your verdict NOW based on "
+            "what you've learned so far. Output ONLY the JSON verdict object."
+    })
 
-    return {
-        "verdict":
-            "ERROR",
-        "error":
-            "max_iterations_reached",
-        "message":
-            f"Verification did not complete within {MAX_SUBAGENT_ITERATIONS} iterations",
-        "cost_usd":
-            float(total_cost),
-        "iterations":
-            MAX_SUBAGENT_ITERATIONS
-    }
+    try:
+        # Final API call without tools - forces model to return verdict
+        final_response = await client.messages.create(
+            model=model_config.model_id,
+            max_tokens=4000,  # Smaller - just need JSON verdict
+            thinking={
+                "type": "enabled",
+                "budget_tokens": 2000  # Minimal thinking for final summary
+            },
+            system=CRITICAL_REVIEWER_SYSTEM_PROMPT,
+            tools=[],  # No tools - must return text
+            messages=messages)
+
+        # Track final API usage
+        thinking_tokens = 0
+        if hasattr(final_response.usage, 'thinking_tokens'):
+            thinking_tokens = final_response.usage.thinking_tokens or 0
+
+        cost_tracker.add_api_usage(
+            input_tokens=final_response.usage.input_tokens,
+            output_tokens=final_response.usage.output_tokens,
+            thinking_tokens=thinking_tokens)
+
+        # Extract result text
+        result_text = ""
+        for block in final_response.content:
+            if block.type == "text":
+                result_text += block.text
+
+        # Try to parse JSON
+        json_text = result_text
+        if "```json" in result_text:
+            start = result_text.find("```json") + 7
+            end = result_text.find("```", start)
+            json_text = result_text[start:end].strip()
+        elif "```" in result_text:
+            start = result_text.find("```") + 3
+            end = result_text.find("```", start)
+            json_text = result_text[start:end].strip()
+
+        result = json.loads(json_text)
+        verdict = result.get("verdict", "UNKNOWN")
+
+        total_cost = await cost_tracker.finalize_and_charge(
+            session=session,
+            user_id=user_id,
+            source="self_critique",
+            verdict=verdict,
+            iterations=MAX_SUBAGENT_ITERATIONS + 1)  # +1 for final call
+
+        result["cost_usd"] = float(total_cost)
+        result["iterations"] = MAX_SUBAGENT_ITERATIONS + 1
+        result["tool_limit_reached"] = True
+        result["tokens_used"] = {
+            "input": cost_tracker.total_input_tokens,
+            "output": cost_tracker.total_output_tokens,
+            "thinking": cost_tracker.total_thinking_tokens
+        }
+
+        logger.info("self_critique.completed_after_limit",
+                    verdict=verdict,
+                    iterations=MAX_SUBAGENT_ITERATIONS + 1,
+                    total_cost=float(total_cost))
+
+        return result
+
+    except Exception as e:
+        logger.warning("self_critique.final_call_failed", error=str(e))
+
+        total_cost = await cost_tracker.finalize_and_charge(
+            session=session,
+            user_id=user_id,
+            source="self_critique",
+            verdict="ERROR",
+            iterations=MAX_SUBAGENT_ITERATIONS)
+
+        return {
+            "verdict":
+                "ERROR",
+            "error":
+                "max_iterations_final_call_failed",
+            "message":
+                f"Tool limit reached and final verdict extraction failed: {e}",
+            "cost_usd":
+                float(total_cost),
+            "iterations":
+                MAX_SUBAGENT_ITERATIONS,
+            "tool_limit_reached":
+                True
+        }
 
 
 # =============================================================================

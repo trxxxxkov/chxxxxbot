@@ -161,6 +161,7 @@ class ToolExecutor:
                 chat_id=self._chat_id,
                 message_thread_id=self._message_thread_id,
                 on_subagent_tool=tool_callback,
+                cancel_event=cancel_event,
             )
             return (idx, result)
 
