@@ -204,15 +204,19 @@ class TestFlushWrites:
         mock_redis.lpop = mock_lpop
         mock_redis.llen = AsyncMock(return_value=0)
 
+        # Create mock result for execute that returns rowcount
+        mock_result = MagicMock()
+        mock_result.rowcount = 1
+
         mock_session = MagicMock()
-        mock_session.add = MagicMock()
+        mock_session.execute = AsyncMock(return_value=mock_result)
         mock_session.commit = AsyncMock()
 
         with patch("cache.write_behind.get_redis", return_value=mock_redis):
             result = await flush_writes(mock_session)
 
         assert result == 1
-        mock_session.add.assert_called_once()
+        mock_session.execute.assert_called_once()
         mock_session.commit.assert_called_once()
 
 

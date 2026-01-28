@@ -179,8 +179,8 @@ def detect_mime_from_magic(
     if isinstance(file_bytes, (bytearray, memoryview)):
         file_bytes = bytes(file_bytes)
     elif not isinstance(file_bytes, bytes):
-        logger.warning("mime.magic_expected_bytes",
-                       got_type=type(file_bytes).__name__)
+        logger.error("mime.magic_expected_bytes",
+                     got_type=type(file_bytes).__name__)
         return None
 
     try:
@@ -189,7 +189,7 @@ def detect_mime_from_magic(
             return normalize_mime_type(mime_type)
         return None
     except Exception as e:
-        logger.warning("mime.magic_detection_failed", error=str(e))
+        logger.info("mime.magic_detection_failed", error=str(e))
         return None
 
 

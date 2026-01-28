@@ -312,14 +312,14 @@ class TestProcessMessageBatch:
     """Tests for _process_message_batch function."""
 
     @pytest.mark.asyncio
-    async def test_empty_batch_logs_warning(self):
-        """Should log warning for empty batch."""
+    async def test_empty_batch_logs_error(self):
+        """Should log error for empty batch (indicates bug in batching logic)."""
         with patch("telegram.handlers.claude.logger") as mock_logger:
             from telegram.handlers.claude import _process_message_batch
 
             await _process_message_batch(thread_id=42, messages=[])
 
-            mock_logger.warning.assert_called_with(
+            mock_logger.error.assert_called_with(
                 "claude_handler.empty_batch",
                 thread_id=42,
             )
@@ -370,7 +370,7 @@ class TestProcessMessageBatch:
                 queue_position=3,
                 wait_time=30.0,
             )
-            yield  # Never reached
+            yield  # pylint: disable=unreachable
 
         with patch("telegram.handlers.claude.claude_provider",
                    mock_claude_provider):

@@ -180,9 +180,9 @@ async def store_exec_file(
     Returns:
         Metadata dict with temp_id if stored successfully, None otherwise.
     """
-    # Check size limit
+    # Check size limit (normal constraint)
     if len(content) > EXEC_FILE_MAX_SIZE:
-        logger.warning(
+        logger.info(
             "exec_cache.file_too_large",
             filename=filename,
             size_bytes=len(content),
@@ -194,7 +194,8 @@ async def store_exec_file(
     redis = await get_redis()
 
     if redis is None:
-        logger.warning("exec_cache.redis_unavailable", filename=filename)
+        # Graceful degradation - file won't be cached but tool continues
+        logger.info("exec_cache.redis_unavailable", filename=filename)
         return None
 
     try:
@@ -416,8 +417,9 @@ async def get_pending_files_for_thread(thread_id: int) -> List[dict]:
     redis = await get_redis()
 
     if redis is None:
-        logger.warning("exec_cache.get_pending_files.redis_unavailable",
-                       thread_id=thread_id)
+        # Graceful degradation - returns empty list
+        logger.info("exec_cache.get_pending_files.redis_unavailable",
+                    thread_id=thread_id)
         return []
 
     try:

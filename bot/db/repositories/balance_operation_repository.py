@@ -215,7 +215,7 @@ class BalanceOperationRepository(BaseRepository[BalanceOperation]):
         operations = list(result.scalars().all())
 
         if not operations:
-            logger.warning(
+            logger.info(
                 "balance_operation.no_operations",
                 user_id=user_id,
                 msg="User has no balance operations",

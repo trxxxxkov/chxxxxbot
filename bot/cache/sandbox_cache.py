@@ -71,7 +71,7 @@ async def get_cached_sandbox(thread_id: int) -> Optional[str]:
         return sandbox_id
 
     except Exception as e:
-        logger.warning(
+        logger.info(
             "sandbox_cache.get_error",
             thread_id=thread_id,
             error=str(e),
@@ -113,7 +113,7 @@ async def cache_sandbox(thread_id: int, sandbox_id: str) -> bool:
         return True
 
     except Exception as e:
-        logger.warning(
+        logger.info(
             "sandbox_cache.store_error",
             thread_id=thread_id,
             sandbox_id=sandbox_id,
@@ -156,7 +156,7 @@ async def refresh_sandbox_ttl(thread_id: int) -> bool:
         return True
 
     except Exception as e:
-        logger.warning(
+        logger.info(
             "sandbox_cache.refresh_error",
             thread_id=thread_id,
             error=str(e),
@@ -194,7 +194,7 @@ async def invalidate_sandbox(thread_id: int) -> bool:
         return True
 
     except Exception as e:
-        logger.warning(
+        logger.info(
             "sandbox_cache.invalidate_error",
             thread_id=thread_id,
             error=str(e),

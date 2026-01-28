@@ -186,8 +186,8 @@ class UserRepository(BaseRepository[User]):
 
         user = await self.get_by_telegram_id(telegram_id)
         if not user:
-            logger.warning("user_repository.update_last_seen.user_not_found",
-                           telegram_id=telegram_id)
+            logger.error("user_repository.update_last_seen.user_not_found",
+                         telegram_id=telegram_id)
             raise ValueError(f"User {telegram_id} not found")
 
         user.last_seen_at = datetime.now(timezone.utc)
@@ -227,8 +227,8 @@ class UserRepository(BaseRepository[User]):
         """
         user = await self.get_by_telegram_id(telegram_id)
         if not user:
-            logger.warning("user_repository.increment_stats.user_not_found",
-                           telegram_id=telegram_id)
+            logger.error("user_repository.increment_stats.user_not_found",
+                         telegram_id=telegram_id)
             return
 
         if messages:

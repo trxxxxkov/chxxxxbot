@@ -69,7 +69,7 @@ async def get_cached_file(telegram_file_id: str) -> Optional[bytes]:
         return data
 
     except Exception as e:  # pylint: disable=broad-exception-caught
-        logger.warning(
+        logger.info(
             "file_cache.get_error",
             file_id=telegram_file_id[:20] + "...",
             error=str(e),
@@ -128,7 +128,7 @@ async def cache_file(
         return True
 
     except Exception as e:  # pylint: disable=broad-exception-caught
-        logger.warning(
+        logger.info(
             "file_cache.set_error",
             file_id=telegram_file_id[:20] + "...",
             filename=filename,
@@ -168,7 +168,7 @@ async def invalidate_file(telegram_file_id: str) -> bool:
         return deleted > 0
 
     except Exception as e:  # pylint: disable=broad-exception-caught
-        logger.warning(
+        logger.info(
             "file_cache.invalidate_error",
             file_id=telegram_file_id[:20] + "...",
             error=str(e),

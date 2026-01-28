@@ -165,7 +165,8 @@ async def _process_message_batch(thread_id: int,
         messages: List of ProcessedMessage objects (all I/O complete).
     """
     if not messages:
-        logger.warning("claude_handler.empty_batch", thread_id=thread_id)
+        # Should never happen - indicates bug in batching logic
+        logger.error("claude_handler.empty_batch", thread_id=thread_id)
         return
 
     if claude_provider is None:
@@ -598,8 +599,9 @@ async def _process_batch_with_session(
                         bot_message = await _send_with_retry(
                             first_message, "✓ Files delivered.")
                     else:
-                        logger.warning("claude_handler.empty_response",
-                                       thread_id=thread_id)
+                        # External API returned empty - gracefully handled
+                        logger.info("claude_handler.empty_response",
+                                    thread_id=thread_id)
                         bot_message = await _send_with_retry(
                             first_message,
                             "⚠️ Claude returned an empty response. "
@@ -825,11 +827,13 @@ async def _process_batch_with_session(
                     try:
                         await bot_message.edit_text(response_text)
                     except Exception as e:  # pylint: disable=broad-exception-caught
-                        logger.warning("claude_handler.warning_edit_failed",
-                                       error=str(e))
+                        # Cosmetic - user already sees the response
+                        logger.debug("claude_handler.warning_edit_failed",
+                                     error=str(e))
 
             elif stop_reason == "refusal":
-                logger.warning("claude_handler.refusal", thread_id=thread_id)
+                # External API decision - gracefully handled
+                logger.info("claude_handler.refusal", thread_id=thread_id)
 
                 # Add explanation to user
                 refusal_msg = (
@@ -844,8 +848,9 @@ async def _process_batch_with_session(
                     try:
                         await bot_message.edit_text(response_text)
                     except Exception as e:  # pylint: disable=broad-exception-caught
-                        logger.warning("claude_handler.refusal_edit_failed",
-                                       error=str(e))
+                        # Cosmetic - user already sees the response
+                        logger.debug("claude_handler.refusal_edit_failed",
+                                     error=str(e))
 
             elif stop_reason == "max_tokens":
                 logger.info("claude_handler.max_tokens_reached",
@@ -879,10 +884,10 @@ async def _process_batch_with_session(
 
             queued = await queue_write(WriteType.MESSAGE, message_data)
             if not queued:
-                # Fallback to direct DB write if Redis unavailable
-                logger.warning("claude_handler.write_behind_fallback",
-                               thread_id=thread_id,
-                               reason="redis_unavailable")
+                # Fallback to direct DB write if Redis unavailable (graceful degradation)
+                logger.info("claude_handler.write_behind_fallback",
+                            thread_id=thread_id,
+                            reason="redis_unavailable")
                 await msg_repo.create_message(
                     chat_id=thread.chat_id,
                     message_id=bot_message.message_id,
@@ -1008,19 +1013,19 @@ async def _process_batch_with_session(
                             session=session,
                         )
                     except Exception as naming_error:  # pylint: disable=broad-exception-caught
-                        # Log but don't fail - naming is not critical
-                        logger.warning(
+                        # External error, not critical - gracefully handled
+                        logger.info(
                             "claude_handler.topic_naming_failed",
                             thread_id=thread_id,
                             error=str(naming_error),
                         )
 
     except ContextWindowExceededError as e:
-        logger.error("claude_handler.context_exceeded",
-                     thread_id=thread_id,
-                     tokens_used=e.tokens_used,
-                     tokens_limit=e.tokens_limit,
-                     exc_info=True)
+        # External API limit - gracefully handled with user message
+        logger.info("claude_handler.context_exceeded",
+                    thread_id=thread_id,
+                    tokens_used=e.tokens_used,
+                    tokens_limit=e.tokens_limit)
         record_error(error_type="context_exceeded", handler="claude")
 
         await first_message.answer(
@@ -1029,11 +1034,11 @@ async def _process_batch_with_session(
             f"Please start a new thread or reduce message history.")
 
     except RateLimitError as e:
-        logger.error("claude_handler.rate_limit",
-                     thread_id=thread_id,
-                     error=str(e),
-                     retry_after=e.retry_after,
-                     exc_info=True)
+        # External API limit - gracefully handled with user message
+        logger.info("claude_handler.rate_limit",
+                    thread_id=thread_id,
+                    error=str(e),
+                    retry_after=e.retry_after)
         record_error(error_type="rate_limit", handler="claude")
         record_claude_request(model="unknown", success=False)
 
@@ -1046,10 +1051,10 @@ async def _process_batch_with_session(
             f"Too many requests. Please wait a moment and try again.")
 
     except APIConnectionError as e:
-        logger.error("claude_handler.connection_error",
-                     thread_id=thread_id,
-                     error=str(e),
-                     exc_info=True)
+        # External infrastructure error - gracefully handled
+        logger.info("claude_handler.connection_error",
+                    thread_id=thread_id,
+                    error=str(e))
         record_error(error_type="connection_error", handler="claude")
         record_claude_request(model="unknown", success=False)
 
@@ -1059,10 +1064,8 @@ async def _process_batch_with_session(
             "connection and try again.")
 
     except APITimeoutError as e:
-        logger.error("claude_handler.timeout",
-                     thread_id=thread_id,
-                     error=str(e),
-                     exc_info=True)
+        # External API timeout - gracefully handled
+        logger.info("claude_handler.timeout", thread_id=thread_id, error=str(e))
         record_error(error_type="timeout", handler="claude")
         record_claude_request(model="unknown", success=False)
 
@@ -1072,11 +1075,11 @@ async def _process_batch_with_session(
             "message or simpler question.")
 
     except LLMError as e:
-        logger.error("claude_handler.llm_error",
-                     thread_id=thread_id,
-                     error=str(e),
-                     error_type=type(e).__name__,
-                     exc_info=True)
+        # External API error - gracefully handled
+        logger.info("claude_handler.llm_error",
+                    thread_id=thread_id,
+                    error=str(e),
+                    error_type=type(e).__name__)
         record_error(error_type="llm_error", handler="claude")
         record_claude_request(model="unknown", success=False)
 

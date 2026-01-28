@@ -64,7 +64,7 @@ async def process_batch(
         messages: List of ProcessedMessage objects.
     """
     if not messages:
-        logger.warning("processor.empty_batch", thread_id=thread_id)
+        logger.error("processor.empty_batch", thread_id=thread_id)
         return
 
     logger.info(

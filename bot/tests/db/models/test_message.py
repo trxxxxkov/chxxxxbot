@@ -11,6 +11,7 @@ Comprehensive tests for db/models/message.py:
 - Indexes
 """
 
+import random
 import time
 from unittest.mock import MagicMock
 
@@ -30,9 +31,11 @@ from sqlalchemy.exc import IntegrityError
 
 @pytest.fixture
 async def pg_sample_chat(pg_session):
-    """Create sample chat for message tests."""
+    """Create sample chat for message tests with unique ID."""
+    # Generate unique chat ID to avoid conflicts between test runs
+    unique_id = random.randint(100000000, 999999999)
     chat = Chat(
-        id=123456789,
+        id=unique_id,
         type="private",
         first_name="Test",
         last_name="User",

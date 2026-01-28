@@ -85,7 +85,8 @@ async def get_cached_user(user_id: int) -> Optional[CachedUserData]:
         return cached
 
     except Exception as e:  # pylint: disable=broad-exception-caught
-        logger.warning("user_cache.get_error", user_id=user_id, error=str(e))
+        # Cache miss is graceful - falls back to DB
+        logger.info("user_cache.get_error", user_id=user_id, error=str(e))
         return None
 
 
@@ -145,7 +146,8 @@ async def cache_user(
         return True
 
     except Exception as e:  # pylint: disable=broad-exception-caught
-        logger.warning("user_cache.set_error", user_id=user_id, error=str(e))
+        # Cache set failure is graceful - next request will retry
+        logger.info("user_cache.set_error", user_id=user_id, error=str(e))
         return False
 
 
@@ -184,9 +186,10 @@ async def invalidate_user(user_id: int) -> bool:
         return deleted > 0
 
     except Exception as e:  # pylint: disable=broad-exception-caught
-        logger.warning("user_cache.invalidate_error",
-                       user_id=user_id,
-                       error=str(e))
+        # Cache invalidation failure is graceful - stale data will expire
+        logger.info("user_cache.invalidate_error",
+                    user_id=user_id,
+                    error=str(e))
         return False
 
 

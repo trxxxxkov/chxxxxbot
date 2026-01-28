@@ -181,7 +181,7 @@ class CommandMiddleware(BaseMiddleware):
 
         except Exception as e:  # pylint: disable=broad-exception-caught
             # Don't fail command if topic registration fails
-            logger.warning(
+            logger.info(
                 "command.topic_registration_failed",
                 chat_id=chat_id,
                 topic_id=topic_id,

@@ -104,7 +104,7 @@ class FileManager:
             return content
 
         except TelegramAPIError as e:
-            logger.error(
+            logger.info(
                 "file_manager.telegram_download_failed",
                 telegram_file_id=telegram_file_id,
                 error=str(e),

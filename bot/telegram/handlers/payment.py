@@ -186,7 +186,7 @@ async def process_custom_amount(message: Message, state: FSMContext,
     try:
         stars_amount = int(message.text.strip())
     except ValueError:
-        logger.warning(
+        logger.info(
             "payment.invalid_custom_amount",
             user_id=user_id,
             text=message.text,
@@ -195,7 +195,7 @@ async def process_custom_amount(message: Message, state: FSMContext,
         return
 
     if not (MIN_CUSTOM_STARS <= stars_amount <= MAX_CUSTOM_STARS):
-        logger.warning(
+        logger.info(
             "payment.custom_amount_out_of_range",
             user_id=user_id,
             stars_amount=stars_amount,
@@ -246,12 +246,11 @@ async def _send_invoice_to_user(
         )
 
     except Exception as e:
-        logger.error(
+        logger.info(
             "payment.send_invoice_error",
             user_id=user_id,
             stars_amount=stars_amount,
             error=str(e),
-            exc_info=True,
         )
         await message.answer(
             "❌ Failed to create invoice. Please try again later.")
@@ -507,7 +506,7 @@ async def cmd_refund(message: Message, session: AsyncSession):
 
     except ValueError as e:
         # Validation errors (refund not allowed)
-        logger.warning(
+        logger.info(
             "payment.refund_validation_error",
             user_id=user_id,
             transaction_id=transaction_id,

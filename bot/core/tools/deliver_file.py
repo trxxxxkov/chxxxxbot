@@ -151,7 +151,7 @@ async def deliver_file(
         # Step 1: Get metadata from cache
         metadata = await get_exec_meta(temp_id)
         if metadata is None:
-            logger.warning("tools.deliver_file.meta_not_found", temp_id=temp_id)
+            logger.info("tools.deliver_file.meta_not_found", temp_id=temp_id)
             return {
                 "success":
                     "false",
@@ -163,8 +163,7 @@ async def deliver_file(
         # Step 2: Get file content from cache
         content = await get_exec_file(temp_id)
         if content is None:
-            logger.warning("tools.deliver_file.content_not_found",
-                           temp_id=temp_id)
+            logger.info("tools.deliver_file.content_not_found", temp_id=temp_id)
             return {
                 "success":
                     "false",
@@ -226,10 +225,7 @@ async def deliver_file(
         return result
 
     except Exception as e:
-        logger.error("tools.deliver_file.failed",
-                     temp_id=temp_id,
-                     error=str(e),
-                     exc_info=True)
+        logger.info("tools.deliver_file.failed", temp_id=temp_id, error=str(e))
         return {
             "success": "false",
             "error": f"Failed to deliver file: {str(e)}",

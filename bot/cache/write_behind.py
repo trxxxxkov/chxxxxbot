@@ -73,7 +73,8 @@ async def queue_write(write_type: WriteType, data: Dict[str, Any]) -> bool:
     redis = await get_redis()
 
     if redis is None:
-        logger.warning("write_behind.queue_failed", reason="redis_unavailable")
+        # Redis unavailable - caller should fall back to direct DB write
+        logger.info("write_behind.queue_failed", reason="redis_unavailable")
         return False
 
     try:
@@ -159,7 +160,8 @@ async def requeue_failed_items(failed_items: List[Dict[str, Any]]) -> int:
             await redis.rpush(WRITE_QUEUE_KEY, json.dumps(item))
             requeued += 1
 
-            logger.warning(
+            # Normal retry mechanism - item will be processed later
+            logger.info(
                 "write_behind.item_requeued",
                 write_type=item.get("type"),
                 retry_count=retry_count,
@@ -205,7 +207,11 @@ async def _batch_insert_messages(
     session,
     messages: List[Dict],
 ) -> tuple[int, List[Dict]]:
-    """Batch insert messages to database.
+    """Batch insert messages to database using ON CONFLICT DO NOTHING.
+
+    Uses PostgreSQL-specific INSERT ... ON CONFLICT DO NOTHING to gracefully
+    handle duplicate messages (same chat_id, message_id). This handles race
+    conditions where the same message might be queued multiple times.
 
     Args:
         session: Database session.
@@ -221,8 +227,9 @@ async def _batch_insert_messages(
         Message  # pylint: disable=import-outside-toplevel
     from db.models.message import \
         MessageRole  # pylint: disable=import-outside-toplevel
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-    count = 0
+    values_list = []
     failed = []
 
     for msg_data in messages:
@@ -235,36 +242,85 @@ async def _batch_insert_messages(
             elif date_value is None:
                 date_value = int(datetime.now(timezone.utc).timestamp())
 
-            message = Message(
-                chat_id=data["chat_id"],
-                message_id=data["message_id"],
-                thread_id=data["thread_id"],
-                from_user_id=data.get("from_user_id"),
-                date=date_value,
-                role=MessageRole(data["role"]),
-                text_content=data.get("text_content"),
-                input_tokens=data.get("input_tokens", 0),
-                output_tokens=data.get("output_tokens", 0),
+            values_list.append({
+                "chat_id":
+                    data["chat_id"],
+                "message_id":
+                    data["message_id"],
+                "thread_id":
+                    data["thread_id"],
+                "from_user_id":
+                    data.get("from_user_id"),
+                "date":
+                    date_value,
+                "role":
+                    MessageRole(data["role"]),
+                "text_content":
+                    data.get("text_content"),
+                "input_tokens":
+                    data.get("input_tokens", 0),
+                "output_tokens":
+                    data.get("output_tokens", 0),
                 # Field mapping: queue uses cache_read/write_tokens,
                 # Message model uses cache_read/creation_input_tokens
-                cache_read_input_tokens=data.get("cache_read_tokens", 0),
-                cache_creation_input_tokens=data.get("cache_write_tokens", 0),
-                thinking_tokens=data.get("thinking_tokens", 0),
-                thinking_blocks=data.get("thinking_blocks"),
-                model_id=data.get("model_id"),  # Track which model was used
-                created_at=date_value,
-            )
-            session.add(message)
-            count += 1
+                "cache_read_input_tokens":
+                    data.get("cache_read_tokens", 0),
+                "cache_creation_input_tokens":
+                    data.get("cache_write_tokens", 0),
+                "thinking_tokens":
+                    data.get("thinking_tokens", 0),
+                "thinking_blocks":
+                    data.get("thinking_blocks"),
+                "model_id":
+                    data.get("model_id"),
+                "created_at":
+                    date_value,
+                # Set defaults for boolean/count fields
+                "has_photos":
+                    False,
+                "has_documents":
+                    False,
+                "has_voice":
+                    False,
+                "has_video":
+                    False,
+                "attachment_count":
+                    0,
+                "attachments": [],
+                "edit_count":
+                    0,
+            })
         except Exception as e:  # pylint: disable=broad-exception-caught
             logger.error(
-                "write_behind.message_insert_error",
+                "write_behind.message_prepare_error",
                 error=str(e),
                 data_keys=list(data.keys()),
             )
             failed.append(msg_data)
 
-    return count, failed
+    if not values_list:
+        return 0, failed
+
+    # Use PostgreSQL INSERT ... ON CONFLICT DO NOTHING
+    # This gracefully handles duplicate primary keys (chat_id, message_id)
+    stmt = pg_insert(
+        Message.__table__).values(values_list).on_conflict_do_nothing(
+            index_elements=["chat_id", "message_id"])
+    result = await session.execute(stmt)
+
+    # rowcount tells us how many rows were actually inserted
+    inserted_count = result.rowcount if result.rowcount >= 0 else len(
+        values_list)
+
+    if inserted_count < len(values_list):
+        logger.debug(
+            "write_behind.messages_duplicates_skipped",
+            total=len(values_list),
+            inserted=inserted_count,
+            skipped=len(values_list) - inserted_count,
+        )
+
+    return inserted_count, failed
 
 
 async def _batch_update_stats(
@@ -520,10 +576,10 @@ async def flush_writes(session) -> int:
         await session.rollback()
         all_failed = ready_writes
 
-    # Re-queue failed items for retry
+    # Re-queue failed items for retry (normal retry mechanism)
     if all_failed:
         requeued = await requeue_failed_items(all_failed)
-        logger.warning(
+        logger.info(
             "write_behind.items_requeued",
             failed_count=len(all_failed),
             requeued_count=requeued,

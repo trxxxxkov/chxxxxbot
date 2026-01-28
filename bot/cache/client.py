@@ -55,7 +55,7 @@ def _read_redis_password() -> Optional[str]:
         logger.debug("redis.no_password_file", path=secret_path)
         return None
     except Exception as e:  # pylint: disable=broad-exception-caught
-        logger.warning("redis.password_read_error", error=str(e))
+        logger.info("redis.password_read_error", error=str(e))
         return None
 
 
@@ -204,7 +204,7 @@ async def get_redis() -> Optional[redis.Redis]:
         return None
 
     if _redis_client is None:
-        logger.warning("redis.client_not_initialized")
+        logger.info("redis.client_not_initialized")
         _record_failure()
         return None
 
@@ -214,11 +214,11 @@ async def get_redis() -> Optional[redis.Redis]:
         _record_success()
         return _redis_client
     except redis.ConnectionError:
-        logger.warning("redis.connection_lost")
+        logger.info("redis.connection_lost")
         _record_failure()
         return None
     except Exception as e:  # pylint: disable=broad-exception-caught
-        logger.warning("redis.ping_failed", error=str(e))
+        logger.info("redis.ping_failed", error=str(e))
         _record_failure()
         return None
 
@@ -267,7 +267,7 @@ async def close_redis() -> None:
             await _redis_client.aclose()
             logger.info("redis.closed")
         except Exception as e:  # pylint: disable=broad-exception-caught
-            logger.warning("redis.close_error", error=str(e))
+            logger.info("redis.close_error", error=str(e))
         finally:
             _redis_client = None
 
@@ -275,7 +275,7 @@ async def close_redis() -> None:
         try:
             await _connection_pool.disconnect()
         except Exception as e:  # pylint: disable=broad-exception-caught
-            logger.warning("redis.pool_disconnect_error", error=str(e))
+            logger.info("redis.pool_disconnect_error", error=str(e))
         finally:
             _connection_pool = None
 

@@ -4,6 +4,7 @@ Tests the normalizer's ability to convert Telegram messages into
 ProcessedMessage objects with all I/O mocked.
 """
 
+from contextlib import asynccontextmanager
 from datetime import datetime
 from datetime import timezone
 from io import BytesIO
@@ -76,6 +77,23 @@ def mock_bot() -> AsyncMock:
     bot.download_file.return_value = BytesIO(b"test file content")
 
     return bot
+
+
+@pytest.fixture
+def mock_action_manager():
+    """Create a mock ActionManager that returns no-op context managers."""
+
+    @asynccontextmanager
+    async def noop_context(*args, **kwargs):
+        yield
+
+    manager = MagicMock()
+    manager.downloading.return_value = noop_context()
+    manager.processing.return_value = noop_context()
+    manager.uploading.return_value = noop_context()
+    manager.generating.return_value = noop_context()
+
+    return manager
 
 
 class TestMessageNormalizerTextOnly:
@@ -257,15 +275,21 @@ class TestMessageNormalizerPhoto:
     """Tests for photo processing."""
 
     @pytest.mark.asyncio
+    @patch("telegram.pipeline.normalizer.ActionManager")
     @patch("telegram.pipeline.normalizer.upload_to_files_api")
+    @patch("telegram.pipeline.normalizer.cache_file")
     async def test_process_photo(
         self,
+        mock_cache_file: AsyncMock,
         mock_upload: AsyncMock,
+        mock_action_manager_class: MagicMock,
         normalizer: MessageNormalizer,
         mock_message: MagicMock,
         mock_bot: AsyncMock,
+        mock_action_manager: MagicMock,
     ) -> None:
         """Processes photo by uploading to Files API."""
+        mock_action_manager_class.get.return_value = mock_action_manager
         mock_upload.return_value = "file_photo_123"
 
         # Set up photo
@@ -290,15 +314,21 @@ class TestMessageNormalizerPhoto:
         mock_upload.assert_called_once()
 
     @pytest.mark.asyncio
+    @patch("telegram.pipeline.normalizer.ActionManager")
     @patch("telegram.pipeline.normalizer.upload_to_files_api")
+    @patch("telegram.pipeline.normalizer.cache_file")
     async def test_process_photo_uses_largest_size(
         self,
+        mock_cache_file: AsyncMock,
         mock_upload: AsyncMock,
+        mock_action_manager_class: MagicMock,
         normalizer: MessageNormalizer,
         mock_message: MagicMock,
         mock_bot: AsyncMock,
+        mock_action_manager: MagicMock,
     ) -> None:
         """Uses largest photo size (last in list)."""
+        mock_action_manager_class.get.return_value = mock_action_manager
         mock_upload.return_value = "file_photo_large"
 
         # Multiple sizes (Telegram sends multiple)
@@ -328,7 +358,9 @@ class TestMessageNormalizerDocument:
     """Tests for document processing."""
 
     @pytest.mark.asyncio
+    @patch("telegram.pipeline.normalizer.ActionManager")
     @patch("telegram.pipeline.normalizer.upload_to_files_api")
+    @patch("telegram.pipeline.normalizer.cache_file")
     @patch(
         "telegram.pipeline.normalizer.mime_to_media_type",
         return_value=MediaType.PDF,
@@ -341,12 +373,16 @@ class TestMessageNormalizerDocument:
         self,
         mock_detect: MagicMock,
         mock_mime_to_media: MagicMock,
+        mock_cache_file: AsyncMock,
         mock_upload: AsyncMock,
+        mock_action_manager_class: MagicMock,
         normalizer: MessageNormalizer,
         mock_message: MagicMock,
         mock_bot: AsyncMock,
+        mock_action_manager: MagicMock,
     ) -> None:
         """Processes PDF document."""
+        mock_action_manager_class.get.return_value = mock_action_manager
         mock_upload.return_value = "file_pdf_123"
 
         document = MagicMock()
@@ -365,7 +401,9 @@ class TestMessageNormalizerDocument:
         assert result.files[0].filename == "document.pdf"
 
     @pytest.mark.asyncio
+    @patch("telegram.pipeline.normalizer.ActionManager")
     @patch("telegram.pipeline.normalizer.upload_to_files_api")
+    @patch("telegram.pipeline.normalizer.cache_file")
     @patch(
         "telegram.pipeline.normalizer.mime_to_media_type",
         return_value=MediaType.DOCUMENT,
@@ -378,12 +416,16 @@ class TestMessageNormalizerDocument:
         self,
         mock_detect: MagicMock,
         mock_mime_to_media: MagicMock,
+        mock_cache_file: AsyncMock,
         mock_upload: AsyncMock,
+        mock_action_manager_class: MagicMock,
         normalizer: MessageNormalizer,
         mock_message: MagicMock,
         mock_bot: AsyncMock,
+        mock_action_manager: MagicMock,
     ) -> None:
         """Processes text document."""
+        mock_action_manager_class.get.return_value = mock_action_manager
         mock_upload.return_value = "file_txt_123"
 
         document = MagicMock()
@@ -404,13 +446,20 @@ class TestMessageNormalizerVoice:
     """Tests for voice message processing."""
 
     @pytest.mark.asyncio
+    @patch("telegram.pipeline.normalizer.ActionManager")
+    @patch("telegram.pipeline.normalizer.cache_file")
     async def test_process_voice_transcribes(
         self,
+        mock_cache_file: AsyncMock,
+        mock_action_manager_class: MagicMock,
         normalizer: MessageNormalizer,
         mock_message: MagicMock,
         mock_bot: AsyncMock,
+        mock_action_manager: MagicMock,
     ) -> None:
         """Processes voice message with transcription."""
+        mock_action_manager_class.get.return_value = mock_action_manager
+
         # Mock Whisper response
         whisper_response = MagicMock()
         whisper_response.text = "  Hello from voice message  "
@@ -443,13 +492,20 @@ class TestMessageNormalizerVoice:
         assert result.has_files is False
 
     @pytest.mark.asyncio
+    @patch("telegram.pipeline.normalizer.ActionManager")
+    @patch("telegram.pipeline.normalizer.cache_file")
     async def test_voice_text_for_db_has_prefix(
         self,
+        mock_cache_file: AsyncMock,
+        mock_action_manager_class: MagicMock,
         normalizer: MessageNormalizer,
         mock_message: MagicMock,
         mock_bot: AsyncMock,
+        mock_action_manager: MagicMock,
     ) -> None:
         """Voice message text for DB includes prefix."""
+        mock_action_manager_class.get.return_value = mock_action_manager
+
         whisper_response = MagicMock()
         whisper_response.text = "Voice transcript"
         whisper_response.duration = 10.0
@@ -480,13 +536,20 @@ class TestMessageNormalizerVideoNote:
     """Tests for video note (round video) processing."""
 
     @pytest.mark.asyncio
+    @patch("telegram.pipeline.normalizer.ActionManager")
+    @patch("telegram.pipeline.normalizer.cache_file")
     async def test_process_video_note_transcribes(
         self,
+        mock_cache_file: AsyncMock,
+        mock_action_manager_class: MagicMock,
         normalizer: MessageNormalizer,
         mock_message: MagicMock,
         mock_bot: AsyncMock,
+        mock_action_manager: MagicMock,
     ) -> None:
         """Processes video note with transcription."""
+        mock_action_manager_class.get.return_value = mock_action_manager
+
         whisper_response = MagicMock()
         whisper_response.text = "Video note message"
         whisper_response.duration = 15.0
@@ -518,7 +581,9 @@ class TestMessageNormalizerAudio:
     """Tests for audio file processing."""
 
     @pytest.mark.asyncio
+    @patch("telegram.pipeline.normalizer.ActionManager")
     @patch("telegram.pipeline.normalizer.upload_to_files_api")
+    @patch("telegram.pipeline.normalizer.cache_file")
     @patch(
         "telegram.pipeline.normalizer.detect_mime_type",
         return_value="audio/mpeg",
@@ -526,12 +591,16 @@ class TestMessageNormalizerAudio:
     async def test_process_audio_uploads_no_transcribe(
         self,
         mock_detect: MagicMock,
+        mock_cache_file: AsyncMock,
         mock_upload: AsyncMock,
+        mock_action_manager_class: MagicMock,
         normalizer: MessageNormalizer,
         mock_message: MagicMock,
         mock_bot: AsyncMock,
+        mock_action_manager: MagicMock,
     ) -> None:
         """Audio files are uploaded, not auto-transcribed."""
+        mock_action_manager_class.get.return_value = mock_action_manager
         mock_upload.return_value = "file_audio_123"
 
         audio = MagicMock()
@@ -559,7 +628,9 @@ class TestMessageNormalizerVideo:
     """Tests for video file processing."""
 
     @pytest.mark.asyncio
+    @patch("telegram.pipeline.normalizer.ActionManager")
     @patch("telegram.pipeline.normalizer.upload_to_files_api")
+    @patch("telegram.pipeline.normalizer.cache_file")
     @patch(
         "telegram.pipeline.normalizer.detect_mime_type",
         return_value="video/mp4",
@@ -567,12 +638,16 @@ class TestMessageNormalizerVideo:
     async def test_process_video_uploads_no_transcribe(
         self,
         mock_detect: MagicMock,
+        mock_cache_file: AsyncMock,
         mock_upload: AsyncMock,
+        mock_action_manager_class: MagicMock,
         normalizer: MessageNormalizer,
         mock_message: MagicMock,
         mock_bot: AsyncMock,
+        mock_action_manager: MagicMock,
     ) -> None:
         """Video files are uploaded, not auto-transcribed."""
+        mock_action_manager_class.get.return_value = mock_action_manager
         mock_upload.return_value = "file_video_123"
 
         video = MagicMock()

@@ -228,27 +228,24 @@ class ClaudeProvider(LLMProvider):
 
         except anthropic.RateLimitError as e:
             duration_ms = (time.time() - start_time) * 1000
-            logger.error("claude.get_message.rate_limit",
-                         error=str(e),
-                         duration_ms=round(duration_ms, 2),
-                         exc_info=True)
+            logger.info("claude.get_message.rate_limit",
+                        error=str(e),
+                        duration_ms=round(duration_ms, 2))
             raise RateLimitError("Rate limit exceeded. Please try again later.",
                                  retry_after=None) from e
 
         except anthropic.APIConnectionError as e:
             duration_ms = (time.time() - start_time) * 1000
-            logger.error("claude.get_message.connection_error",
-                         error=str(e),
-                         duration_ms=round(duration_ms, 2),
-                         exc_info=True)
+            logger.info("claude.get_message.connection_error",
+                        error=str(e),
+                        duration_ms=round(duration_ms, 2))
             raise APIConnectionError("Failed to connect to Claude API.") from e
 
         except anthropic.APITimeoutError as e:
             duration_ms = (time.time() - start_time) * 1000
-            logger.error("claude.get_message.timeout",
-                         error=str(e),
-                         duration_ms=round(duration_ms, 2),
-                         exc_info=True)
+            logger.info("claude.get_message.timeout",
+                        error=str(e),
+                        duration_ms=round(duration_ms, 2))
             raise APITimeoutError("Request to Claude API timed out.") from e
 
         except Exception as e:
@@ -365,9 +362,9 @@ class ClaudeProvider(LLMProvider):
                     # Let it proceed - API will return proper error
             except Exception as e:  # pylint: disable=broad-exception-caught
                 # Token counting failed - log but continue (not critical)
-                logger.warning("claude.token_counting.failed",
-                               model_full_id=request.model,
-                               error=str(e))
+                logger.info("claude.token_counting.failed",
+                            model_full_id=request.model,
+                            error=str(e))
 
         # Phase 1.4.3: Extended Thinking
         # NOW ENABLED: thinking blocks are saved to DB and properly handled
@@ -531,12 +528,11 @@ class ClaudeProvider(LLMProvider):
         except anthropic.RateLimitError as e:
             duration_ms = (time.time() - start_time) * 1000
 
-            logger.error("claude.stream.rate_limit",
-                         model_full_id=request.model,
-                         model_api_id=model_config.model_id,
-                         error=str(e),
-                         duration_ms=round(duration_ms, 2),
-                         exc_info=True)
+            logger.info("claude.stream.rate_limit",
+                        model_full_id=request.model,
+                        model_api_id=model_config.model_id,
+                        error=str(e),
+                        duration_ms=round(duration_ms, 2))
 
             raise RateLimitError(
                 "Rate limit exceeded. Please try again later.",
@@ -546,12 +542,11 @@ class ClaudeProvider(LLMProvider):
         except anthropic.APIConnectionError as e:
             duration_ms = (time.time() - start_time) * 1000
 
-            logger.error("claude.stream.connection_error",
-                         model_full_id=request.model,
-                         model_api_id=model_config.model_id,
-                         error=str(e),
-                         duration_ms=round(duration_ms, 2),
-                         exc_info=True)
+            logger.info("claude.stream.connection_error",
+                        model_full_id=request.model,
+                        model_api_id=model_config.model_id,
+                        error=str(e),
+                        duration_ms=round(duration_ms, 2))
 
             raise APIConnectionError(
                 "Failed to connect to Claude API. Please check your internet "
@@ -560,12 +555,11 @@ class ClaudeProvider(LLMProvider):
         except anthropic.APITimeoutError as e:
             duration_ms = (time.time() - start_time) * 1000
 
-            logger.error("claude.stream.timeout",
-                         model_full_id=request.model,
-                         model_api_id=model_config.model_id,
-                         error=str(e),
-                         duration_ms=round(duration_ms, 2),
-                         exc_info=True)
+            logger.info("claude.stream.timeout",
+                        model_full_id=request.model,
+                        model_api_id=model_config.model_id,
+                        error=str(e),
+                        duration_ms=round(duration_ms, 2))
 
             raise APITimeoutError(
                 "Request to Claude API timed out. Please try again.") from e
@@ -963,22 +957,16 @@ class ClaudeProvider(LLMProvider):
                         duration_ms=round(duration_ms, 2))
 
         except anthropic.RateLimitError as e:
-            logger.error("claude.stream_events.rate_limit",
-                         error=str(e),
-                         exc_info=True)
+            logger.info("claude.stream_events.rate_limit", error=str(e))
             raise RateLimitError("Rate limit exceeded. Please try again later.",
                                  retry_after=None) from e
 
         except anthropic.APIConnectionError as e:
-            logger.error("claude.stream_events.connection_error",
-                         error=str(e),
-                         exc_info=True)
+            logger.info("claude.stream_events.connection_error", error=str(e))
             raise APIConnectionError("Failed to connect to Claude API.") from e
 
         except anthropic.APITimeoutError as e:
-            logger.error("claude.stream_events.timeout",
-                         error=str(e),
-                         exc_info=True)
+            logger.info("claude.stream_events.timeout", error=str(e))
             raise APITimeoutError("Request to Claude API timed out.") from e
 
         except Exception as e:

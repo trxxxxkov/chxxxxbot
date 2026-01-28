@@ -93,7 +93,7 @@ async def handle_message(message: types.Message, session: AsyncSession) -> None:
         session: Database session from middleware.
     """
     if not message.from_user:
-        logger.warning(
+        logger.error(
             "unified_handler.no_user",
             message_id=message.message_id,
         )

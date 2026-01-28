@@ -142,7 +142,14 @@ async def _warm_caches(thread: Thread, user) -> None:
     """
     try:
         # Cache thread data
-        await cache_thread(thread)
+        await cache_thread(
+            chat_id=thread.chat_id,
+            user_id=thread.user_id,
+            thread_id=thread.thread_id,
+            internal_id=thread.id,
+            title=thread.title,
+            files_context=thread.files_context,
+        )
 
         # Cache empty message history (new thread has no messages yet)
         await cache_messages(thread.id, [])
@@ -151,7 +158,14 @@ async def _warm_caches(thread: Thread, user) -> None:
         await cache_files(thread.id, [])
 
         # Cache user data for fast balance checks
-        await cache_user(user)
+        await cache_user(
+            user_id=user.id,
+            balance=user.balance,
+            model_id=user.model_id,
+            first_name=user.first_name,
+            username=user.username,
+            custom_prompt=user.custom_prompt,
+        )
 
         logger.debug(
             "thread_resolver.caches_warmed",
@@ -161,7 +175,7 @@ async def _warm_caches(thread: Thread, user) -> None:
 
     except Exception as e:  # pylint: disable=broad-exception-caught
         # Cache warming is optimization, don't fail on errors
-        logger.warning(
+        logger.info(
             "thread_resolver.cache_warming_failed",
             thread_id=thread.id,
             error=str(e),

@@ -149,28 +149,26 @@ async def analyze_pdf(claude_file_id: str,
             if e.status_code in RETRYABLE_STATUS_CODES:
                 if attempt < MAX_RETRIES - 1:
                     delay = RETRY_DELAY_SECONDS * (2**attempt)
-                    logger.warning("tools.analyze_pdf.retry",
-                                   claude_file_id=claude_file_id,
-                                   attempt=attempt + 1,
-                                   max_retries=MAX_RETRIES,
-                                   status_code=e.status_code,
-                                   delay_seconds=delay)
+                    logger.info("tools.analyze_pdf.retry",
+                                claude_file_id=claude_file_id,
+                                attempt=attempt + 1,
+                                max_retries=MAX_RETRIES,
+                                status_code=e.status_code,
+                                delay_seconds=delay)
                     await asyncio.sleep(delay)
                     continue
             # Non-retryable error or max retries reached
             # Claude API failures are external service issues
-            logger.warning("tools.analyze_pdf.failed",
-                           claude_file_id=claude_file_id,
-                           error=str(e),
-                           exc_info=True)
+            logger.info("tools.analyze_pdf.failed",
+                        claude_file_id=claude_file_id,
+                        error=str(e))
             raise
 
         except Exception as e:
             # External API failures, not internal bugs
-            logger.warning("tools.analyze_pdf.failed",
-                           claude_file_id=claude_file_id,
-                           error=str(e),
-                           exc_info=True)
+            logger.info("tools.analyze_pdf.failed",
+                        claude_file_id=claude_file_id,
+                        error=str(e))
             raise
 
     # Should not reach here, but satisfy mypy

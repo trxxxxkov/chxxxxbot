@@ -445,9 +445,9 @@ async def render_latex(
         )
 
         if metadata is None:
-            # Fallback: direct delivery if cache fails
-            logger.warning("tools.render_latex.cache_failed_fallback",
-                           filename=filename)
+            # Fallback: direct delivery if cache fails (graceful degradation)
+            logger.info("tools.render_latex.cache_failed_fallback",
+                        filename=filename)
             # Truncate LaTeX for context (max 200 chars)
             latex_context = clean_latex[:200] + ("..." if len(clean_latex) > 200
                                                  else "")
@@ -497,16 +497,16 @@ async def render_latex(
         }
 
     except ValueError as e:
-        logger.warning("tools.render_latex.compilation_error",
-                       latex_preview=clean_latex[:50],
-                       error=str(e))
+        # User LaTeX syntax error - not a code bug
+        logger.info("tools.render_latex.compilation_error",
+                    latex_preview=clean_latex[:50],
+                    error=str(e))
         return {"success": "false", "error": str(e)}
     except Exception as e:
         # LaTeX rendering failures are usually invalid input, not internal bugs
-        logger.warning("tools.render_latex.failed",
-                       latex_preview=clean_latex[:50] if clean_latex else "",
-                       error=str(e),
-                       exc_info=True)
+        logger.info("tools.render_latex.failed",
+                    latex_preview=clean_latex[:50] if clean_latex else "",
+                    error=str(e))
         return {"success": "false", "error": f"Rendering failed: {str(e)}"}
 
 

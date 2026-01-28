@@ -331,7 +331,7 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
             final_message = await dm.current.finalize(final_text=partial_display
                                                      )
         except Exception as e:  # pylint: disable=broad-exception-caught
-            logger.error(
+            logger.info(
                 "orchestrator.cancelled.finalize_failed",
                 thread_id=self._thread_id,
                 error=str(e),
@@ -381,7 +381,7 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
                 final_message = await dm.current.finalize(
                     final_text=final_display)
             except Exception as e:  # pylint: disable=broad-exception-caught
-                logger.error(
+                logger.info(
                     "orchestrator.finalize_failed",
                     thread_id=self._thread_id,
                     error=str(e),
@@ -523,7 +523,7 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
                     final_message = await dm.current.finalize(
                         final_text=partial_display)
                 except Exception as e:  # pylint: disable=broad-exception-caught
-                    logger.error(
+                    logger.info(
                         "orchestrator.turn_break.finalize_failed",
                         thread_id=self._thread_id,
                         error=str(e),
@@ -546,7 +546,7 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
         dm: DraftManager,
     ) -> StreamResult:
         """Handle unexpected stop reason."""
-        logger.warning(
+        logger.info(
             "orchestrator.unexpected_stop",
             thread_id=self._thread_id,
             stop_reason=stream.stop_reason,

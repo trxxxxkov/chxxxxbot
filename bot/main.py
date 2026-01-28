@@ -64,7 +64,8 @@ def load_privileged_users() -> set[int]:
     privileged_file = Path("/run/secrets/privileged_users")
 
     if not privileged_file.exists():
-        logger.warning(
+        # Expected if admin commands not needed
+        logger.info(
             "privileged_users_file_not_found",
             path=str(privileged_file),
             msg="No privileged users configured - admin commands disabled",
@@ -202,7 +203,8 @@ async def warm_user_cache(logger) -> int:
             return cached_count
 
     except Exception as e:  # pylint: disable=broad-exception-caught
-        logger.warning("cache_warming.failed", error=str(e))
+        # Optimization failure - system continues without pre-warmed cache
+        logger.info("cache_warming.failed", error=str(e))
         return 0
 
 

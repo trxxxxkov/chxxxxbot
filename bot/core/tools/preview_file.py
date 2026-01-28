@@ -195,9 +195,9 @@ async def _get_file_from_db(
         return content, metadata, user_file.claude_file_id
 
     except Exception as e:
-        logger.warning("preview_file.download_failed",
-                       file_id=file_id,
-                       error=str(e))
+        logger.info("preview_file.download_failed",
+                    file_id=file_id,
+                    error=str(e))
         return None, None, None
 
 
@@ -696,9 +696,7 @@ async def _handle_image_preview(
         result["filename"] = filename
         return result
     except Exception as e:
-        logger.error("preview_file.vision_failed",
-                     file_id=file_id,
-                     error=str(e))
+        logger.info("preview_file.vision_failed", file_id=file_id, error=str(e))
         return {
             "success": "false",
             "filename": filename,
@@ -727,7 +725,7 @@ async def _handle_pdf_preview(
         result["filename"] = filename
         return result
     except Exception as e:
-        logger.error("preview_file.pdf_failed", file_id=file_id, error=str(e))
+        logger.info("preview_file.pdf_failed", file_id=file_id, error=str(e))
         return {
             "success": "false",
             "filename": filename,

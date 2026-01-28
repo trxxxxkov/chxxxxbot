@@ -241,8 +241,8 @@ class TopicNamingService:
                 )
 
             except Exception as charge_error:
-                # Log but continue - naming already happened
-                logger.warning(
+                # CRITICAL: naming happened but we failed to charge
+                logger.error(
                     "topic_naming.charge_failed",
                     user_id=user_id,
                     cost_usd=float(cost_usd),
@@ -271,8 +271,8 @@ class TopicNamingService:
             return title
 
         except Exception as e:
-            # Log error but don't break the main flow
-            logger.warning(
+            # External API error - don't break the main flow
+            logger.info(
                 "topic_naming.failed",
                 thread_id=thread.id,
                 telegram_thread_id=thread.thread_id,

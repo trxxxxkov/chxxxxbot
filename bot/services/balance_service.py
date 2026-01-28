@@ -117,7 +117,7 @@ class BalanceService:
         )
 
         if not can_request:
-            logger.warning(
+            logger.info(
                 "balance.insufficient_for_request",
                 user_id=user_id,
                 balance=float(balance),
@@ -220,7 +220,7 @@ class BalanceService:
 
         # Alert if balance went negative
         if balance_after < 0:
-            logger.warning(
+            logger.info(
                 "balance.negative_after_charge",
                 user_id=user_id,
                 balance_after=float(balance_after),

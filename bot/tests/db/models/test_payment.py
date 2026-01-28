@@ -6,11 +6,17 @@ Phase 2.1: Payment system tests for Payment model with constraints and methods.
 from datetime import datetime
 from datetime import timedelta
 from decimal import Decimal
+import uuid
 
 from db.models.payment import Payment
 from db.models.payment import PaymentStatus
 import pytest
 from sqlalchemy import select
+
+
+def unique_charge_id(prefix: str = "tg_charge") -> str:
+    """Generate unique charge ID for test isolation."""
+    return f"{prefix}_{uuid.uuid4().hex[:12]}"
 
 
 @pytest.mark.asyncio
@@ -21,7 +27,7 @@ class TestPaymentModel:
         """Test creating a payment with all required fields."""
         payment = Payment(
             user_id=pg_sample_user.id,
-            telegram_payment_charge_id="tg_charge_12345",
+            telegram_payment_charge_id=unique_charge_id("creation"),
             stars_amount=100,
             nominal_usd_amount=Decimal("1.3000"),
             credited_usd_amount=Decimal("0.6500"),
@@ -54,7 +60,7 @@ class TestPaymentModel:
         # Valid commissions
         payment = Payment(
             user_id=pg_sample_user.id,
-            telegram_payment_charge_id="tg_charge_valid",
+            telegram_payment_charge_id=unique_charge_id("commission"),
             stars_amount=50,
             nominal_usd_amount=Decimal("0.6500"),
             credited_usd_amount=Decimal("0.3250"),
@@ -75,7 +81,7 @@ class TestPaymentModel:
         """Test that stars_amount must be positive."""
         payment = Payment(
             user_id=pg_sample_user.id,
-            telegram_payment_charge_id="tg_charge_zero",
+            telegram_payment_charge_id=unique_charge_id("zero"),
             stars_amount=0,  # Invalid: must be > 0
             nominal_usd_amount=Decimal("0.0000"),
             credited_usd_amount=Decimal("0.0000"),
@@ -95,9 +101,12 @@ class TestPaymentModel:
 
     async def test_payment_unique_charge_id(self, pg_session, pg_sample_user):
         """Test telegram_payment_charge_id uniqueness constraint."""
+        # Use same charge_id for both payments to test uniqueness
+        shared_charge_id = unique_charge_id("unique_test")
+
         payment1 = Payment(
             user_id=pg_sample_user.id,
-            telegram_payment_charge_id="tg_charge_unique",
+            telegram_payment_charge_id=shared_charge_id,
             stars_amount=100,
             nominal_usd_amount=Decimal("1.3000"),
             credited_usd_amount=Decimal("0.6500"),
@@ -114,7 +123,7 @@ class TestPaymentModel:
         # Try to create duplicate
         payment2 = Payment(
             user_id=pg_sample_user.id,
-            telegram_payment_charge_id="tg_charge_unique",  # Duplicate!
+            telegram_payment_charge_id=shared_charge_id,  # Duplicate!
             stars_amount=50,
             nominal_usd_amount=Decimal("0.6500"),
             credited_usd_amount=Decimal("0.3250"),
@@ -137,7 +146,7 @@ class TestPaymentModel:
         """Test can_refund() returns True within refund period."""
         payment = Payment(
             user_id=pg_sample_user.id,
-            telegram_payment_charge_id="tg_charge_recent",
+            telegram_payment_charge_id=unique_charge_id("recent"),
             stars_amount=100,
             nominal_usd_amount=Decimal("1.3000"),
             credited_usd_amount=Decimal("0.6500"),
@@ -160,7 +169,7 @@ class TestPaymentModel:
         """Test can_refund() returns False outside refund period."""
         payment = Payment(
             user_id=pg_sample_user.id,
-            telegram_payment_charge_id="tg_charge_old",
+            telegram_payment_charge_id=unique_charge_id("old"),
             stars_amount=100,
             nominal_usd_amount=Decimal("1.3000"),
             credited_usd_amount=Decimal("0.6500"),
@@ -187,7 +196,7 @@ class TestPaymentModel:
         """Test can_refund() returns False for already refunded payments."""
         payment = Payment(
             user_id=pg_sample_user.id,
-            telegram_payment_charge_id="tg_charge_refunded",
+            telegram_payment_charge_id=unique_charge_id("refunded"),
             stars_amount=100,
             nominal_usd_amount=Decimal("1.3000"),
             credited_usd_amount=Decimal("0.6500"),
@@ -212,7 +221,7 @@ class TestPaymentModel:
         # Valid: total = 0.9999 (very high but still leaves small amount)
         payment = Payment(
             user_id=pg_sample_user.id,
-            telegram_payment_charge_id="tg_charge_max_commission",
+            telegram_payment_charge_id=unique_charge_id("max_commission"),
             stars_amount=100,
             nominal_usd_amount=Decimal("1.3000"),
             credited_usd_amount=Decimal(
@@ -233,7 +242,7 @@ class TestPaymentModel:
         """Test that payment is deleted when user is deleted (CASCADE)."""
         payment = Payment(
             user_id=pg_sample_user.id,
-            telegram_payment_charge_id="tg_charge_cascade",
+            telegram_payment_charge_id=unique_charge_id("cascade"),
             stars_amount=100,
             nominal_usd_amount=Decimal("1.3000"),
             credited_usd_amount=Decimal("0.6500"),

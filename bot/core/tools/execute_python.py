@@ -76,9 +76,9 @@ def _run_sandbox_sync(  # pylint: disable=too-many-locals,too-many-statements
             logger.info("tools.execute_python.sandbox_reused",
                         sandbox_id=cached_sandbox_id)
         except Exception as reconnect_error:
-            logger.warning("tools.execute_python.sandbox_reconnect_failed",
-                           sandbox_id=cached_sandbox_id,
-                           error=str(reconnect_error))
+            logger.info("tools.execute_python.sandbox_reconnect_failed",
+                        sandbox_id=cached_sandbox_id,
+                        error=str(reconnect_error))
             sandbox = None
 
     # Create new sandbox if no cached or reconnect failed
@@ -201,9 +201,8 @@ def _run_sandbox_sync(  # pylint: disable=too-many-locals,too-many-statements
                         file_count=len(generated_files))
 
         except Exception as scan_error:  # pylint: disable=broad-exception-caught
-            logger.warning("tools.execute_python.output_scan_failed",
-                           error=str(scan_error),
-                           exc_info=True)
+            logger.info("tools.execute_python.output_scan_failed",
+                        error=str(scan_error))
 
         sandbox_end_time = time.time()
         sandbox_duration = sandbox_end_time - sandbox_start_time
@@ -240,8 +239,8 @@ def _run_sandbox_sync(  # pylint: disable=too-many-locals,too-many-statements
                 sandbox.kill()
                 logger.info("tools.execute_python.sandbox_killed_on_error")
             except Exception as cleanup_error:  # pylint: disable=broad-exception-caught
-                logger.warning("tools.execute_python.sandbox_cleanup_failed",
-                               error=str(cleanup_error))
+                logger.info("tools.execute_python.sandbox_cleanup_failed",
+                            error=str(cleanup_error))
         else:
             logger.debug("tools.execute_python.sandbox_kept_alive",
                          sandbox_id=sandbox.sandbox_id)
@@ -452,7 +451,7 @@ async def execute_python(code: str,
                             content).decode('utf-8')
                     return file_info
                 else:
-                    logger.warning(
+                    logger.info(
                         "tools.execute_python.file_cache_failed",
                         filename=filename,
                         size_bytes=len(content),
@@ -468,7 +467,7 @@ async def execute_python(code: str,
             # Collect successful results
             for result_item in cache_results:
                 if isinstance(result_item, BaseException):
-                    logger.warning(
+                    logger.info(
                         "tools.execute_python.file_cache_exception",
                         error=str(result_item),
                     )
@@ -511,9 +510,7 @@ async def execute_python(code: str,
 
     except Exception as e:
         # E2B sandbox failures are external service issues, not our bugs
-        logger.warning("tools.execute_python.failed",
-                       error=str(e),
-                       exc_info=True)
+        logger.info("tools.execute_python.failed", error=str(e))
         # Re-raise to let caller handle
         raise
 

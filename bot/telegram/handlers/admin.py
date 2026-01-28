@@ -145,7 +145,7 @@ async def cmd_topup(message: Message, session: AsyncSession):
 
     except ValueError as e:
         # Validation errors (user not found)
-        logger.warning(
+        logger.info(
             "admin.topup_validation_error",
             admin_user_id=user_id,
             error=str(e),
@@ -371,7 +371,7 @@ async def cmd_clear(
             )
         except Exception as e:
             # Log error but continue - topic may already be deleted
-            logger.warning(
+            logger.info(
                 "admin.delete_topic_error",
                 chat_id=chat_id,
                 topic_id=topic_id,

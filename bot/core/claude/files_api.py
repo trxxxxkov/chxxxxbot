@@ -166,25 +166,24 @@ async def upload_to_files_api(
 
             if not _is_retryable_error(e) or attempt == MAX_RETRIES - 1:
                 # Non-retryable error or last attempt - log and raise
-                logger.error("files_api.upload_failed",
-                             filename=filename,
-                             mime_type=mime_type,
-                             error=str(e),
-                             status_code=getattr(e, 'status_code', None),
-                             attempt=attempt + 1,
-                             max_retries=MAX_RETRIES,
-                             exc_info=True)
+                logger.info("files_api.upload_failed",
+                            filename=filename,
+                            mime_type=mime_type,
+                            error=str(e),
+                            status_code=getattr(e, 'status_code', None),
+                            attempt=attempt + 1,
+                            max_retries=MAX_RETRIES)
                 raise
 
             # Retryable error - wait and retry
             delay = _calculate_retry_delay(attempt)
-            logger.warning("files_api.upload_retry",
-                           filename=filename,
-                           error=str(e),
-                           status_code=getattr(e, 'status_code', None),
-                           attempt=attempt + 1,
-                           max_retries=MAX_RETRIES,
-                           retry_delay_seconds=round(delay, 2))
+            logger.info("files_api.upload_retry",
+                        filename=filename,
+                        error=str(e),
+                        status_code=getattr(e, 'status_code', None),
+                        attempt=attempt + 1,
+                        max_retries=MAX_RETRIES,
+                        retry_delay_seconds=round(delay, 2))
             await asyncio.sleep(delay)
 
     # Should not reach here, but just in case
@@ -229,8 +228,8 @@ async def download_from_files_api(claude_file_id: str) -> bytes:
 
         except anthropic.NotFoundError:
             # NotFoundError is not retryable - file doesn't exist
-            logger.error("files_api.download_not_found",
-                         claude_file_id=claude_file_id)
+            logger.info("files_api.download_not_found",
+                        claude_file_id=claude_file_id)
             raise
 
         except anthropic.APIError as e:
@@ -238,24 +237,23 @@ async def download_from_files_api(claude_file_id: str) -> bytes:
 
             if not _is_retryable_error(e) or attempt == MAX_RETRIES - 1:
                 # Non-retryable error or last attempt - log and raise
-                logger.error("files_api.download_failed",
-                             claude_file_id=claude_file_id,
-                             error=str(e),
-                             status_code=getattr(e, 'status_code', None),
-                             attempt=attempt + 1,
-                             max_retries=MAX_RETRIES,
-                             exc_info=True)
+                logger.info("files_api.download_failed",
+                            claude_file_id=claude_file_id,
+                            error=str(e),
+                            status_code=getattr(e, 'status_code', None),
+                            attempt=attempt + 1,
+                            max_retries=MAX_RETRIES)
                 raise
 
             # Retryable error - wait and retry
             delay = _calculate_retry_delay(attempt)
-            logger.warning("files_api.download_retry",
-                           claude_file_id=claude_file_id,
-                           error=str(e),
-                           status_code=getattr(e, 'status_code', None),
-                           attempt=attempt + 1,
-                           max_retries=MAX_RETRIES,
-                           retry_delay_seconds=round(delay, 2))
+            logger.info("files_api.download_retry",
+                        claude_file_id=claude_file_id,
+                        error=str(e),
+                        status_code=getattr(e, 'status_code', None),
+                        attempt=attempt + 1,
+                        max_retries=MAX_RETRIES,
+                        retry_delay_seconds=round(delay, 2))
             await asyncio.sleep(delay)
 
     # Should not reach here, but just in case
@@ -286,8 +284,8 @@ async def delete_from_files_api(claude_file_id: str) -> None:
 
         except anthropic.NotFoundError:
             # NotFoundError is acceptable for delete - file already gone
-            logger.warning("files_api.delete_not_found",
-                           claude_file_id=claude_file_id)
+            logger.debug("files_api.delete_not_found",
+                         claude_file_id=claude_file_id)
             return
 
         except anthropic.APIError as e:
@@ -295,24 +293,23 @@ async def delete_from_files_api(claude_file_id: str) -> None:
 
             if not _is_retryable_error(e) or attempt == MAX_RETRIES - 1:
                 # Non-retryable error or last attempt - log and raise
-                logger.error("files_api.delete_failed",
-                             claude_file_id=claude_file_id,
-                             error=str(e),
-                             status_code=getattr(e, 'status_code', None),
-                             attempt=attempt + 1,
-                             max_retries=MAX_RETRIES,
-                             exc_info=True)
+                logger.info("files_api.delete_failed",
+                            claude_file_id=claude_file_id,
+                            error=str(e),
+                            status_code=getattr(e, 'status_code', None),
+                            attempt=attempt + 1,
+                            max_retries=MAX_RETRIES)
                 raise
 
             # Retryable error - wait and retry
             delay = _calculate_retry_delay(attempt)
-            logger.warning("files_api.delete_retry",
-                           claude_file_id=claude_file_id,
-                           error=str(e),
-                           status_code=getattr(e, 'status_code', None),
-                           attempt=attempt + 1,
-                           max_retries=MAX_RETRIES,
-                           retry_delay_seconds=round(delay, 2))
+            logger.info("files_api.delete_retry",
+                        claude_file_id=claude_file_id,
+                        error=str(e),
+                        status_code=getattr(e, 'status_code', None),
+                        attempt=attempt + 1,
+                        max_retries=MAX_RETRIES,
+                        retry_delay_seconds=round(delay, 2))
             await asyncio.sleep(delay)
 
     # Should not reach here, but just in case
@@ -352,12 +349,11 @@ async def cleanup_expired_files(user_file_repo) -> dict:
         except Exception as e:  # pylint: disable=broad-exception-caught
             failed_count += 1
 
-            logger.error("files_api.cleanup_file_failed",
-                         file_id=file.id,
-                         claude_file_id=file.claude_file_id,
-                         filename=file.filename,
-                         error=str(e),
-                         exc_info=True)
+            logger.info("files_api.cleanup_file_failed",
+                        file_id=file.id,
+                        claude_file_id=file.claude_file_id,
+                        filename=file.filename,
+                        error=str(e))
 
     logger.info("files_api.cleanup_complete",
                 expired_count=expired_count,

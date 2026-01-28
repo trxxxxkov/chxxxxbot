@@ -110,6 +110,13 @@ def mock_claude_provider():
     """Create mock Claude provider."""
     provider = AsyncMock()
     provider.stream_message = AsyncMock()
+
+    # Mock stream_events as async generator to avoid coroutine warning
+    async def mock_stream_events(*args, **kwargs):
+        return
+        yield  # makes this an async generator
+
+    provider.stream_events = mock_stream_events
     return provider
 
 

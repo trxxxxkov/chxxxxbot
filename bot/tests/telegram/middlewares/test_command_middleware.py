@@ -248,9 +248,9 @@ class TestCommandMiddleware:
                     topic_id=12345,
                 )
 
-                # Should log warning
-                mock_logger.warning.assert_called()
-                call_args = mock_logger.warning.call_args
+                # Should log info (external error, gracefully handled)
+                mock_logger.info.assert_called()
+                call_args = mock_logger.info.call_args
                 assert "topic_registration_failed" in call_args[0][0]
 
                 # Should return False on error

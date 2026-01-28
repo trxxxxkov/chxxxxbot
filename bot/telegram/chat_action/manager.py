@@ -368,8 +368,8 @@ class ChatActionManager:
             )
             return True
         except Exception as e:  # pylint: disable=broad-exception-caught
-            # Don't fail the operation if chat action fails
-            logger.warning(
+            # Don't fail the operation if chat action fails (cosmetic feature)
+            logger.info(
                 "chat_action.failed",
                 chat_id=self.chat_id,
                 thread_id=self.thread_id,

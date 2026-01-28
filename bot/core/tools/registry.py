@@ -187,9 +187,9 @@ async def _validate_file_type(
     user_file = await repo.get_by_claude_file_id(file_id)
 
     if not user_file:
-        logger.warning("tools.file_validation.not_found",
-                       tool_name=tool.name,
-                       claude_file_id=file_id)
+        logger.info("tools.file_validation.not_found",
+                    tool_name=tool.name,
+                    claude_file_id=file_id)
         return  # Let the tool handle missing file
 
     # Check MIME type against allowed prefixes

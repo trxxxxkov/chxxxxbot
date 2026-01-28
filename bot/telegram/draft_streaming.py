@@ -366,7 +366,7 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
             return True
 
         except TelegramRetryAfter as e:
-            # Flood control - wait and retry once
+            # Architectural trade-off: update frequency vs rate limits
             logger.warning("draft_streamer.flood_control",
                            chat_id=self.chat_id,
                            retry_after=e.retry_after)
@@ -389,7 +389,7 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
                 return False
 
         except TelegramBadRequest as e:
-            # MarkdownV2 parse error - fallback to plain text
+            # Architectural trade-off: MarkdownV2 formatting vs compatibility
             if "can't parse entities" in str(e).lower() and parse_mode:
                 logger.warning("draft_streamer.parse_error_fallback",
                                chat_id=self.chat_id,
@@ -399,17 +399,17 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
                 return await self.update(text_to_send,
                                          parse_mode=None,
                                          force=force)
-            logger.warning("draft_streamer.update_failed",
-                           chat_id=self.chat_id,
-                           draft_id=self.draft_id,
-                           error=str(e))
+            logger.info("draft_streamer.update_failed",
+                        chat_id=self.chat_id,
+                        draft_id=self.draft_id,
+                        error=str(e))
             return False
 
         except Exception as e:  # pylint: disable=broad-exception-caught
-            logger.warning("draft_streamer.update_failed",
-                           chat_id=self.chat_id,
-                           draft_id=self.draft_id,
-                           error=str(e))
+            logger.info("draft_streamer.update_failed",
+                        chat_id=self.chat_id,
+                        draft_id=self.draft_id,
+                        error=str(e))
             # Try without parse_mode as fallback
             if parse_mode:
                 return await self.update(text_to_send,
@@ -507,6 +507,7 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
                          draft_id=self.draft_id)
             return True
         except TelegramRetryAfter as e:
+            # Architectural trade-off: keepalive frequency vs rate limits
             logger.warning("draft_streamer.keepalive_flood",
                            chat_id=self.chat_id,
                            retry_after=e.retry_after)
@@ -519,17 +520,17 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
             # Parse error - try again with plain text and track it
             if is_parse_error and effective_parse_mode:
                 if not self._keepalive_failure_logged:
-                    logger.warning("draft_streamer.keepalive_parse_error",
-                                   chat_id=self.chat_id,
-                                   parse_mode=effective_parse_mode,
-                                   error=str(e))
+                    logger.info("draft_streamer.keepalive_parse_error",
+                                chat_id=self.chat_id,
+                                parse_mode=effective_parse_mode,
+                                error=str(e))
                 self._last_parse_mode = None  # Track fallback
                 return await self._send_keepalive(None)  # Retry without parse
 
-            # Parse error even with None - draft API limitation
+            # Parse error even with None - draft API limitation (expected edge case)
             if is_parse_error and not effective_parse_mode:
                 if not self._keepalive_failure_logged:
-                    logger.warning(
+                    logger.info(
                         "draft_streamer.keepalive_parse_error_persistent",
                         chat_id=self.chat_id,
                         error=str(e),
@@ -538,19 +539,19 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
                     self._keepalive_failure_logged = True
                 return False
 
-            # Other errors - log only first
+            # Other errors - log only first (cosmetic feature)
             if not self._keepalive_failure_logged:
-                logger.warning("draft_streamer.keepalive_failed",
-                               chat_id=self.chat_id,
-                               error=str(e))
+                logger.info("draft_streamer.keepalive_failed",
+                            chat_id=self.chat_id,
+                            error=str(e))
                 self._keepalive_failure_logged = True
             return False
         except Exception as e:  # pylint: disable=broad-exception-caught
-            # Log only first failure to avoid log flooding
+            # Log only first failure to avoid log flooding (cosmetic feature)
             if not self._keepalive_failure_logged:
-                logger.warning("draft_streamer.keepalive_failed",
-                               chat_id=self.chat_id,
-                               error=str(e))
+                logger.info("draft_streamer.keepalive_failed",
+                            chat_id=self.chat_id,
+                            error=str(e))
                 self._keepalive_failure_logged = True
             return False
 
@@ -615,10 +616,11 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
             )
         except TelegramBadRequest as e:
             if "can't parse entities" in str(e).lower() and parse_mode:
-                logger.warning("draft_streamer.finalize_parse_error_fallback",
-                               chat_id=self.chat_id,
-                               parse_mode=parse_mode,
-                               error=str(e))
+                # Expected with complex content - fallback to plain text
+                logger.debug("draft_streamer.finalize_parse_error_fallback",
+                             chat_id=self.chat_id,
+                             parse_mode=parse_mode,
+                             error=str(e))
                 message = await self.bot.send_message(
                     chat_id=self.chat_id,
                     text=text_to_send,

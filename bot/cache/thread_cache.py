@@ -93,7 +93,7 @@ async def get_cached_thread(
         return cached
 
     except Exception as e:  # pylint: disable=broad-exception-caught
-        logger.warning(
+        logger.info(
             "thread_cache.get_error",
             chat_id=chat_id,
             user_id=user_id,
@@ -158,7 +158,7 @@ async def cache_thread(
         return True
 
     except Exception as e:  # pylint: disable=broad-exception-caught
-        logger.warning(
+        logger.info(
             "thread_cache.set_error",
             chat_id=chat_id,
             user_id=user_id,
@@ -206,7 +206,7 @@ async def invalidate_thread(
         return deleted > 0
 
     except Exception as e:  # pylint: disable=broad-exception-caught
-        logger.warning(
+        logger.info(
             "thread_cache.invalidate_error",
             chat_id=chat_id,
             user_id=user_id,
@@ -293,7 +293,7 @@ async def get_cached_messages(internal_thread_id: int) -> Optional[list[dict]]:
         return messages
 
     except Exception as e:  # pylint: disable=broad-exception-caught
-        logger.warning(
+        logger.info(
             "messages_cache.get_error",
             thread_id=internal_thread_id,
             error=str(e),
@@ -343,7 +343,7 @@ async def cache_messages(
         return True
 
     except Exception as e:  # pylint: disable=broad-exception-caught
-        logger.warning(
+        logger.info(
             "messages_cache.set_error",
             thread_id=internal_thread_id,
             error=str(e),
@@ -384,7 +384,7 @@ async def invalidate_messages(internal_thread_id: int) -> bool:
         return deleted > 0
 
     except Exception as e:  # pylint: disable=broad-exception-caught
-        logger.warning(
+        logger.info(
             "messages_cache.invalidate_error",
             thread_id=internal_thread_id,
             error=str(e),
@@ -448,7 +448,7 @@ async def append_message_atomic(
         return True
 
     except Exception as e:  # pylint: disable=broad-exception-caught
-        logger.warning(
+        logger.info(
             "messages_cache.atomic_append_error",
             thread_id=internal_thread_id,
             error=str(e),
@@ -523,7 +523,7 @@ async def get_cached_files(internal_thread_id: int) -> Optional[list[dict]]:
         return files
 
     except Exception as e:  # pylint: disable=broad-exception-caught
-        logger.warning(
+        logger.info(
             "files_cache.get_error",
             thread_id=internal_thread_id,
             error=str(e),
@@ -573,7 +573,7 @@ async def cache_files(
         return True
 
     except Exception as e:  # pylint: disable=broad-exception-caught
-        logger.warning(
+        logger.info(
             "files_cache.set_error",
             thread_id=internal_thread_id,
             error=str(e),
@@ -614,7 +614,7 @@ async def invalidate_files(internal_thread_id: int) -> bool:
         return deleted > 0
 
     except Exception as e:  # pylint: disable=broad-exception-caught
-        logger.warning(
+        logger.info(
             "files_cache.invalidate_error",
             thread_id=internal_thread_id,
             error=str(e),

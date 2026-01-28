@@ -390,7 +390,7 @@ class PaymentService:
         payment = await self.payment_repo.get_by_charge_id(
             telegram_payment_charge_id)
         if not payment:
-            logger.warning(
+            logger.error(
                 "payment.refund_payment_not_found",
                 user_id=user_id,
                 charge_id=telegram_payment_charge_id,
@@ -412,7 +412,7 @@ class PaymentService:
 
         # Check status
         if payment.status != PaymentStatus.COMPLETED:
-            logger.warning(
+            logger.info(
                 "payment.refund_invalid_status",
                 payment_id=payment.id,
                 status=payment.status.value,
@@ -424,7 +424,7 @@ class PaymentService:
 
         # Check refund period
         if not payment.can_refund(REFUND_PERIOD_DAYS):
-            logger.warning(
+            logger.info(
                 "payment.refund_period_expired",
                 payment_id=payment.id,
                 created_at=payment.created_at.isoformat(),
@@ -441,7 +441,7 @@ class PaymentService:
             raise ValueError(f"User {user_id} not found")
 
         if user.balance < payment.credited_usd_amount:
-            logger.warning(
+            logger.info(
                 "payment.refund_insufficient_balance",
                 user_id=user_id,
                 balance=float(user.balance),
