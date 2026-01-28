@@ -418,3 +418,298 @@ async def pg_admin_user(pg_session: AsyncSession):
     pg_session.add(user)
     await pg_session.flush()
     return user
+
+
+# ============================================================================
+# Phase 5.5: Telegram Mock Fixtures
+# ============================================================================
+
+
+@pytest.fixture
+def mock_telegram_user():
+    """Create mock Telegram user object.
+
+    Returns:
+        MagicMock: Mock aiogram User with common attributes.
+    """
+    from unittest.mock import MagicMock
+
+    user = MagicMock()
+    user.id = 123456789
+    user.first_name = "Test"
+    user.last_name = "User"
+    user.username = "test_user"
+    user.language_code = "en"
+    user.is_premium = False
+    user.is_bot = False
+    return user
+
+
+@pytest.fixture
+def mock_telegram_chat():
+    """Create mock Telegram chat object.
+
+    Returns:
+        MagicMock: Mock aiogram Chat with common attributes.
+    """
+    from unittest.mock import MagicMock
+
+    chat = MagicMock()
+    chat.id = 987654321
+    chat.type = "private"
+    chat.title = None
+    chat.username = "test_user"
+    chat.first_name = "Test"
+    chat.last_name = "User"
+    return chat
+
+
+@pytest.fixture
+def mock_telegram_message(mock_telegram_user, mock_telegram_chat):
+    """Create mock Telegram message object.
+
+    Args:
+        mock_telegram_user: Mock user fixture.
+        mock_telegram_chat: Mock chat fixture.
+
+    Returns:
+        MagicMock: Mock aiogram Message with common attributes and methods.
+    """
+    from unittest.mock import AsyncMock
+    from unittest.mock import MagicMock
+
+    message = MagicMock()
+    message.message_id = 1
+    message.date = datetime.now(timezone.utc)
+    message.chat = mock_telegram_chat
+    message.from_user = mock_telegram_user
+    message.text = "Hello, bot!"
+    message.caption = None
+    message.photo = None
+    message.document = None
+    message.voice = None
+    message.video = None
+    message.audio = None
+    message.message_thread_id = None
+
+    # Mock bot
+    message.bot = MagicMock()
+    message.bot.get_file = AsyncMock()
+    message.bot.download_file = AsyncMock()
+    message.bot.send_message = AsyncMock()
+    message.bot.send_photo = AsyncMock()
+    message.bot.send_document = AsyncMock()
+
+    # Mock message methods
+    message.answer = AsyncMock(return_value=MagicMock(message_id=2))
+    message.reply = AsyncMock(return_value=MagicMock(message_id=2))
+    message.edit_text = AsyncMock()
+    message.delete = AsyncMock()
+
+    return message
+
+
+@pytest.fixture
+def mock_telegram_callback(mock_telegram_user, mock_telegram_message):
+    """Create mock Telegram callback query object.
+
+    Args:
+        mock_telegram_user: Mock user fixture.
+        mock_telegram_message: Mock message fixture.
+
+    Returns:
+        MagicMock: Mock aiogram CallbackQuery with common attributes.
+    """
+    from unittest.mock import AsyncMock
+    from unittest.mock import MagicMock
+
+    callback = MagicMock()
+    callback.id = "callback_123"
+    callback.from_user = mock_telegram_user
+    callback.message = mock_telegram_message
+    callback.data = "action:value"
+    callback.chat_instance = "chat_instance_123"
+
+    # Mock callback methods
+    callback.answer = AsyncMock()
+    callback.message.edit_text = AsyncMock()
+    callback.message.delete = AsyncMock()
+
+    return callback
+
+
+@pytest.fixture
+def mock_telegram_bot():
+    """Create mock Telegram bot object.
+
+    Returns:
+        MagicMock: Mock aiogram Bot with common methods.
+    """
+    from unittest.mock import AsyncMock
+    from unittest.mock import MagicMock
+
+    bot = MagicMock()
+    bot.id = 123456789
+    bot.username = "test_bot"
+
+    # Mock bot methods
+    bot.get_me = AsyncMock(
+        return_value=MagicMock(id=123456789, username="test_bot"))
+    bot.get_file = AsyncMock()
+    bot.download_file = AsyncMock()
+    bot.send_message = AsyncMock(return_value=MagicMock(message_id=1))
+    bot.send_photo = AsyncMock(return_value=MagicMock(message_id=1))
+    bot.send_document = AsyncMock(return_value=MagicMock(message_id=1))
+    bot.send_voice = AsyncMock(return_value=MagicMock(message_id=1))
+    bot.send_chat_action = AsyncMock()
+    bot.edit_message_text = AsyncMock()
+    bot.delete_message = AsyncMock()
+    bot.answer_pre_checkout_query = AsyncMock()
+    bot.refund_star_payment = AsyncMock()
+    bot.create_invoice_link = AsyncMock(return_value="https://t.me/invoice/xxx")
+
+    return bot
+
+
+# ============================================================================
+# Phase 5.5: Claude Mock Fixtures
+# ============================================================================
+
+
+@pytest.fixture
+def mock_claude_message():
+    """Create mock Claude API message response.
+
+    Returns:
+        MagicMock: Mock Anthropic Message with common attributes.
+    """
+    from unittest.mock import MagicMock
+
+    message = MagicMock()
+    message.id = "msg_123"
+    message.type = "message"
+    message.role = "assistant"
+    message.content = [MagicMock(type="text", text="Hello! How can I help?")]
+    message.model = "claude-sonnet-4-5-20250929"
+    message.stop_reason = "end_turn"
+    message.usage = MagicMock(input_tokens=100, output_tokens=50)
+
+    return message
+
+
+@pytest.fixture
+def mock_claude_stream_events():
+    """Create mock Claude streaming events generator.
+
+    Returns:
+        list: List of mock streaming events.
+    """
+    from unittest.mock import MagicMock
+
+    events = [
+        MagicMock(type="message_start",
+                  message=MagicMock(id="msg_123",
+                                    model="claude-sonnet-4-5-20250929")),
+        MagicMock(type="content_block_start",
+                  index=0,
+                  content_block=MagicMock(type="text", text="")),
+        MagicMock(type="content_block_delta",
+                  index=0,
+                  delta=MagicMock(type="text_delta", text="Hello")),
+        MagicMock(type="content_block_delta",
+                  index=0,
+                  delta=MagicMock(type="text_delta", text=" world!")),
+        MagicMock(type="content_block_stop", index=0),
+        MagicMock(type="message_delta",
+                  delta=MagicMock(stop_reason="end_turn"),
+                  usage=MagicMock(output_tokens=10)),
+        MagicMock(type="message_stop"),
+    ]
+
+    return events
+
+
+@pytest.fixture
+def mock_claude_tool_use_events():
+    """Create mock Claude tool use streaming events.
+
+    Returns:
+        list: List of mock streaming events with tool use.
+    """
+    from unittest.mock import MagicMock
+
+    events = [
+        MagicMock(type="message_start",
+                  message=MagicMock(id="msg_123",
+                                    model="claude-sonnet-4-5-20250929")),
+        MagicMock(type="content_block_start",
+                  index=0,
+                  content_block=MagicMock(type="tool_use",
+                                          id="tool_123",
+                                          name="web_search")),
+        MagicMock(type="content_block_delta",
+                  index=0,
+                  delta=MagicMock(type="input_json_delta",
+                                  partial_json='{"query": "test"}')),
+        MagicMock(type="content_block_stop", index=0),
+        MagicMock(type="message_delta",
+                  delta=MagicMock(stop_reason="tool_use"),
+                  usage=MagicMock(output_tokens=20)),
+        MagicMock(type="message_stop"),
+    ]
+
+    return events
+
+
+@pytest.fixture
+def mock_claude_provider():
+    """Create mock Claude provider.
+
+    Returns:
+        MagicMock: Mock ClaudeProvider with common methods.
+    """
+    from unittest.mock import AsyncMock
+    from unittest.mock import MagicMock
+
+    provider = MagicMock()
+    provider.create_message = AsyncMock()
+    provider.stream_message = AsyncMock()
+    provider.stream_events = AsyncMock()
+    provider.count_tokens = MagicMock(return_value=100)
+
+    return provider
+
+
+# ============================================================================
+# Phase 5.5: Redis Mock Fixtures
+# ============================================================================
+
+
+@pytest.fixture
+def mock_redis():
+    """Create mock Redis client.
+
+    Returns:
+        MagicMock: Mock Redis client with common methods.
+    """
+    from unittest.mock import AsyncMock
+    from unittest.mock import MagicMock
+
+    redis = MagicMock()
+    redis.get = AsyncMock(return_value=None)
+    redis.set = AsyncMock(return_value=True)
+    redis.delete = AsyncMock(return_value=1)
+    redis.setex = AsyncMock(return_value=True)
+    redis.expire = AsyncMock(return_value=True)
+    redis.exists = AsyncMock(return_value=0)
+    redis.incr = AsyncMock(return_value=1)
+    redis.decr = AsyncMock(return_value=0)
+    redis.lpush = AsyncMock(return_value=1)
+    redis.rpush = AsyncMock(return_value=1)
+    redis.lrange = AsyncMock(return_value=[])
+    redis.hget = AsyncMock(return_value=None)
+    redis.hset = AsyncMock(return_value=1)
+    redis.hgetall = AsyncMock(return_value={})
+    redis.pipeline = MagicMock()
+
+    return redis

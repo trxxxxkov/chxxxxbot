@@ -38,6 +38,19 @@ def init_db(database_url: str, echo: bool = False) -> None:
     """
     global _engine, _session_factory  # pylint: disable=global-statement
 
+    # Import all models to register them with SQLAlchemy mapper
+    # This must happen before any queries that use relationships
+    # pylint: disable=import-outside-toplevel,unused-import
+    from db.models.balance_operation import BalanceOperation  # noqa: F401
+    from db.models.chat import Chat  # noqa: F401
+    from db.models.message import Message  # noqa: F401
+    from db.models.payment import Payment  # noqa: F401
+    from db.models.thread import Thread  # noqa: F401
+    from db.models.tool_call import ToolCall  # noqa: F401
+    from db.models.user import User  # noqa: F401
+    from db.models.user_file import UserFile  # noqa: F401
+
+    # pylint: enable=import-outside-toplevel,unused-import
     # Connection pool configuration optimized for Telegram bot
     # pool_size=5: Max 5 base connections
     # max_overflow=10: Allow up to 10 additional connections during spikes
