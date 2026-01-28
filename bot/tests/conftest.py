@@ -7,6 +7,13 @@ NO __init__.py - use direct import:
     from tests.conftest import test_session, sample_user
 """
 
+# Ensure /app is in sys.path for imports to work
+import os
+import sys
+_app_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _app_path not in sys.path:
+    sys.path.insert(0, _app_path)
+
 import asyncio
 from datetime import datetime
 from datetime import timezone

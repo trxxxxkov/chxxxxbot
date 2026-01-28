@@ -9,8 +9,8 @@ from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import pytest
-from tests.utils.assertions import assert_cost_reasonable
-from tests.utils.assertions import assert_tokens_counted
+from tests.test_utils.assertions import assert_cost_reasonable
+from tests.test_utils.assertions import assert_tokens_counted
 
 
 class TestAssertCostReasonable:
@@ -98,7 +98,7 @@ class TestAssertBalanceChanged:
     @pytest.mark.asyncio
     async def test_balance_changed_positive(self, test_session, sample_user):
         """Test balance increased correctly."""
-        from tests.utils.assertions import assert_balance_changed
+        from tests.test_utils.assertions import assert_balance_changed
 
         initial = sample_user.balance
         credit = Decimal("2.00")
@@ -111,7 +111,7 @@ class TestAssertBalanceChanged:
     @pytest.mark.asyncio
     async def test_balance_changed_negative(self, test_session, sample_user):
         """Test balance decreased correctly."""
-        from tests.utils.assertions import assert_balance_changed
+        from tests.test_utils.assertions import assert_balance_changed
 
         initial = sample_user.balance
         debit = Decimal("-1.00")
@@ -124,7 +124,7 @@ class TestAssertBalanceChanged:
     @pytest.mark.asyncio
     async def test_balance_mismatch_fails(self, test_session, sample_user):
         """Test balance mismatch raises error."""
-        from tests.utils.assertions import assert_balance_changed
+        from tests.test_utils.assertions import assert_balance_changed
 
         initial = sample_user.balance
 
@@ -139,7 +139,7 @@ class TestAssertBalanceEquals:
     @pytest.mark.asyncio
     async def test_balance_equals(self, test_session, sample_user):
         """Test balance equals expected value."""
-        from tests.utils.assertions import assert_balance_equals
+        from tests.test_utils.assertions import assert_balance_equals
 
         expected = sample_user.balance
         await assert_balance_equals(test_session, sample_user.id, expected)
@@ -147,7 +147,7 @@ class TestAssertBalanceEquals:
     @pytest.mark.asyncio
     async def test_balance_not_equals_fails(self, test_session, sample_user):
         """Test balance not equals raises error."""
-        from tests.utils.assertions import assert_balance_equals
+        from tests.test_utils.assertions import assert_balance_equals
 
         wrong_balance = Decimal("999.99")
 
@@ -165,7 +165,7 @@ class TestAssertMessageSaved:
         """Test message found in thread."""
         from db.models.message import Message
         from db.models.message import MessageRole
-        from tests.utils.assertions import assert_message_saved
+        from tests.test_utils.assertions import assert_message_saved
 
         # Create a message with required fields
         message = Message(
@@ -195,7 +195,7 @@ class TestAssertMessageSaved:
         """Test message content contains substring."""
         from db.models.message import Message
         from db.models.message import MessageRole
-        from tests.utils.assertions import assert_message_saved
+        from tests.test_utils.assertions import assert_message_saved
 
         message = Message(
             chat_id=sample_chat.id,
@@ -224,7 +224,7 @@ class TestAssertMessageSaved:
     @pytest.mark.asyncio
     async def test_message_not_found_fails(self, test_session, sample_thread):
         """Test message not found raises error."""
-        from tests.utils.assertions import assert_message_saved
+        from tests.test_utils.assertions import assert_message_saved
 
         with pytest.raises(AssertionError, match="No assistant message found"):
             await assert_message_saved(test_session, sample_thread.id,
@@ -240,7 +240,7 @@ class TestAssertMessageCount:
         """Test message count matches expected."""
         from db.models.message import Message
         from db.models.message import MessageRole
-        from tests.utils.assertions import assert_message_count
+        from tests.test_utils.assertions import assert_message_count
 
         # Add 3 messages
         for i in range(3):
@@ -271,7 +271,7 @@ class TestAssertMessageCount:
         """Test message count with role filter."""
         from db.models.message import Message
         from db.models.message import MessageRole
-        from tests.utils.assertions import assert_message_count
+        from tests.test_utils.assertions import assert_message_count
 
         # Add mixed messages
         test_session.add(
@@ -339,7 +339,7 @@ class TestAssertMessageCount:
     @pytest.mark.asyncio
     async def test_count_mismatch_fails(self, test_session, sample_thread):
         """Test count mismatch raises error."""
-        from tests.utils.assertions import assert_message_count
+        from tests.test_utils.assertions import assert_message_count
 
         with pytest.raises(AssertionError, match="Message count mismatch"):
             await assert_message_count(test_session, sample_thread.id, 99)
@@ -351,7 +351,7 @@ class TestAssertThreadExists:
     @pytest.mark.asyncio
     async def test_thread_found(self, test_session, sample_thread):
         """Test thread found returns ID."""
-        from tests.utils.assertions import assert_thread_exists
+        from tests.test_utils.assertions import assert_thread_exists
 
         thread_id = await assert_thread_exists(test_session,
                                                sample_thread.chat_id)
@@ -360,7 +360,7 @@ class TestAssertThreadExists:
     @pytest.mark.asyncio
     async def test_thread_not_found_fails(self, test_session):
         """Test thread not found raises error."""
-        from tests.utils.assertions import assert_thread_exists
+        from tests.test_utils.assertions import assert_thread_exists
 
         with pytest.raises(AssertionError, match="Thread not found"):
             await assert_thread_exists(test_session, 99999999)
@@ -374,7 +374,7 @@ class TestAssertPaymentRecorded:
         """Test payment found."""
         from db.models.payment import Payment
         from db.models.payment import PaymentStatus
-        from tests.utils.assertions import assert_payment_recorded
+        from tests.test_utils.assertions import assert_payment_recorded
 
         payment = Payment(
             user_id=sample_user.id,
@@ -398,7 +398,7 @@ class TestAssertPaymentRecorded:
         """Test payment found by charge ID."""
         from db.models.payment import Payment
         from db.models.payment import PaymentStatus
-        from tests.utils.assertions import assert_payment_recorded
+        from tests.test_utils.assertions import assert_payment_recorded
 
         payment = Payment(
             user_id=sample_user.id,
@@ -424,7 +424,7 @@ class TestAssertPaymentRecorded:
     @pytest.mark.asyncio
     async def test_payment_not_found_fails(self, test_session, sample_user):
         """Test payment not found raises error."""
-        from tests.utils.assertions import assert_payment_recorded
+        from tests.test_utils.assertions import assert_payment_recorded
 
         with pytest.raises(AssertionError, match="Payment not found"):
             await assert_payment_recorded(test_session, sample_user.id, 99999)

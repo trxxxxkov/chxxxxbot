@@ -72,6 +72,7 @@ services:
       - grafana_data:/mnt/volumes/grafana:ro
     environment:
       - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/app
       - DATABASE_HOST=postgres
       - DATABASE_PORT=5432
       - DATABASE_USER=postgres
