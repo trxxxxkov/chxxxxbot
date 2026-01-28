@@ -124,7 +124,8 @@ class TestExecutePythonAsync:
                 "generated_files": "[]",
                 "_file_contents": [],
             }
-            mock_to_thread.return_value = (mock_result, 1.0)
+            # Return tuple: (result, sandbox_duration, sandbox_id)
+            mock_to_thread.return_value = (mock_result, 1.0, "sandbox_123")
 
             from core.tools.execute_python import execute_python
 

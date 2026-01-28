@@ -85,9 +85,10 @@ class TestExecutePython:
         assert "stderr" in result
         assert "Hello, world!" in result["stdout"]
 
-        # Verify sandbox was created and context manager was used
+        # Verify sandbox was created
         mock_sandbox_class.create.assert_called_once()
-        mock_sandbox.kill.assert_called_once()
+        # Sandbox is kept alive on success (for reuse), not killed
+        mock_sandbox.kill.assert_not_called()
 
         # Verify run_code was called
         mock_sandbox.run_code.assert_called_once()
@@ -123,6 +124,8 @@ class TestExecutePython:
         mock_execution.logs = mock_logs
 
         mock_sandbox.run_code.return_value = mock_execution
+        # Mock files.list() to return empty list (no output files)
+        mock_sandbox.files.list.return_value = []
         mock_sandbox.kill.return_value = None
         mock_sandbox_class.create.return_value = mock_sandbox
 
@@ -139,8 +142,8 @@ class TestExecutePython:
         # Verify pip install was called
         mock_sandbox.commands.run.assert_called_once_with("pip install numpy")
 
-        # Verify context manager was used
-        mock_sandbox.kill.assert_called_once()
+        # Sandbox is kept alive on success (for reuse), not killed
+        mock_sandbox.kill.assert_not_called()
 
     @pytest.mark.asyncio
     @patch('core.tools.execute_python.Sandbox')
@@ -167,6 +170,8 @@ class TestExecutePython:
         mock_execution.logs = mock_logs
 
         mock_sandbox.run_code.return_value = mock_execution
+        # Mock files.list() to return empty list (no output files)
+        mock_sandbox.files.list.return_value = []
         mock_sandbox.kill.return_value = None
         mock_sandbox_class.create.return_value = mock_sandbox
 
@@ -179,8 +184,8 @@ class TestExecutePython:
         assert result["success"] == "false"
         assert "NameError" in result["error"]
 
-        # Verify context manager was used even after error
-        mock_sandbox.kill.assert_called_once()
+        # Sandbox is kept alive even on Python errors (only killed on infra failures)
+        mock_sandbox.kill.assert_not_called()
 
     @pytest.mark.asyncio
     @patch('core.tools.execute_python.Sandbox')
