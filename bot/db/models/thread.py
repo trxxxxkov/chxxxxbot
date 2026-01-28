@@ -111,6 +111,16 @@ class Thread(Base, TimestampMixin):
         "Set True on creation, False after naming.",
     )
 
+    # Topic clearing: marks thread as belonging to deleted topic
+    is_cleared: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+        doc="Whether the Telegram topic for this thread has been deleted. "
+        "Cleared threads are excluded from topic counts.",
+    )
+
     # Indexes and constraints
     __table_args__ = (
         # Unique constraint: one thread per user per topic

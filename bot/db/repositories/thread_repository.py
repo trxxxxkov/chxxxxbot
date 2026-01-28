@@ -240,8 +240,12 @@ class ThreadRepository(BaseRepository[Thread]):
         Returns:
             List of unique Telegram topic IDs (not internal thread IDs).
         """
-        stmt = (select(Thread.thread_id).where(
-            Thread.chat_id == chat_id, Thread.thread_id.isnot(None)).distinct())
+        stmt = (
+            select(Thread.thread_id).where(
+                Thread.chat_id == chat_id,
+                Thread.thread_id.isnot(None),
+                Thread.is_cleared == False,  # noqa: E712 pylint: disable=singleton-comparison
+            ).distinct())
         result = await self.session.execute(stmt)
         return [row[0] for row in result.fetchall()]
 
@@ -250,18 +254,20 @@ class ThreadRepository(BaseRepository[Thread]):
         chat_id: int,
         topic_id: int,
     ) -> int:
-        """Clear cached file bodies for a specific Telegram topic.
+        """Mark threads as cleared and clear their cache.
 
-        Only clears Redis cache (file bodies, exec files, sandbox).
-        All database records (threads, messages, user_files metadata) are preserved.
+        Sets is_cleared=True for all threads in the topic and clears Redis cache.
+        Database records (threads, messages, user_files metadata) are preserved
+        but threads are excluded from future topic counts.
 
         Args:
             chat_id: Telegram chat ID.
             topic_id: Telegram forum topic ID (thread_id).
 
         Returns:
-            Number of cache entries cleared.
+            Number of threads marked as cleared.
         """
+        from sqlalchemy import update
         from utils.structured_logging import get_logger
 
         logger = get_logger(__name__)
@@ -277,7 +283,14 @@ class ThreadRepository(BaseRepository[Thread]):
         if not thread_ids:
             return 0
 
-        # 2. Clear Redis cache for each thread (file bodies only, not DB records)
+        # 2. Mark all threads as cleared in DB
+        update_stmt = (update(Thread).where(
+            Thread.chat_id == chat_id,
+            Thread.thread_id == topic_id,
+        ).values(is_cleared=True))
+        await self.session.execute(update_stmt)
+
+        # 3. Clear Redis cache for each thread (file bodies only)
         from cache.thread_cache import clear_thread_cache
 
         cache_stats = {"messages": 0, "files": 0, "exec_files": 0, "sandbox": 0}
@@ -286,14 +299,12 @@ class ThreadRepository(BaseRepository[Thread]):
             for key in cache_stats:
                 cache_stats[key] += stats.get(key, 0)
 
-        total_cleared = sum(cache_stats.values())
-
         logger.info(
-            "thread.clear_cache",
+            "thread.mark_cleared",
             chat_id=chat_id,
             topic_id=topic_id,
             thread_count=len(thread_ids),
             cleared_cache=cache_stats,
         )
 
-        return total_cleared
+        return len(thread_ids)
