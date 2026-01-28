@@ -275,7 +275,7 @@ class TestMessageNormalizerPhoto:
     """Tests for photo processing."""
 
     @pytest.mark.asyncio
-    @patch("telegram.pipeline.normalizer.ActionManager")
+    @patch("telegram.pipeline.normalizer.ChatActionManager")
     @patch("telegram.pipeline.normalizer.upload_to_files_api")
     @patch("telegram.pipeline.normalizer.cache_file")
     async def test_process_photo(
@@ -314,7 +314,7 @@ class TestMessageNormalizerPhoto:
         mock_upload.assert_called_once()
 
     @pytest.mark.asyncio
-    @patch("telegram.pipeline.normalizer.ActionManager")
+    @patch("telegram.pipeline.normalizer.ChatActionManager")
     @patch("telegram.pipeline.normalizer.upload_to_files_api")
     @patch("telegram.pipeline.normalizer.cache_file")
     async def test_process_photo_uses_largest_size(
@@ -358,7 +358,7 @@ class TestMessageNormalizerDocument:
     """Tests for document processing."""
 
     @pytest.mark.asyncio
-    @patch("telegram.pipeline.normalizer.ActionManager")
+    @patch("telegram.pipeline.normalizer.ChatActionManager")
     @patch("telegram.pipeline.normalizer.upload_to_files_api")
     @patch("telegram.pipeline.normalizer.cache_file")
     @patch(
@@ -401,7 +401,7 @@ class TestMessageNormalizerDocument:
         assert result.files[0].filename == "document.pdf"
 
     @pytest.mark.asyncio
-    @patch("telegram.pipeline.normalizer.ActionManager")
+    @patch("telegram.pipeline.normalizer.ChatActionManager")
     @patch("telegram.pipeline.normalizer.upload_to_files_api")
     @patch("telegram.pipeline.normalizer.cache_file")
     @patch(
@@ -446,7 +446,7 @@ class TestMessageNormalizerVoice:
     """Tests for voice message processing."""
 
     @pytest.mark.asyncio
-    @patch("telegram.pipeline.normalizer.ActionManager")
+    @patch("telegram.pipeline.normalizer.ChatActionManager")
     @patch("telegram.pipeline.normalizer.cache_file")
     async def test_process_voice_transcribes(
         self,
@@ -492,7 +492,7 @@ class TestMessageNormalizerVoice:
         assert result.has_files is False
 
     @pytest.mark.asyncio
-    @patch("telegram.pipeline.normalizer.ActionManager")
+    @patch("telegram.pipeline.normalizer.ChatActionManager")
     @patch("telegram.pipeline.normalizer.cache_file")
     async def test_voice_text_for_db_has_prefix(
         self,
@@ -536,7 +536,7 @@ class TestMessageNormalizerVideoNote:
     """Tests for video note (round video) processing."""
 
     @pytest.mark.asyncio
-    @patch("telegram.pipeline.normalizer.ActionManager")
+    @patch("telegram.pipeline.normalizer.ChatActionManager")
     @patch("telegram.pipeline.normalizer.cache_file")
     async def test_process_video_note_transcribes(
         self,
@@ -581,7 +581,7 @@ class TestMessageNormalizerAudio:
     """Tests for audio file processing."""
 
     @pytest.mark.asyncio
-    @patch("telegram.pipeline.normalizer.ActionManager")
+    @patch("telegram.pipeline.normalizer.ChatActionManager")
     @patch("telegram.pipeline.normalizer.upload_to_files_api")
     @patch("telegram.pipeline.normalizer.cache_file")
     @patch(
@@ -628,7 +628,7 @@ class TestMessageNormalizerVideo:
     """Tests for video file processing."""
 
     @pytest.mark.asyncio
-    @patch("telegram.pipeline.normalizer.ActionManager")
+    @patch("telegram.pipeline.normalizer.ChatActionManager")
     @patch("telegram.pipeline.normalizer.upload_to_files_api")
     @patch("telegram.pipeline.normalizer.cache_file")
     @patch(

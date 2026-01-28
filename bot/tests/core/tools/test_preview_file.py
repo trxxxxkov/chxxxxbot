@@ -133,9 +133,13 @@ class TestPreviewFile:
         """Test preview_file returns error when exec file not in cache."""
         from core.tools.preview_file import preview_file
 
-        with patch("core.tools.preview_file.get_exec_meta",
-                   new_callable=AsyncMock) as mock_meta:
-            mock_meta.return_value = None
+        mock_file_manager = MagicMock()
+        mock_file_manager.get_file_content = AsyncMock(
+            side_effect=FileNotFoundError(
+                "File 'exec_nonexistent' not found or expired"))
+
+        with patch("core.file_manager.FileManager",
+                   return_value=mock_file_manager):
 
             result = await preview_file(
                 file_id="exec_nonexistent",
@@ -151,16 +155,13 @@ class TestPreviewFile:
         """Test preview_file returns error when exec content missing."""
         from core.tools.preview_file import preview_file
 
-        with patch("core.tools.preview_file.get_exec_meta",
-                   new_callable=AsyncMock) as mock_meta, \
-             patch("core.tools.preview_file.get_exec_file",
-                   new_callable=AsyncMock) as mock_file:
+        mock_file_manager = MagicMock()
+        mock_file_manager.get_file_content = AsyncMock(
+            side_effect=FileNotFoundError(
+                "File 'exec_abc' content not found (may have expired)"))
 
-            mock_meta.return_value = {
-                "filename": "test.csv",
-                "mime_type": "text/csv"
-            }
-            mock_file.return_value = None
+        with patch("core.file_manager.FileManager",
+                   return_value=mock_file_manager):
 
             result = await preview_file(
                 file_id="exec_abc",
@@ -176,16 +177,19 @@ class TestPreviewFile:
         """Test preview_file routes CSV to correct handler."""
         from core.tools.preview_file import preview_file
 
-        with patch("core.tools.preview_file.get_exec_meta",
-                   new_callable=AsyncMock) as mock_meta, \
-             patch("core.tools.preview_file.get_exec_file",
-                   new_callable=AsyncMock) as mock_file:
-
-            mock_meta.return_value = {
+        mock_file_manager = MagicMock()
+        mock_file_manager.get_file_content = AsyncMock(return_value=(
+            b"a,b,c\n1,2,3",
+            {
                 "filename": "data.csv",
-                "mime_type": "text/csv"
-            }
-            mock_file.return_value = b"a,b,c\n1,2,3"
+                "mime_type": "text/csv",
+                "file_size": 13,
+                "source": "exec_cache",
+            },
+        ))
+
+        with patch("core.file_manager.FileManager",
+                   return_value=mock_file_manager):
 
             result = await preview_file(
                 file_id="exec_abc",
@@ -202,16 +206,19 @@ class TestPreviewFile:
         """Test preview_file returns metadata for audio/video."""
         from core.tools.preview_file import preview_file
 
-        with patch("core.tools.preview_file.get_exec_meta",
-                   new_callable=AsyncMock) as mock_meta, \
-             patch("core.tools.preview_file.get_exec_file",
-                   new_callable=AsyncMock) as mock_file:
-
-            mock_meta.return_value = {
+        mock_file_manager = MagicMock()
+        mock_file_manager.get_file_content = AsyncMock(return_value=(
+            b"fake mp3 data",
+            {
                 "filename": "audio.mp3",
-                "mime_type": "audio/mpeg"
-            }
-            mock_file.return_value = b"fake mp3 data"
+                "mime_type": "audio/mpeg",
+                "file_size": 13,
+                "source": "exec_cache",
+            },
+        ))
+
+        with patch("core.file_manager.FileManager",
+                   return_value=mock_file_manager):
 
             result = await preview_file(
                 file_id="exec_abc",
@@ -228,16 +235,19 @@ class TestPreviewFile:
         """Test preview_file suggests library for binary files."""
         from core.tools.preview_file import preview_file
 
-        with patch("core.tools.preview_file.get_exec_meta",
-                   new_callable=AsyncMock) as mock_meta, \
-             patch("core.tools.preview_file.get_exec_file",
-                   new_callable=AsyncMock) as mock_file:
-
-            mock_meta.return_value = {
+        mock_file_manager = MagicMock()
+        mock_file_manager.get_file_content = AsyncMock(return_value=(
+            b"parquet binary data",
+            {
                 "filename": "data.parquet",
-                "mime_type": "application/octet-stream"
-            }
-            mock_file.return_value = b"parquet binary data"
+                "mime_type": "application/octet-stream",
+                "file_size": 19,
+                "source": "exec_cache",
+            },
+        ))
+
+        with patch("core.file_manager.FileManager",
+                   return_value=mock_file_manager):
 
             result = await preview_file(
                 file_id="exec_abc",
@@ -255,12 +265,13 @@ class TestPreviewFile:
         """Test preview_file returns error when file not in database."""
         from core.tools.preview_file import preview_file
 
-        mock_repo = MagicMock()
-        mock_repo.get_by_claude_file_id = AsyncMock(return_value=None)
-        mock_repo.get_by_telegram_file_id = AsyncMock(return_value=None)
+        mock_file_manager = MagicMock()
+        mock_file_manager.get_file_content = AsyncMock(
+            side_effect=FileNotFoundError(
+                "File 'file_unknown' not found in database"))
 
-        with patch("core.tools.preview_file.UserFileRepository",
-                   return_value=mock_repo):
+        with patch("core.file_manager.FileManager",
+                   return_value=mock_file_manager):
             result = await preview_file(
                 file_id="file_unknown",
                 bot=MagicMock(),

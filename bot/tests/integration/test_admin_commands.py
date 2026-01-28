@@ -534,7 +534,8 @@ class TestClearCommand:
 
             mock_message.answer.assert_called_once()
             response = mock_message.answer.call_args[0][0]
-            assert "privileged users" in response.lower()
+            # Response indicates user needs admin rights
+            assert "admin rights" in response.lower()
 
     async def test_clear_no_topics(self, test_session, admin_user_id):
         """Test /clear when no topics exist.
@@ -557,7 +558,7 @@ class TestClearCommand:
             assert "No forum topics" in response
 
     async def test_clear_all_from_general(self, test_session, admin_user_id):
-        """Test /clear from General deletes all topics.
+        """Test /clear from General shows confirmation for multiple topics.
 
         Args:
             test_session: Async session fixture.
@@ -585,8 +586,10 @@ class TestClearCommand:
 
             await admin.cmd_clear(mock_message, test_session)
 
-            # Should delete both topics (silently, no confirmation message)
-            assert mock_message.bot.delete_forum_topic.call_count == 2
+            # Now shows confirmation instead of immediate deletion
+            mock_message.answer.assert_called_once()
+            response = mock_message.answer.call_args[0][0]
+            assert "2" in response  # Number of topics
 
     async def test_clear_single_topic(self, test_session, admin_user_id):
         """Test /clear in existing topic deletes only that topic.
@@ -629,7 +632,7 @@ class TestClearCommand:
             assert call_kwargs["message_thread_id"] == 3001
 
     async def test_clear_general_topic_id_1(self, test_session, admin_user_id):
-        """Test /clear with topic_id=1 (General) deletes all.
+        """Test /clear with topic_id=1 (General) shows confirmation.
 
         Args:
             test_session: Async session fixture.
@@ -654,15 +657,15 @@ class TestClearCommand:
 
             await admin.cmd_clear(mock_message, test_session)
 
-            # Should delete the topic (all mode, silently)
-            mock_message.bot.delete_forum_topic.assert_called_once()
+            # Now shows confirmation instead of immediate deletion
+            mock_message.answer.assert_called_once()
 
     async def test_clear_from_new_topic_deletes_all(self, test_session,
                                                     admin_user_id):
-        """Test /clear from a newly created topic deletes all.
+        """Test /clear from a newly created topic shows confirmation.
 
         When CommandMiddleware sets topic_was_created=True, the /clear
-        command should delete ALL topics (treating it as sent from General).
+        command should show confirmation for deleting ALL topics.
 
         Args:
             test_session: Async session fixture.
@@ -689,10 +692,12 @@ class TestClearCommand:
                 message_thread_id=5001,  # New topic
             )
 
-            # topic_was_created=True means new topic, delete ALL
+            # topic_was_created=True means new topic, treat as "all topics"
             await admin.cmd_clear(mock_message,
                                   test_session,
                                   topic_was_created=True)
 
-            # Should delete ALL topics (silently, no confirmation message)
-            assert mock_message.bot.delete_forum_topic.call_count == 2
+            # Now shows confirmation instead of immediate deletion
+            mock_message.answer.assert_called_once()
+            response = mock_message.answer.call_args[0][0]
+            assert "2" in response  # Number of topics

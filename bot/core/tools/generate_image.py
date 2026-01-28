@@ -187,48 +187,41 @@ matplotlib or plotly instead.
 }
 
 
-async def _get_image_from_file_id(file_id: str) -> Optional[Image.Image]:
-    """Load image from file ID (Claude Files API or exec_cache).
+async def _get_image_from_file_id(
+    file_id: str,
+    bot: 'Bot',
+    session: 'AsyncSession',
+) -> Optional[Image.Image]:
+    """Load image from file ID using unified FileManager.
 
     Args:
-        file_id: Either claude_file_id (file_xxx) or temp_id (exec_xxx).
+        file_id: Any file ID format (exec_xxx, file_xxx, or telegram_file_id).
+        bot: Telegram bot instance.
+        session: Database session.
 
     Returns:
         PIL Image object or None if not found/not image.
     """
+    # Import here to avoid circular dependencies
+    from core.file_manager import \
+        FileManager  # pylint: disable=import-outside-toplevel
+
     try:
-        # Check exec_cache first (temporary generated files)
-        if file_id.startswith("exec_"):
-            from cache.exec_cache import \
-                get_exec_file  # pylint: disable=import-outside-toplevel
-            content, meta = await get_exec_file(file_id)
-            if content and meta:
-                mime = meta.get("mime_type", "")
-                if mime.startswith("image/"):
-                    return Image.open(io.BytesIO(content))
+        file_manager = FileManager(bot, session)
+        content, metadata = await file_manager.get_file_content(file_id)
+
+        mime_type = metadata.get("mime_type", "")
+        if not mime_type.startswith("image/"):
             logger.info("generate_image.file_not_image",
                         file_id=file_id,
-                        mime_type=meta.get("mime_type") if meta else None)
+                        mime_type=mime_type)
             return None
 
-        # Download from Claude Files API (beta.files.download)
-        if file_id.startswith("file_"):
-            from core.clients import \
-                get_anthropic_client  # pylint: disable=import-outside-toplevel
+        return Image.open(io.BytesIO(content))
 
-            client = get_anthropic_client(use_files_api=True)
-
-            # Run in thread pool to avoid blocking
-            def _download() -> bytes:
-                # Use beta.files.download for Files API
-                return client.beta.files.download(file_id=file_id)
-
-            content = await asyncio.to_thread(_download)
-            return Image.open(io.BytesIO(content))
-
-        logger.warning("generate_image.unknown_file_id_format", file_id=file_id)
+    except FileNotFoundError:
+        logger.info("generate_image.file_not_found", file_id=file_id)
         return None
-
     except Exception as e:  # pylint: disable=broad-exception-caught
         logger.info("generate_image.file_load_error",
                     file_id=file_id,
@@ -303,7 +296,7 @@ async def generate_image(  # pylint: disable=too-many-locals,too-many-branches,t
         if source_file_ids:
             loaded_count = 0
             for file_id in source_file_ids[:14]:  # Max 14 reference images
-                img = await _get_image_from_file_id(file_id)
+                img = await _get_image_from_file_id(file_id, bot, session)
                 if img:
                     contents.append(img)
                     loaded_count += 1

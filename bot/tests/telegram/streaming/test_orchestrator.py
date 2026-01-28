@@ -33,7 +33,7 @@ from telegram.streaming.types import ToolCall
 
 
 @dataclass
-class MockStreamEvent:
+class MockStreamEvent:  # pylint: disable=too-many-instance-attributes
     """Mock stream event from Claude API."""
 
     type: str
@@ -43,6 +43,7 @@ class MockStreamEvent:
     tool_input: dict | None = None
     stop_reason: str | None = None
     final_message: Any = None
+    is_server_tool: bool = False
 
 
 @dataclass
@@ -367,7 +368,7 @@ class TestStreamingOrchestratorStream:
                     "telegram.streaming.orchestrator.DraftManager",
                     return_value=mock_draft_manager,
                 ),
-                patch("telegram.streaming.orchestrator.ActionManager") as
+                patch("telegram.streaming.orchestrator.ChatActionManager") as
                 mock_action_cls,
         ):
             # Setup context managers
@@ -455,7 +456,7 @@ class TestStreamingOrchestratorStream:
                     "telegram.streaming.orchestrator.DraftManager",
                     return_value=mock_draft_manager,
                 ),
-                patch("telegram.streaming.orchestrator.ActionManager") as
+                patch("telegram.streaming.orchestrator.ChatActionManager") as
                 mock_action_cls,
         ):
             mock_gen_ctx.return_value.__aenter__ = AsyncMock(
@@ -522,7 +523,7 @@ class TestStreamingOrchestratorStream:
                     "telegram.streaming.orchestrator.DraftManager",
                     return_value=mock_draft_manager,
                 ),
-                patch("telegram.streaming.orchestrator.ActionManager") as
+                patch("telegram.streaming.orchestrator.ChatActionManager") as
                 mock_action_cls,
         ):
             mock_gen_ctx.return_value.__aenter__ = AsyncMock(
@@ -631,7 +632,7 @@ class TestStreamingOrchestratorStream:
                     "telegram.streaming.orchestrator.DraftManager",
                     return_value=mock_draft_manager,
                 ),
-                patch("telegram.streaming.orchestrator.ActionManager") as
+                patch("telegram.streaming.orchestrator.ChatActionManager") as
                 mock_action_cls,
                 patch.object(
                     orchestrator,
@@ -736,7 +737,7 @@ class TestStreamingOrchestratorStream:
                     "telegram.streaming.orchestrator.DraftManager",
                     return_value=mock_draft_manager,
                 ),
-                patch("telegram.streaming.orchestrator.ActionManager") as
+                patch("telegram.streaming.orchestrator.ChatActionManager") as
                 mock_action_cls,
                 patch.object(
                     orchestrator,
@@ -809,7 +810,7 @@ class TestStreamingOrchestratorStream:
                     "telegram.streaming.orchestrator.DraftManager",
                     return_value=mock_draft_manager,
                 ),
-                patch("telegram.streaming.orchestrator.ActionManager") as
+                patch("telegram.streaming.orchestrator.ChatActionManager") as
                 mock_action_cls,
         ):
             mock_gen_ctx.return_value.__aenter__ = AsyncMock(
@@ -872,7 +873,7 @@ class TestStreamingOrchestratorStream:
                     "telegram.streaming.orchestrator.DraftManager",
                     return_value=mock_draft_manager,
                 ),
-                patch("telegram.streaming.orchestrator.ActionManager") as
+                patch("telegram.streaming.orchestrator.ChatActionManager") as
                 mock_action_cls,
         ):
             mock_gen_ctx.return_value.__aenter__ = AsyncMock(
@@ -956,7 +957,7 @@ class TestStreamingOrchestratorStream:
                     "telegram.streaming.orchestrator.DraftManager",
                     return_value=mock_draft_manager,
                 ),
-                patch("telegram.streaming.orchestrator.ActionManager") as
+                patch("telegram.streaming.orchestrator.ChatActionManager") as
                 mock_action_cls,
         ):
             mock_gen_ctx.return_value.__aenter__ = AsyncMock(
@@ -1077,7 +1078,7 @@ class TestStreamingOrchestratorStream:
                     "telegram.streaming.orchestrator.DraftManager",
                     return_value=mock_draft_manager,
                 ),
-                patch("telegram.streaming.orchestrator.ActionManager") as
+                patch("telegram.streaming.orchestrator.ChatActionManager") as
                 mock_action_cls,
                 patch.object(
                     orchestrator,
@@ -1147,7 +1148,7 @@ class TestStreamingOrchestratorStream:
                     "telegram.streaming.orchestrator.DraftManager",
                     return_value=mock_draft_manager,
                 ),
-                patch("telegram.streaming.orchestrator.ActionManager") as
+                patch("telegram.streaming.orchestrator.ChatActionManager") as
                 mock_action_cls,
         ):
             mock_gen_ctx.return_value.__aenter__ = AsyncMock(
@@ -1243,7 +1244,7 @@ class TestStreamingOrchestratorMaxIterations:
                     "telegram.streaming.orchestrator.DraftManager",
                     return_value=mock_draft_manager,
                 ),
-                patch("telegram.streaming.orchestrator.ActionManager") as
+                patch("telegram.streaming.orchestrator.ChatActionManager") as
                 mock_action_cls,
                 patch.object(
                     orchestrator,

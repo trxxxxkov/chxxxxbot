@@ -18,12 +18,9 @@ import asyncio
 from typing import Any, Dict, Optional, TYPE_CHECKING
 
 from anthropic import APIStatusError
-from cache.exec_cache import get_exec_file
-from cache.exec_cache import get_exec_meta
 from core.clients import get_anthropic_client
 from core.pricing import calculate_claude_cost
 from core.pricing import cost_to_float
-from db.repositories.user_file_repository import UserFileRepository
 from utils.structured_logging import get_logger
 
 if TYPE_CHECKING:
@@ -119,86 +116,6 @@ PAID for images/PDF (Claude Vision API, ~$0.003-0.01).
         "required": ["file_id"]
     }
 }
-
-
-async def _get_file_from_exec_cache(
-    temp_id: str,) -> tuple[Optional[bytes], Optional[Dict[str, Any]]]:
-    """Get file from execute_python Redis cache.
-
-    Args:
-        temp_id: Temporary file ID (exec_xxx).
-
-    Returns:
-        Tuple of (content bytes, metadata dict) or (None, None) if not found.
-    """
-    metadata = await get_exec_meta(temp_id)
-    if not metadata:
-        return None, None
-
-    content = await get_exec_file(temp_id)
-    if not content:
-        return None, None
-
-    return content, metadata
-
-
-async def _get_file_from_db(
-    file_id: str,
-    session: 'AsyncSession',
-    bot: 'Bot',
-) -> tuple[Optional[bytes], Optional[Dict[str, Any]], Optional[str]]:
-    """Get file from database (telegram or claude file_id).
-
-    Args:
-        file_id: Claude file_id or Telegram file_id.
-        session: Database session.
-        bot: Telegram bot for downloading.
-
-    Returns:
-        Tuple of (content bytes, metadata dict, claude_file_id) or
-        (None, None, None) if not found.
-    """
-    user_file_repo = UserFileRepository(session)
-
-    # Try to find by claude_file_id first
-    user_file = await user_file_repo.get_by_claude_file_id(file_id)
-
-    # If not found, try by telegram_file_id
-    if not user_file:
-        user_file = await user_file_repo.get_by_telegram_file_id(file_id)
-
-    if not user_file:
-        return None, None, None
-
-    # Build metadata
-    metadata = {
-        "filename": user_file.filename,
-        "mime_type": user_file.mime_type,
-        "file_size": user_file.file_size,
-        "file_type": user_file.file_type.value,
-    }
-
-    # Download content
-    try:
-        if user_file.telegram_file_id:
-            # Download from Telegram
-            tg_file = await bot.get_file(user_file.telegram_file_id)
-            from io import BytesIO
-            buffer = BytesIO()
-            await bot.download_file(tg_file.file_path, buffer)
-            content = buffer.getvalue()
-        else:
-            # Download from Files API
-            from core.claude.files_api import download_from_files_api
-            content = await download_from_files_api(user_file.claude_file_id)
-
-        return content, metadata, user_file.claude_file_id
-
-    except Exception as e:
-        logger.info("preview_file.download_failed",
-                    file_id=file_id,
-                    error=str(e))
-        return None, None, None
 
 
 def _is_text_format(mime_type: str, filename: str) -> bool:
@@ -814,35 +731,33 @@ async def preview_file(
     Returns:
         Dict with file content preview, optionally with cost_usd for paid ops.
     """
+    # Import here to avoid circular dependencies
+    from core.file_manager import \
+        FileManager  # pylint: disable=import-outside-toplevel
+
     logger.info("tools.preview_file.called",
                 file_id=file_id,
                 question_length=len(question),
                 max_rows=max_rows,
                 max_chars=max_chars)
 
-    content: Optional[bytes] = None
-    metadata: Optional[Dict[str, Any]] = None
-    claude_file_id: Optional[str] = None
+    # Use unified FileManager for file retrieval
+    file_manager = FileManager(bot, session)
 
-    # Determine source and get file
-    if file_id.startswith("exec_"):
-        content, metadata = await _get_file_from_exec_cache(file_id)
-        if not content:
+    try:
+        content, metadata = await file_manager.get_file_content(file_id)
+    except FileNotFoundError as e:
+        error_msg = str(e)
+        if "expired" in error_msg.lower():
             return {
                 "success": "false",
                 "error": f"File '{file_id}' not found or expired (30 min TTL)"
             }
-    else:
-        content, metadata, claude_file_id = await _get_file_from_db(
-            file_id, session, bot)
-        if not content:
-            return {
-                "success": "false",
-                "error": f"File '{file_id}' not found in database"
-            }
+        return {"success": "false", "error": f"File '{file_id}' not found"}
 
     mime_type = metadata.get("mime_type", "application/octet-stream")
     filename = metadata.get("filename", "unknown")
+    claude_file_id = metadata.get("claude_file_id")
 
     logger.debug("preview_file.processing",
                  file_id=file_id,

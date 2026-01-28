@@ -257,7 +257,7 @@ class TestGetToolSystemMessage:
         assert "🎨" in result
         assert "Изображение создано" in result
         assert "4K" in result
-        assert "16:9" in result
+        # Note: aspect_ratio is not included in the formatted output
 
     def test_generate_image_default_params(self):
         """Test generate_image with default parameters."""

@@ -3,6 +3,7 @@
 This module provides a centralized interface for file handling across the bot:
 - Download from Telegram storage
 - Download from Claude Files API
+- Download from exec_cache (temporary generated files)
 - Redis caching (automatic)
 - Database metadata queries
 
@@ -11,7 +12,7 @@ NO __init__.py - use direct import:
 """
 
 import asyncio
-from typing import Optional, TYPE_CHECKING
+from typing import Any, Optional, TYPE_CHECKING
 
 from cache.file_cache import cache_file
 from cache.file_cache import get_cached_file
@@ -305,3 +306,235 @@ class FileManager:
         )
 
         return content
+
+    async def get_file_content(
+        self,
+        file_id: str,
+        use_cache: bool = True,
+    ) -> tuple[bytes, dict[str, Any]]:
+        """Unified file retrieval from any source.
+
+        Routes by file_id prefix:
+        - exec_* → exec_cache (temporary generated files)
+        - file_* → DB lookup → Telegram or Files API
+        - other  → Telegram download (assumes telegram_file_id)
+
+        Args:
+            file_id: Any supported file ID format.
+            use_cache: Use Redis cache for Telegram files.
+
+        Returns:
+            Tuple of (content_bytes, metadata_dict).
+            Metadata contains:
+            - filename: str
+            - mime_type: str
+            - file_size: int
+            - source: "exec_cache" | "telegram" | "files_api"
+            - context: str | None (only for exec_cache)
+            - preview: str | None (only for exec_cache)
+            - claude_file_id: str | None (only for DB files)
+
+        Raises:
+            FileNotFoundError: If file not found in any source.
+        """
+        logger.info(
+            "file_manager.get_file_content",
+            file_id=file_id,
+            use_cache=use_cache,
+        )
+
+        # Route by prefix
+        if file_id.startswith("exec_"):
+            return await self._get_from_exec_cache(file_id)
+
+        if file_id.startswith("file_"):
+            return await self._get_from_db_by_claude_id(file_id, use_cache)
+
+        # Assume telegram_file_id - try DB first, then direct download
+        return await self._get_from_db_or_telegram(file_id, use_cache)
+
+    async def _get_from_exec_cache(
+        self,
+        temp_id: str,
+    ) -> tuple[bytes, dict[str, Any]]:
+        """Get file from exec_cache (temporary generated files).
+
+        Args:
+            temp_id: Temporary file ID (exec_xxx).
+
+        Returns:
+            Tuple of (content, metadata).
+
+        Raises:
+            FileNotFoundError: If file not found or expired.
+        """
+        # Import here to avoid circular dependencies
+        from cache.exec_cache import \
+            get_exec_file  # pylint: disable=import-outside-toplevel
+        from cache.exec_cache import \
+            get_exec_meta  # pylint: disable=import-outside-toplevel
+
+        metadata = await get_exec_meta(temp_id)
+        if not metadata:
+            logger.info("file_manager.exec_cache_miss", temp_id=temp_id)
+            raise FileNotFoundError(
+                f"File '{temp_id}' not found or expired (30 min TTL)")
+
+        content = await get_exec_file(temp_id)
+        if not content:
+            logger.info("file_manager.exec_cache_content_miss", temp_id=temp_id)
+            raise FileNotFoundError(
+                f"File '{temp_id}' content not found (may have expired)")
+
+        logger.info(
+            "file_manager.exec_cache_hit",
+            temp_id=temp_id,
+            filename=metadata.get("filename"),
+            size_bytes=len(content),
+        )
+
+        return content, {
+            "filename": metadata.get("filename", "unknown"),
+            "mime_type": metadata.get("mime_type", "application/octet-stream"),
+            "file_size": len(content),
+            "source": "exec_cache",
+            "context": metadata.get("context"),
+            "preview": metadata.get("preview"),
+        }
+
+    async def _get_from_db_by_claude_id(
+        self,
+        claude_file_id: str,
+        use_cache: bool,
+    ) -> tuple[bytes, dict[str, Any]]:
+        """Get file by Claude file_id from database.
+
+        Args:
+            claude_file_id: Claude Files API file ID.
+            use_cache: Use Redis cache for Telegram files.
+
+        Returns:
+            Tuple of (content, metadata).
+
+        Raises:
+            FileNotFoundError: If file not found.
+        """
+        # Import here to avoid circular dependencies
+        from db.repositories.user_file_repository import \
+            UserFileRepository  # pylint: disable=import-outside-toplevel
+
+        repo = UserFileRepository(self.session)
+        user_file = await repo.get_by_claude_file_id(claude_file_id)
+
+        if not user_file:
+            logger.info(
+                "file_manager.db_miss",
+                claude_file_id=claude_file_id,
+            )
+            raise FileNotFoundError(
+                f"File '{claude_file_id}' not found in database")
+
+        return await self._download_user_file(user_file, use_cache)
+
+    async def _get_from_db_or_telegram(
+        self,
+        file_id: str,
+        use_cache: bool,
+    ) -> tuple[bytes, dict[str, Any]]:
+        """Get file by telegram_file_id - try DB first, then direct download.
+
+        Args:
+            file_id: Telegram file_id or unknown format.
+            use_cache: Use Redis cache.
+
+        Returns:
+            Tuple of (content, metadata).
+
+        Raises:
+            FileNotFoundError: If file not found.
+        """
+        # Import here to avoid circular dependencies
+        from db.repositories.user_file_repository import \
+            UserFileRepository  # pylint: disable=import-outside-toplevel
+
+        repo = UserFileRepository(self.session)
+
+        # Try to find by telegram_file_id in database
+        user_file = await repo.get_by_telegram_file_id(file_id)
+
+        if user_file:
+            return await self._download_user_file(user_file, use_cache)
+
+        # Not in DB - try direct Telegram download
+        try:
+            content = await self.download_by_telegram_id(
+                file_id,
+                use_cache=use_cache,
+            )
+            return content, {
+                "filename": "unknown",
+                "mime_type": "application/octet-stream",
+                "file_size": len(content),
+                "source": "telegram",
+                "claude_file_id": None,
+            }
+        except Exception as e:
+            logger.info(
+                "file_manager.telegram_download_failed",
+                file_id=file_id,
+                error=str(e),
+            )
+            raise FileNotFoundError(
+                f"File '{file_id}' not found in database or Telegram") from e
+
+    async def _download_user_file(
+        self,
+        user_file: Any,
+        use_cache: bool,
+    ) -> tuple[bytes, dict[str, Any]]:
+        """Download content for a UserFile record.
+
+        Args:
+            user_file: UserFile database record.
+            use_cache: Use Redis cache for Telegram files.
+
+        Returns:
+            Tuple of (content, metadata).
+        """
+        metadata = {
+            "filename":
+                user_file.filename,
+            "mime_type":
+                user_file.mime_type,
+            "file_size":
+                user_file.file_size,
+            "claude_file_id":
+                user_file.claude_file_id,
+            "file_type":
+                user_file.file_type.value if user_file.file_type else None,
+        }
+
+        # Prefer Telegram download if available
+        if user_file.telegram_file_id:
+            content = await self.download_by_telegram_id(
+                user_file.telegram_file_id,
+                use_cache=use_cache,
+            )
+            metadata["source"] = "telegram"
+            logger.info(
+                "file_manager.downloaded_from_telegram",
+                claude_file_id=user_file.claude_file_id,
+                telegram_file_id=user_file.telegram_file_id,
+                size_bytes=len(content),
+            )
+            return content, metadata
+
+        # Fallback to Files API
+        content = await self.download_from_files_api(user_file.claude_file_id)
+        metadata["source"] = "files_api"
+        logger.info(
+            "file_manager.downloaded_from_files_api",
+            claude_file_id=user_file.claude_file_id,
+            size_bytes=len(content),
+        )
+        return content, metadata
