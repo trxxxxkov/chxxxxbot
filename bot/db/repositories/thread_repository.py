@@ -250,21 +250,18 @@ class ThreadRepository(BaseRepository[Thread]):
         chat_id: int,
         topic_id: int,
     ) -> int:
-        """Delete user_files for a specific Telegram topic.
+        """Clear cached file bodies for a specific Telegram topic.
 
-        Only deletes user_files linked to messages in these threads.
-        Threads and messages are preserved in the database.
+        Only clears Redis cache (file bodies, exec files, sandbox).
+        All database records (threads, messages, user_files metadata) are preserved.
 
         Args:
             chat_id: Telegram chat ID.
             topic_id: Telegram forum topic ID (thread_id).
 
         Returns:
-            Number of files deleted.
+            Number of cache entries cleared.
         """
-        from db.models.message import Message
-        from db.models.user_file import UserFile
-        from sqlalchemy import delete as sql_delete
         from utils.structured_logging import get_logger
 
         logger = get_logger(__name__)
@@ -280,25 +277,7 @@ class ThreadRepository(BaseRepository[Thread]):
         if not thread_ids:
             return 0
 
-        # 2. Get all message IDs in these threads
-        message_ids_stmt = select(Message.message_id).where(
-            Message.chat_id == chat_id,
-            Message.thread_id.in_(thread_ids),
-        )
-        message_ids_result = await self.session.execute(message_ids_stmt)
-        message_ids = [row[0] for row in message_ids_result.fetchall()]
-
-        # 3. Delete user_files for these messages
-        deleted_files = 0
-        if message_ids:
-            files_stmt = sql_delete(UserFile).where(
-                UserFile.message_id.in_(message_ids))
-            files_result = await self.session.execute(files_stmt)
-            deleted_files = files_result.rowcount
-
-        await self.session.flush()
-
-        # 4. Clear Redis cache for each thread
+        # 2. Clear Redis cache for each thread (file bodies only, not DB records)
         from cache.thread_cache import clear_thread_cache
 
         cache_stats = {"messages": 0, "files": 0, "exec_files": 0, "sandbox": 0}
@@ -307,14 +286,14 @@ class ThreadRepository(BaseRepository[Thread]):
             for key in cache_stats:
                 cache_stats[key] += stats.get(key, 0)
 
+        total_cleared = sum(cache_stats.values())
+
         logger.info(
-            "thread.clear_files",
+            "thread.clear_cache",
             chat_id=chat_id,
             topic_id=topic_id,
             thread_count=len(thread_ids),
-            message_count=len(message_ids),
-            deleted_db_files=deleted_files,
             cleared_cache=cache_stats,
         )
 
-        return deleted_files
+        return total_cleared
