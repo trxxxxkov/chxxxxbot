@@ -1308,16 +1308,17 @@ class TestSystemPromptIntegration:
         assert "<self_critique_usage>" in GLOBAL_SYSTEM_PROMPT
         assert "</self_critique_usage>" in GLOBAL_SYSTEM_PROMPT
 
-    def test_system_prompt_mentions_triggers(self):
-        """Test system prompt includes trigger phrases."""
+    def test_system_prompt_mentions_decision_flow(self):
+        """Test system prompt includes dynamic decision flow."""
         from prompts.system_prompt import GLOBAL_SYSTEM_PROMPT
 
-        # Russian triggers
-        assert "переделай" in GLOBAL_SYSTEM_PROMPT
-        assert "проверь" in GLOBAL_SYSTEM_PROMPT
+        # Dynamic decision-making keywords
+        assert "decide" in GLOBAL_SYSTEM_PROMPT.lower()
+        assert "verification" in GLOBAL_SYSTEM_PROMPT.lower()
 
-        # English triggers
-        assert "redo" in GLOBAL_SYSTEM_PROMPT or "wrong" in GLOBAL_SYSTEM_PROMPT
+        # Workflow elements
+        assert "PASS" in GLOBAL_SYSTEM_PROMPT
+        assert "fix" in GLOBAL_SYSTEM_PROMPT.lower()
 
     def test_system_prompt_mentions_cost(self):
         """Test system prompt includes cost information."""

@@ -8,6 +8,8 @@ The subagent has access to tools:
 - preview_file: Examine any file type
 - analyze_image: Vision analysis
 - analyze_pdf: PDF analysis
+- web_search: Search the web to verify facts (server-side, $0.01/search)
+- web_fetch: Read full content of web pages (documentation, articles)
 
 Cost:
 - Requires balance >= $0.50 to start
@@ -47,10 +49,11 @@ VERIFICATION_MODEL_ID = "claude:opus"
 MIN_BALANCE_FOR_CRITIQUE = Decimal("0.50")
 
 # Maximum iterations for subagent tool loop
-MAX_SUBAGENT_ITERATIONS = 20
+# High limit to allow extensive web searching for fact verification
+MAX_SUBAGENT_ITERATIONS = 40
 
-# Extended thinking budget for deep analysis
-THINKING_BUDGET_TOKENS = 10000
+# Extended thinking budget for deep analysis (doubled for thorough verification)
+THINKING_BUDGET_TOKENS = 16000
 
 # =============================================================================
 # Prometheus Metrics
@@ -130,13 +133,40 @@ Available tools:
 - preview_file: Examine any file - images, PDFs, CSV, text, code
 - analyze_image: Deep vision analysis of images
 - analyze_pdf: Analyze PDF content and structure
-
-PARALLEL EXECUTION: When multiple verifications are independent, run them
-in parallel. For example:
-- Checking code AND visualizing output -> parallel
-- Running tests for multiple functions -> parallel
-- Analyzing multiple files -> parallel
+- web_search: Search the internet to verify facts, check claims, find
+  authoritative sources. USE EXTENSIVELY for fact-checking!
+- web_fetch: Fetch and read full content of web pages (documentation, articles).
+  Use after web_search to read complete documentation pages.
 </verification_tools>
+
+<parallel_tool_execution>
+If you intend to call multiple tools and there are no dependencies between the
+tool calls, make ALL independent tool calls in parallel. Maximize use of parallel
+tool calls to increase speed and efficiency.
+
+Examples of parallel execution:
+- Checking code AND visualizing output → parallel
+- Running tests for multiple functions → parallel
+- Analyzing multiple files → parallel
+- Searching for multiple facts simultaneously → parallel (HIGHLY RECOMMENDED)
+- Verifying library docs AND running tests → parallel
+
+However, if some tool calls depend on previous calls to inform parameters, call
+those tools sequentially. Never use placeholders or guess missing parameters.
+</parallel_tool_execution>
+
+<thinking_guidance>
+After receiving tool results, carefully reflect on their quality and determine
+optimal next steps before proceeding. Use your thinking to:
+- Plan which verifications to run next based on findings
+- Iterate based on new information
+- Track confidence levels in your assessments
+- Self-critique your own verification approach
+
+For complex verification tasks, develop competing hypotheses about potential
+issues and systematically test each one. Update your confidence as you gather
+evidence.
+</thinking_guidance>
 
 <verification_workflow>
 Follow this systematic approach:
@@ -173,6 +203,30 @@ Follow this systematic approach:
    - Verify content matches what was requested
    - Check formatting, completeness
 
+   For FACTS/CLAIMS:
+   - USE WEB_SEARCH EXTENSIVELY to verify factual claims
+   - Search for authoritative sources (official docs, Wikipedia, etc.)
+   - Cross-reference multiple sources
+   - Check dates, numbers, names, technical specifications
+   - Don't trust the original response's facts without verification
+
+   For CODE WITH EXTERNAL LIBRARIES/APIs:
+   - ALWAYS search for the OFFICIAL documentation of libraries used
+   - Verify API methods, parameters, and return types are CURRENT
+   - Check if the library version implied is up-to-date
+   - Search for "[library] changelog" or "[library] migration guide"
+   - Look for deprecation warnings or breaking changes
+   - Verify correct import paths and package names
+   - Check if there are newer, better alternatives
+   - Example searches: "pandas read_csv parameters 2024", "requests library
+     timeout parameter", "numpy array creation best practices"
+
+   CRITICAL: Libraries evolve! Code that worked 6 months ago may be:
+   - Using deprecated functions
+   - Missing new required parameters
+   - Using old import paths
+   - Incompatible with current versions
+
 4. ALIGNMENT CHECK
    - Does the output ACTUALLY answer the user's request?
    - Not "sort of" or "mostly" - EXACTLY?
@@ -195,7 +249,8 @@ After verification, respond with a JSON object ONLY:
     {
       "severity": "critical" | "major" | "minor",
       "category": "accuracy" | "completeness" | "logic" | "user_intent" |
-                  "code_correctness" | "formatting" | "edge_cases",
+                  "code_correctness" | "formatting" | "edge_cases" |
+                  "api_outdated" | "factual_error" | "security",
       "description": "<specific description of the issue>",
       "location": "<where in the content: line number, paragraph, file name>",
       "evidence": "<what you found that proves this is an issue>"
@@ -238,6 +293,40 @@ Remember: A false "PASS" wastes user's time and money.
 A harsh but accurate "FAIL" helps them get better results.
 </rating_guidelines>
 
+<web_search_strategy>
+Use web_search EXTENSIVELY for verification. Search proactively and often.
+After finding relevant URLs, use web_fetch to read full documentation pages.
+
+WORKFLOW: web_search → find URLs → web_fetch to read full content
+
+For FACTUAL CLAIMS:
+- Search for authoritative sources (Wikipedia, official docs, academic papers)
+- Cross-reference at least 2-3 sources for important facts
+- Check dates, numbers, names, technical specifications
+- Search: "[topic] fact check", "[claim] true or false"
+- Use web_fetch to read Wikipedia articles or reference pages in full
+
+For CODE/LIBRARIES:
+- ALWAYS search for official documentation of any library mentioned
+- Search: "[library] official documentation [year]"
+- Search: "[library] changelog", "[library] breaking changes"
+- Search: "[function name] deprecated", "[library] migration guide"
+- Use web_fetch to read the FULL documentation page, not just snippets!
+- Verify import paths, method signatures, parameter names
+- Check if there are newer/better alternatives
+
+For APIs:
+- Search: "[API name] documentation [year]"
+- Search: "[API] rate limits", "[API] authentication"
+- Use web_fetch to read the COMPLETE API reference
+- Verify endpoint URLs, required headers, response formats
+- Check for version changes or deprecations
+
+IMPORTANT: Don't trust your training data for library/API information!
+Libraries change frequently. ALWAYS verify against current documentation.
+Use web_fetch to read full docs - search snippets are often incomplete!
+</web_search_strategy>
+
 <context_awareness>
 You have a limited context window for this verification task.
 Focus on the most important verifications first.
@@ -247,6 +336,23 @@ If you run out of context, provide your best assessment based on what you verifi
 # =============================================================================
 # Tools available to the subagent
 # =============================================================================
+
+# Server-side tools (Anthropic handles execution)
+WEB_SEARCH_TOOL = {
+    "type": "web_search_20250305",
+    "name": "web_search",
+    "max_uses": 100,  # Allow extensive searches for thorough fact-checking
+}
+
+WEB_FETCH_TOOL = {
+    "type": "web_fetch_20250910",
+    "name": "web_fetch",
+    "max_uses": 50,  # Allow fetching documentation pages
+    "citations": {
+        "enabled": True
+    },
+    "max_content_tokens": 50000,  # Reasonable limit for docs
+}
 
 SUBAGENT_TOOLS = [{
     "name": "execute_python",
@@ -367,23 +473,23 @@ The subagent can:
 - Run Python code to test your solutions (execute_python)
 - Examine files you generated (preview_file)
 - Analyze images/PDFs with Vision (analyze_image, analyze_pdf)
+- Search the web to verify facts and claims (web_search)
+- Fetch and read full documentation pages (web_fetch)
 
 COST: Requires balance >= $0.50. User pays actual Opus token costs + tool costs.
 Typical cost: $0.03-0.15 per verification.
 
-USE THIS TOOL IN THESE CASES:
+WHEN TO USE: You decide. Consider verification when quality matters or you're uncertain.
 
-1. AFTER USER DISSATISFACTION
-   Triggers: "переделай", "не то", "неправильно", "redo", "wrong", "try again"
-   Workflow: Generate new version -> self_critique -> if FAIL: iterate -> deliver when PASS
+DYNAMIC WORKFLOW:
+1. Generate solution → decide if verification needed → if yes, call self_critique
+2. After receiving critique, evaluate the issues:
+   - Trivial/clear fixes → fix and deliver (no more critique needed)
+   - Non-trivial fixes → fix and call self_critique again
+   - PASS → deliver with confidence
+3. Decide at each step whether another round is needed (max 3 rounds)
 
-2. WHEN USER REQUESTS VERIFICATION
-   Triggers: "проверь", "убедись", "тщательно", "точно", "verify", "make sure"
-   Workflow: Complete task -> self_critique -> fix if needed -> deliver
-
-3. DURING COMPLEX TASKS (your judgment)
-   When: Long reasoning chains, 50+ lines of code, uncertain correctness
-   Workflow: Generate -> self_critique -> iterate if needed -> deliver
+The subagent can: test code, check visual outputs, search current API docs, find flaws.
 
 Returns structured verdict: PASS, FAIL, or NEEDS_IMPROVEMENT with specific issues.""",
     "input_schema": {
@@ -830,7 +936,7 @@ async def execute_self_critique(
                 "budget_tokens": THINKING_BUDGET_TOKENS
             },
             system=CRITICAL_REVIEWER_SYSTEM_PROMPT,
-            tools=SUBAGENT_TOOLS,
+            tools=SUBAGENT_TOOLS + [WEB_SEARCH_TOOL, WEB_FETCH_TOOL],
             messages=messages)
 
         # Track token costs
