@@ -677,6 +677,41 @@ class ClaudeProvider(LLMProvider):
         """
         return self.last_thinking
 
+    def _sanitize_block_for_api(self, block_dict: dict) -> dict:
+        """Remove fields that API returns but doesn't accept on input.
+
+        Server-side tool results (web_search, web_fetch) include 'citations'
+        field that must be stripped before sending back to API.
+
+        Args:
+            block_dict: Serialized content block.
+
+        Returns:
+            Sanitized block dict safe to send to API.
+        """
+        block_type = block_dict.get("type", "")
+
+        # Remove 'citations' from server tool result blocks
+        if block_type in ("server_tool_result", "web_search_tool_result",
+                          "web_fetch_tool_result"):
+            block_dict = block_dict.copy()
+            block_dict.pop("citations", None)
+
+        # Also check nested content for server tool results
+        if "content" in block_dict and isinstance(block_dict["content"], list):
+            cleaned_content = []
+            for item in block_dict["content"]:
+                if isinstance(item, dict):
+                    item_copy = item.copy()
+                    item_copy.pop("citations", None)
+                    cleaned_content.append(item_copy)
+                else:
+                    cleaned_content.append(item)
+            block_dict = block_dict.copy()
+            block_dict["content"] = cleaned_content
+
+        return block_dict
+
     def get_thinking_blocks_json(self) -> Optional[str]:
         """Get full assistant content blocks as JSON for context preservation.
 
@@ -686,6 +721,9 @@ class ClaudeProvider(LLMProvider):
 
         IMPORTANT: The content must be preserved without modification to avoid
         'thinking blocks cannot be modified' errors from the API.
+
+        Note: Server-side tool results have 'citations' field stripped as API
+        doesn't accept it on input.
 
         Returns:
             JSON string of ALL content blocks or None if no message available.
@@ -712,9 +750,12 @@ class ClaudeProvider(LLMProvider):
             if hasattr(block, 'model_dump'):
                 # Pydantic model - use model_dump for complete serialization
                 block_dict = block.model_dump(exclude_none=True)
+                # Sanitize for API (remove citations from server tool results)
+                block_dict = self._sanitize_block_for_api(block_dict)
                 content_blocks.append(block_dict)
             elif isinstance(block, dict):
-                content_blocks.append(block)
+                block_dict = self._sanitize_block_for_api(block)
+                content_blocks.append(block_dict)
             else:
                 # Fallback: try to convert to dict
                 try:

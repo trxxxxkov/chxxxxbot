@@ -79,6 +79,47 @@ def get_tool_system_message(
     return _get_msg(tool_name, tool_input, result)
 
 
+def serialize_content_block(block) -> dict:
+    """Serialize a content block for Claude API.
+
+    Removes fields that are returned by API but not accepted on input,
+    such as 'citations' in server_tool_result blocks.
+
+    Args:
+        block: Content block (Pydantic model or dict).
+
+    Returns:
+        Serialized dict safe to send back to API.
+    """
+    if hasattr(block, 'model_dump'):
+        block_dict = block.model_dump()
+    elif isinstance(block, dict):
+        block_dict = block.copy()
+    else:
+        return block
+
+    # Remove 'citations' from server_tool_result blocks
+    # API returns this field but doesn't accept it on input
+    block_type = block_dict.get("type", "")
+    if block_type in ("server_tool_result", "web_search_tool_result",
+                      "web_fetch_tool_result"):
+        block_dict.pop("citations", None)
+
+    # Also check nested content for server tool results
+    if "content" in block_dict and isinstance(block_dict["content"], list):
+        cleaned_content = []
+        for item in block_dict["content"]:
+            if isinstance(item, dict):
+                item_copy = item.copy()
+                item_copy.pop("citations", None)
+                cleaned_content.append(item_copy)
+            else:
+                cleaned_content.append(item)
+        block_dict["content"] = cleaned_content
+
+    return block_dict
+
+
 class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
     """Orchestrates streaming response with tools and files.
 
@@ -308,12 +349,10 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
                     # They are executed by API automatically, just add to conversation
                     captured_msg = stream.captured_message
                     if captured_msg and captured_msg.content:
-                        serialized_content = []
-                        for block in captured_msg.content:
-                            if hasattr(block, 'model_dump'):
-                                serialized_content.append(block.model_dump())
-                            else:
-                                serialized_content.append(block)
+                        serialized_content = [
+                            serialize_content_block(block)
+                            for block in captured_msg.content
+                        ]
                         conversation.append({
                             "role": "assistant",
                             "content": serialized_content
@@ -498,12 +537,9 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
         # Add to conversation
         captured_msg = stream.captured_message
         if captured_msg and captured_msg.content:
-            serialized_content = []
-            for block in captured_msg.content:
-                if hasattr(block, 'model_dump'):
-                    serialized_content.append(block.model_dump())
-                else:
-                    serialized_content.append(block)
+            serialized_content = [
+                serialize_content_block(block) for block in captured_msg.content
+            ]
             conversation.append({
                 "role": "assistant",
                 "content": serialized_content

@@ -48,6 +48,44 @@ class ContextFormatter:
         self.chat_type = chat_type
         self.is_group = chat_type in ("group", "supergroup")
 
+    def _sanitize_block(self, block: dict) -> dict:
+        """Remove fields that API returns but doesn't accept on input.
+
+        Server-side tool results include 'citations' field that must be
+        stripped before sending back to API.
+
+        Args:
+            block: Content block dict.
+
+        Returns:
+            Sanitized block dict safe to send to API.
+        """
+        if not isinstance(block, dict):
+            return block
+
+        block_type = block.get("type", "")
+
+        # Remove 'citations' from server tool result blocks
+        if block_type in ("server_tool_result", "web_search_tool_result",
+                          "web_fetch_tool_result"):
+            block = block.copy()
+            block.pop("citations", None)
+
+        # Also check nested content for server tool results
+        if "content" in block and isinstance(block["content"], list):
+            cleaned_content = []
+            for item in block["content"]:
+                if isinstance(item, dict):
+                    item_copy = item.copy()
+                    item_copy.pop("citations", None)
+                    cleaned_content.append(item_copy)
+                else:
+                    cleaned_content.append(item)
+            block = block.copy()
+            block["content"] = cleaned_content
+
+        return block
+
     def format_message(self, msg: DBMessage) -> LLMMessage:
         """Format a single database message for LLM.
 
@@ -71,8 +109,11 @@ class ContextFormatter:
                 content_blocks = json.loads(msg.thinking_blocks)
                 # Validate it's a list with content blocks
                 if isinstance(content_blocks, list) and content_blocks:
-                    # Use saved content directly - DO NOT MODIFY
-                    content: Union[str, list[dict[str, Any]]] = content_blocks
+                    # Sanitize blocks (remove citations from server tool results)
+                    sanitized = [
+                        self._sanitize_block(b) for b in content_blocks
+                    ]
+                    content: Union[str, list[dict[str, Any]]] = sanitized
                     return LLMMessage(role=role, content=content)
             except (json.JSONDecodeError, TypeError):
                 # Not valid JSON - fall back to text_content
@@ -226,8 +267,11 @@ class ContextFormatter:
                 content_blocks = json.loads(msg.thinking_blocks)
                 # Validate it's a list with content blocks
                 if isinstance(content_blocks, list) and content_blocks:
-                    # Use saved content directly - DO NOT MODIFY
-                    content: Union[str, list[dict[str, Any]]] = content_blocks
+                    # Sanitize blocks (remove citations from server tool results)
+                    sanitized = [
+                        self._sanitize_block(b) for b in content_blocks
+                    ]
+                    content: Union[str, list[dict[str, Any]]] = sanitized
                     return LLMMessage(role=role, content=content)
             except (json.JSONDecodeError, TypeError):
                 pass
