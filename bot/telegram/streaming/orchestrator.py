@@ -262,12 +262,14 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
                                     generating_scope_id)
                                 generating_scope_active = False
                             await stream.handle_tool_use_start(
-                                event.tool_id, event.tool_name)
+                                event.tool_id, event.tool_name,
+                                event.is_server_tool)
                         elif event.type == "block_end":
                             if event.tool_name and event.tool_id:
                                 stream.handle_tool_input_complete(
                                     event.tool_id, event.tool_name,
-                                    event.tool_input or {})
+                                    event.tool_input or {},
+                                    event.is_server_tool)
                                 await stream.update_display()
                             else:
                                 await stream.handle_block_end()
@@ -301,6 +303,27 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
                     if result is not None:
                         return result
                     # Continue to next iteration with updated conversation
+                elif stream.stop_reason == "tool_use" and not stream.pending_tools:
+                    # Only server-side tools were called (web_search, web_fetch)
+                    # They are executed by API automatically, just add to conversation
+                    captured_msg = stream.captured_message
+                    if captured_msg and captured_msg.content:
+                        serialized_content = []
+                        for block in captured_msg.content:
+                            if hasattr(block, 'model_dump'):
+                                serialized_content.append(block.model_dump())
+                            else:
+                                serialized_content.append(block)
+                        conversation.append({
+                            "role": "assistant",
+                            "content": serialized_content
+                        })
+                        logger.info(
+                            "orchestrator.server_tools_only",
+                            thread_id=self._thread_id,
+                            iteration=iteration + 1,
+                        )
+                    # Continue to next iteration
                 else:
                     # Unexpected stop reason
                     return await self._handle_unexpected_stop(stream, dm)

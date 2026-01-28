@@ -168,7 +168,10 @@ class StreamingSession:  # pylint: disable=too-many-instance-attributes
         self._current_block_type = "text"
         await self._update_draft()
 
-    async def handle_tool_use_start(self, tool_id: str, tool_name: str) -> None:
+    async def handle_tool_use_start(self,
+                                    tool_id: str,
+                                    tool_name: str,
+                                    is_server_tool: bool = False) -> None:
         """Handle tool_use event (tool started, input not yet complete).
 
         Finalizes any pending text block and shows tool marker.
@@ -176,6 +179,7 @@ class StreamingSession:  # pylint: disable=too-many-instance-attributes
         Args:
             tool_id: Tool use ID from Claude.
             tool_name: Name of the tool being called.
+            is_server_tool: True for server-side tools (web_search, web_fetch).
         """
         # Finalize any pending content block
         self._finalize_current_block()
@@ -193,23 +197,39 @@ class StreamingSession:  # pylint: disable=too-many-instance-attributes
         logger.info("stream.session.tool_detected",
                     thread_id=self._thread_id,
                     tool_name=tool_name,
-                    tool_id=tool_id)
+                    tool_id=tool_id,
+                    is_server_tool=is_server_tool)
 
-    def handle_tool_input_complete(self, tool_id: str, tool_name: str,
-                                   tool_input: dict[str, Any]) -> None:
+    def handle_tool_input_complete(self,
+                                   tool_id: str,
+                                   tool_name: str,
+                                   tool_input: dict[str, Any],
+                                   is_server_tool: bool = False) -> None:
         """Handle block_end event with complete tool input.
 
         Updates tool marker (for generate_image) and adds to pending tools.
+        Server-side tools (web_search, web_fetch) are NOT added to pending_tools
+        because they are executed by the API automatically.
 
         Args:
             tool_id: Tool use ID from Claude.
             tool_name: Name of the tool.
             tool_input: Complete tool input parameters.
+            is_server_tool: True for server-side tools (web_search, web_fetch).
         """
         # Finalize current block
         self._finalize_current_block()
 
-        # Add tool_use to content blocks
+        # Server-side tools are already executed by API and included in response
+        # Don't add to content_blocks (captured_message has them) or pending_tools
+        if is_server_tool:
+            logger.info("stream.session.server_tool_skipped",
+                        thread_id=self._thread_id,
+                        tool_name=tool_name,
+                        tool_id=tool_id)
+            return
+
+        # Add tool_use to content blocks (client-side tools only)
         self._content_blocks.append({
             "type": "tool_use",
             "id": tool_id,
@@ -232,7 +252,7 @@ class StreamingSession:  # pylint: disable=too-many-instance-attributes
                         old_marker, new_marker)
                     break
 
-        # Add to pending tools
+        # Add to pending tools (client-side only - need execution)
         self._pending_tools.append(
             ToolCall(tool_id=tool_id, name=tool_name, input=tool_input or {}))
 

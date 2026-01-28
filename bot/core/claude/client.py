@@ -858,13 +858,15 @@ class ClaudeProvider(LLMProvider):
                                               tool_id=block.id)
 
                         # Server-side tools (web_search, web_fetch)
+                        # These are executed by API automatically - no client execution
                         elif block.type == "server_tool_use":
                             current_tool_name = block.name
                             current_tool_id = block.id
                             accumulated_json = ""
                             yield StreamEvent(type="tool_use",
                                               tool_name=block.name,
-                                              tool_id=block.id)
+                                              tool_id=block.id,
+                                              is_server_tool=True)
 
                     # Content block delta - yield appropriate event
                     elif event.type == "content_block_delta":
@@ -902,7 +904,8 @@ class ClaudeProvider(LLMProvider):
                             # Server-side tool - already executed, just mark end
                             yield StreamEvent(type="block_end",
                                               tool_name=current_tool_name,
-                                              tool_id=current_tool_id)
+                                              tool_id=current_tool_id,
+                                              is_server_tool=True)
                         else:
                             yield StreamEvent(type="block_end")
 

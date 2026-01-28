@@ -31,6 +31,7 @@ class StreamEvent:  # pylint: disable=too-many-instance-attributes
         final_message: Complete API response message (for stream_complete).
         usage: Token usage statistics (for stream_complete).
         thinking: Thinking text (for stream_complete).
+        is_server_tool: True for server-side tools (web_search, web_fetch).
 
     Event Types:
         - thinking_delta: Chunk of thinking/reasoning text
@@ -54,6 +55,8 @@ class StreamEvent:  # pylint: disable=too-many-instance-attributes
     final_message: Any = None  # anthropic.types.Message
     usage: Any = None  # TokenUsage
     thinking: Optional[str] = None
+    # Server-side tools (web_search, web_fetch) are executed by API automatically
+    is_server_tool: bool = False
 
 
 class Message(BaseModel):
