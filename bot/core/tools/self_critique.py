@@ -769,6 +769,11 @@ async def _execute_subagent_tool(tool_name: str, tool_input: dict[str, Any],
             if "execution_time" in result:
                 e2b_cost = calculate_e2b_cost(result["execution_time"])
                 cost_tracker.add_tool_cost("execute_python", e2b_cost)
+                # Log for Grafana (appears in E2B panel)
+                logger.info("tools.loop.user_charged_for_tool",
+                            tool_name="execute_python",
+                            cost_usd=float(e2b_cost),
+                            source="self_critique")
 
         elif tool_name == "preview_file":
             result = await preview_file(file_id=tool_input["file_id"],
@@ -779,9 +784,14 @@ async def _execute_subagent_tool(tool_name: str, tool_input: dict[str, Any],
                                         session=session,
                                         thread_id=thread_id)
             # Vision API cost tracked by preview_file itself
-            if "cost" in result:
-                cost_tracker.add_tool_cost("preview_file",
-                                           Decimal(str(result["cost"])))
+            if "cost_usd" in result:
+                cost = Decimal(str(result["cost_usd"]))
+                cost_tracker.add_tool_cost("preview_file", cost)
+                # Log for Grafana (appears in Anthropic panel via analyze tools)
+                logger.info("tools.loop.user_charged_for_tool",
+                            tool_name="preview_file",
+                            cost_usd=float(cost),
+                            source="self_critique")
 
         elif tool_name == "analyze_image":
             result = await analyze_image(
@@ -790,9 +800,14 @@ async def _execute_subagent_tool(tool_name: str, tool_input: dict[str, Any],
                 bot=bot,
                 session=session)
             # Vision API cost
-            if "cost" in result:
-                cost_tracker.add_tool_cost("analyze_image",
-                                           Decimal(str(result["cost"])))
+            if "cost_usd" in result:
+                cost = Decimal(str(result["cost_usd"]))
+                cost_tracker.add_tool_cost("analyze_image", cost)
+                # Log for Grafana (appears in Anthropic panel)
+                logger.info("tools.loop.user_charged_for_tool",
+                            tool_name="analyze_image",
+                            cost_usd=float(cost),
+                            source="self_critique")
 
         elif tool_name == "analyze_pdf":
             result = await analyze_pdf(
@@ -801,9 +816,14 @@ async def _execute_subagent_tool(tool_name: str, tool_input: dict[str, Any],
                 bot=bot,
                 session=session)
             # Vision API cost
-            if "cost" in result:
-                cost_tracker.add_tool_cost("analyze_pdf",
-                                           Decimal(str(result["cost"])))
+            if "cost_usd" in result:
+                cost = Decimal(str(result["cost_usd"]))
+                cost_tracker.add_tool_cost("analyze_pdf", cost)
+                # Log for Grafana (appears in Anthropic panel)
+                logger.info("tools.loop.user_charged_for_tool",
+                            tool_name="analyze_pdf",
+                            cost_usd=float(cost),
+                            source="self_critique")
 
         else:
             result = {"error": f"Unknown tool: {tool_name}"}
@@ -948,6 +968,22 @@ async def execute_self_critique(
         cost_tracker.add_api_usage(input_tokens=response.usage.input_tokens,
                                    output_tokens=response.usage.output_tokens,
                                    thinking_tokens=thinking_tokens)
+
+        # Log for Grafana (appears in Anthropic panel)
+        # Calculate cost for this API call
+        api_cost = calculate_claude_cost(
+            model_id=model_config.model_id,
+            input_tokens=response.usage.input_tokens,
+            output_tokens=response.usage.output_tokens,
+            thinking_tokens=thinking_tokens,
+        )
+        logger.info("claude_handler.user_charged",
+                    model_id="claude:opus",
+                    cost_usd=float(api_cost),
+                    input_tokens=response.usage.input_tokens,
+                    output_tokens=response.usage.output_tokens,
+                    thinking_tokens=thinking_tokens,
+                    source="self_critique")
 
         # Check stop reason
         if response.stop_reason == "end_turn":

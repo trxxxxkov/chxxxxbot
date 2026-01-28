@@ -594,7 +594,7 @@ class TestSubagentToolRouting:
         with patch("core.tools.analyze_image.analyze_image") as mock_analyze:
             mock_analyze.return_value = {
                 "description": "A chart showing data",
-                "cost": 0.01
+                "cost_usd": 0.01
             }
 
             result = await _execute_subagent_tool(
