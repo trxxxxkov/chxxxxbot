@@ -422,16 +422,10 @@ def _render_markdown_v2(text: str, auto_close: bool = True) -> str:
             i += 2
             continue
 
-        # Check for spoiler (||)
-        if text[i:i + 2] == "||":
-            if current_context() == FormattingType.SPOILER:
-                result.append("||")
-                pop_context(FormattingType.SPOILER)
-            else:
-                result.append("||")
-                push_context(FormattingType.SPOILER, "||")
-            i += 2
-            continue
+        # NOTE: We do NOT handle || as Telegram spoiler because:
+        # 1. Claude doesn't use Telegram spoiler syntax
+        # 2. Claude uses | for markdown tables which causes false matches
+        # 3. | characters will be escaped individually below
 
         # Check for strikethrough (~~) - convert to MarkdownV2 (~)
         if text[i:i + 2] == "~~":
@@ -551,8 +545,7 @@ def _render_markdown_v2(text: str, auto_close: bool = True) -> str:
                 result.append("__")
             elif ctx.format_type == FormattingType.STRIKETHROUGH:
                 result.append("~")
-            elif ctx.format_type == FormattingType.SPOILER:
-                result.append("||")
+            # NOTE: SPOILER is not auto-closed because we don't parse ||
             elif ctx.format_type == FormattingType.LINK_TEXT:
                 # Escape the opening [ we added earlier
                 if ctx.start_pos < len(result):
@@ -785,10 +778,7 @@ def fix_truncated_md2(text: str) -> str:
     if strike_count % 2 == 1:
         result += "~"
 
-    # Count spoiler (||)
-    spoiler_count = _count_outside_code(result, "||")
-    if spoiler_count % 2 == 1:
-        result += "||"
+    # NOTE: We don't handle || spoiler - all | are escaped individually
 
     return result
 

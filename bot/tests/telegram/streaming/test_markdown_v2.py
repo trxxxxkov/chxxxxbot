@@ -470,10 +470,15 @@ class TestFormattingEdgeCases:
         assert "~strikethrough~" in result
         assert "~~" not in result.replace(r"\~", "")
 
-    def test_spoiler_markers(self):
-        """Spoiler markers should work."""
+    def test_pipe_characters_escaped(self):
+        """Pipe characters should be escaped (not treated as spoiler).
+
+        Claude uses | for markdown tables, not Telegram spoilers.
+        """
         result = render_streaming_safe("This is ||spoiler|| text")
-        assert "||spoiler||" in result
+        # | should be escaped as \|, so || becomes \|\|
+        assert r"\|" in result
+        assert "||" not in result  # No unescaped ||
 
     def test_underline_vs_italic(self):
         """Double underscore is underline, single is italic."""
@@ -765,25 +770,27 @@ class TestPreprocessUnsupportedMarkdown:
 class TestFixTruncatedMd2:
     """Tests for fix_truncated_md2() function."""
 
-    @pytest.mark.parametrize("input_text,expected_check", [
-        ("", lambda r: r == ""),
-        (r"Hello \| world", lambda r: r == r"Hello \| world"),
-        ("Hello \\", lambda r: r == "Hello " and not r.endswith("\\")),
-        ("*bold text", lambda r: r.endswith("*") and r.count("*") == 2),
-        ("_italic text", lambda r: r.endswith("_")),
-        ("```python\nprint('hello')", lambda r: r.endswith("```")),
-        ("`code here", lambda r: r.endswith("`")),
-        ("~struck text", lambda r: r.endswith("~")),
-        ("||spoiler content", lambda r: r.endswith("||")),
-        (r"\*not bold", lambda r: r == r"\*not bold"),
-        (r"(formula\)", lambda r: r == r"\(formula\)"),
-        ("=5", lambda r: r == r"\=5"),
-        ("+1", lambda r: r == r"\+1"),
-        (r"…(formula\)", lambda r: r == r"…\(formula\)"),
-        ("…=5 text", lambda r: r == r"…\=5 text"),
-        (r"\(formula\)", lambda r: r == r"\(formula\)"),
-        (r"…\(formula\)", lambda r: r == r"…\(formula\)"),
-    ])
+    @pytest.mark.parametrize(
+        "input_text,expected_check",
+        [
+            ("", lambda r: r == ""),
+            (r"Hello \| world", lambda r: r == r"Hello \| world"),
+            ("Hello \\", lambda r: r == "Hello " and not r.endswith("\\")),
+            ("*bold text", lambda r: r.endswith("*") and r.count("*") == 2),
+            ("_italic text", lambda r: r.endswith("_")),
+            ("```python\nprint('hello')", lambda r: r.endswith("```")),
+            ("`code here", lambda r: r.endswith("`")),
+            ("~struck text", lambda r: r.endswith("~")),
+            # NOTE: || is NOT spoiler - | chars are escaped individually
+            (r"\*not bold", lambda r: r == r"\*not bold"),
+            (r"(formula\)", lambda r: r == r"\(formula\)"),
+            ("=5", lambda r: r == r"\=5"),
+            ("+1", lambda r: r == r"\+1"),
+            (r"…(formula\)", lambda r: r == r"…\(formula\)"),
+            ("…=5 text", lambda r: r == r"…\=5 text"),
+            (r"\(formula\)", lambda r: r == r"\(formula\)"),
+            (r"…\(formula\)", lambda r: r == r"…\(formula\)"),
+        ])
     def test_fix_truncated_md2(self, input_text, expected_check):
         """Should fix truncated MarkdownV2 correctly."""
         from telegram.streaming.markdown_v2 import fix_truncated_md2
