@@ -620,3 +620,82 @@ async def invalidate_files(internal_thread_id: int) -> bool:
             error=str(e),
         )
         return False
+
+
+async def clear_thread_cache(internal_thread_id: int) -> dict:
+    """Clear all cache entries for a thread.
+
+    Deletes:
+    - messages cache
+    - files cache
+    - exec thread index + exec files
+    - sandbox cache
+
+    Args:
+        internal_thread_id: Internal thread ID (from database).
+
+    Returns:
+        Dict with counts of deleted keys per category.
+    """
+    from cache.keys import exec_file_key
+    from cache.keys import exec_meta_key
+    from cache.keys import exec_thread_index_key
+    from cache.keys import sandbox_key
+
+    redis = await get_redis()
+    result = {
+        "messages": 0,
+        "files": 0,
+        "exec_files": 0,
+        "sandbox": 0,
+    }
+
+    if redis is None:
+        return result
+
+    try:
+        # 1. Delete messages cache
+        msg_key = messages_key(internal_thread_id)
+        result["messages"] = await redis.delete(msg_key)
+
+        # 2. Delete files cache
+        f_key = files_key(internal_thread_id)
+        result["files"] = await redis.delete(f_key)
+
+        # 3. Delete exec files from thread index
+        exec_idx_key = exec_thread_index_key(internal_thread_id)
+        exec_file_ids = await redis.smembers(exec_idx_key)
+
+        if exec_file_ids:
+            # Delete each exec file and its metadata
+            keys_to_delete = []
+            for temp_id in exec_file_ids:
+                if isinstance(temp_id, bytes):
+                    temp_id = temp_id.decode()
+                keys_to_delete.append(exec_file_key(temp_id))
+                keys_to_delete.append(exec_meta_key(temp_id))
+
+            if keys_to_delete:
+                result["exec_files"] = await redis.delete(*keys_to_delete)
+
+        # Delete the index itself
+        await redis.delete(exec_idx_key)
+
+        # 4. Delete sandbox cache
+        sb_key = sandbox_key(internal_thread_id)
+        result["sandbox"] = await redis.delete(sb_key)
+
+        logger.info(
+            "thread_cache.cleared",
+            thread_id=internal_thread_id,
+            **result,
+        )
+
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        logger.info(
+            "thread_cache.clear_error",
+            thread_id=internal_thread_id,
+            error=str(e),
+        )
+
+    return result

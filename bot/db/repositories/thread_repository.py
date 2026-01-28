@@ -250,19 +250,17 @@ class ThreadRepository(BaseRepository[Thread]):
         chat_id: int,
         topic_id: int,
     ) -> int:
-        """Delete all threads for a specific Telegram topic with cascade.
+        """Delete user_files for a specific Telegram topic.
 
-        Performs cascading delete in order:
-        1. user_files - files linked to messages in these threads
-        2. messages - all messages in these threads
-        3. threads - the thread records themselves
+        Only deletes user_files linked to messages in these threads.
+        Threads and messages are preserved in the database.
 
         Args:
             chat_id: Telegram chat ID.
             topic_id: Telegram forum topic ID (thread_id).
 
         Returns:
-            Number of threads deleted.
+            Number of files deleted.
         """
         from db.models.message import Message
         from db.models.user_file import UserFile
@@ -298,33 +296,25 @@ class ThreadRepository(BaseRepository[Thread]):
             files_result = await self.session.execute(files_stmt)
             deleted_files = files_result.rowcount
 
-        # 4. Delete messages in these threads
-        deleted_messages = 0
-        if thread_ids:
-            messages_stmt = sql_delete(Message).where(
-                Message.chat_id == chat_id,
-                Message.thread_id.in_(thread_ids),
-            )
-            messages_result = await self.session.execute(messages_stmt)
-            deleted_messages = messages_result.rowcount
-
-        # 5. Delete the threads
-        threads_stmt = sql_delete(Thread).where(
-            Thread.chat_id == chat_id,
-            Thread.thread_id == topic_id,
-        )
-        threads_result = await self.session.execute(threads_stmt)
-        deleted_threads = threads_result.rowcount
-
         await self.session.flush()
 
+        # 4. Clear Redis cache for each thread
+        from cache.thread_cache import clear_thread_cache
+
+        cache_stats = {"messages": 0, "files": 0, "exec_files": 0, "sandbox": 0}
+        for tid in thread_ids:
+            stats = await clear_thread_cache(tid)
+            for key in cache_stats:
+                cache_stats[key] += stats.get(key, 0)
+
         logger.info(
-            "thread.cascade_delete",
+            "thread.clear_files",
             chat_id=chat_id,
             topic_id=topic_id,
-            deleted_threads=deleted_threads,
-            deleted_messages=deleted_messages,
-            deleted_files=deleted_files,
+            thread_count=len(thread_ids),
+            message_count=len(message_ids),
+            deleted_db_files=deleted_files,
+            cleared_cache=cache_stats,
         )
 
-        return deleted_threads
+        return deleted_files
