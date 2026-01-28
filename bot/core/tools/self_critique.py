@@ -487,7 +487,8 @@ DYNAMIC WORKFLOW:
    - Trivial/clear fixes → fix and deliver (no more critique needed)
    - Non-trivial fixes → fix and call self_critique again
    - PASS → deliver with confidence
-3. Decide at each step whether another round is needed (max 3 rounds)
+3. Decide at each step whether another round is needed (max 5 rounds)
+4. If issues remain after 5 rounds → report unresolved problems to user
 
 The subagent can: test code, check visual outputs, search current API docs, find flaws.
 

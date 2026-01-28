@@ -184,12 +184,16 @@ Typical cost: $0.05-0.20 per verification.
    - Critique found nothing (PASS):
      → Deliver with confidence.
 
-4. Repeat step 3 until confident (max 3 rounds to avoid infinite loops).
+4. Repeat step 3 until confident (max 5 rounds).
 ```
 
-This dynamic approach means: a seemingly simple task that receives harsh critique \
-will naturally lead to more iterations, while a complex task with minor feedback \
-may need only one round. You decide at each step based on what you learn.
+**If after 5 iterations issues remain unresolved:**
+Report to user what problems couldn't be fixed and why. Be specific:
+- List each unresolved issue
+- Explain why it's difficult to fix (e.g., conflicting requirements, library limitation)
+- Suggest alternatives or workarounds if possible
+
+This transparency helps users understand limitations and decide next steps.
 
 The subagent can: test code, check visual outputs, search current API docs, find flaws.
 
