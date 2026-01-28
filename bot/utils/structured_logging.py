@@ -46,6 +46,37 @@ class AiogramLogFilter(logging.Filter):
         return True
 
 
+class E2BLogFilter(logging.Filter):
+    """Filter to downgrade routine E2B sandbox events to INFO level.
+
+    E2B SDK logs 404 errors when trying to reconnect to expired sandboxes.
+    This is normal behavior - the system automatically creates a new sandbox.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        """Check and optionally modify log record level.
+
+        Args:
+            record: The log record to filter.
+
+        Returns:
+            True to emit the record (always returns True, just modifies level).
+        """
+        msg = str(record.msg)
+
+        # 404 errors when sandbox expired - normal, we create a new one
+        if record.levelno == logging.ERROR and "Response 404" in msg:
+            record.levelno = logging.INFO
+            record.levelname = "INFO"
+
+        # Also handle "not found" messages
+        if record.levelno == logging.ERROR and "not found" in msg.lower():
+            record.levelno = logging.INFO
+            record.levelname = "INFO"
+
+        return True
+
+
 def setup_logging(level: str = "INFO") -> None:
     """Configures structlog for JSON logging.
 
@@ -109,6 +140,12 @@ def setup_logging(level: str = "INFO") -> None:
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
     logging.getLogger("anthropic").setLevel(logging.INFO)
+
+    # E2B sandbox: 404 on reconnect is normal (sandbox expired)
+    e2b_logger = logging.getLogger("e2b")
+    e2b_logger.addFilter(E2BLogFilter())
+    e2b_code_logger = logging.getLogger("e2b_code_interpreter")
+    e2b_code_logger.addFilter(E2BLogFilter())
 
 
 def get_logger(name: str) -> structlog.BoundLogger:
