@@ -250,10 +250,12 @@ class ThreadRepository(BaseRepository[Thread]):
         chat_id: int,
         topic_id: int,
     ) -> int:
-        """Delete all threads for a specific Telegram topic.
+        """Delete all threads for a specific Telegram topic with cascade.
 
-        Removes all thread records (for all users) associated with
-        the given Telegram topic ID in the chat.
+        Performs cascading delete in order:
+        1. user_files - files linked to messages in these threads
+        2. messages - all messages in these threads
+        3. threads - the thread records themselves
 
         Args:
             chat_id: Telegram chat ID.
@@ -262,12 +264,67 @@ class ThreadRepository(BaseRepository[Thread]):
         Returns:
             Number of threads deleted.
         """
+        from db.models.message import Message
+        from db.models.user_file import UserFile
         from sqlalchemy import delete as sql_delete
+        from utils.structured_logging import get_logger
 
-        stmt = sql_delete(Thread).where(
+        logger = get_logger(__name__)
+
+        # 1. Get all internal thread IDs for this topic
+        thread_ids_stmt = select(Thread.id).where(
             Thread.chat_id == chat_id,
             Thread.thread_id == topic_id,
         )
-        result = await self.session.execute(stmt)
+        thread_ids_result = await self.session.execute(thread_ids_stmt)
+        thread_ids = [row[0] for row in thread_ids_result.fetchall()]
+
+        if not thread_ids:
+            return 0
+
+        # 2. Get all message IDs in these threads
+        message_ids_stmt = select(Message.message_id).where(
+            Message.chat_id == chat_id,
+            Message.thread_id.in_(thread_ids),
+        )
+        message_ids_result = await self.session.execute(message_ids_stmt)
+        message_ids = [row[0] for row in message_ids_result.fetchall()]
+
+        # 3. Delete user_files for these messages
+        deleted_files = 0
+        if message_ids:
+            files_stmt = sql_delete(UserFile).where(
+                UserFile.message_id.in_(message_ids))
+            files_result = await self.session.execute(files_stmt)
+            deleted_files = files_result.rowcount
+
+        # 4. Delete messages in these threads
+        deleted_messages = 0
+        if thread_ids:
+            messages_stmt = sql_delete(Message).where(
+                Message.chat_id == chat_id,
+                Message.thread_id.in_(thread_ids),
+            )
+            messages_result = await self.session.execute(messages_stmt)
+            deleted_messages = messages_result.rowcount
+
+        # 5. Delete the threads
+        threads_stmt = sql_delete(Thread).where(
+            Thread.chat_id == chat_id,
+            Thread.thread_id == topic_id,
+        )
+        threads_result = await self.session.execute(threads_stmt)
+        deleted_threads = threads_result.rowcount
+
         await self.session.flush()
-        return result.rowcount
+
+        logger.info(
+            "thread.cascade_delete",
+            chat_id=chat_id,
+            topic_id=topic_id,
+            deleted_threads=deleted_threads,
+            deleted_messages=deleted_messages,
+            deleted_files=deleted_files,
+        )
+
+        return deleted_threads
