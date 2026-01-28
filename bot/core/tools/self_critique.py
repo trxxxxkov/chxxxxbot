@@ -25,7 +25,7 @@ from decimal import Decimal
 import json
 from typing import Any, Optional, TYPE_CHECKING
 
-from anthropic import AsyncAnthropic
+# AsyncAnthropic client obtained from global claude_provider
 from config import get_model
 from core.pricing import calculate_claude_cost
 from core.pricing import calculate_e2b_cost
@@ -933,9 +933,27 @@ async def execute_self_critique(
         verification_hints=verification_hints,
         focus_areas=focus_areas)
 
-    # 4. Create Anthropic client
-    # API key loaded from environment (ANTHROPIC_API_KEY)
-    client = AsyncAnthropic()
+    # 4. Get Anthropic client from global provider
+    # Import here to avoid circular imports at module level
+    from telegram.handlers.claude import claude_provider
+
+    if claude_provider is None:
+        logger.error("self_critique.provider_not_initialized", user_id=user_id)
+        return {
+            "verdict":
+                "ERROR",
+            "error":
+                "claude_provider_not_initialized",
+            "message":
+                "Claude provider not initialized. Please try again later.",
+            "cost_usd":
+                0.0,
+            "iterations":
+                0
+        }
+
+    client = claude_provider.client
+    logger.debug("self_critique.client_obtained", user_id=user_id)
 
     # 5. Run subagent tool loop
     messages: list[dict[str, Any]] = [{
@@ -949,16 +967,30 @@ async def execute_self_critique(
                      message_count=len(messages))
 
         # Call Claude API with extended thinking
-        response = await client.messages.create(
-            model=model_config.model_id,
-            max_tokens=16000,
-            thinking={
-                "type": "enabled",
-                "budget_tokens": THINKING_BUDGET_TOKENS
-            },
-            system=CRITICAL_REVIEWER_SYSTEM_PROMPT,
-            tools=SUBAGENT_TOOLS + [WEB_SEARCH_TOOL, WEB_FETCH_TOOL],
-            messages=messages)
+        try:
+            response = await client.messages.create(
+                model=model_config.model_id,
+                max_tokens=16000,
+                thinking={
+                    "type": "enabled",
+                    "budget_tokens": THINKING_BUDGET_TOKENS
+                },
+                system=CRITICAL_REVIEWER_SYSTEM_PROMPT,
+                tools=SUBAGENT_TOOLS + [WEB_SEARCH_TOOL, WEB_FETCH_TOOL],
+                messages=messages)
+        except Exception as api_error:
+            logger.error("self_critique.api_error",
+                         user_id=user_id,
+                         iteration=iteration,
+                         error=str(api_error),
+                         error_type=type(api_error).__name__)
+            return {
+                "verdict": "ERROR",
+                "error": "api_call_failed",
+                "message": f"Claude API error: {str(api_error)}",
+                "cost_usd": float(cost_tracker.calculate_total_cost()),
+                "iterations": iteration
+            }
 
         # Track token costs
         thinking_tokens = 0

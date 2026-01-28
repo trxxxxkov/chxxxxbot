@@ -367,7 +367,7 @@ class TestBalanceCheck:
              patch("services.balance_service.BalanceService") as mock_bs_class, \
              patch("db.repositories.user_repository.UserRepository"), \
              patch("db.repositories.balance_operation_repository.BalanceOperationRepository"), \
-             patch("core.tools.self_critique.AsyncAnthropic") as mock_anthropic:
+             patch("telegram.handlers.claude.claude_provider") as mock_provider:
 
             # Setup model config
             mock_config = Mock()
@@ -384,7 +384,7 @@ class TestBalanceCheck:
             # Setup Anthropic client
             mock_client = AsyncMock()
             mock_client.messages.create = AsyncMock(return_value=mock_response)
-            mock_anthropic.return_value = mock_client
+            mock_provider.client = mock_client
 
             result = await execute_self_critique(user_request="Test request",
                                                  content="Test content",
@@ -411,7 +411,7 @@ class TestBalanceCheck:
              patch("services.balance_service.BalanceService") as mock_bs_class, \
              patch("db.repositories.user_repository.UserRepository"), \
              patch("db.repositories.balance_operation_repository.BalanceOperationRepository"), \
-             patch("core.tools.self_critique.AsyncAnthropic") as mock_anthropic:
+             patch("telegram.handlers.claude.claude_provider") as mock_provider:
 
             mock_config = Mock()
             mock_config.model_id = "claude-opus-4-5-20251101"
@@ -426,7 +426,7 @@ class TestBalanceCheck:
 
             mock_client = AsyncMock()
             mock_client.messages.create = AsyncMock(return_value=mock_response)
-            mock_anthropic.return_value = mock_client
+            mock_provider.client = mock_client
 
             result = await execute_self_critique(user_request="Test",
                                                  bot=mock_bot,
@@ -686,7 +686,7 @@ class TestJSONParsing:
              patch("services.balance_service.BalanceService") as mock_bs_class, \
              patch("db.repositories.user_repository.UserRepository"), \
              patch("db.repositories.balance_operation_repository.BalanceOperationRepository"), \
-             patch("core.tools.self_critique.AsyncAnthropic") as mock_anthropic:
+             patch("telegram.handlers.claude.claude_provider") as mock_provider:
 
             mock_config = Mock()
             mock_config.model_id = "claude-opus-4-5-20251101"
@@ -700,7 +700,7 @@ class TestJSONParsing:
 
             mock_client = AsyncMock()
             mock_client.messages.create = AsyncMock(return_value=mock_response)
-            mock_anthropic.return_value = mock_client
+            mock_provider.client = mock_client
 
             result = await execute_self_critique(user_request="Test",
                                                  bot=mock_bot,
@@ -729,7 +729,7 @@ class TestJSONParsing:
              patch("services.balance_service.BalanceService") as mock_bs_class, \
              patch("db.repositories.user_repository.UserRepository"), \
              patch("db.repositories.balance_operation_repository.BalanceOperationRepository"), \
-             patch("core.tools.self_critique.AsyncAnthropic") as mock_anthropic:
+             patch("telegram.handlers.claude.claude_provider") as mock_provider:
 
             mock_config = Mock()
             mock_config.model_id = "claude-opus-4-5-20251101"
@@ -743,7 +743,7 @@ class TestJSONParsing:
 
             mock_client = AsyncMock()
             mock_client.messages.create = AsyncMock(return_value=mock_response)
-            mock_anthropic.return_value = mock_client
+            mock_provider.client = mock_client
 
             result = await execute_self_critique(user_request="Test",
                                                  bot=mock_bot,
@@ -765,7 +765,7 @@ class TestJSONParsing:
              patch("services.balance_service.BalanceService") as mock_bs_class, \
              patch("db.repositories.user_repository.UserRepository"), \
              patch("db.repositories.balance_operation_repository.BalanceOperationRepository"), \
-             patch("core.tools.self_critique.AsyncAnthropic") as mock_anthropic:
+             patch("telegram.handlers.claude.claude_provider") as mock_provider:
 
             mock_config = Mock()
             mock_config.model_id = "claude-opus-4-5-20251101"
@@ -779,7 +779,7 @@ class TestJSONParsing:
 
             mock_client = AsyncMock()
             mock_client.messages.create = AsyncMock(return_value=mock_response)
-            mock_anthropic.return_value = mock_client
+            mock_provider.client = mock_client
 
             result = await execute_self_critique(user_request="Test",
                                                  bot=mock_bot,
@@ -820,7 +820,7 @@ class TestToolLoopIntegration:
              patch("services.balance_service.BalanceService") as mock_bs_class, \
              patch("db.repositories.user_repository.UserRepository"), \
              patch("db.repositories.balance_operation_repository.BalanceOperationRepository"), \
-             patch("core.tools.self_critique.AsyncAnthropic") as mock_anthropic:
+             patch("telegram.handlers.claude.claude_provider") as mock_provider:
 
             mock_config = Mock()
             mock_config.model_id = "claude-opus-4-5-20251101"
@@ -834,7 +834,7 @@ class TestToolLoopIntegration:
 
             mock_client = AsyncMock()
             mock_client.messages.create = AsyncMock(return_value=mock_response)
-            mock_anthropic.return_value = mock_client
+            mock_provider.client = mock_client
 
             result = await execute_self_critique(
                 user_request="Write a function to add two numbers",
@@ -898,7 +898,7 @@ class TestToolLoopIntegration:
              patch("services.balance_service.BalanceService") as mock_bs_class, \
              patch("db.repositories.user_repository.UserRepository"), \
              patch("db.repositories.balance_operation_repository.BalanceOperationRepository"), \
-             patch("core.tools.self_critique.AsyncAnthropic") as mock_anthropic, \
+             patch("telegram.handlers.claude.claude_provider") as mock_provider, \
              patch("core.tools.execute_python.execute_python") as mock_exec_python:
 
             mock_config = Mock()
@@ -914,7 +914,7 @@ class TestToolLoopIntegration:
             mock_client = AsyncMock()
             mock_client.messages.create = AsyncMock(
                 side_effect=[mock_response_1, mock_response_2])
-            mock_anthropic.return_value = mock_client
+            mock_provider.client = mock_client
 
             mock_exec_python.return_value = {
                 "output": "Test passed!",
@@ -986,7 +986,7 @@ class TestToolLoopIntegration:
              patch("services.balance_service.BalanceService") as mock_bs_class, \
              patch("db.repositories.user_repository.UserRepository"), \
              patch("db.repositories.balance_operation_repository.BalanceOperationRepository"), \
-             patch("core.tools.self_critique.AsyncAnthropic") as mock_anthropic, \
+             patch("telegram.handlers.claude.claude_provider") as mock_provider, \
              patch("core.tools.execute_python.execute_python") as mock_exec, \
              patch("core.tools.preview_file.preview_file") as mock_preview:
 
@@ -1003,7 +1003,7 @@ class TestToolLoopIntegration:
             mock_client = AsyncMock()
             mock_client.messages.create = AsyncMock(
                 side_effect=[mock_response_1, mock_response_2])
-            mock_anthropic.return_value = mock_client
+            mock_provider.client = mock_client
 
             mock_exec.return_value = {"output": "OK", "execution_time": 0.1}
             mock_preview.return_value = {"content": "File OK"}
@@ -1059,7 +1059,7 @@ class TestMaxIterations:
              patch("services.balance_service.BalanceService") as mock_bs_class, \
              patch("db.repositories.user_repository.UserRepository"), \
              patch("db.repositories.balance_operation_repository.BalanceOperationRepository"), \
-             patch("core.tools.self_critique.AsyncAnthropic") as mock_anthropic, \
+             patch("telegram.handlers.claude.claude_provider") as mock_provider, \
              patch("core.tools.execute_python.execute_python") as mock_exec:
 
             mock_config = Mock()
@@ -1075,7 +1075,7 @@ class TestMaxIterations:
             mock_client = AsyncMock()
             # Always return tool_use, never end_turn
             mock_client.messages.create = AsyncMock(return_value=mock_response)
-            mock_anthropic.return_value = mock_client
+            mock_provider.client = mock_client
 
             mock_exec.return_value = {"output": "OK", "execution_time": 0.01}
 
@@ -1116,7 +1116,7 @@ class TestCostCharging:
              patch("services.balance_service.BalanceService") as mock_bs_class, \
              patch("db.repositories.user_repository.UserRepository"), \
              patch("db.repositories.balance_operation_repository.BalanceOperationRepository"), \
-             patch("core.tools.self_critique.AsyncAnthropic") as mock_anthropic, \
+             patch("telegram.handlers.claude.claude_provider") as mock_provider, \
              patch("core.tools.self_critique.calculate_claude_cost") as mock_calc:
 
             mock_config = Mock()
@@ -1131,7 +1131,7 @@ class TestCostCharging:
 
             mock_client = AsyncMock()
             mock_client.messages.create = AsyncMock(return_value=mock_response)
-            mock_anthropic.return_value = mock_client
+            mock_provider.client = mock_client
 
             mock_calc.return_value = Decimal("0.05")
 
@@ -1185,7 +1185,7 @@ class TestCostCharging:
              patch("services.balance_service.BalanceService") as mock_bs_class, \
              patch("db.repositories.user_repository.UserRepository"), \
              patch("db.repositories.balance_operation_repository.BalanceOperationRepository"), \
-             patch("core.tools.self_critique.AsyncAnthropic") as mock_anthropic, \
+             patch("telegram.handlers.claude.claude_provider") as mock_provider, \
              patch("core.tools.execute_python.execute_python") as mock_exec, \
              patch("core.tools.self_critique.calculate_claude_cost") as mock_calc, \
              patch("core.tools.self_critique.calculate_e2b_cost") as mock_e2b:
@@ -1203,7 +1203,7 @@ class TestCostCharging:
             mock_client = AsyncMock()
             mock_client.messages.create = AsyncMock(
                 side_effect=[mock_response_1, mock_response_2])
-            mock_anthropic.return_value = mock_client
+            mock_provider.client = mock_client
 
             # Tool costs
             mock_exec.return_value = {"output": "1", "execution_time": 2.0}
