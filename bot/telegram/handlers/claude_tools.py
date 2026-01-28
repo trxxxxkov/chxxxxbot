@@ -12,7 +12,7 @@ NO __init__.py - use direct import:
 
 from decimal import Decimal
 import time
-from typing import Optional
+from typing import Awaitable, Callable, Optional
 
 from aiogram import Bot
 from aiogram import types
@@ -105,6 +105,7 @@ async def execute_single_tool_safe(
     user_id: int,
     chat_id: Optional[int] = None,
     message_thread_id: Optional[int] = None,
+    on_subagent_tool: Optional[Callable[[str], Awaitable[None]]] = None,
 ) -> dict:
     """Execute a single tool with error handling for parallel execution.
 
@@ -127,6 +128,7 @@ async def execute_single_tool_safe(
         user_id: User ID for balance pre-check.
         chat_id: Chat ID for typing indicator (optional).
         message_thread_id: Forum topic ID for typing indicator (optional).
+        on_subagent_tool: Callback for self_critique subagent tool progress.
 
     Returns:
         Dict with result or error. Always includes:
@@ -175,8 +177,14 @@ async def execute_single_tool_safe(
         # Status will be shown when:
         # - File is being uploaded (uploading scope in claude_files.py)
         # - Bot continues writing text (generating scope in claude.py)
+
+        # For self_critique, pass the subagent tool callback
+        tool_input_with_callback = dict(tool_input)
+        if tool_name == "self_critique" and on_subagent_tool:
+            tool_input_with_callback["on_subagent_tool"] = on_subagent_tool
+
         result = await execute_tool(tool_name,
-                                    tool_input,
+                                    tool_input_with_callback,
                                     bot,
                                     session,
                                     thread_id=thread_id,

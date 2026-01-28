@@ -23,7 +23,7 @@ NO __init__.py - use direct import:
 import asyncio
 from decimal import Decimal
 import json
-from typing import Any, Optional, TYPE_CHECKING
+from typing import Any, Awaitable, Callable, Optional, TYPE_CHECKING
 
 # AsyncAnthropic client obtained from global claude_provider
 from config import get_model
@@ -739,15 +739,29 @@ def _build_verification_context(user_request: str, content: Optional[str],
     return "\n".join(parts)
 
 
-async def _execute_subagent_tool(tool_name: str, tool_input: dict[str, Any],
-                                 tool_use_id: str, bot: 'Bot',
-                                 session: 'AsyncSession',
-                                 thread_id: Optional[int],
-                                 cost_tracker: CostTracker) -> dict[str, Any]:
+async def _execute_subagent_tool(
+    tool_name: str,
+    tool_input: dict[str, Any],
+    tool_use_id: str,
+    bot: 'Bot',
+    session: 'AsyncSession',
+    thread_id: Optional[int],
+    cost_tracker: CostTracker,
+    on_tool_start: Optional[Callable[[str], Awaitable[None]]] = None,
+) -> dict[str, Any]:
     """Execute a tool call from the subagent and track costs."""
     logger.debug("self_critique.tool_call",
                  tool_name=tool_name,
                  tool_input_keys=list(tool_input.keys()))
+
+    # Notify about tool start for display updates
+    if on_tool_start:
+        try:
+            await on_tool_start(tool_name)
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.warning("self_critique.on_tool_start_failed",
+                           tool_name=tool_name,
+                           error=str(e))
 
     try:
         # Import tool executors here to avoid circular imports
@@ -866,6 +880,7 @@ async def execute_self_critique(
     session: 'AsyncSession',
     thread_id: Optional[int] = None,
     user_id: int,
+    on_subagent_tool: Optional[Callable[[str], Awaitable[None]]] = None,
 ) -> dict[str, Any]:
     """Execute critical self-verification subagent.
 
@@ -882,6 +897,8 @@ async def execute_self_critique(
         session: Database session.
         thread_id: Current thread ID.
         user_id: User ID for balance check and cost tracking.
+        on_subagent_tool: Optional callback called when subagent uses a tool.
+            Used to update display with tool progress.
 
     Returns:
         Structured verification result with verdict, issues, recommendations.
@@ -1105,7 +1122,8 @@ async def execute_self_critique(
                                        bot=bot,
                                        session=session,
                                        thread_id=thread_id,
-                                       cost_tracker=cost_tracker)
+                                       cost_tracker=cost_tracker,
+                                       on_tool_start=on_subagent_tool)
                 for block in tool_use_blocks
             ]
 

@@ -439,12 +439,17 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
                 self._telegram_thread_id,
             )
 
+        # Callback for subagent tool progress (e.g., self_critique)
+        async def on_subagent_tool(parent_tool: str, sub_tool: str) -> None:
+            await stream.add_subagent_tool(parent_tool, sub_tool)
+
         # Execute tools
         executor = self._get_tool_executor()
         batch_result = await executor.execute_batch(
             pending_tools,
             cancel_event=cancel_event,
             on_file_ready=on_file_ready,
+            on_subagent_tool=on_subagent_tool,
         )
 
         # Add system messages

@@ -11,7 +11,7 @@ import asyncio
 from dataclasses import dataclass
 from dataclasses import field
 from decimal import Decimal
-from typing import Callable, TYPE_CHECKING
+from typing import Awaitable, Callable, TYPE_CHECKING
 
 from cache.write_behind import queue_write
 from cache.write_behind import WriteType
@@ -116,6 +116,7 @@ class ToolExecutor:
         tools: list[ToolCall],
         cancel_event: "Event | None" = None,
         on_file_ready: "Callable | None" = None,
+        on_subagent_tool: "Callable[[str, str], Awaitable[None]] | None" = None,
     ) -> BatchExecutionResult:
         """Execute tools in parallel, process results as completed.
 
@@ -123,6 +124,7 @@ class ToolExecutor:
             tools: List of ToolCall to execute.
             cancel_event: Optional event to check for cancellation.
             on_file_ready: Callback for file processing (called for each file).
+            on_subagent_tool: Callback (parent_tool, sub_tool) for subagent progress.
 
         Returns:
             BatchExecutionResult with all results in original order.
@@ -140,6 +142,15 @@ class ToolExecutor:
 
         # Create indexed tasks for as_completed processing
         async def _indexed_task(idx: int, tool: ToolCall) -> tuple:
+            # Create callback for self_critique subagent tool progress
+            tool_callback = None
+            if tool.name == "self_critique" and on_subagent_tool:
+
+                async def _subagent_callback(sub_tool: str) -> None:
+                    await on_subagent_tool(tool.name, sub_tool)
+
+                tool_callback = _subagent_callback
+
             result = await execute_single_tool_safe(
                 tool_name=tool.name,
                 tool_input=tool.input,
@@ -149,6 +160,7 @@ class ToolExecutor:
                 user_id=self._user_id,
                 chat_id=self._chat_id,
                 message_thread_id=self._message_thread_id,
+                on_subagent_tool=tool_callback,
             )
             return (idx, result)
 

@@ -81,6 +81,9 @@ class StreamingSession:  # pylint: disable=too-many-instance-attributes
         self._stop_reason = ""
         self._captured_message: Any = None
 
+        # Track subagent tools for display (tool_name -> list of subagent tools)
+        self._subagent_tools: dict[str, list[str]] = {}
+
     @property
     def display(self) -> DisplayManager:
         """Get the display manager."""
@@ -359,6 +362,75 @@ class StreamingSession:  # pylint: disable=too-many-instance-attributes
     def clear_pending_tools(self) -> None:
         """Clear pending tools after execution."""
         self._pending_tools.clear()
+
+    async def add_subagent_tool(self, parent_tool: str, sub_tool: str) -> None:
+        """Add subagent tool to parent tool's progress display.
+
+        Updates the tool marker to show which tools the subagent is using.
+        For example: [🔍 self_critique] → with subagent list below.
+
+        Args:
+            parent_tool: Name of the parent tool (e.g., 'self_critique').
+            sub_tool: Name of the subagent tool being called.
+        """
+        if parent_tool not in self._subagent_tools:
+            self._subagent_tools[parent_tool] = []
+
+        self._subagent_tools[parent_tool].append(sub_tool)
+
+        # Build subagent tools list text
+        tools_list = self._subagent_tools[parent_tool]
+        tools_text = "\n".join(f"- {t}" for t in tools_list)
+        subagent_marker = f"[{tools_text}]"
+
+        # Find parent tool marker and update/add subagent marker
+        parent_emoji = get_tool_emoji(parent_tool)
+        parent_marker = f"[{parent_emoji} {parent_tool}]"
+
+        # Look for existing subagent marker or add new one
+        found_parent = False
+        for block in self._display.blocks:
+            if block.block_type == BlockType.THINKING:
+                if parent_marker in block.content:
+                    found_parent = True
+                    # Check if there's already a subagent marker
+                    # Pattern: [🔍 self_critique]\n[- tool1\n- tool2]
+                    lines = block.content.split("\n")
+                    new_lines = []
+                    skip_until_close = False
+
+                    for line in lines:
+                        if parent_marker in line:
+                            new_lines.append(line)
+                            # Add subagent marker on next line
+                            new_lines.append(subagent_marker)
+                            skip_until_close = True
+                        elif skip_until_close and line.startswith("[- "):
+                            # Skip old subagent marker lines
+                            continue
+                        elif skip_until_close and line.startswith("-"):
+                            # Continue skipping subagent lines
+                            continue
+                        elif skip_until_close and line.endswith(
+                                "]") and not line.startswith("["):
+                            # End of old subagent marker
+                            skip_until_close = False
+                            continue
+                        else:
+                            skip_until_close = False
+                            new_lines.append(line)
+
+                    block.content = "\n".join(new_lines)
+                    break
+
+        if found_parent:
+            await self._update_draft(force=True)
+
+        logger.debug("stream.session.subagent_tool_added",
+                     thread_id=self._thread_id,
+                     parent_tool=parent_tool,
+                     sub_tool=sub_tool,
+                     total_subagent_tools=len(tools_list))
 
     def log_iteration_complete(self, iteration: int) -> None:
         """Log iteration completion stats.

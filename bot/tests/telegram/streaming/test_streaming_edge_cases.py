@@ -260,6 +260,48 @@ class TestStreamingSessionEdgeCases:
         length = session.get_current_text_length()
         assert length == 5
 
+    @pytest.mark.asyncio
+    async def test_add_subagent_tool_single(self, mock_draft_manager):
+        """Test add_subagent_tool adds tool to tracking."""
+        session = StreamingSession(mock_draft_manager, thread_id=123)
+
+        # First add the parent tool marker
+        await session.handle_tool_use_start("tool_123", "self_critique")
+
+        # Then add subagent tool
+        await session.add_subagent_tool("self_critique", "execute_python")
+
+        # Check internal tracking
+        assert "self_critique" in session._subagent_tools
+        assert session._subagent_tools["self_critique"] == ["execute_python"]
+
+    @pytest.mark.asyncio
+    async def test_add_subagent_tool_multiple(self, mock_draft_manager):
+        """Test add_subagent_tool accumulates tools."""
+        session = StreamingSession(mock_draft_manager, thread_id=123)
+
+        # First add the parent tool marker
+        await session.handle_tool_use_start("tool_123", "self_critique")
+
+        # Add multiple subagent tools
+        await session.add_subagent_tool("self_critique", "execute_python")
+        await session.add_subagent_tool("self_critique", "analyze_image")
+        await session.add_subagent_tool("self_critique", "web_search")
+
+        # Check internal tracking
+        assert session._subagent_tools["self_critique"] == [
+            "execute_python", "analyze_image", "web_search"
+        ]
+
+    @pytest.mark.asyncio
+    async def test_subagent_tools_reset_on_new_session(self,
+                                                       mock_draft_manager):
+        """Test subagent tools start empty."""
+        session = StreamingSession(mock_draft_manager, thread_id=123)
+
+        # Initially empty
+        assert session._subagent_tools == {}
+
 
 # ============================================================================
 # Tests for error message formatting

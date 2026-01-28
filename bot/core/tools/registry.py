@@ -290,6 +290,7 @@ async def execute_tool(
                     session=session,
                     thread_id=thread_id,
                     user_id=user_id,
+                    on_subagent_tool=tool_input.pop("on_subagent_tool", None),
                     **tool_input,
                 )
             else:
