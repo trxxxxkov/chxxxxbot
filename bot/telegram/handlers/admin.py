@@ -13,8 +13,12 @@ privileged commands like /topup and /set_margin.
 
 from decimal import Decimal
 
+from aiogram import F
 from aiogram import Router
 from aiogram.filters import Command
+from aiogram.types import CallbackQuery
+from aiogram.types import InlineKeyboardButton
+from aiogram.types import InlineKeyboardMarkup
 from aiogram.types import Message
 import config
 from db.repositories.thread_repository import ThreadRepository
@@ -349,41 +353,86 @@ async def cmd_clear(
             return
 
     if is_general:
-        # General - delete all topics
+        # General - delete all topics (with confirmation)
         topic_ids = list(existing_topic_ids)
-        mode = "all"
-    else:
-        # Regular topic - delete only this one
-        topic_ids = [current_topic_id]
-        mode = "single"
+        # Filter out General topic (ID=1) for count
+        deletable_count = sum(1 for t in topic_ids if t != 1)
 
-    if not topic_ids:
-        await message.answer("ℹ️ No forum topics to delete.")
+        if deletable_count == 0:
+            await message.answer("ℹ️ No forum topics to delete.")
+            return
+
+        # Show confirmation dialog
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(
+                text=f"Yes, delete all {deletable_count} topics",
+                callback_data=f"clear_all:{chat_id}",
+            )
+        ]])
+
+        logger.info(
+            "clear.confirmation_shown",
+            user_id=user_id,
+            chat_id=chat_id,
+            topic_count=deletable_count,
+        )
+
+        await message.answer(
+            f"⚠️ Are you sure you want to delete all {deletable_count} topics?\n\n"
+            "This action cannot be undone.",
+            reply_markup=keyboard,
+        )
         return
+
+    # Single topic mode - delete immediately
+    topic_ids = [current_topic_id]
 
     logger.info(
         "clear.started",
         user_id=user_id,
         chat_id=chat_id,
-        mode=mode,
-        is_general=is_general,
+        mode="single",
         current_topic_id=current_topic_id,
-        topic_count=len(topic_ids),
-        topic_ids=topic_ids,
     )
 
-    # Send progress message (only for "all" mode, single topic deletes immediately)
+    await _delete_topics(message.bot, chat_id, topic_ids, thread_repo)
+    await session.commit()
+
+    logger.info(
+        "clear.complete",
+        user_id=user_id,
+        chat_id=chat_id,
+        mode="single",
+        deleted=1,
+    )
+
+
+async def _delete_topics(
+    bot,
+    chat_id: int,
+    topic_ids: list[int],
+    thread_repo: ThreadRepository,
+) -> int:
+    """Delete forum topics and clean up DB records.
+
+    Args:
+        bot: Telegram Bot instance.
+        chat_id: Chat ID where topics are located.
+        topic_ids: List of topic IDs to delete.
+        thread_repo: Thread repository for DB cleanup.
+
+    Returns:
+        Number of topics successfully deleted.
+    """
     deleted_count = 0
-    skipped_general = False
 
     for topic_id in topic_ids:
         # Skip General topic (ID=1) - cannot be deleted
         if topic_id == 1:
-            skipped_general = True
             continue
 
         try:
-            await message.bot.delete_forum_topic(
+            await bot.delete_forum_topic(
                 chat_id=chat_id,
                 message_thread_id=topic_id,
             )
@@ -405,16 +454,75 @@ async def cmd_clear(
         await thread_repo.delete_threads_by_topic_id(chat_id, topic_id)
         deleted_count += 1
 
-    # Commit DB changes
-    await session.commit()
+    return deleted_count
 
-    # No confirmation message - topics are silently deleted
+
+@router.callback_query(F.data.startswith("clear_all:"))
+async def handle_clear_all_confirmation(
+    callback: CallbackQuery,
+    session: AsyncSession,
+):
+    """Handle confirmation button for clearing all topics.
+
+    Args:
+        callback: Callback query from inline button.
+        session: Database session from middleware.
+    """
+    user_id = callback.from_user.id
+    # Extract chat_id from callback data
+    chat_id = int(callback.data.split(":")[1])
+
+    # Verify user has permission (re-check in case of stale button)
+    is_private_chat = callback.message.chat.type == "private"
+
+    if not is_private_chat:
+        is_chat_admin = False
+        try:
+            member = await callback.bot.get_chat_member(chat_id, user_id)
+            is_chat_admin = member.status in ("administrator", "creator")
+        except Exception:
+            pass
+
+        if not is_privileged(user_id) and not is_chat_admin:
+            await callback.answer(
+                "You no longer have permission to do this.",
+                show_alert=True,
+            )
+            return
+
+    # Get all topics for this chat
+    thread_repo = ThreadRepository(session)
+    topic_ids = await thread_repo.get_unique_topic_ids(chat_id)
+
+    if not topic_ids:
+        await callback.answer("No topics to delete.", show_alert=True)
+        await callback.message.delete()
+        return
+
+    logger.info(
+        "clear.confirmed",
+        user_id=user_id,
+        chat_id=chat_id,
+        topic_count=len(topic_ids),
+    )
+
+    # Delete confirmation message first (it's in a topic that will be deleted)
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+
+    # Delete all topics
+    deleted_count = await _delete_topics(callback.bot, chat_id, list(topic_ids),
+                                         thread_repo)
+    await session.commit()
 
     logger.info(
         "clear.complete",
         user_id=user_id,
         chat_id=chat_id,
-        mode=mode,
+        mode="all",
         deleted=deleted_count,
-        skipped_general=skipped_general,
     )
+
+    await callback.answer(f"Deleted {deleted_count} topics.", show_alert=True)
