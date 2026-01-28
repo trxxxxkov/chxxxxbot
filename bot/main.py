@@ -94,7 +94,7 @@ def load_privileged_users() -> set[int]:
                 if id_str.isdigit():
                     privileged_ids.add(int(id_str))
 
-        logger.info(
+        logger.debug(
             "privileged_users_loaded",
             count=len(privileged_ids),
             user_ids=sorted(list(privileged_ids)),
@@ -195,7 +195,7 @@ async def warm_user_cache(logger) -> int:
                 if success:
                     cached_count += 1
 
-            logger.info(
+            logger.debug(
                 "cache_warming.completed",
                 total_active=len(active_users),
                 cached=cached_count,
@@ -346,7 +346,7 @@ async def collect_metrics_task(logger) -> None:
                                  exc_info=True)
 
         except asyncio.CancelledError:
-            logger.info("metrics_collection_task_cancelled")
+            logger.debug("metrics_collection_task_cancelled")
             break
         except Exception as e:
             logger.error("metrics_collection_error",
@@ -368,18 +368,18 @@ async def main() -> None:
     setup_logging(level="DEBUG")
     logger = get_logger(__name__)
 
-    logger.info("bot_starting")
+    logger.debug("bot_starting")
 
     try:
         # Initialize database
         database_url = get_database_url()
         init_db(database_url, echo=False)
-        logger.info("database_initialized")
+        logger.debug("database_initialized")
 
         # Initialize Redis cache (Phase 3.2)
         try:
             await init_redis()
-            logger.info("redis_initialized")
+            logger.debug("redis_initialized")
 
             # Warm user cache with recently active users
             await warm_user_cache(logger)
@@ -391,17 +391,17 @@ async def main() -> None:
         # Read secrets
         bot_token = read_secret("telegram_bot_token")
         anthropic_api_key = read_secret("anthropic_api_key")
-        logger.info("secrets_loaded")
+        logger.debug("secrets_loaded")
 
         # Initialize Claude provider
         init_claude_provider(anthropic_api_key)
-        logger.info("claude_provider_initialized")
+        logger.debug("claude_provider_initialized")
 
         # Load privileged users (Phase 2.1: admin commands)
         import config as bot_config
 
         bot_config.PRIVILEGED_USERS = load_privileged_users()
-        logger.info(
+        logger.debug(
             "privileged_users_configured",
             count=len(bot_config.PRIVILEGED_USERS),
         )
@@ -414,26 +414,26 @@ async def main() -> None:
         bot_info = await bot.get_me()
         bot_config.BOT_ID = bot_info.id
         bot_config.BOT_USERNAME = bot_info.username
-        logger.info("bot_info_loaded",
-                    bot_id=bot_info.id,
-                    bot_username=bot_info.username)
+        logger.debug("bot_info_loaded",
+                     bot_id=bot_info.id,
+                     bot_username=bot_info.username)
 
         # Start metrics server (Phase 3.1: Prometheus integration)
         await start_metrics_server(host='0.0.0.0', port=8080)
-        logger.info("metrics_server_started", port=8080)
+        logger.debug("metrics_server_started", port=8080)
 
         # Start background metrics collection task
         metrics_task = asyncio.create_task(collect_metrics_task(logger))
-        logger.info("metrics_collection_task_started")
+        logger.debug("metrics_collection_task_started")
 
         # Start write-behind background task (Phase 3.3: Cache-first)
         from cache.write_behind import \
             write_behind_task  # pylint: disable=import-outside-toplevel
         write_behind_handle = asyncio.create_task(write_behind_task(logger))
-        logger.info("write_behind_task_started")
+        logger.debug("write_behind_task_started")
 
         # Start polling
-        logger.info("starting_polling")
+        logger.debug("starting_polling")
         try:
             await dispatcher.start_polling(bot)
         finally:
@@ -461,11 +461,11 @@ async def main() -> None:
     finally:
         # Cleanup Redis connections
         await close_redis()
-        logger.info("redis_closed")
+        logger.debug("redis_closed")
 
         # Cleanup database connections
         await dispose_db()
-        logger.info("bot_stopped")
+        logger.debug("bot_stopped")
 
 
 if __name__ == "__main__":

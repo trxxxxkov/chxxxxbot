@@ -520,4 +520,4 @@ async def start_metrics_server(host: str = '0.0.0.0', port: int = 8080) -> None:
     site = web.TCPSite(runner, host, port)
     await site.start()
 
-    logger.info('metrics_server_started', host=host, port=port)
+    logger.debug('metrics_server_started', host=host, port=port)

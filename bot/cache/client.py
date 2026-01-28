@@ -113,7 +113,7 @@ async def init_redis() -> redis.Redis:
     redis_url = get_redis_url()
     safe_url = _sanitize_url(redis_url)
 
-    logger.info("redis.connecting", url=safe_url)
+    logger.debug("redis.connecting", url=safe_url)
 
     # Create connection pool with reasonable defaults
     _connection_pool = ConnectionPool.from_url(
@@ -130,7 +130,7 @@ async def init_redis() -> redis.Redis:
     # Test connection
     try:
         await _redis_client.ping()
-        logger.info("redis.connected", url=safe_url)
+        logger.debug("redis.connected", url=safe_url)
     except redis.ConnectionError as e:
         logger.error("redis.connection_failed", url=safe_url, error=str(e))
         raise
@@ -265,7 +265,7 @@ async def close_redis() -> None:
     if _redis_client is not None:
         try:
             await _redis_client.aclose()
-            logger.info("redis.closed")
+            logger.debug("redis.closed")
         except Exception as e:  # pylint: disable=broad-exception-caught
             logger.info("redis.close_error", error=str(e))
         finally:

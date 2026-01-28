@@ -196,7 +196,7 @@ class TestInitClaudeProvider:
 
                 init_claude_provider("test_api_key")
 
-                mock_logger.info.assert_called_with(
+                mock_logger.debug.assert_called_with(
                     "claude_handler.provider_initialized")
 
 

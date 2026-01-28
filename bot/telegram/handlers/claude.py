@@ -113,7 +113,7 @@ def init_claude_provider(api_key: str) -> None:
     """
     global claude_provider  # pylint: disable=global-statement
     claude_provider = ClaudeProvider(api_key=api_key)
-    logger.info("claude_handler.provider_initialized")
+    logger.debug("claude_handler.provider_initialized")
 
 
 async def _send_with_retry(

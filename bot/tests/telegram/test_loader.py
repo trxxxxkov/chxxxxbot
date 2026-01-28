@@ -110,7 +110,7 @@ def test_create_bot_logging():
         create_bot("test_token")
 
         # Verify logging
-        mock_logger.info.assert_called_once_with("bot_created")
+        mock_logger.debug.assert_called_once_with("bot_created")
 
 
 def test_create_bot_returns_bot_type():
@@ -232,7 +232,7 @@ def test_create_dispatcher_logging():
             "start", "model", "personality", "payment", "admin",
             "stop_generation", "edited_message", "unified_pipeline"
         ]
-        mock_logger.info.assert_called_once_with(
+        mock_logger.debug.assert_called_once_with(
             "dispatcher_created",
             routers=expected_routers,
         )

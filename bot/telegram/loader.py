@@ -42,7 +42,7 @@ def create_bot(token: str) -> Bot:
     """
     bot = Bot(token=token,
               default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-    logger.info("bot_created")
+    logger.debug("bot_created")
     return bot
 
 
@@ -88,7 +88,7 @@ def create_dispatcher() -> Dispatcher:
     dispatcher.include_router(edited_message.router)  # Edit tracking
     dispatcher.include_router(unified_handler.router)  # Unified handler
 
-    logger.info(
+    logger.debug(
         "dispatcher_created",
         routers=[
             "start",

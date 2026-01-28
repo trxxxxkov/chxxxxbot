@@ -633,7 +633,7 @@ async def write_behind_task(log) -> None:
     from db.engine import \
         get_session  # pylint: disable=import-outside-toplevel
 
-    log.info("write_behind.task_started", interval=FLUSH_INTERVAL)
+    log.debug("write_behind.task_started", interval=FLUSH_INTERVAL)
 
     while True:
         try:
@@ -650,7 +650,7 @@ async def write_behind_task(log) -> None:
 
         except asyncio.CancelledError:
             # Final flush on shutdown
-            log.info("write_behind.shutdown_flush_start")
+            log.debug("write_behind.shutdown_flush_start")
             try:
                 async with get_session() as session:
                     # Flush multiple times to drain queue
@@ -661,8 +661,8 @@ async def write_behind_task(log) -> None:
                             break
                         total_flushed += flushed
 
-                    log.info("write_behind.shutdown_flush_complete",
-                             total=total_flushed)
+                    log.debug("write_behind.shutdown_flush_complete",
+                              total=total_flushed)
             except Exception as e:  # pylint: disable=broad-exception-caught
                 log.error("write_behind.shutdown_flush_error", error=str(e))
             break

@@ -137,8 +137,8 @@ async def test_init_db_logs_safely():
         url_with_password = 'postgresql+asyncpg://user:secret123@localhost:5432/db'
         engine.init_db(url_with_password)
 
-        mock_logger.info.assert_called_once()
-        call_args = mock_logger.info.call_args
+        mock_logger.debug.assert_called_once()
+        call_args = mock_logger.debug.call_args
 
         # Verify "database_initialized" event logged
         assert call_args[0][0] == 'database_initialized'
@@ -210,7 +210,7 @@ async def test_dispose_db_closes_connections():
         await engine.dispose_db()
 
         mock_engine.dispose.assert_called_once()
-        mock_logger.info.assert_called_with('database_disposed')
+        mock_logger.debug.assert_called_with('database_disposed')
 
 
 @pytest.mark.asyncio

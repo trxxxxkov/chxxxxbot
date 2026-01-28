@@ -65,7 +65,7 @@ def get_queue() -> ProcessedMessageQueue:
     global _queue  # pylint: disable=global-statement
     if _queue is None:
         _queue = ProcessedMessageQueue(_process_batch)
-        logger.info("unified_handler.queue_initialized")
+        logger.debug("unified_handler.queue_initialized")
     return _queue
 
 

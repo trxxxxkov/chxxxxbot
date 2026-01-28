@@ -77,7 +77,7 @@ def init_db(database_url: str, echo: bool = False) -> None:
 
     # Log without exposing password
     safe_url = database_url.split('@')[-1] if '@' in database_url else 'local'
-    logger.info("database_initialized", url=safe_url)
+    logger.debug("database_initialized", url=safe_url)
 
 
 async def dispose_db() -> None:
@@ -89,7 +89,7 @@ async def dispose_db() -> None:
     global _engine  # pylint: disable=global-statement,global-variable-not-assigned
     if _engine:
         await _engine.dispose()
-        logger.info("database_disposed")
+        logger.debug("database_disposed")
 
 
 @asynccontextmanager

@@ -68,11 +68,11 @@ class ClaudeProvider(LLMProvider):
         self.last_thinking: Optional[
             str] = None  # Phase 1.4.3: Extended Thinking
 
-        logger.info("claude_provider.initialized",
-                    beta_features=[
-                        "interleaved-thinking", "context-management", "effort",
-                        "files-api", "web-search", "web-fetch"
-                    ])
+        logger.debug("claude_provider.initialized",
+                     beta_features=[
+                         "interleaved-thinking", "context-management", "effort",
+                         "files-api", "web-search", "web-fetch"
+                     ])
 
     # pylint: disable=too-many-locals,too-many-branches,too-many-statements
     async def get_message(self, request: LLMRequest) -> anthropic.types.Message:

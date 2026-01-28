@@ -80,7 +80,7 @@ class ProcessedMessageQueue:
         """
         self._queues: Dict[int, MessageBatch] = {}
         self._process_callback = process_callback
-        logger.info("processed_queue.initialized")
+        logger.debug("processed_queue.initialized")
 
     def _get_or_create_queue(self, thread_id: int) -> MessageBatch:
         """Get or create queue for thread.
