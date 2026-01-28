@@ -376,16 +376,8 @@ class StreamingSession:  # pylint: disable=too-many-instance-attributes
         if not message:
             return
 
-        # Check if previous thinking content ends with ] (tool marker)
-        thinking_blocks = self._display.get_thinking_blocks()
-        if thinking_blocks:
-            last_content = thinking_blocks[-1].content.rstrip()
-            if last_content.endswith("]"):
-                # Previous was a marker, use single newline
-                self._display.append(BlockType.THINKING, "\n" + message)
-                return
-
-        # Otherwise use double newline for visual separation
+        # Always use double newline for proper visual separation
+        # Single newline doesn't create visible separation in Telegram
         self._display.append(BlockType.THINKING, "\n\n" + message)
 
     def clear_pending_tools(self) -> None:

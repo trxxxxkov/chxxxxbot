@@ -70,7 +70,7 @@ async def _process_single_file(
         # Override to document type if as_document is True
         # This ensures chat action shows "uploading document" instead of "uploading photo"
         if as_document and file_type == FileType.IMAGE:
-            file_type = FileType.OTHER  # Will show document action
+            file_type = FileType.DOCUMENT  # Will show document action
 
         # Get ChatActionManager and wrap ENTIRE file processing in uploading scope
         # This shows correct status during both Files API upload AND Telegram send
