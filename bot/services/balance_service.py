@@ -286,7 +286,7 @@ class BalanceService:
                 "Must provide either target_user_id or target_username")
 
         if not user:
-            logger.error(
+            logger.info(
                 "balance.admin_topup_user_not_found",
                 admin_user_id=admin_user_id,
                 target_user_id=target_user_id,
