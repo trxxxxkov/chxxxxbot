@@ -525,4 +525,5 @@ async def handle_clear_all_confirmation(
         deleted=deleted_count,
     )
 
-    await callback.answer(f"Deleted {deleted_count} topics.", show_alert=True)
+    # Silent acknowledgment - no notification to user
+    await callback.answer()
