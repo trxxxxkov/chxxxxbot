@@ -397,6 +397,21 @@
           {
             "matcher": {
               "id": "byName",
+              "options": "self_critique"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#DC2626",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
               "options": "Claude Sonnet 4.5"
             },
             "properties": [
@@ -509,6 +524,15 @@
         }
       },
       "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"self_critique.cost_charged\" | unwrap total_cost [$__interval])) or vector(0)",
+          "legendFormat": "self_critique",
+          "refId": "SC"
+        },
         {
           "datasource": {
             "type": "loki",
