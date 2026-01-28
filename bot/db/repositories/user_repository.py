@@ -69,12 +69,13 @@ class UserRepository(BaseRepository[User]):
         Returns:
             User instance or None if not found.
         """
-        logger.debug("user_repository.get_by_username", username=username)
+        logger.debug("user_repository.get_by_username",
+                     target_username=username)
         stmt = select(User).where(User.username == username)
         result = await self.session.execute(stmt)
         user = result.scalar_one_or_none()
         logger.debug("user_repository.get_by_username.result",
-                     username=username,
+                     target_username=username,
                      found=user is not None)
         return user
 

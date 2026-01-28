@@ -81,7 +81,7 @@ class ChatRepository(BaseRepository[Chat]):
         logger.info("chat_repository.get_or_create.start",
                     telegram_id=telegram_id,
                     chat_type=chat_type,
-                    username=username)
+                    chat_username=username)
 
         chat = await self.get_by_telegram_id(telegram_id)
 
