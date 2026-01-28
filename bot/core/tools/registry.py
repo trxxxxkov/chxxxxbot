@@ -39,6 +39,7 @@ from core.tools.execute_python import TOOL_CONFIG as EXECUTE_PYTHON_CONFIG
 from core.tools.generate_image import TOOL_CONFIG as GENERATE_IMAGE_CONFIG
 from core.tools.preview_file import TOOL_CONFIG as PREVIEW_FILE_CONFIG
 from core.tools.render_latex import TOOL_CONFIG as RENDER_LATEX_CONFIG
+from core.tools.self_critique import TOOL_CONFIG as SELF_CRITIQUE_CONFIG
 from core.tools.transcribe_audio import TOOL_CONFIG as TRANSCRIBE_AUDIO_CONFIG
 from utils.structured_logging import get_logger
 
@@ -93,6 +94,7 @@ TOOLS: Dict[str, ToolConfig] = {
     "execute_python": EXECUTE_PYTHON_CONFIG,
     "preview_file": PREVIEW_FILE_CONFIG,
     "deliver_file": DELIVER_FILE_CONFIG,
+    "self_critique": SELF_CRITIQUE_CONFIG,
     "web_search": WEB_SEARCH_CONFIG,
     "web_fetch": WEB_FETCH_CONFIG,
 }
@@ -222,6 +224,7 @@ async def execute_tool(
     bot: 'Bot',
     session: 'AsyncSession',
     thread_id: Optional[int] = None,
+    user_id: Optional[int] = None,
 ) -> Dict[str, str]:
     """Execute a tool by name with given input.
 
@@ -235,6 +238,8 @@ async def execute_tool(
         session: Database session for querying file metadata.
         thread_id: Optional thread ID for associating generated files
             with the conversation (used by execute_python, render_latex).
+        user_id: Optional user ID for balance checks and cost tracking
+            (required by self_critique).
 
     Returns:
         Tool execution result as dictionary.
@@ -275,12 +280,25 @@ async def execute_tool(
     try:
         # Execute tool (all tools are async)
         if tool.needs_bot_session:
-            result = await executor(
-                bot=bot,
-                session=session,
-                thread_id=thread_id,
-                **tool_input,
-            )
+            # self_critique requires user_id for balance check and cost tracking
+            if tool_name == "self_critique":
+                if user_id is None:
+                    raise ValueError(
+                        "self_critique requires user_id for cost tracking")
+                result = await executor(
+                    bot=bot,
+                    session=session,
+                    thread_id=thread_id,
+                    user_id=user_id,
+                    **tool_input,
+                )
+            else:
+                result = await executor(
+                    bot=bot,
+                    session=session,
+                    thread_id=thread_id,
+                    **tool_input,
+                )
         else:
             result = await executor(**tool_input)
 

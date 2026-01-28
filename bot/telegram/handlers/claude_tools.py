@@ -179,7 +179,8 @@ async def execute_single_tool_safe(
                                     tool_input,
                                     bot,
                                     session,
-                                    thread_id=thread_id)
+                                    thread_id=thread_id,
+                                    user_id=user_id)
         duration = time.time() - start_time
 
         # Add metadata for post-processing
