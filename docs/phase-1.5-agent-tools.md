@@ -16,6 +16,7 @@
 - [Multimodal Tools](#multimodal-tools)
 - [Web Tools](#web-tools)
 - [Code Execution](#code-execution)
+- [Self-Critique Verification Subagent](#self-critique-verification-subagent)
 - [System Prompt](#system-prompt)
 - [Implementation Details](#implementation-details)
 - [Related Documents](#related-documents)
@@ -851,6 +852,90 @@ def execute_python(
 
 ---
 
+## Self-Critique Verification Subagent
+
+**Status:** ✅ IMPLEMENTED (2026-01-28)
+
+The `self_critique` tool launches an independent verification session using Claude Opus 4.5 with an adversarial mindset to find flaws in responses.
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                          Main Claude Session                             │
+│  (User's model: Sonnet/Opus/Haiku)                                      │
+├─────────────────────────────────────────────────────────────────────────┤
+│  User request → Claude generates response → [Trigger condition?]        │
+│                                                                          │
+│  Triggers:                                                               │
+│  1. User dissatisfaction ("переделай", "wrong", "redo")                 │
+│  2. Verification request ("проверь", "verify", "make sure")             │
+│  3. Complex task (Claude's judgment: long reasoning, 50+ lines code)    │
+│                              ↓                                           │
+│                    ┌─────────────────┐                                  │
+│                    │  self_critique  │                                  │
+│                    └────────┬────────┘                                  │
+└─────────────────────────────┼────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────────────┐
+│                     Self-Critique Subagent                               │
+│  (ALWAYS Claude Opus 4.5, ADVERSARIAL mindset)                          │
+├─────────────────────────────────────────────────────────────────────────┤
+│  Available Tools (parallel execution):                                  │
+│  ├── execute_python  - Run tests, debug, visualize                     │
+│  ├── preview_file    - Examine any file type                           │
+│  ├── analyze_image   - Vision analysis                                  │
+│  └── analyze_pdf     - PDF analysis                                     │
+│                                                                          │
+│  Workflow:                                                               │
+│  1. Understand user's original request                                  │
+│  2. Examine content/files (use tools in parallel)                       │
+│  3. Write tests / verification code                                     │
+│  4. Compare output vs. user request                                     │
+│  5. Return structured verdict                                           │
+└─────────────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────────────┐
+│  Output: {"verdict": "PASS|FAIL|NEEDS_IMPROVEMENT",                     │
+│           "alignment_score": 0-100, "issues": [...],                    │
+│           "recommendations": [...], "cost_usd": 0.05}                   │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Key Features
+
+| Feature | Description |
+|---------|-------------|
+| **Always Opus** | Uses Claude Opus 4.5 regardless of user's model |
+| **Adversarial mindset** | Actively searches for flaws, not validation |
+| **Full tool access** | execute_python, preview_file, analyze_image, analyze_pdf |
+| **Extended thinking** | 10K budget tokens for deep analysis |
+| **Parallel execution** | asyncio.gather() for multiple tools |
+| **Balance check** | Requires >= $0.50 to start |
+| **Dynamic pricing** | User pays actual Opus tokens + tool costs |
+
+### Cost Estimates (Opus: $15/$75 per 1M tokens)
+
+| Complexity | Input | Output | Tools | Total |
+|------------|-------|--------|-------|-------|
+| Simple (no tools) | ~2K | ~1K | $0 | ~$0.03 |
+| With code execution | ~3K | ~2K | ~$0.01 | ~$0.07 |
+| Thorough verification | ~5K | ~3K | ~$0.03 | ~$0.12 |
+
+### Usage Triggers
+
+1. **User dissatisfaction**: "переделай", "не то", "wrong", "redo", "try again"
+2. **Verification request**: "проверь", "убедись", "verify", "make sure", "carefully"
+3. **Complex tasks**: Long reasoning chains, 50+ lines of code, uncertain correctness
+
+### Implementation Files
+
+- `bot/core/tools/self_critique.py` - Main implementation (~1000 lines)
+- `bot/prompts/system_prompt.py` - Usage instructions in `<self_critique_usage>` section
+- `bot/tests/core/tools/test_self_critique.py` - 46 comprehensive tests
+
+---
+
 ## System Prompt
 
 Dynamic system prompt with available files and tool selection guidance:
@@ -1276,7 +1361,7 @@ Phase 1.5 implements multimodal support and tools using:
 - Registry consolidates all tools in single TOOLS dict
 - Streaming support with tool execution loop
 
-**Tools** - 10 total:
+**Tools** - 11 total:
 - `analyze_image` (custom, vision) - Paid (tokens)
 - `analyze_pdf` (custom, PDF support) - Paid (tokens)
 - `transcribe_audio` (custom, Whisper API) - Paid ($0.006/min)
@@ -1287,6 +1372,7 @@ Phase 1.5 implements multimodal support and tools using:
 - `deliver_file` (custom, file delivery) - Free
 - `web_search` (server-side, Anthropic) - Paid ($0.01/search)
 - `web_fetch` (server-side, Anthropic) - Free (tokens only)
+- `self_critique` (custom, verification subagent) - Paid (Opus tokens + tools)
 
 **Best Practices** (from Phase 1.4):
 - Detailed tool descriptions (3-4+ sentences)
