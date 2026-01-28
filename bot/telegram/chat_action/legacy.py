@@ -3,20 +3,19 @@
 This module preserves the original chat action functions to ensure
 existing code continues to work without modification.
 
-New code should prefer the ActionManager API:
-    from telegram.chat_action import ActionManager
+New code should prefer the ChatActionManager API:
+    from telegram.chat_action.manager import ChatActionManager
 
 Legacy API (still supported):
-    from telegram.chat_action import send_action, continuous_action
+    from telegram.chat_action.legacy import send_action, continuous_action
 """
 
 import asyncio
 from contextlib import asynccontextmanager
 from typing import Optional, TYPE_CHECKING
 
+from telegram.chat_action.types import ChatAction
 from utils.structured_logging import get_logger
-
-from .types import ChatAction
 
 if TYPE_CHECKING:
     from aiogram import Bot

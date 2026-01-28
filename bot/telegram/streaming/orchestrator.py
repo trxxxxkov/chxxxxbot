@@ -11,8 +11,8 @@ from typing import TYPE_CHECKING
 
 from core.models import LLMRequest
 from core.models import Message
-from telegram.chat_action import ActionManager
-from telegram.chat_action import ActionPhase
+from telegram.chat_action.manager import ChatActionManager
+from telegram.chat_action.types import ActionPhase
 from telegram.draft_streaming import DraftManager
 from telegram.generation_tracker import generation_context
 from telegram.handlers.claude_files import process_generated_files
@@ -192,8 +192,8 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
             max_iterations=TOOL_LOOP_MAX_ITERATIONS,
         )
 
-        # Get ActionManager for typing indicator
-        action_manager = ActionManager.get(
+        # Get ChatActionManager for typing indicator
+        action_manager = ChatActionManager.get(
             self._first_message.bot,
             self._chat_id,
             self._telegram_thread_id,
@@ -354,6 +354,7 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
             cancellation_reason=CancellationReason.STOP_COMMAND,
             thinking_chars=thinking_chars,
             output_chars=total_output_chars,
+            has_sent_parts=stream.has_sent_parts,
         )
 
     async def _handle_completion(
@@ -394,6 +395,7 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
             display_text=final_display,
             message=final_message,
             iterations=iterations,
+            has_sent_parts=stream.has_sent_parts,
         )
 
     async def _execute_tools(
@@ -540,6 +542,7 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
                 message=final_message,
                 needs_continuation=True,
                 conversation=conversation,
+                has_sent_parts=stream.has_sent_parts,
             )
 
         # Continue to next iteration
@@ -579,6 +582,7 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
             text=final_answer,
             display_text=final_display or final_answer,
             message=final_message,
+            has_sent_parts=stream.has_sent_parts,
         )
 
     async def _handle_max_iterations(

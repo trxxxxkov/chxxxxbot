@@ -81,8 +81,9 @@ from telegram.context.formatter import ContextFormatter
 from telegram.handlers.claude_files import process_generated_files
 from telegram.handlers.claude_helpers import compose_system_prompt_blocks
 from telegram.handlers.claude_helpers import split_text_smart
-from telegram.streaming import escape_html
-from telegram.streaming import strip_tool_markers as _strip_tool_markers
+from telegram.streaming.formatting import escape_html
+from telegram.streaming.formatting import \
+    strip_tool_markers as _strip_tool_markers
 from telegram.streaming.orchestrator import StreamingOrchestrator
 from utils.metrics import record_cache_hit
 from utils.metrics import record_cache_miss
@@ -590,14 +591,18 @@ async def _process_batch_with_session(
                         for chunk in chunks:
                             bot_message = await _send_with_retry(
                                 first_message, chunk)
-                    elif all_response_parts:
-                        # Had content in previous continuations but empty final
-                        # This can happen with many sequential deliveries
-                        logger.debug("claude_handler.continuations_exhausted",
-                                     thread_id=thread_id)
-                        # Files were already delivered, just acknowledge
+                    elif all_response_parts or result.has_sent_parts:
+                        # Had content in previous continuations or split parts
+                        # This can happen with many sequential deliveries or
+                        # when message was split due to length (>4096 chars)
+                        logger.debug(
+                            "claude_handler.continuations_exhausted",
+                            thread_id=thread_id,
+                            all_response_parts=bool(all_response_parts),
+                            has_sent_parts=result.has_sent_parts)
+                        # Content was already delivered, just acknowledge
                         bot_message = await _send_with_retry(
-                            first_message, "✓ Files delivered.")
+                            first_message, "✓ Response delivered.")
                     else:
                         # External API returned empty - gracefully handled
                         logger.info("claude_handler.empty_response",

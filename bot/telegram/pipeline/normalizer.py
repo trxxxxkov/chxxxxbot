@@ -25,7 +25,7 @@ from core.mime_types import detect_mime_type
 from core.mime_types import mime_to_media_type
 from core.pricing import calculate_whisper_cost
 from core.pricing import cost_to_float
-from telegram.chat_action import ActionManager
+from telegram.chat_action.manager import ChatActionManager
 from telegram.context.extractors import extract_message_context
 from telegram.context.extractors import get_sender_display
 from telegram.pipeline.models import MediaType
@@ -116,14 +116,14 @@ class MessageNormalizer:
         text = message.text or message.caption
 
         # Process media based on type
-        # Use ActionManager for continuous status during long operations
+        # Use ChatActionManager for continuous status during long operations
         files: list[UploadedFile] = []
         transcript: Optional[TranscriptInfo] = None
         transcription_charged = False
 
-        # Get ActionManager for this chat (shows appropriate status indicators)
-        manager = ActionManager.get(message.bot, message.chat.id,
-                                    message.message_thread_id)
+        # Get ChatActionManager for this chat (shows appropriate status indicators)
+        manager = ChatActionManager.get(message.bot, message.chat.id,
+                                        message.message_thread_id)
 
         # Process media with continuous action indicators
         # Voice/video_note: processing() shows record_voice/record_video

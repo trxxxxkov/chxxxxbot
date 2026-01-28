@@ -101,6 +101,7 @@ class StreamResult:  # pylint: disable=too-many-instance-attributes
         thinking_chars: Character count of thinking (for partial cost).
         output_chars: Character count of output text (for partial cost).
         iterations: Number of tool loop iterations completed.
+        has_sent_parts: True if message was split and parts already sent.
     """
 
     text: str
@@ -113,3 +114,4 @@ class StreamResult:  # pylint: disable=too-many-instance-attributes
     thinking_chars: int = 0
     output_chars: int = 0
     iterations: int = 0
+    has_sent_parts: bool = False

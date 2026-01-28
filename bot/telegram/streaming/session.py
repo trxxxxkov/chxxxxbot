@@ -326,6 +326,15 @@ class StreamingSession:  # pylint: disable=too-many-instance-attributes
         """
         return format_final_text(self._display, parse_mode=self._parse_mode)
 
+    @property
+    def has_sent_parts(self) -> bool:
+        """Check if message was split and parts already sent.
+
+        Returns:
+            True if at least one message part was committed via splitting.
+        """
+        return self._message_part > 1
+
     def get_current_text_length(self) -> int:
         """Get current text length before any clearing.
 

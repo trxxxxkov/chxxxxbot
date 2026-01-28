@@ -3,9 +3,12 @@
 This module handles admin-only commands:
 - /topup - Adjust any user's balance (add or subtract)
 - /set_margin - Configure owner margin (k3) for payment commissions
-- /clear - Delete all forum topics in the current chat
 
-Only users in PRIVILEGED_USERS (from secrets/privileged_users.txt) can use these.
+And user commands with admin escalation:
+- /clear - Delete forum topics (current topic for all, all topics for admins)
+
+Only users in PRIVILEGED_USERS (from secrets/privileged_users.txt) can use
+privileged commands like /topup and /set_margin.
 """
 
 from decimal import Decimal
@@ -279,10 +282,15 @@ async def cmd_clear(
 ):
     """Handler for /clear command - delete forum topics.
 
-    Privileged users only. Behavior:
-    - /clear in General (topic_id=None or 1) → deletes ALL topics
+    Available to all users with restrictions:
+    - In private chats: clears all topics
+    - In group chats (current topic): clears only the current topic
+    - In group chats (General/all topics): requires admin or privileged user
+
+    Behavior:
+    - /clear in General (topic_id=None or 1) → deletes ALL topics (admin only)
     - /clear in new topic (just created by this command) → deletes ALL topics
-    - /clear in existing topic → deletes only that topic
+    - /clear in existing topic → deletes only that topic (any user)
 
     Note: Bot must have can_manage_topics admin right.
 
@@ -295,24 +303,14 @@ async def cmd_clear(
     user_id = message.from_user.id
     chat_id = message.chat.id
 
-    # Check privileges
-    if not is_privileged(user_id):
-        logger.warning(
-            "admin.clear_unauthorized",
-            user_id=user_id,
-            username=message.from_user.username,
-        )
-        await message.answer(
-            "❌ This command is only available to privileged users.")
-        return
-
     current_topic_id = message.message_thread_id
     thread_repo = ThreadRepository(session)
     existing_topic_ids = await thread_repo.get_unique_topic_ids(chat_id)
 
     logger.debug(
-        "admin.clear_context",
+        "clear.context",
         chat_id=chat_id,
+        user_id=user_id,
         current_topic_id=current_topic_id,
         existing_topic_ids=existing_topic_ids,
         topic_was_created=topic_was_created,
@@ -324,6 +322,31 @@ async def cmd_clear(
     # - Existing topic → delete only that one
     is_general = (not current_topic_id or current_topic_id == 1 or
                   topic_was_created)
+
+    # Security check: clearing ALL topics in groups requires elevated rights
+    is_private_chat = message.chat.type == "private"
+
+    if is_general and not is_private_chat:
+        # In group chats, clearing all topics requires admin rights
+        is_chat_admin = False
+        try:
+            member = await message.bot.get_chat_member(chat_id, user_id)
+            is_chat_admin = member.status in ("administrator", "creator")
+        except Exception:
+            pass
+
+        if not is_privileged(user_id) and not is_chat_admin:
+            logger.info(
+                "clear.denied_no_admin_rights",
+                user_id=user_id,
+                chat_id=chat_id,
+                msg="User tried to clear all topics without admin rights",
+            )
+            await message.answer(
+                "❌ Clearing all topics requires admin rights.\n"
+                "💡 Use /clear inside a specific topic to delete only that topic."
+            )
+            return
 
     if is_general:
         # General - delete all topics
@@ -339,8 +362,8 @@ async def cmd_clear(
         return
 
     logger.info(
-        "admin.clear_started",
-        admin_user_id=user_id,
+        "clear.started",
+        user_id=user_id,
         chat_id=chat_id,
         mode=mode,
         is_general=is_general,
@@ -365,14 +388,14 @@ async def cmd_clear(
                 message_thread_id=topic_id,
             )
             logger.info(
-                "admin.delete_topic_success",
+                "clear.delete_topic_success",
                 chat_id=chat_id,
                 topic_id=topic_id,
             )
         except Exception as e:
             # Log error but continue - topic may already be deleted
             logger.info(
-                "admin.delete_topic_error",
+                "clear.delete_topic_error",
                 chat_id=chat_id,
                 topic_id=topic_id,
                 error=str(e),
@@ -388,8 +411,8 @@ async def cmd_clear(
     # No confirmation message - topics are silently deleted
 
     logger.info(
-        "admin.clear_complete",
-        admin_user_id=user_id,
+        "clear.complete",
+        user_id=user_id,
         chat_id=chat_id,
         mode=mode,
         deleted=deleted_count,

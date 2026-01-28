@@ -22,7 +22,7 @@ from db.models.user_file import FileSource
 from db.models.user_file import FileType
 from db.repositories.user_file_repository import UserFileRepository
 from sqlalchemy.ext.asyncio import AsyncSession
-from telegram.chat_action import ActionManager
+from telegram.chat_action.manager import ChatActionManager
 from utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
@@ -63,10 +63,10 @@ async def _process_single_file(
         # throughout the entire file handling process
         file_type = mime_to_file_type(mime_type)
 
-        # Get ActionManager and wrap ENTIRE file processing in uploading scope
+        # Get ChatActionManager and wrap ENTIRE file processing in uploading scope
         # This shows correct status during both Files API upload AND Telegram send
-        manager = ActionManager.get(first_message.bot, chat_id,
-                                    telegram_thread_id)
+        manager = ChatActionManager.get(first_message.bot, chat_id,
+                                        telegram_thread_id)
 
         async with manager.uploading(file_type=file_type):
             # Step 1: Upload to Files API
