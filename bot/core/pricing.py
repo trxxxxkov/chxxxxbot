@@ -62,6 +62,9 @@ def calculate_e2b_cost(duration_seconds: float) -> Decimal:
 GEMINI_IMAGE_COST_STANDARD = Decimal("0.134")  # 1K/2K resolution
 GEMINI_IMAGE_COST_4K = Decimal("0.240")  # 4K resolution
 
+# Google Search grounding cost (approximate per query)
+GOOGLE_SEARCH_GROUNDING_COST = Decimal("0.02")
+
 
 def calculate_gemini_image_cost(resolution: str = "2048x2048") -> Decimal:
     """Calculate Gemini image generation cost.
