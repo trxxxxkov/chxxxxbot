@@ -354,18 +354,25 @@ async def cmd_clear(
 
     if is_general:
         # General - delete all topics (with confirmation)
-        topic_ids = list(existing_topic_ids)
-        # Filter out General topic (ID=1) for count
-        deletable_count = sum(1 for t in topic_ids if t != 1)
+        topic_ids = [t for t in existing_topic_ids if t != 1]  # Exclude General
 
-        if deletable_count == 0:
+        if not topic_ids:
             await message.answer("ℹ️ No forum topics to delete.")
             return
 
-        # Show confirmation dialog
+        # Check which topics actually exist in Telegram
+        # (DB may have stale records for already deleted topics)
+        existing_count = await _count_existing_topics(message.bot, chat_id,
+                                                      topic_ids)
+
+        if existing_count == 0:
+            await message.answer("ℹ️ No forum topics to delete.")
+            return
+
+        # Show confirmation dialog with exact count
         keyboard = InlineKeyboardMarkup(inline_keyboard=[[
             InlineKeyboardButton(
-                text=f"Yes, delete all {deletable_count} topics",
+                text=f"Yes, delete {existing_count} topics",
                 callback_data=f"clear_all:{chat_id}",
             )
         ]])
@@ -374,11 +381,11 @@ async def cmd_clear(
             "clear.confirmation_shown",
             user_id=user_id,
             chat_id=chat_id,
-            topic_count=deletable_count,
+            topic_count=existing_count,
         )
 
         await message.answer(
-            f"⚠️ Are you sure you want to delete all {deletable_count} topics?\n\n"
+            f"⚠️ Are you sure you want to delete {existing_count} topics?\n\n"
             "This action cannot be undone.",
             reply_markup=keyboard,
         )
@@ -405,6 +412,35 @@ async def cmd_clear(
         mode="single",
         deleted=1,
     )
+
+
+async def _count_existing_topics(bot, chat_id: int,
+                                 topic_ids: list[int]) -> int:
+    """Count how many topics actually exist in Telegram.
+
+    Uses send_chat_action to verify topic existence without side effects.
+
+    Args:
+        bot: Telegram Bot instance.
+        chat_id: Chat ID where topics are located.
+        topic_ids: List of topic IDs to check.
+
+    Returns:
+        Number of topics that actually exist.
+    """
+    count = 0
+    for topic_id in topic_ids:
+        try:
+            await bot.send_chat_action(
+                chat_id=chat_id,
+                action="typing",
+                message_thread_id=topic_id,
+            )
+            count += 1
+        except Exception:
+            # Topic doesn't exist or bot can't access it
+            pass
+    return count
 
 
 async def _delete_topics(
