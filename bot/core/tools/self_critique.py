@@ -1034,6 +1034,20 @@ async def execute_self_critique(
                     thinking_tokens=thinking_tokens,
                     source="self_critique")
 
+        # Track web_search costs ($0.01 per search request)
+        web_search_requests = getattr(response.usage, 'web_search_requests', 0)
+        # Handle None, 0, or missing attribute
+        if web_search_requests and isinstance(web_search_requests,
+                                              int) and web_search_requests > 0:
+            web_search_cost = Decimal("0.01") * web_search_requests
+            cost_tracker.add_tool_cost("web_search", web_search_cost)
+            # Log for Grafana (appears in web_search panel)
+            # Use same event as main handler for consistency
+            logger.info("tools.web_search.user_charged",
+                        cost_usd=float(web_search_cost),
+                        web_search_requests=web_search_requests,
+                        source="self_critique")
+
         # Check stop reason
         if response.stop_reason == "end_turn":
             # Done - extract JSON result from text blocks
