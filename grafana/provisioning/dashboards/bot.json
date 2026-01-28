@@ -1521,7 +1521,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "{service=\"bot\"} |~ \"${user_filter}\" | json | level=~\"${log_level:pipe}\" | line_format \"[{{ if .username }}{{.username}}{{ else }}<None>{{ end }}] {{__line__}}\"",
+          "expr": "{service=\"bot\"} |~ \"${user_filter}\" | json | level=~\"${log_level:pipe}\" | line_format \"[{{ if .username }}{{.username}}{{ else if .user_id }}<None>{{ end }}] {{__line__}}\"",
           "refId": "A"
         }
       ],
