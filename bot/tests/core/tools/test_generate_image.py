@@ -1,7 +1,7 @@
-"""Tests for generate_image tool (Phase 1.7).
+"""Tests for generate_image tool (Phase 1.7+).
 
 Tests Google Gemini 3 Pro Image API integration:
-- Success flow (image generation)
+- Success flow (image generation) with exec_cache storage
 - Parameter handling (aspect_ratio, image_size)
 - Error handling (API errors, content policy violations)
 - Cost calculation
@@ -9,6 +9,7 @@ Tests Google Gemini 3 Pro Image API integration:
 - Tool definition schema
 """
 
+from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
@@ -26,6 +27,30 @@ def reset_client():
     yield
     # Reset after test
     core.clients._google_client = None
+
+
+@pytest.fixture
+def mock_exec_cache():
+    """Mock exec_cache storage returning proper metadata."""
+
+    async def mock_store(filename,
+                         content,
+                         mime_type,
+                         context,
+                         execution_id,
+                         thread_id,
+                         delivery_hint=None):
+        return {
+            "temp_id": f"exec_{execution_id}",
+            "filename": filename,
+            "mime_type": mime_type,
+            "preview": f"Image {len(content)} bytes",
+            "delivery_hint": delivery_hint,
+        }
+
+    with patch('core.tools.generate_image.store_exec_file',
+               side_effect=mock_store):
+        yield
 
 
 # ============================================================================
@@ -74,7 +99,7 @@ def test_tool_definition_structure():
 
 
 @pytest.mark.asyncio
-async def test_generate_image_success():
+async def test_generate_image_success(mock_exec_cache):
     """Test successful image generation with default parameters."""
     # Mock response from Google API
     mock_response = MagicMock()
@@ -96,23 +121,32 @@ async def test_generate_image_success():
             session=MagicMock(),
         )
 
-        # Verify result structure (minimal - Claude doesn't need details)
+        # Verify result structure (exec_cache pattern)
         assert result["success"] == "true"
         assert "cost_usd" in result
         assert result["cost_usd"] == "0.134"  # Default 2K cost
-        # parameters_used removed to prevent Claude from including in response
+        assert result["mode"] == "generate"
 
-        # Check _file_contents
-        assert "_file_contents" in result
-        assert len(result["_file_contents"]) == 1
-        file_content = result["_file_contents"][0]
-        assert "filename" in file_content
-        assert file_content["content"] == b"fake_image_bytes_here"
-        assert file_content["mime_type"] == "image/png"
+        # Check output_file with temp_id (exec_cache pattern)
+        assert "output_file" in result
+        output_file = result["output_file"]
+        assert "temp_id" in output_file
+        assert output_file["temp_id"].startswith("exec_")
+        assert "filename" in output_file
+        assert output_file["mime_type"] == "image/png"
+
+        # Check image preview for Claude verification
+        assert "_image_preview" in result
+        assert "data" in result["_image_preview"]
+        assert "media_type" in result["_image_preview"]
+
+        # Check next_steps guidance
+        assert "next_steps" in result
+        assert "deliver_file" in result["next_steps"]
 
 
 @pytest.mark.asyncio
-async def test_generate_image_custom_parameters():
+async def test_generate_image_custom_parameters(mock_exec_cache):
     """Test image generation with custom aspect ratio and size."""
     mock_response = MagicMock()
     mock_response.parts = [
@@ -136,11 +170,14 @@ async def test_generate_image_custom_parameters():
         # Verify result (4K costs more)
         assert result["success"] == "true"
         assert result["cost_usd"] == "0.240"  # 4K cost
-        # parameters_used removed to prevent Claude from including in response
+
+        # Check output_file with temp_id (exec_cache pattern)
+        assert "output_file" in result
+        assert result["output_file"]["temp_id"].startswith("exec_")
 
 
 @pytest.mark.asyncio
-async def test_generate_image_with_generated_text():
+async def test_generate_image_with_generated_text(mock_exec_cache):
     """Test image generation when model also returns text."""
     mock_response = MagicMock()
     mock_response.parts = [
@@ -163,6 +200,8 @@ async def test_generate_image_with_generated_text():
         # Check that generated_text is included
         assert "generated_text" in result
         assert result["generated_text"] == "Here's your generated image!"
+        # Also check success
+        assert result["success"] == "true"
 
 
 @pytest.mark.asyncio
@@ -278,7 +317,7 @@ async def test_generate_image_api_error():
 
 
 @pytest.mark.asyncio
-async def test_cost_calculation_1k():
+async def test_cost_calculation_1k(mock_exec_cache):
     """Test cost calculation for 1K images."""
     mock_response = MagicMock()
     mock_response.parts = [
@@ -298,11 +337,12 @@ async def test_cost_calculation_1k():
             image_size="1K",
         )
 
+        assert result["success"] == "true"
         assert result["cost_usd"] == "0.134"
 
 
 @pytest.mark.asyncio
-async def test_cost_calculation_2k():
+async def test_cost_calculation_2k(mock_exec_cache):
     """Test cost calculation for 2K images."""
     mock_response = MagicMock()
     mock_response.parts = [
@@ -322,11 +362,12 @@ async def test_cost_calculation_2k():
             image_size="2K",
         )
 
+        assert result["success"] == "true"
         assert result["cost_usd"] == "0.134"
 
 
 @pytest.mark.asyncio
-async def test_cost_calculation_4k():
+async def test_cost_calculation_4k(mock_exec_cache):
     """Test cost calculation for 4K images."""
     mock_response = MagicMock()
     mock_response.parts = [
@@ -346,4 +387,5 @@ async def test_cost_calculation_4k():
             image_size="4K",
         )
 
+        assert result["success"] == "true"
         assert result["cost_usd"] == "0.240"

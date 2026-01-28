@@ -57,11 +57,20 @@ async def _process_single_file(
         mime_type = file_data["mime_type"]
         # Context helps model understand what this file is about
         upload_context = file_data.get("context")
+        # Force sending as document (no compression) for 4K images
+        as_document = file_data.get("as_document", False)
 
         # Determine file type from MIME BEFORE processing
         # This allows us to show correct action (upload_photo/upload_document)
         # throughout the entire file handling process
         file_type = mime_to_file_type(mime_type)
+        # Keep original type for DB, may override for chat action
+        db_file_type = file_type
+
+        # Override to document type if as_document is True
+        # This ensures chat action shows "uploading document" instead of "uploading photo"
+        if as_document and file_type == FileType.IMAGE:
+            file_type = FileType.OTHER  # Will show document action
 
         # Get ChatActionManager and wrap ENTIRE file processing in uploading scope
         # This shows correct status during both Files API upload AND Telegram send
@@ -80,9 +89,12 @@ async def _process_single_file(
             telegram_file_id = None
             telegram_file_unique_id = None
 
-            if file_type == FileType.IMAGE and mime_type in [
-                    "image/jpeg", "image/png", "image/gif", "image/webp"
-            ]:
+            # Send as photo (with compression) only if:
+            # - It's an image type
+            # - Supported by Telegram photo API
+            # - as_document is NOT set (user didn't request full quality)
+            if (not as_document and file_type == FileType.IMAGE and mime_type
+                    in ["image/jpeg", "image/png", "image/gif", "image/webp"]):
                 sent_msg = await first_message.bot.send_photo(
                     chat_id=chat_id,
                     photo=types.BufferedInputFile(file_bytes,
@@ -105,20 +117,20 @@ async def _process_single_file(
                     telegram_file_id = sent_msg.document.file_id
                     telegram_file_unique_id = sent_msg.document.file_unique_id
 
-        # Step 3: Save to database
+        # Step 3: Save to database (use original file type, not chat action type)
         await user_file_repo.create(
             message_id=first_message.message_id,
             telegram_file_id=telegram_file_id,
             telegram_file_unique_id=telegram_file_unique_id,
             claude_file_id=claude_file_id,
             filename=filename,
-            file_type=file_type,
+            file_type=db_file_type,
             mime_type=mime_type,
             file_size=len(file_bytes),
             source=FileSource.ASSISTANT,
             expires_at=datetime.now(timezone.utc) +
             timedelta(hours=FILES_API_TTL_HOURS),
-            file_metadata={},
+            file_metadata={"as_document": as_document} if as_document else {},
             upload_context=upload_context,
         )
 
@@ -126,14 +138,15 @@ async def _process_single_file(
         logger.info(
             "files.bot_file_sent",
             user_id=user_id,
-            file_type=file_type.value,
+            file_type=db_file_type.value,
             filename=filename,
+            as_document=as_document,
         )
 
         return {
             "filename": filename,
             "claude_file_id": claude_file_id,
-            "file_type": file_type.value,
+            "file_type": db_file_type.value,
         }
 
     except Exception as e:  # pylint: disable=broad-exception-caught

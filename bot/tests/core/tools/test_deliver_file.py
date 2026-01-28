@@ -304,6 +304,136 @@ class TestSequentialDelivery:
 
 
 # ============================================================================
+# Tests for send_mode delivery (hybrid approach)
+# ============================================================================
+
+
+class TestSendModeDelivery:
+    """Tests for send_mode delivery mode (hybrid auto/photo/document)."""
+
+    @pytest.mark.asyncio
+    async def test_send_mode_auto_no_hint(self, mock_bot, mock_session,
+                                          sample_metadata, sample_content):
+        """Test auto mode without delivery_hint uses photo (as_document=False)."""
+        with patch("core.tools.deliver_file.get_exec_meta",
+                   return_value=sample_metadata), \
+             patch("core.tools.deliver_file.get_exec_file",
+                   return_value=sample_content), \
+             patch("core.tools.deliver_file.delete_exec_file",
+                   return_value=True):
+            result = await deliver_file(
+                temp_id="exec_abc12345",
+                bot=mock_bot,
+                session=mock_session,
+                send_mode="auto",
+            )
+
+        assert result["success"] == "true"
+        assert result["_file_contents"][0]["as_document"] is False
+
+    @pytest.mark.asyncio
+    async def test_send_mode_auto_with_document_hint(self, mock_bot,
+                                                     mock_session,
+                                                     sample_content):
+        """Test auto mode with delivery_hint='document' uses document."""
+        metadata_with_hint = {
+            "temp_id": "exec_abc12345",
+            "filename": "4k_image.png",
+            "size_bytes": 1000,
+            "mime_type": "image/png",
+            "context": "Generated 4K image",
+            "delivery_hint": "document",  # Set by generate_image for 4K
+        }
+        with patch("core.tools.deliver_file.get_exec_meta",
+                   return_value=metadata_with_hint), \
+             patch("core.tools.deliver_file.get_exec_file",
+                   return_value=sample_content), \
+             patch("core.tools.deliver_file.delete_exec_file",
+                   return_value=True):
+            result = await deliver_file(
+                temp_id="exec_abc12345",
+                bot=mock_bot,
+                session=mock_session,
+                send_mode="auto",
+            )
+
+        assert result["success"] == "true"
+        assert result["_file_contents"][0]["as_document"] is True
+
+    @pytest.mark.asyncio
+    async def test_send_mode_document_overrides_hint(self, mock_bot,
+                                                     mock_session,
+                                                     sample_metadata,
+                                                     sample_content):
+        """Test send_mode='document' forces document even without hint."""
+        with patch("core.tools.deliver_file.get_exec_meta",
+                   return_value=sample_metadata), \
+             patch("core.tools.deliver_file.get_exec_file",
+                   return_value=sample_content), \
+             patch("core.tools.deliver_file.delete_exec_file",
+                   return_value=True):
+            result = await deliver_file(
+                temp_id="exec_abc12345",
+                bot=mock_bot,
+                session=mock_session,
+                send_mode="document",
+            )
+
+        assert result["success"] == "true"
+        assert result["_file_contents"][0]["as_document"] is True
+
+    @pytest.mark.asyncio
+    async def test_send_mode_photo_overrides_hint(self, mock_bot, mock_session,
+                                                  sample_content):
+        """Test send_mode='photo' forces photo even with document hint."""
+        metadata_with_hint = {
+            "temp_id": "exec_abc12345",
+            "filename": "4k_image.png",
+            "size_bytes": 1000,
+            "mime_type": "image/png",
+            "context": "Generated 4K image",
+            "delivery_hint": "document",
+        }
+        with patch("core.tools.deliver_file.get_exec_meta",
+                   return_value=metadata_with_hint), \
+             patch("core.tools.deliver_file.get_exec_file",
+                   return_value=sample_content), \
+             patch("core.tools.deliver_file.delete_exec_file",
+                   return_value=True):
+            result = await deliver_file(
+                temp_id="exec_abc12345",
+                bot=mock_bot,
+                session=mock_session,
+                send_mode="photo",
+            )
+
+        assert result["success"] == "true"
+        assert result["_file_contents"][0]["as_document"] is False
+
+    @pytest.mark.asyncio
+    async def test_send_mode_with_sequential(self, mock_bot, mock_session,
+                                             sample_metadata, sample_content):
+        """Test send_mode combined with sequential mode."""
+        with patch("core.tools.deliver_file.get_exec_meta",
+                   return_value=sample_metadata), \
+             patch("core.tools.deliver_file.get_exec_file",
+                   return_value=sample_content), \
+             patch("core.tools.deliver_file.delete_exec_file",
+                   return_value=True):
+            result = await deliver_file(
+                temp_id="exec_abc12345",
+                bot=mock_bot,
+                session=mock_session,
+                send_mode="document",
+                sequential=True,
+            )
+
+        assert result["success"] == "true"
+        assert result["_file_contents"][0]["as_document"] is True
+        assert result["_force_turn_break"] is True
+
+
+# ============================================================================
 # Tests for result formatting
 # ============================================================================
 

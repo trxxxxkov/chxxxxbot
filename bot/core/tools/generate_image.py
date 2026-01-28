@@ -88,6 +88,10 @@ source_file_ids pointing to the generated image for iterative editing.
 When satisfied with the result, use deliver_file(temp_id) to send the
 image to the user. You can also use preview_file(temp_id) for detailed
 analysis before delivery.
+
+4K images are automatically delivered as documents (preserving full quality).
+For other resolutions, you can override with send_mode="document" if user
+explicitly requests maximum quality or uncompressed delivery.
 </output_handling>
 
 <prompt_writing>
@@ -112,10 +116,14 @@ aspect_ratio: Choose based on intended use
 - 9:16 vertical for stories, phone backgrounds, vertical displays
 - 16:9 widescreen for desktop wallpapers, banners, cinematic shots
 
-image_size: Balance quality against cost
+image_size: Match resolution to user's quality requirements
 - 1K for quick previews and thumbnails
 - 2K for standard quality, suitable for most uses
 - 4K for high detail, print quality, professional assets
+
+Choose 4K automatically when user mentions: "high quality", "maximum quality",
+"high resolution", "high res", "4K", "print quality", "detailed", "professional",
+"wallpaper", "poster", or similar quality-focused requests.
 
 source_file_ids: Provide file IDs from Available Files or Pending Files
 - Single image for direct editing or style transfer
@@ -401,9 +409,12 @@ async def generate_image(  # pylint: disable=too-many-locals,too-many-branches,t
         else:
             file_context = f"Generated image: {prompt_context}"
 
-        # Store in exec_cache
+        # Store in exec_cache with delivery hint for 4K images
         import uuid  # pylint: disable=import-outside-toplevel
         execution_id = uuid.uuid4().hex[:8]
+
+        # 4K images should be sent as documents to preserve quality
+        delivery_hint = "document" if image_size == "4K" else None
 
         metadata = await store_exec_file(
             filename=filename,
@@ -412,6 +423,7 @@ async def generate_image(  # pylint: disable=too-many-locals,too-many-branches,t
             context=file_context,
             execution_id=execution_id,
             thread_id=thread_id,
+            delivery_hint=delivery_hint,
         )
 
         if not metadata:

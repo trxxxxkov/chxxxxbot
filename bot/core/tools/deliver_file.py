@@ -76,7 +76,19 @@ Use default (parallel) when:
 Files expire after 30 minutes. If temp_id not found:
 - Inform user that file expired
 - Regenerate with execute_python/render_latex if needed
-</cache_expiry>""",
+</cache_expiry>
+
+<delivery_modes>
+**send_mode controls how images are delivered:**
+- "auto" (default): Uses file's delivery_hint if present (4K images auto-detect
+  as document), otherwise sends as photo for quick preview
+- "photo": Force send as photo (Telegram compresses, good for chat preview)
+- "document": Force send as document (preserves full quality, no compression)
+
+For 4K images generated with generate_image, auto mode automatically sends
+as document to preserve quality. You only need to override this if user
+explicitly wants a compressed photo for quick sharing.
+</delivery_modes>""",
     "input_schema": {
         "type": "object",
         "properties": {
@@ -95,6 +107,14 @@ Files expire after 30 minutes. If temp_id not found:
                     "If true, forces turn break after delivery. "
                     "Use when you need to write text after this file "
                     "before delivering the next one. Default: false"
+            },
+            "send_mode": {
+                "type": "string",
+                "enum": ["auto", "photo", "document"],
+                "description":
+                    "How to send images: 'auto' uses file's delivery_hint "
+                    "(4K auto-detects as document), 'photo' forces compressed "
+                    "photo, 'document' forces uncompressed file. Default: auto"
             }
         },
         "required": ["temp_id"]
@@ -109,6 +129,7 @@ async def deliver_file(
     thread_id: int | None = None,  # pylint: disable=unused-argument
     caption: str | None = None,
     sequential: bool = False,
+    send_mode: str = "auto",
 ) -> Dict[str, Any]:
     """Deliver cached execution file to user.
 
@@ -122,6 +143,8 @@ async def deliver_file(
         caption: Optional caption for the file.
         sequential: If True, handler will force turn break after delivery.
             This allows Claude to write text between file deliveries.
+        send_mode: How to send images. "auto" uses file's delivery_hint,
+            "photo" forces compressed photo, "document" forces uncompressed.
 
     Returns:
         Dictionary with delivery result:
@@ -145,7 +168,8 @@ async def deliver_file(
     logger.info("tools.deliver_file.called",
                 temp_id=temp_id,
                 has_caption=bool(caption),
-                sequential=sequential)
+                sequential=sequential,
+                send_mode=send_mode)
 
     try:
         # Step 1: Get metadata from cache
@@ -176,13 +200,29 @@ async def deliver_file(
         mime_type = metadata["mime_type"]
         # Use context from metadata (set by tool that created the file)
         file_context = metadata.get("context")
+        # Delivery hint from generate_image (e.g., "document" for 4K)
+        delivery_hint = metadata.get("delivery_hint")
         size_bytes = len(content)
+
+        # Determine as_document based on send_mode and delivery_hint
+        # - "auto": use delivery_hint if present, otherwise False (photo)
+        # - "photo": always False (compressed photo)
+        # - "document": always True (uncompressed file)
+        if send_mode == "document":
+            as_document = True
+        elif send_mode == "photo":
+            as_document = False
+        else:  # "auto" - use hint or default to photo
+            as_document = (delivery_hint == "document")
 
         logger.info("tools.deliver_file.file_retrieved",
                     temp_id=temp_id,
                     filename=filename,
                     mime_type=mime_type,
-                    size_bytes=size_bytes)
+                    size_bytes=size_bytes,
+                    delivery_hint=delivery_hint,
+                    send_mode=send_mode,
+                    as_document=as_document)
 
         # Step 3: Delete from cache (file will be in Files API after delivery)
         # This prevents duplicate delivery and frees cache space
@@ -200,6 +240,7 @@ async def deliver_file(
                 "content": content,
                 "mime_type": mime_type,
                 "context": file_context,
+                "as_document": as_document,
             }],
         }
 

@@ -164,6 +164,7 @@ async def store_exec_file(
     context: str,
     execution_id: Optional[str] = None,
     thread_id: Optional[int] = None,
+    delivery_hint: Optional[str] = None,
 ) -> Optional[dict]:
     """Store execution output file in Redis.
 
@@ -176,6 +177,8 @@ async def store_exec_file(
             This helps the model understand the file's purpose.
         execution_id: Optional execution ID for grouping.
         thread_id: Optional thread ID for associating file with conversation.
+        delivery_hint: Optional hint for how to deliver the file.
+            "document" for uncompressed delivery, None for default (photo).
 
     Returns:
         Metadata dict with temp_id if stored successfully, None otherwise.
@@ -215,6 +218,7 @@ async def store_exec_file(
             "context": context,
             "execution_id": execution_id,
             "thread_id": thread_id,
+            "delivery_hint": delivery_hint,
             "created_at": time.time(),
             "expires_at": time.time() + EXEC_FILE_TTL,
         }
