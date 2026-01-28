@@ -106,10 +106,16 @@ def _run_sandbox_sync(  # pylint: disable=too-many-locals,too-many-statements
         # Install pip packages if specified
         # On reused sandbox, packages may already be installed but pip handles this
         if requirements:
+            # Handle both string and list types (LLM may pass either)
+            if isinstance(requirements, list):
+                requirements_str = ' '.join(requirements)
+            else:
+                requirements_str = requirements
             logger.info("tools.execute_python.installing_packages",
                         requirements=requirements,
                         reused_sandbox=reused)
-            install_output = sandbox.commands.run(f"pip install {requirements}")
+            install_output = sandbox.commands.run(
+                f"pip install {requirements_str}")
             logger.info("tools.execute_python.packages_installed",
                         exit_code=install_output.exit_code,
                         stdout_length=len(install_output.stdout))
