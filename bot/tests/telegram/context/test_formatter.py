@@ -135,7 +135,8 @@ class TestContextFormatterFormatMessage:
 
         result = formatter.format_message(msg)
 
-        assert result.content == ""
+        # Empty messages get placeholder to prevent API errors
+        assert result.content == "[empty message]"
 
 
 class TestContextFormatterGroupChat:

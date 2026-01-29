@@ -60,6 +60,9 @@ class ContextFormatter:
         # Always use text_content - thinking blocks are not passed to context
         # to save tokens (up to 16K per response with extended thinking)
         text_content = self._format_content(msg)
+        # Ensure we never return empty content (API requires non-empty)
+        if not text_content:
+            text_content = "[empty message]"
         return LLMMessage(role=role, content=text_content)
 
     def _format_content(self, msg: DBMessage) -> str:
@@ -239,6 +242,9 @@ class ContextFormatter:
                     return LLMMessage(role=role, content=content_blocks)
 
         # No visual files - return simple text format
+        # Ensure we never return empty content (API requires non-empty)
+        if not text_content:
+            text_content = "[empty message]"
         return LLMMessage(role=role, content=text_content)
 
     def _build_multimodal_content(
@@ -279,11 +285,17 @@ class ContextFormatter:
                     }
                 })
 
-        # Add text block
+        # Add text block (always add at least placeholder to ensure non-empty)
         if text_content:
             content_blocks.append({
                 "type": "text",
                 "text": text_content,
+            })
+        elif not content_blocks:
+            # Fallback: ensure we never return empty content
+            content_blocks.append({
+                "type": "text",
+                "text": "[empty message]",
             })
 
         return content_blocks

@@ -79,6 +79,42 @@ def get_tool_system_message(
     return _get_msg(tool_name, tool_input, result)
 
 
+def is_empty_content(content) -> bool:
+    """Check if message content is empty.
+
+    Empty content includes:
+    - None or empty string ""
+    - Empty list []
+    - List without valid content blocks
+
+    Args:
+        content: Message content (str or list).
+
+    Returns:
+        True if content is empty, False otherwise.
+    """
+    if content is None:
+        return True
+    if isinstance(content, str):
+        return not content.strip()
+    if isinstance(content, list):
+        # Check if there's at least one valid content block
+        valid_block_types = ("image", "document", "tool_result", "tool_use",
+                             "server_tool_use", "server_tool_result")
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            block_type = block.get("type", "")
+            # Text block with content is valid
+            if block_type == "text" and block.get("text", "").strip():
+                return False
+            # Non-text blocks (images, tools) are always valid
+            if block_type in valid_block_types:
+                return False
+        return True
+    return False
+
+
 def serialize_content_block(block) -> dict:
     """Serialize a content block for Claude API.
 
@@ -222,10 +258,17 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
                 conversation_length=len(conversation),
             )
         else:
-            conversation = [{
-                "role": msg.role,
-                "content": msg.content
-            } for msg in self._request.messages]
+            # Filter out messages with empty content to prevent API errors
+            conversation = []
+            for msg in self._request.messages:
+                if is_empty_content(msg.content):
+                    logger.warning(
+                        "orchestrator.skipping_empty_message",
+                        thread_id=self._thread_id,
+                        role=msg.role,
+                    )
+                    continue
+                conversation.append({"role": msg.role, "content": msg.content})
 
         logger.info(
             "orchestrator.start",

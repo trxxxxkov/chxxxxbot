@@ -26,6 +26,32 @@ from utils.structured_logging import get_logger
 logger = get_logger(__name__)
 
 
+def _filter_empty_messages(messages: list) -> list:
+    """Filter out messages with empty content.
+
+    Claude API requires all messages to have non-empty content
+    (except for optional final assistant message).
+
+    Args:
+        messages: List of Message objects.
+
+    Returns:
+        List of dicts with role/content, empty messages filtered out.
+    """
+    result = []
+    for msg in messages:
+        content = msg.content
+        # Skip messages with empty content
+        if content is None:
+            continue
+        if isinstance(content, str) and not content.strip():
+            continue
+        if isinstance(content, list) and not content:
+            continue
+        result.append({"role": msg.role, "content": content})
+    return result
+
+
 class ClaudeProvider(LLMProvider):
     """Claude API client implementing LLMProvider interface.
 
@@ -123,11 +149,8 @@ class ClaudeProvider(LLMProvider):
                     has_tools=request.tools is not None,
                     tool_count=len(request.tools) if request.tools else 0)
 
-        # Convert messages to Anthropic format with history caching
-        api_messages = [{
-            "role": msg.role,
-            "content": msg.content
-        } for msg in request.messages]
+        # Convert messages to Anthropic format, filtering empty messages
+        api_messages = _filter_empty_messages(request.messages)
 
         # Prepare API parameters
         api_params = {
@@ -305,11 +328,8 @@ class ClaudeProvider(LLMProvider):
                     max_tokens=request.max_tokens,
                     temperature=request.temperature)
 
-        # Convert messages to Anthropic format with history caching
-        api_messages = [{
-            "role": msg.role,
-            "content": msg.content
-        } for msg in request.messages]
+        # Convert messages to Anthropic format, filtering empty messages
+        api_messages = _filter_empty_messages(request.messages)
 
         # Prepare request parameters (use exact model_id for API)
         api_params = {
@@ -822,11 +842,8 @@ class ClaudeProvider(LLMProvider):
                     has_tools=request.tools is not None,
                     tool_count=len(request.tools) if request.tools else 0)
 
-        # Convert messages to Anthropic format with history caching
-        api_messages = [{
-            "role": msg.role,
-            "content": msg.content
-        } for msg in request.messages]
+        # Convert messages to Anthropic format, filtering empty messages
+        api_messages = _filter_empty_messages(request.messages)
 
         # Prepare API parameters
         api_params = {
