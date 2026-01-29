@@ -451,7 +451,8 @@ class TestToolDefinition:
 
         assert "description" in SELF_CRITIQUE_TOOL
         assert "verification" in SELF_CRITIQUE_TOOL["description"].lower()
-        assert "adversarial" in SELF_CRITIQUE_TOOL["description"].lower()
+        # Tool description includes trigger phrases
+        assert "when to use" in SELF_CRITIQUE_TOOL["description"].lower()
 
     def test_tool_has_input_schema(self):
         """Test tool has input schema."""
@@ -1423,43 +1424,48 @@ class TestRegistryIntegration:
 # =============================================================================
 
 
-class TestSystemPromptIntegration:
-    """Tests for system prompt containing self_critique instructions."""
+class TestToolDefinitionIntegration:
+    """Tests for self_critique tool definition content.
 
-    def test_system_prompt_has_self_critique_section(self):
-        """Test that system prompt includes self_critique usage section."""
-        from prompts.system_prompt import GLOBAL_SYSTEM_PROMPT
+    Note: self_critique instructions were moved from system prompt to tool
+    definition to reduce system prompt size and avoid duplication.
+    """
 
-        assert "<self_critique_usage>" in GLOBAL_SYSTEM_PROMPT
-        assert "</self_critique_usage>" in GLOBAL_SYSTEM_PROMPT
+    def test_tool_definition_has_trigger_phrases(self):
+        """Test tool definition includes trigger phrases for when to use."""
+        from core.tools.self_critique import SELF_CRITIQUE_TOOL
 
-    def test_system_prompt_mentions_decision_flow(self):
-        """Test system prompt includes dynamic decision flow."""
-        from prompts.system_prompt import GLOBAL_SYSTEM_PROMPT
+        desc = SELF_CRITIQUE_TOOL["description"].lower()
+        assert "when to use" in desc
+        assert "verify" in desc or "перепроверь" in desc
 
-        # Dynamic decision-making keywords
-        assert "decide" in GLOBAL_SYSTEM_PROMPT.lower()
-        assert "verification" in GLOBAL_SYSTEM_PROMPT.lower()
+    def test_tool_definition_mentions_iteration_workflow(self):
+        """Test tool definition includes iteration workflow."""
+        from core.tools.self_critique import SELF_CRITIQUE_TOOL
 
+        desc = SELF_CRITIQUE_TOOL["description"]
         # Workflow elements
-        assert "PASS" in GLOBAL_SYSTEM_PROMPT
-        assert "fix" in GLOBAL_SYSTEM_PROMPT.lower()
+        assert "PASS" in desc
+        assert "fix" in desc.lower()
+        assert "iteration" in desc.lower() or "5" in desc
 
-    def test_system_prompt_mentions_cost(self):
-        """Test system prompt includes cost information."""
-        from prompts.system_prompt import GLOBAL_SYSTEM_PROMPT
+    def test_tool_definition_mentions_cost(self):
+        """Test tool definition includes cost information."""
+        from core.tools.self_critique import SELF_CRITIQUE_TOOL
 
-        assert "$0.50" in GLOBAL_SYSTEM_PROMPT or "0.50" in GLOBAL_SYSTEM_PROMPT
+        desc = SELF_CRITIQUE_TOOL["description"]
+        assert "$0.50" in desc or "0.50" in desc
 
-    def test_system_prompt_mentions_opus(self):
-        """Test system prompt mentions Opus model."""
-        from prompts.system_prompt import GLOBAL_SYSTEM_PROMPT
+    def test_tool_definition_mentions_opus(self):
+        """Test tool definition mentions Opus model."""
+        from core.tools.self_critique import SELF_CRITIQUE_TOOL
 
-        assert "Opus" in GLOBAL_SYSTEM_PROMPT
+        desc = SELF_CRITIQUE_TOOL["description"]
+        assert "Opus" in desc
 
-    def test_tool_selection_guidelines_include_verification(self):
-        """Test tool selection guidelines include verification section."""
-        from prompts.system_prompt import GLOBAL_SYSTEM_PROMPT
+    def test_tool_definition_has_explicit_trigger_requirement(self):
+        """Test tool definition requires explicit user request."""
+        from core.tools.self_critique import SELF_CRITIQUE_TOOL
 
-        assert "Verification:" in GLOBAL_SYSTEM_PROMPT
-        assert "self_critique" in GLOBAL_SYSTEM_PROMPT
+        desc = SELF_CRITIQUE_TOOL["description"].lower()
+        assert "only" in desc and "user" in desc
