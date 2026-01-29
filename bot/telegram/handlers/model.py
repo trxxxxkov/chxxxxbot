@@ -9,6 +9,7 @@ from aiogram import F
 from aiogram import Router
 from aiogram import types
 from aiogram.filters import Command
+from cache.user_cache import invalidate_user
 from config import get_default_model
 from config import get_model
 from db.repositories.chat_repository import ChatRepository
@@ -174,6 +175,9 @@ async def model_selection_callback(  # pylint: disable=too-many-locals
     old_model_id = db_user.model_id
     db_user.model_id = new_model_id
     await session.commit()
+
+    # Invalidate user cache so next request uses new model
+    await invalidate_user(user.id)
 
     logger.info("model.changed",
                 user_id=db_user.id,
