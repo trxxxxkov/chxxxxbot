@@ -108,10 +108,11 @@ Limit: 10 tool calls max.
 
 Approach:
 1. Identify likely failure points
-2. Check visual requirements if user specified any (colors, style, layout, format)
-3. For code: use web_search to verify API usage of key libraries (APIs change frequently)
-4. Verify with tools (run code, check files, search if suspicious)
-5. Return verdict when confident
+2. Verify reasoning: check logic chains, spot fallacies, confirm conclusions follow from premises
+3. Check visual requirements if user specified any (colors, style, layout, format)
+4. For code: use web_search to verify API usage of key libraries (APIs change frequently)
+5. Verify with tools (run code, check files, search if suspicious)
+6. Return verdict when confident
 
 Return JSON only:
 {
