@@ -29,6 +29,42 @@ MIN_THINKING_SPACE = 100
 ParseMode = Literal["MarkdownV2", "HTML"]
 
 
+def _safe_truncate_start_md2(content: str, available_chars: int) -> str:
+    r"""Safely truncate MarkdownV2 content from the beginning.
+
+    When truncating from the start, we may cut in the middle of an escape
+    sequence (e.g., \. becomes just .). This function adjusts the cut point
+    to avoid breaking escape sequences.
+
+    Args:
+        content: MarkdownV2-formatted content to truncate.
+        available_chars: Maximum characters to keep from the end.
+
+    Returns:
+        Truncated content (without ellipsis - caller adds it).
+    """
+    if len(content) <= available_chars:
+        return content
+
+    start_idx = len(content) - available_chars
+
+    # Don't cut in the middle of an escape sequence (\x)
+    # If the character just before our cut point is a backslash,
+    # we need to include it to preserve the escape sequence
+    if start_idx > 0 and content[start_idx - 1] == "\\":
+        # Check if it's an escaped backslash (\\) or escape sequence (\x)
+        # For \\, the first \ escapes the second, so cutting after \\ is OK
+        # For \x (where x is special char), we need to include the \
+        if start_idx >= 2 and content[start_idx - 2] == "\\":
+            # It's \\, safe to cut here (the \\ is complete)
+            pass
+        else:
+            # It's \x, include the backslash
+            start_idx -= 1
+
+    return content[start_idx:]
+
+
 class TruncationManager:
     """Manages smart truncation of streaming content.
 
@@ -165,7 +201,8 @@ class TruncationManager:
                 blockquote_close):
             content = thinking_html[len(blockquote_open):-len(blockquote_close)]
             # Truncate content from beginning (keep recent, most relevant)
-            truncated_content = ellipsis + content[-available_for_content:]
+            start_idx = len(content) - available_for_content
+            truncated_content = ellipsis + content[start_idx:]
             return f"{blockquote_open}{truncated_content}{blockquote_close}", text_html
 
         # Fallback: truncate raw string (shouldn't happen with proper formatting)
@@ -220,8 +257,9 @@ class TruncationManager:
                 # Fits without truncation
                 return thinking_md2, text_md2
 
-            # Truncate content from beginning
-            truncated_content = ellipsis + content[-available_for_content:]
+            # Truncate content from beginning (safely, avoiding broken escapes)
+            truncated_content = ellipsis + _safe_truncate_start_md2(
+                content, available_for_content)
 
             # Fix any broken formatting from truncation
             truncated_content = fix_truncated_md2(truncated_content)

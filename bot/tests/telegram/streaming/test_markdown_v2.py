@@ -384,6 +384,27 @@ class TestMessageSplittingEdgeCases:
         assert "OLD_PART_" not in result_thinking
         assert result_thinking.startswith("**>")
 
+    def test_thinking_truncation_preserves_escape_sequences(self):
+        """Truncation should not break escape sequences like \\. in thinking."""
+        from telegram.streaming.truncation import TruncationManager
+
+        tm = TruncationManager(parse_mode="MarkdownV2")
+        # Create thinking with escaped dots that could be broken by truncation
+        # Pattern: OLD_PART + padding + \.text (escaped dot)
+        # If truncation cuts between \ and ., the dot becomes unescaped
+        thinking = "**>OLD" + "x" * 3900 + r"\_RECENT\.END||"
+        text = "Short"
+
+        result_thinking, result_text = tm.truncate_for_display(thinking, text)
+        # The result should either have \. intact or the backslash included
+        # It should NOT have an unescaped dot after truncation
+        assert result_thinking.startswith("**>")
+        # Check that escape sequences are preserved (not broken)
+        # If truncation happened, the dot should still be escaped
+        if r"\." in thinking and "END" in result_thinking:
+            # If END is in result, the \. should be preserved
+            assert r"\." in result_thinking or "\\." in result_thinking
+
     def test_text_exceeding_limit_hides_thinking(self):
         """When text exceeds limit, thinking is hidden entirely."""
         from telegram.streaming.truncation import TruncationManager
