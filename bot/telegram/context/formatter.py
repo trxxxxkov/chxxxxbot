@@ -11,12 +11,10 @@ NO __init__.py - use direct import:
     from telegram.context.formatter import ContextFormatter
 """
 
-import json
-from typing import Any, Optional, TYPE_CHECKING, Union
+from typing import Any, TYPE_CHECKING
 
 from core.models import Message as LLMMessage
 from db.models.message import Message as DBMessage
-from db.models.message import MessageRole
 from db.models.user_file import FileType
 
 if TYPE_CHECKING:
@@ -48,51 +46,8 @@ class ContextFormatter:
         self.chat_type = chat_type
         self.is_group = chat_type in ("group", "supergroup")
 
-    def _sanitize_block(self, block: dict) -> dict:
-        """Remove fields that API returns but doesn't accept on input.
-
-        Server-side tool results include 'citations' field that must be
-        stripped before sending back to API.
-
-        Args:
-            block: Content block dict.
-
-        Returns:
-            Sanitized block dict safe to send to API.
-        """
-        if not isinstance(block, dict):
-            return block
-
-        block_type = block.get("type", "")
-
-        # Remove 'citations' from server tool result blocks
-        if block_type in ("server_tool_result", "web_search_tool_result",
-                          "web_fetch_tool_result"):
-            block = block.copy()
-            block.pop("citations", None)
-
-        # Also check nested content for server tool results
-        if "content" in block and isinstance(block["content"], list):
-            cleaned_content = []
-            for item in block["content"]:
-                if isinstance(item, dict):
-                    item_copy = item.copy()
-                    item_copy.pop("citations", None)
-                    cleaned_content.append(item_copy)
-                else:
-                    cleaned_content.append(item)
-            block = block.copy()
-            block["content"] = cleaned_content
-
-        return block
-
     def format_message(self, msg: DBMessage) -> LLMMessage:
         """Format a single database message for LLM.
-
-        For assistant messages with thinking_blocks (which stores the FULL
-        original content from Claude), uses it as-is to preserve exact format.
-        This is CRITICAL for Extended Thinking - the API rejects modified
-        thinking/redacted_thinking blocks.
 
         Args:
             msg: Database Message object with context fields.
@@ -102,24 +57,8 @@ class ContextFormatter:
         """
         role = "user" if msg.from_user_id else "assistant"
 
-        # For assistant messages with saved content blocks, use them as-is
-        # This preserves thinking/redacted_thinking blocks exactly as Claude sent
-        if msg.role == MessageRole.ASSISTANT and msg.thinking_blocks:
-            try:
-                content_blocks = json.loads(msg.thinking_blocks)
-                # Validate it's a list with content blocks
-                if isinstance(content_blocks, list) and content_blocks:
-                    # Sanitize blocks (remove citations from server tool results)
-                    sanitized = [
-                        self._sanitize_block(b) for b in content_blocks
-                    ]
-                    content: Union[str, list[dict[str, Any]]] = sanitized
-                    return LLMMessage(role=role, content=content)
-            except (json.JSONDecodeError, TypeError):
-                # Not valid JSON - fall back to text_content
-                pass
-
-        # For user messages or assistant without thinking: format text
+        # Always use text_content - thinking blocks are not passed to context
+        # to save tokens (up to 16K per response with extended thinking)
         text_content = self._format_content(msg)
         return LLMMessage(role=role, content=text_content)
 
@@ -260,22 +199,8 @@ class ContextFormatter:
         """
         role = "user" if msg.from_user_id else "assistant"
 
-        # For assistant messages with saved content blocks, use them as-is
-        # This preserves thinking/redacted_thinking blocks exactly as Claude sent
-        if msg.role == MessageRole.ASSISTANT and msg.thinking_blocks:
-            try:
-                content_blocks = json.loads(msg.thinking_blocks)
-                # Validate it's a list with content blocks
-                if isinstance(content_blocks, list) and content_blocks:
-                    # Sanitize blocks (remove citations from server tool results)
-                    sanitized = [
-                        self._sanitize_block(b) for b in content_blocks
-                    ]
-                    content: Union[str, list[dict[str, Any]]] = sanitized
-                    return LLMMessage(role=role, content=content)
-            except (json.JSONDecodeError, TypeError):
-                pass
-
+        # Always use text_content - thinking blocks are not passed to context
+        # to save tokens (up to 16K per response with extended thinking)
         text_content = self._format_content(msg)
 
         # For user messages, check for ALL attached files

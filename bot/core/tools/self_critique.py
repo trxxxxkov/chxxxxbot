@@ -56,8 +56,7 @@ VERIFICATION_MODEL_ID = "claude:opus"
 MIN_BALANCE_FOR_CRITIQUE = Decimal("0.50")
 
 # Maximum iterations for subagent tool loop
-# Keep low - self_critique should be quick: analyze, maybe run 1-2 tools, return verdict
-MAX_SUBAGENT_ITERATIONS = 8
+MAX_SUBAGENT_ITERATIONS = 10
 
 # Extended thinking budget - enough for analysis but not excessive
 THINKING_BUDGET_TOKENS = 10000
@@ -102,56 +101,19 @@ except ImportError:
 # Critical Reviewer System Prompt
 # =============================================================================
 
-CRITICAL_REVIEWER_SYSTEM_PROMPT = """<identity>
-You are a code reviewer verifying another Claude's output.
-Your job: find flaws, errors, and gaps - not praise.
-</identity>
+CRITICAL_REVIEWER_SYSTEM_PROMPT = """You are verifying another Claude's response. Find flaws, not praise.
 
-<cost_awareness>
-This verification costs the user money. Be efficient.
-- You have a HARD LIMIT of 8 tool calls total. Plan accordingly.
-- Aim to complete verification in 1-3 tool calls
-- Do not search for documentation of standard libraries (numpy, pandas, requests)
-- Do not verify every single fact - focus on claims that seem suspicious
-- Do not use web_search unless you have a specific fact to verify
-- Trust your knowledge for common programming patterns
-- If you reach the tool limit, you'll be asked to return a verdict with what you know
-</cost_awareness>
+Tools: execute_python (test code), preview_file, analyze_image/pdf, web_search, web_fetch.
+Limit: 10 tool calls max.
 
-<available_tools>
-- execute_python: Run code to test - use this for code verification
-- preview_file: Check generated files
-- analyze_image/analyze_pdf: For visual content (costs money - use sparingly)
-- web_search: Only for specific suspicious facts (not routine library checks)
-- web_fetch: Only if web_search found something that needs full reading
-</available_tools>
+Approach:
+1. Identify likely failure points
+2. Check visual requirements if user specified any (colors, style, layout, format)
+3. For code: use web_search to verify API usage of key libraries (APIs change frequently)
+4. Verify with tools (run code, check files, search if suspicious)
+5. Return verdict when confident
 
-<verification_approach>
-1. Read the user request and response carefully
-2. Identify the most likely failure points (1-2 max)
-3. Verify only those points:
-   - For code: run it with execute_python, test edge cases
-   - For facts: only search if something seems wrong or outdated
-   - For files: preview if needed
-4. Return verdict immediately after verification
-
-Avoid:
-- Searching for every library mentioned
-- Cross-referencing multiple sources
-- Verifying things that look correct
-- Making multiple iterations when one suffices
-</verification_approach>
-
-<after_tool_use>
-After receiving tool results, briefly reflect on what you learned and determine
-if you have enough information to return a verdict. If yes, return it immediately.
-Only continue to another tool call if the results revealed a specific issue that
-needs further investigation.
-</after_tool_use>
-
-<output_format>
-Return a JSON object ONLY (no other text):
-
+Return JSON only:
 {
   "verdict": "PASS" | "FAIL" | "NEEDS_IMPROVEMENT",
   "alignment_score": 0-100,
@@ -160,34 +122,30 @@ Return a JSON object ONLY (no other text):
   "recommendations": ["..."],
   "summary": "1-2 sentences"
 }
-</output_format>
 
-<rating_guidelines>
-FAIL: Critical errors, wrong output, doesn't answer the question
-NEEDS_IMPROVEMENT: Partially correct, minor bugs, missing parts
-PASS: Works correctly, answers the question
-</rating_guidelines>"""
+FAIL: Critical errors, wrong output
+NEEDS_IMPROVEMENT: Partial, minor bugs
+PASS: Works correctly"""
 
 # =============================================================================
 # Tools available to the subagent
 # =============================================================================
 
 # Server-side tools (Anthropic handles execution)
-# Keep limits LOW - each use adds tokens to context and costs money
 WEB_SEARCH_TOOL = {
     "type": "web_search_20250305",
     "name": "web_search",
-    "max_uses": 5,  # Only for specific fact-checking, not routine verification
+    "max_uses": 10,
 }
 
 WEB_FETCH_TOOL = {
     "type": "web_fetch_20250910",
     "name": "web_fetch",
-    "max_uses": 3,  # Sparingly - each fetch adds up to 20K tokens to context
+    "max_uses": 10,
     "citations": {
         "enabled": True
     },
-    "max_content_tokens": 20000,  # Reduced from 50K to limit context bloat
+    "max_content_tokens": 20000,
 }
 
 # Reuse tool definitions from existing modules (DRY principle)
@@ -207,35 +165,34 @@ SELF_CRITIQUE_TOOL = {
     "name":
         "self_critique",
     "description":
-        """Critical self-verification subagent using Claude Opus 4.5.
+        """Verification subagent that critically analyzes your work using Claude Opus.
 
-Launches an independent verification session with ADVERSARIAL mindset to find
-flaws in your response before sending to user.
+WHEN TO USE: Only when the user explicitly requests verification or extra care.
 
-The subagent can:
-- Run Python code to test your solutions (execute_python)
-- Examine files you generated (preview_file)
-- Analyze images/PDFs with Vision (analyze_image, analyze_pdf)
-- Search the web to verify facts and claims (web_search)
-- Fetch and read full documentation pages (web_fetch)
+Trigger phrases (any language):
+- "перепроверь", "проверь результат", "убедись что правильно"
+- "осторожнее", "аккуратно", "будь внимателен"
+- "проверяй факты", "не ошибись", "точно посчитай"
+- "double-check", "verify", "make sure it's correct"
 
-COST: Requires balance >= $0.50. User pays actual Opus token costs + tool costs.
-Typical cost: $0.03-0.15 per verification.
+Do NOT use for routine tasks without explicit user request.
 
-WHEN TO USE: You decide. Consider verification when quality matters or you're uncertain.
+The subagent can run Python tests, examine files, analyze images/PDFs, \
+search web, and fetch documentation.
 
-DYNAMIC WORKFLOW:
-1. Generate solution → decide if verification needed → if yes, call self_critique
-2. After receiving critique, evaluate the issues:
-   - Trivial/clear fixes → fix and deliver (no more critique needed)
-   - Non-trivial fixes → fix and call self_critique again
+COST: Requires balance >= $0.50. Typical cost: $0.03-0.15 per call.
+
+ITERATION WORKFLOW:
+1. Call self_critique after generating your solution
+2. Receive verdict (PASS/FAIL/NEEDS_IMPROVEMENT) with issues list
+3. Decide next step:
+   - Minor issues (typos, small fixes) → fix and deliver, no more calls
+   - Major issues (logic errors, multiple problems) → fix and call again
    - PASS → deliver with confidence
-3. Decide at each step whether another round is needed (max 5 rounds)
-4. If issues remain after 5 rounds → report unresolved problems to user
+4. Maximum 5 iterations total
+5. If unresolved issues remain after 5 rounds → report them to user
 
-The subagent can: test code, check visual outputs, search current API docs, find flaws.
-
-Returns structured verdict: PASS, FAIL, or NEEDS_IMPROVEMENT with specific issues.""",
+Returns structured verdict with specific issues and recommendations.""",
     "input_schema": {
         "type": "object",
         "properties": {
@@ -807,11 +764,14 @@ async def execute_self_critique(  # pylint: disable=too-many-return-statements
 
         # Handle tool use
         elif response.stop_reason == "tool_use":
-            # Add assistant message (preserve thinking blocks for interleaved thinking)
-            messages.append({
-                "role": "assistant",
-                "content": [block.model_dump() for block in response.content]
-            })
+            # Add assistant message WITHOUT thinking blocks
+            # Keep text blocks - they contain important intermediate analysis
+            content_blocks = [
+                block.model_dump()
+                for block in response.content
+                if block.type not in ("thinking", "redacted_thinking")
+            ]
+            messages.append({"role": "assistant", "content": content_blocks})
 
             # Execute ALL tools in parallel
             tool_use_blocks = [
