@@ -516,6 +516,7 @@ async def _process_batch_with_session(
                 was_cancelled = False  # Track if user cancelled generation
                 thinking_chars = 0  # Track thinking chars for partial payment
                 output_chars = 0  # Track output chars for partial payment
+                any_files_delivered = False  # Track if files delivered across continuations
                 for continuation_idx in range(max_continuations + 1):
                     # Use StreamingOrchestrator for cleaner streaming flow
                     orchestrator = StreamingOrchestrator(
@@ -542,6 +543,10 @@ async def _process_batch_with_session(
                     # Accumulate chars across iterations for partial billing
                     thinking_chars += result.thinking_chars
                     output_chars += result.output_chars
+
+                    # Track file deliveries across continuations
+                    if result.has_delivered_files:
+                        any_files_delivered = True
 
                     # Collect response parts
                     if response_text:
@@ -591,22 +596,23 @@ async def _process_batch_with_session(
                         for chunk in chunks:
                             bot_message = await _send_with_retry(
                                 first_message, chunk)
-                    elif all_response_parts or result.has_sent_parts:
-                        # Had content in previous continuations or split parts
-                        # This can happen with many sequential deliveries or
-                        # when message was split due to length (>4096 chars)
+                    elif (all_response_parts or result.has_sent_parts or
+                          any_files_delivered):
+                        # Had content in previous continuations, split parts,
+                        # or files delivered via deliver_file tool
                         logger.debug(
                             "claude_handler.continuations_exhausted",
                             thread_id=thread_id,
                             all_response_parts=bool(all_response_parts),
-                            has_sent_parts=result.has_sent_parts)
+                            has_sent_parts=result.has_sent_parts,
+                            any_files_delivered=any_files_delivered)
                         # Content was already delivered, just acknowledge
                         bot_message = await _send_with_retry(
                             first_message, "✓ Response delivered.")
                     else:
-                        # External API returned empty - gracefully handled
-                        logger.info("claude_handler.empty_response",
-                                    thread_id=thread_id)
+                        # External API returned empty - this shouldn't happen
+                        logger.warning("claude_handler.empty_response",
+                                       thread_id=thread_id)
                         bot_message = await _send_with_retry(
                             first_message,
                             "⚠️ Claude returned an empty response. "

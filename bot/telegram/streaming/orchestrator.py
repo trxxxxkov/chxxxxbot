@@ -602,6 +602,8 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
                 needs_continuation=True,
                 conversation=conversation,
                 has_sent_parts=stream.has_sent_parts,
+                has_delivered_files=batch_result.turn_break_tool ==
+                "deliver_file",
             )
 
         # Continue to next iteration
