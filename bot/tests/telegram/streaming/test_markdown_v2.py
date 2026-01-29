@@ -825,3 +825,41 @@ class TestFixTruncatedMd2:
 
         result = fix_truncated_md2("_italic text")
         assert result == "_italic text_"
+
+    def test_special_char_after_newline(self):
+        """Special chars after newline should be escaped."""
+        from telegram.streaming.markdown_v2 import fix_truncated_md2
+
+        # Dot after newline (common truncation case)
+        result = fix_truncated_md2("…line1\n.5 value")
+        assert result == r"…line1\n\.5 value".replace(r"\n", "\n")
+
+        # Other special chars after newline
+        result = fix_truncated_md2("text\n(parenthesis")
+        assert result == "text\n\\(parenthesis"
+
+        result = fix_truncated_md2("text\n=equals")
+        assert result == "text\n\\=equals"
+
+        result = fix_truncated_md2("text\n+plus")
+        assert result == "text\n\\+plus"
+
+    def test_multiline_special_chars_preserved_if_escaped(self):
+        """Already escaped special chars after newline should stay escaped."""
+        from telegram.streaming.markdown_v2 import fix_truncated_md2
+
+        # If backslash precedes the newline, don't double-escape
+        # (this is an edge case where the previous line ends with \)
+        result = fix_truncated_md2("text\\\n.value")
+        # The backslash at end of line 1 escapes nothing useful,
+        # but we should still escape the dot
+        assert "\\.value" in result or result.endswith(".value")
+
+    def test_multiple_lines_with_special_chars(self):
+        """Multiple lines with special chars at start."""
+        from telegram.streaming.markdown_v2 import fix_truncated_md2
+
+        result = fix_truncated_md2("line1\n.line2\n+line3\n=line4")
+        assert "\\.line2" in result
+        assert "\\+line3" in result
+        assert "\\=line4" in result

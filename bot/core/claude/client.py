@@ -52,6 +52,7 @@ class ClaudeProvider(LLMProvider):
         # - files-api: Files API for multimodal content
         # - web-search: Server-side web search tool
         # - web-fetch: Server-side web page/PDF fetching tool
+        # - extended-cache-ttl: 1-hour prompt caching TTL
         self.client = anthropic.AsyncAnthropic(
             api_key=api_key,
             default_headers={
@@ -60,7 +61,8 @@ class ClaudeProvider(LLMProvider):
                                    "effort-2025-11-24,"
                                    "files-api-2025-04-14,"
                                    "web-search-2025-03-05,"
-                                   "web-fetch-2025-09-10")
+                                   "web-fetch-2025-09-10,"
+                                   "extended-cache-ttl-2025-04-11")
             })
         self.last_usage: Optional[TokenUsage] = None
         self.last_message: Optional[
@@ -121,7 +123,7 @@ class ClaudeProvider(LLMProvider):
                     has_tools=request.tools is not None,
                     tool_count=len(request.tools) if request.tools else 0)
 
-        # Convert messages to Anthropic format
+        # Convert messages to Anthropic format with history caching
         api_messages = [{
             "role": msg.role,
             "content": msg.content
@@ -303,7 +305,7 @@ class ClaudeProvider(LLMProvider):
                     max_tokens=request.max_tokens,
                     temperature=request.temperature)
 
-        # Convert messages to Anthropic format
+        # Convert messages to Anthropic format with history caching
         api_messages = [{
             "role": msg.role,
             "content": msg.content
@@ -820,7 +822,7 @@ class ClaudeProvider(LLMProvider):
                     has_tools=request.tools is not None,
                     tool_count=len(request.tools) if request.tools else 0)
 
-        # Convert messages to Anthropic format
+        # Convert messages to Anthropic format with history caching
         api_messages = [{
             "role": msg.role,
             "content": msg.content

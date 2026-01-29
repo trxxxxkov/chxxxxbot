@@ -22,7 +22,7 @@ router = Router(name="edited_message")
 @router.edited_message()
 async def handle_edited_message(
     message: types.Message,
-    db_session: AsyncSession,
+    session: AsyncSession,
 ) -> None:
     """Handle edited message updates.
 
@@ -31,7 +31,7 @@ async def handle_edited_message(
 
     Args:
         message: Edited Telegram message.
-        db_session: Database session from middleware.
+        session: Database session from middleware.
     """
     chat_id = message.chat.id
     message_id = message.message_id
@@ -43,7 +43,7 @@ async def handle_edited_message(
         user_id=message.from_user.id if message.from_user else None,
     )
 
-    msg_repo = MessageRepository(db_session)
+    msg_repo = MessageRepository(session)
 
     # Get new text content
     text_content = message.text if message.text else None

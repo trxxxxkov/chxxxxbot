@@ -111,12 +111,15 @@ def compose_system_prompt_blocks(
     """
     blocks = []
 
-    # Block 1: GLOBAL_SYSTEM_PROMPT - always cached (≥1024 tokens)
+    # Block 1: GLOBAL_SYSTEM_PROMPT - always cached with 1h TTL
+    # 1h TTL costs 2x base input (vs 1.25x for 5m), but shared across ALL users
+    # with same model. Since system prompt rarely changes, 1h is more efficient.
     blocks.append({
         "type": "text",
         "text": global_prompt,
         "cache_control": {
-            "type": "ephemeral"
+            "type": "ephemeral",
+            "ttl": "1h"
         }
     })
 

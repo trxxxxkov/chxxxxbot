@@ -724,16 +724,37 @@ def fix_truncated_md2(text: str) -> str:
     # Only escape non-formatting chars: ()>#+-={}[]!.
     # Do NOT escape formatting markers: _*~`| (they have semantic meaning)
     non_formatting_special = "()>#+-={}[]!."
-    if result:
-        # Check first character - only escape non-formatting special chars
-        if result[0] in non_formatting_special:
-            result = "\\" + result
-        # Check character after ellipsis (common truncation pattern: …(text)
-        elif result.startswith("…") and len(result) > 1:
-            # Only escape if not already escaped (…\ means next char is escaped)
-            if result[1] != "\\" and result[1] in non_formatting_special:
-                # Insert escape after ellipsis: …( -> …\(
-                result = "…\\" + result[1:]
+
+    # Fix special chars at the very beginning
+    if result and result[0] in non_formatting_special:
+        result = "\\" + result
+
+    # Fix special char after ellipsis (common truncation pattern: …(text)
+    if result.startswith("…") and len(result) > 1:
+        # Only escape if not already escaped (…\ means next char is escaped)
+        if result[1] != "\\" and result[1] in non_formatting_special:
+            # Insert escape after ellipsis: …( -> …\(
+            result = "…\\" + result[1:]
+
+    # Fix 1c: Escape special chars at the start of ANY line (after newline)
+    # When truncation cuts "abc\\.def" into "…\n.def", the dot after newline
+    # needs escaping. Check each line start, not just the first character.
+    lines = result.split("\n")
+    fixed_lines: list[str] = []
+    for i, line in enumerate(lines):
+        if i == 0:
+            # First line already handled above
+            fixed_lines.append(line)
+        elif line and line[0] in non_formatting_special:
+            # Line starts with special char that may have lost its escape
+            # But only if not already escaped (check previous line doesn't end with \)
+            if not (fixed_lines and fixed_lines[-1].endswith("\\")):
+                fixed_lines.append("\\" + line)
+            else:
+                fixed_lines.append(line)
+        else:
+            fixed_lines.append(line)
+    result = "\n".join(fixed_lines)
 
     # Fix 2: Close unclosed formatting by counting markers
     # For MarkdownV2, we need balanced: *, _, __, ~, ||, `, ```

@@ -737,10 +737,11 @@ async def _process_batch_with_session(
                 cache_read_cost = ((usage.cache_read_tokens / 1_000_000) *
                                    model_config.pricing_cache_read)
 
-            if usage.cache_creation_tokens and model_config.pricing_cache_write_5m:
+            # Use 1h cache pricing since GLOBAL_SYSTEM_PROMPT uses 1h TTL
+            if usage.cache_creation_tokens and model_config.pricing_cache_write_1h:
                 cache_creation_cost = (
                     (usage.cache_creation_tokens / 1_000_000) *
-                    model_config.pricing_cache_write_5m)
+                    model_config.pricing_cache_write_1h)
 
             cost_usd = (
                 (usage.input_tokens / 1_000_000) * model_config.pricing_input +
@@ -947,15 +948,24 @@ async def _process_batch_with_session(
 
             # Phase 2.1: Charge user for API usage
             try:
+                # Build description with all cost components
+                desc_parts = [
+                    f"Claude API: {usage.input_tokens} in",
+                    f"{usage.output_tokens} out",
+                ]
+                if usage.thinking_tokens:
+                    desc_parts.append(f"{usage.thinking_tokens} think")
+                if usage.cache_creation_tokens:
+                    desc_parts.append(f"{usage.cache_creation_tokens} cache_w")
+                if usage.cache_read_tokens:
+                    desc_parts.append(f"{usage.cache_read_tokens} cache_r")
+                desc_parts.append(f"({model_config.alias})")
+
                 # Charge user for actual cost
                 balance_after = await services.balance.charge_user(
                     user_id=user_id,
                     amount=cost_usd,
-                    description=(
-                        f"Claude API call: {usage.input_tokens} input + "
-                        f"{usage.output_tokens} output + "
-                        f"{usage.thinking_tokens} thinking tokens, "
-                        f"model {model_config.display_name}"),
+                    description=" + ".join(desc_parts),
                     related_message_id=bot_message.message_id,
                 )
 
