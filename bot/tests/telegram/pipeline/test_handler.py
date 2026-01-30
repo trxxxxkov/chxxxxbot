@@ -263,3 +263,188 @@ class TestUnifiedHandler:
         mock_message.answer.assert_called_once()
         args = mock_message.answer.call_args[0]
         assert "try again" in args[0].lower()
+
+
+class TestUnsupportedMessageHandler:
+    """Tests for the unsupported message handler."""
+
+    @pytest.mark.asyncio
+    async def test_handler_logs_sticker(self, mock_message: MagicMock) -> None:
+        """Handler logs sticker message type."""
+        from telegram.pipeline.handler import handle_unsupported_message
+
+        mock_message.sticker = MagicMock()
+        mock_message.animation = None
+        mock_message.contact = None
+        mock_message.location = None
+
+        # Should not raise
+        await handle_unsupported_message(mock_message)
+
+    @pytest.mark.asyncio
+    async def test_handler_logs_animation(self,
+                                          mock_message: MagicMock) -> None:
+        """Handler logs animation (GIF) message type."""
+        from telegram.pipeline.handler import handle_unsupported_message
+
+        mock_message.sticker = None
+        mock_message.animation = MagicMock()
+        mock_message.contact = None
+        mock_message.location = None
+
+        # Should not raise
+        await handle_unsupported_message(mock_message)
+
+
+class TestGetUnsupportedContentType:
+    """Tests for _get_unsupported_content_type helper."""
+
+    def test_sticker_type(self, mock_message: MagicMock) -> None:
+        """Detects sticker message type."""
+        from telegram.pipeline.handler import _get_unsupported_content_type
+
+        mock_message.sticker = MagicMock()
+        mock_message.animation = None
+        mock_message.contact = None
+        mock_message.location = None
+        mock_message.venue = None
+        mock_message.poll = None
+        mock_message.dice = None
+        mock_message.game = None
+        mock_message.new_chat_members = None
+        mock_message.left_chat_member = None
+        mock_message.new_chat_title = None
+        mock_message.new_chat_photo = None
+        mock_message.delete_chat_photo = None
+        mock_message.group_chat_created = None
+        mock_message.pinned_message = None
+        mock_message.forum_topic_created = None
+        mock_message.forum_topic_closed = None
+        mock_message.forum_topic_reopened = None
+
+        assert _get_unsupported_content_type(mock_message) == "sticker"
+
+    def test_animation_type(self, mock_message: MagicMock) -> None:
+        """Detects animation (GIF) message type."""
+        from telegram.pipeline.handler import _get_unsupported_content_type
+
+        mock_message.sticker = None
+        mock_message.animation = MagicMock()
+        mock_message.contact = None
+        mock_message.location = None
+        mock_message.venue = None
+        mock_message.poll = None
+        mock_message.dice = None
+        mock_message.game = None
+        mock_message.new_chat_members = None
+        mock_message.left_chat_member = None
+        mock_message.new_chat_title = None
+        mock_message.new_chat_photo = None
+        mock_message.delete_chat_photo = None
+        mock_message.group_chat_created = None
+        mock_message.pinned_message = None
+        mock_message.forum_topic_created = None
+        mock_message.forum_topic_closed = None
+        mock_message.forum_topic_reopened = None
+
+        assert _get_unsupported_content_type(mock_message) == "animation"
+
+    def test_contact_type(self, mock_message: MagicMock) -> None:
+        """Detects contact message type."""
+        from telegram.pipeline.handler import _get_unsupported_content_type
+
+        mock_message.sticker = None
+        mock_message.animation = None
+        mock_message.contact = MagicMock()
+        mock_message.location = None
+        mock_message.venue = None
+        mock_message.poll = None
+        mock_message.dice = None
+        mock_message.game = None
+        mock_message.new_chat_members = None
+        mock_message.left_chat_member = None
+        mock_message.new_chat_title = None
+        mock_message.new_chat_photo = None
+        mock_message.delete_chat_photo = None
+        mock_message.group_chat_created = None
+        mock_message.pinned_message = None
+        mock_message.forum_topic_created = None
+        mock_message.forum_topic_closed = None
+        mock_message.forum_topic_reopened = None
+
+        assert _get_unsupported_content_type(mock_message) == "contact"
+
+    def test_location_type(self, mock_message: MagicMock) -> None:
+        """Detects location message type."""
+        from telegram.pipeline.handler import _get_unsupported_content_type
+
+        mock_message.sticker = None
+        mock_message.animation = None
+        mock_message.contact = None
+        mock_message.location = MagicMock()
+        mock_message.venue = None
+        mock_message.poll = None
+        mock_message.dice = None
+        mock_message.game = None
+        mock_message.new_chat_members = None
+        mock_message.left_chat_member = None
+        mock_message.new_chat_title = None
+        mock_message.new_chat_photo = None
+        mock_message.delete_chat_photo = None
+        mock_message.group_chat_created = None
+        mock_message.pinned_message = None
+        mock_message.forum_topic_created = None
+        mock_message.forum_topic_closed = None
+        mock_message.forum_topic_reopened = None
+
+        assert _get_unsupported_content_type(mock_message) == "location"
+
+    def test_poll_type(self, mock_message: MagicMock) -> None:
+        """Detects poll message type."""
+        from telegram.pipeline.handler import _get_unsupported_content_type
+
+        mock_message.sticker = None
+        mock_message.animation = None
+        mock_message.contact = None
+        mock_message.location = None
+        mock_message.venue = None
+        mock_message.poll = MagicMock()
+        mock_message.dice = None
+        mock_message.game = None
+        mock_message.new_chat_members = None
+        mock_message.left_chat_member = None
+        mock_message.new_chat_title = None
+        mock_message.new_chat_photo = None
+        mock_message.delete_chat_photo = None
+        mock_message.group_chat_created = None
+        mock_message.pinned_message = None
+        mock_message.forum_topic_created = None
+        mock_message.forum_topic_closed = None
+        mock_message.forum_topic_reopened = None
+
+        assert _get_unsupported_content_type(mock_message) == "poll"
+
+    def test_unknown_type(self, mock_message: MagicMock) -> None:
+        """Returns unknown for unrecognized message types."""
+        from telegram.pipeline.handler import _get_unsupported_content_type
+
+        mock_message.sticker = None
+        mock_message.animation = None
+        mock_message.contact = None
+        mock_message.location = None
+        mock_message.venue = None
+        mock_message.poll = None
+        mock_message.dice = None
+        mock_message.game = None
+        mock_message.new_chat_members = None
+        mock_message.left_chat_member = None
+        mock_message.new_chat_title = None
+        mock_message.new_chat_photo = None
+        mock_message.delete_chat_photo = None
+        mock_message.group_chat_created = None
+        mock_message.pinned_message = None
+        mock_message.forum_topic_created = None
+        mock_message.forum_topic_closed = None
+        mock_message.forum_topic_reopened = None
+
+        assert _get_unsupported_content_type(mock_message) == "unknown"

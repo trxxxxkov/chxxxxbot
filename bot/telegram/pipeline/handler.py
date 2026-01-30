@@ -353,3 +353,77 @@ async def _charge_transcription(
             msg="CRITICAL: Failed to charge user for Whisper!",
         )
         # Don't fail the request - user already got the transcription
+
+
+@router.message()
+async def handle_unsupported_message(message: types.Message) -> None:
+    """Catch-all handler for unsupported message types.
+
+    Logs unsupported message types at DEBUG level instead of letting aiogram
+    log "Update is not handled" at INFO level.
+
+    Supported types are: text, caption, photo, document, voice, audio,
+    video, video_note. Everything else (sticker, animation, contact,
+    location, poll, dice, etc.) is logged here but not processed.
+
+    Args:
+        message: Telegram message of unsupported type.
+    """
+    # Determine what type of message this is
+    content_type = _get_unsupported_content_type(message)
+
+    logger.debug(
+        "unified_handler.unsupported_message_type",
+        user_id=message.from_user.id if message.from_user else None,
+        chat_id=message.chat.id,
+        message_id=message.message_id,
+        content_type=content_type,
+    )
+
+
+def _get_unsupported_content_type(message: types.Message) -> str:  # pylint: disable=too-many-return-statements
+    """Determine content type for unsupported messages.
+
+    Args:
+        message: Telegram message.
+
+    Returns:
+        Content type string describing the unsupported type.
+    """
+    if message.sticker:
+        return "sticker"
+    if message.animation:
+        return "animation"
+    if message.contact:
+        return "contact"
+    if message.location:
+        return "location"
+    if message.venue:
+        return "venue"
+    if message.poll:
+        return "poll"
+    if message.dice:
+        return "dice"
+    if message.game:
+        return "game"
+    if message.new_chat_members:
+        return "new_chat_members"
+    if message.left_chat_member:
+        return "left_chat_member"
+    if message.new_chat_title:
+        return "new_chat_title"
+    if message.new_chat_photo:
+        return "new_chat_photo"
+    if message.delete_chat_photo:
+        return "delete_chat_photo"
+    if message.group_chat_created:
+        return "group_chat_created"
+    if message.pinned_message:
+        return "pinned_message"
+    if message.forum_topic_created:
+        return "forum_topic_created"
+    if message.forum_topic_closed:
+        return "forum_topic_closed"
+    if message.forum_topic_reopened:
+        return "forum_topic_reopened"
+    return "unknown"

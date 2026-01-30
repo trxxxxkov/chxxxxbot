@@ -48,8 +48,13 @@ async def handle_edited_message(
     # Get new text content
     text_content = message.text if message.text else None
     caption = message.caption if message.caption else None
-    edit_date = int(
-        message.edit_date.timestamp()) if message.edit_date else None
+    # edit_date can be datetime or int depending on aiogram version/context
+    edit_date = None
+    if message.edit_date:
+        if hasattr(message.edit_date, 'timestamp'):
+            edit_date = int(message.edit_date.timestamp())
+        else:
+            edit_date = int(message.edit_date)
 
     # Update message in database
     updated_msg = await msg_repo.update_message_edit(

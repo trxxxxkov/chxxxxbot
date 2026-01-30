@@ -212,6 +212,42 @@ class TestHandleEditedMessage:
             edit_date=None,
         )
 
+    @pytest.mark.asyncio
+    async def test_edit_with_int_edit_date(
+        self,
+        mock_message,
+        mock_session,
+    ):
+        """Test edit with int edit_date (Unix timestamp).
+
+        In some aiogram versions or contexts, edit_date may be an int
+        (Unix timestamp) instead of datetime object.
+        """
+        from telegram.handlers.edited_message import handle_edited_message
+
+        # edit_date as Unix timestamp (int) instead of datetime
+        mock_message.edit_date = 1705321800  # 2024-01-15 12:30:00 UTC
+
+        mock_repo = MagicMock()
+        mock_updated_msg = MagicMock()
+        mock_updated_msg.edit_count = 1
+        mock_updated_msg.original_content = None
+        mock_repo.update_message_edit = AsyncMock(return_value=mock_updated_msg)
+
+        with patch(
+                "telegram.handlers.edited_message.MessageRepository",
+                return_value=mock_repo,
+        ):
+            await handle_edited_message(mock_message, mock_session)
+
+        mock_repo.update_message_edit.assert_called_once_with(
+            chat_id=123456,
+            message_id=789,
+            text_content="Edited text content",
+            caption=None,
+            edit_date=1705321800,
+        )
+
 
 class TestEditedMessageRouter:
     """Tests for edited_message router configuration."""
