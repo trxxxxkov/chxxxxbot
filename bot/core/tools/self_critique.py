@@ -166,37 +166,31 @@ SELF_CRITIQUE_TOOL = {
     "name":
         "self_critique",
     "description":
-        """Independent verification by Claude Opus with structured verdict.
+        """**MANDATORY** independent verification by Claude Opus 4.5.
 
-WHY USE THIS (not manual re-check): Self-verification in the same context often \
-confirms your own reasoning. self_critique launches a fresh Opus instance with an \
-adversarial prompt specifically designed to find flaws - providing truly independent \
-verification with structured output (verdict, confidence score, specific issues).
+**CRITICAL**: When user asks you to verify/check your answer, you MUST use this tool. \
+Do NOT attempt to verify manually - self-verification in the same context confirms \
+your own biases. This tool launches a FRESH Opus instance with adversarial prompt.
 
-WHEN TO USE: Only when user explicitly asks for verification or re-check.
+**MUST USE when user message contains ANY of these (case-insensitive):**
+- Russian: "перепроверь", "проверь", "перепроверка", "проверка", "проверить", \
+"убедись", "точно?", "уверен?", "не ошибся", "ошибка?", "правильно?", \
+"осторожнее", "аккуратно", "внимательно"
+- English: "verify", "check", "double-check", "recheck", "re-check", \
+"are you sure", "is this correct", "make sure", "be careful"
 
-Trigger phrases (use self_critique when you see these):
-- PRE-DELIVERY: "осторожнее", "аккуратно", "перепроверь", "убедись", \
-"double-check", "be careful", "verify", "make sure"
-- POST-RESPONSE: "перепроверь свой ответ", "проверь что написал", \
-"а ты уверен?", "точно?", "не ошибся?", "check your answer", "are you sure?"
+**DO NOT** respond with "Проверю пошагово..." or "Давайте проверим..." without \
+calling this tool first. Manual re-verification is PROHIBITED for explicit requests.
 
-For post-response verification: pass your previous answer in 'content' field.
+**POST-RESPONSE verification**: When user questions your previous answer, pass it \
+in 'content' field with the original 'user_request'.
 
-Do NOT use for routine tasks without explicit user request.
+**Capabilities**: Run Python tests, analyze files/images/PDFs, web search, web fetch.
 
-CAPABILITIES: Run Python tests, examine files, analyze images/PDFs, \
-search web, fetch documentation.
+**Cost**: Requires $0.50+ balance. Typical: $0.03-0.15 per call.
 
-COST: Requires balance >= $0.50. Typical cost: $0.03-0.15 per call.
-
-WORKFLOW:
-1. Call self_critique with your solution in 'content'
-2. Receive verdict (PASS/FAIL/NEEDS_IMPROVEMENT) with specific issues
-3. If PASS → deliver with confidence
-4. If issues found → fix and optionally verify again (max 5 iterations)
-
-Returns structured JSON: verdict, alignment_score, confidence, issues list.""",
+**Returns**: Structured verdict (PASS/FAIL/NEEDS_IMPROVEMENT), confidence score, \
+specific issues list, recommendations.""",
     "input_schema": {
         "type": "object",
         "properties": {

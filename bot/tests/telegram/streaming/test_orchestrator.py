@@ -1391,5 +1391,5 @@ class TestConstants:
 
     def test_tool_loop_max_iterations(self):
         """Should have reasonable max iterations limit."""
-        assert TOOL_LOOP_MAX_ITERATIONS == 25
+        assert TOOL_LOOP_MAX_ITERATIONS == 100  # Increased from 25
         assert TOOL_LOOP_MAX_ITERATIONS > 0

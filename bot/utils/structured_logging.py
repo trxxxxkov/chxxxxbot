@@ -84,6 +84,27 @@ class E2BLogFilter(logging.Filter):
         return True
 
 
+def _downgrade_404_errors(_logger: str, method_name: str,
+                          event_dict: dict) -> dict:
+    """Structlog processor to downgrade 404 sandbox errors to info level.
+
+    E2B SDK logs 404 errors when trying to reconnect to expired sandboxes.
+    This is normal behavior - we automatically create a new sandbox.
+    """
+    event = event_dict.get("event", "")
+    level = event_dict.get("level", "")
+
+    # Downgrade "Response 404" errors to info
+    if level == "error" and "Response 404" in str(event):
+        event_dict["level"] = "info"
+
+    # Also downgrade "not found" messages
+    if level == "error" and "not found" in str(event).lower():
+        event_dict["level"] = "info"
+
+    return event_dict
+
+
 def setup_logging(level: str = "INFO") -> None:
     """Configures structlog for JSON logging.
 
@@ -101,6 +122,7 @@ def setup_logging(level: str = "INFO") -> None:
     shared_processors = [
         structlog.contextvars.merge_contextvars,
         structlog.processors.add_log_level,
+        _downgrade_404_errors,  # Downgrade E2B 404 errors to info
         structlog.processors.StackInfoRenderer(),
         structlog.dev.set_exc_info,
         structlog.processors.format_exc_info,
@@ -137,6 +159,8 @@ def setup_logging(level: str = "INFO") -> None:
     root_logger.handlers.clear()
     root_logger.addHandler(handler)
     root_logger.setLevel(getattr(logging, level.upper()))
+    # Add E2B filter to root to catch 404 from any source
+    root_logger.addFilter(E2BLogFilter())
 
     # Aiogram dispatcher: only show actual errors, not routine retries
     dispatcher_logger = logging.getLogger("aiogram.dispatcher")
@@ -149,10 +173,10 @@ def setup_logging(level: str = "INFO") -> None:
     logging.getLogger("anthropic").setLevel(logging.INFO)
 
     # E2B sandbox: 404 on reconnect is normal (sandbox expired)
-    e2b_logger = logging.getLogger("e2b")
-    e2b_logger.addFilter(E2BLogFilter())
-    e2b_code_logger = logging.getLogger("e2b_code_interpreter")
-    e2b_code_logger.addFilter(E2BLogFilter())
+    # Apply filter to all E2B-related loggers including HTTP clients
+    for logger_name in ["e2b", "e2b_code_interpreter", "httpx", "httpcore"]:
+        e2b_related_logger = logging.getLogger(logger_name)
+        e2b_related_logger.addFilter(E2BLogFilter())
 
 
 def get_logger(name: str) -> structlog.BoundLogger:

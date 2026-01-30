@@ -451,8 +451,8 @@ class TestToolDefinition:
 
         assert "description" in SELF_CRITIQUE_TOOL
         assert "verification" in SELF_CRITIQUE_TOOL["description"].lower()
-        # Tool description includes trigger phrases
-        assert "when to use" in SELF_CRITIQUE_TOOL["description"].lower()
+        # Tool description includes mandatory trigger phrases
+        assert "must use" in SELF_CRITIQUE_TOOL["description"].lower()
 
     def test_tool_has_input_schema(self):
         """Test tool has input schema."""
@@ -1436,18 +1436,18 @@ class TestToolDefinitionIntegration:
         from core.tools.self_critique import SELF_CRITIQUE_TOOL
 
         desc = SELF_CRITIQUE_TOOL["description"].lower()
-        assert "when to use" in desc
+        assert "must use" in desc
         assert "verify" in desc or "перепроверь" in desc
 
-    def test_tool_definition_mentions_iteration_workflow(self):
-        """Test tool definition includes iteration workflow."""
+    def test_tool_definition_mentions_verdict_workflow(self):
+        """Test tool definition includes verdict information."""
         from core.tools.self_critique import SELF_CRITIQUE_TOOL
 
         desc = SELF_CRITIQUE_TOOL["description"]
-        # Workflow elements
-        assert "PASS" in desc
-        assert "fix" in desc.lower()
-        assert "iteration" in desc.lower() or "5" in desc
+        # Verdict elements
+        assert "PASS" in desc or "pass" in desc.lower()
+        assert "FAIL" in desc or "fail" in desc.lower()
+        assert "verdict" in desc.lower()
 
     def test_tool_definition_mentions_cost(self):
         """Test tool definition includes cost information."""
@@ -1464,8 +1464,8 @@ class TestToolDefinitionIntegration:
         assert "Opus" in desc
 
     def test_tool_definition_has_explicit_trigger_requirement(self):
-        """Test tool definition requires explicit user request."""
+        """Test tool definition requires user verification request."""
         from core.tools.self_critique import SELF_CRITIQUE_TOOL
 
         desc = SELF_CRITIQUE_TOOL["description"].lower()
-        assert "only" in desc and "user" in desc
+        assert "when user" in desc or "user asks" in desc

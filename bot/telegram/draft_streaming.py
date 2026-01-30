@@ -31,7 +31,7 @@ DEFAULT_PARSE_MODE: ParseMode = "MarkdownV2"
 
 # Minimum interval between draft updates (seconds)
 # sendMessageDraft still has rate limits, just more relaxed than edit_message
-MIN_UPDATE_INTERVAL = 0.6
+MIN_UPDATE_INTERVAL = 0.7
 
 # Default keepalive interval (seconds)
 DEFAULT_KEEPALIVE_INTERVAL = 6.0
