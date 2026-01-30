@@ -14,6 +14,7 @@ from datetime import timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from aiogram import types
+from aiogram.exceptions import TelegramNetworkError
 from cache.thread_cache import invalidate_files
 from config import FILES_API_TTL_HOURS
 from core.claude.files_api import upload_to_files_api
@@ -26,6 +27,49 @@ from telegram.chat_action.manager import ChatActionManager
 from utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
+
+# Retry settings for network errors
+MAX_SEND_RETRIES = 3
+RETRY_DELAY_SECONDS = 1.0
+
+
+async def _send_with_retry(send_func, filename: str, **kwargs) -> types.Message:
+    """Send file to Telegram with retry on network errors.
+
+    Args:
+        send_func: Bot method to call (send_photo or send_document).
+        filename: Filename for logging.
+        **kwargs: Arguments to pass to send_func.
+
+    Returns:
+        Sent message on success.
+
+    Raises:
+        Last exception if all retries fail.
+    """
+    last_error = None
+    for attempt in range(MAX_SEND_RETRIES):
+        try:
+            return await send_func(**kwargs)
+        except TelegramNetworkError as e:
+            last_error = e
+            if attempt < MAX_SEND_RETRIES - 1:
+                logger.warning(
+                    "files.send_retry",
+                    filename=filename,
+                    attempt=attempt + 1,
+                    max_retries=MAX_SEND_RETRIES,
+                    error=str(e),
+                )
+                await asyncio.sleep(RETRY_DELAY_SECONDS * (attempt + 1))
+            else:
+                logger.error(
+                    "files.send_failed_after_retries",
+                    filename=filename,
+                    attempts=MAX_SEND_RETRIES,
+                    error=str(e),
+                )
+    raise last_error
 
 
 async def _process_single_file(
@@ -95,7 +139,9 @@ async def _process_single_file(
             # - as_document is NOT set (user didn't request full quality)
             if (not as_document and file_type == FileType.IMAGE and mime_type
                     in ["image/jpeg", "image/png", "image/gif", "image/webp"]):
-                sent_msg = await first_message.bot.send_photo(
+                sent_msg = await _send_with_retry(
+                    first_message.bot.send_photo,
+                    filename=filename,
                     chat_id=chat_id,
                     photo=types.BufferedInputFile(file_bytes,
                                                   filename=filename),
@@ -107,7 +153,9 @@ async def _process_single_file(
                     telegram_file_id = largest.file_id
                     telegram_file_unique_id = largest.file_unique_id
             else:
-                sent_msg = await first_message.bot.send_document(
+                sent_msg = await _send_with_retry(
+                    first_message.bot.send_document,
+                    filename=filename,
                     chat_id=chat_id,
                     document=types.BufferedInputFile(file_bytes,
                                                      filename=filename),
