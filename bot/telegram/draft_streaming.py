@@ -390,12 +390,13 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
 
         except TelegramBadRequest as e:
             # Architectural trade-off: MarkdownV2 formatting vs compatibility
+            # This is expected behavior - fallback to plain text when parse fails
             if "can't parse entities" in str(e).lower() and parse_mode:
-                logger.warning("draft_streamer.parse_error_fallback",
-                               chat_id=self.chat_id,
-                               draft_id=self.draft_id,
-                               parse_mode=parse_mode,
-                               error=str(e))
+                logger.debug("draft_streamer.parse_error_fallback",
+                             chat_id=self.chat_id,
+                             draft_id=self.draft_id,
+                             parse_mode=parse_mode,
+                             error=str(e))
                 return await self.update(text_to_send,
                                          parse_mode=None,
                                          force=force)
