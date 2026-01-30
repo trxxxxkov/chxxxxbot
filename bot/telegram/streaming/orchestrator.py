@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 # Constants
-TOOL_LOOP_MAX_ITERATIONS = 25
+TOOL_LOOP_MAX_ITERATIONS = 100
 DRAFT_KEEPALIVE_INTERVAL = 3.0
 
 
@@ -694,7 +694,7 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
         dm: DraftManager,
     ) -> StreamResult:
         """Handle max iterations exceeded."""
-        logger.error(
+        logger.warning(
             "orchestrator.max_iterations",
             thread_id=self._thread_id,
             max_iterations=TOOL_LOOP_MAX_ITERATIONS,

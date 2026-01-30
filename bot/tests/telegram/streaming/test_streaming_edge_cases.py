@@ -389,7 +389,7 @@ class TestMaxIterations:
         from telegram.streaming.orchestrator import TOOL_LOOP_MAX_ITERATIONS
 
         assert TOOL_LOOP_MAX_ITERATIONS > 0
-        assert TOOL_LOOP_MAX_ITERATIONS == 25  # Current value
+        assert TOOL_LOOP_MAX_ITERATIONS == 100  # Increased from 25
 
     def test_draft_keepalive_interval_constant(self):
         """Test DRAFT_KEEPALIVE_INTERVAL is defined."""

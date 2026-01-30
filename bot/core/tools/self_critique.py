@@ -166,34 +166,37 @@ SELF_CRITIQUE_TOOL = {
     "name":
         "self_critique",
     "description":
-        """Verification subagent that critically analyzes your work using Claude Opus.
+        """Independent verification by Claude Opus with structured verdict.
 
-WHEN TO USE: Only when the user explicitly requests verification or extra care.
+WHY USE THIS (not manual re-check): Self-verification in the same context often \
+confirms your own reasoning. self_critique launches a fresh Opus instance with an \
+adversarial prompt specifically designed to find flaws - providing truly independent \
+verification with structured output (verdict, confidence score, specific issues).
 
-Trigger phrases (any language):
-- "перепроверь", "проверь результат", "убедись что правильно"
-- "осторожнее", "аккуратно", "будь внимателен"
-- "проверяй факты", "не ошибись", "точно посчитай"
-- "double-check", "verify", "make sure it's correct"
+WHEN TO USE: Only when user explicitly asks for verification or re-check.
+
+Trigger phrases (use self_critique when you see these):
+- PRE-DELIVERY: "осторожнее", "аккуратно", "перепроверь", "убедись", \
+"double-check", "be careful", "verify", "make sure"
+- POST-RESPONSE: "перепроверь свой ответ", "проверь что написал", \
+"а ты уверен?", "точно?", "не ошибся?", "check your answer", "are you sure?"
+
+For post-response verification: pass your previous answer in 'content' field.
 
 Do NOT use for routine tasks without explicit user request.
 
-The subagent can run Python tests, examine files, analyze images/PDFs, \
-search web, and fetch documentation.
+CAPABILITIES: Run Python tests, examine files, analyze images/PDFs, \
+search web, fetch documentation.
 
 COST: Requires balance >= $0.50. Typical cost: $0.03-0.15 per call.
 
-ITERATION WORKFLOW:
-1. Call self_critique after generating your solution
-2. Receive verdict (PASS/FAIL/NEEDS_IMPROVEMENT) with issues list
-3. Decide next step:
-   - Minor issues (typos, small fixes) → fix and deliver, no more calls
-   - Major issues (logic errors, multiple problems) → fix and call again
-   - PASS → deliver with confidence
-4. Maximum 5 iterations total
-5. If unresolved issues remain after 5 rounds → report them to user
+WORKFLOW:
+1. Call self_critique with your solution in 'content'
+2. Receive verdict (PASS/FAIL/NEEDS_IMPROVEMENT) with specific issues
+3. If PASS → deliver with confidence
+4. If issues found → fix and optionally verify again (max 5 iterations)
 
-Returns structured verdict with specific issues and recommendations.""",
+Returns structured JSON: verdict, alignment_score, confidence, issues list.""",
     "input_schema": {
         "type": "object",
         "properties": {

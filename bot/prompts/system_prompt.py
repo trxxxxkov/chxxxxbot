@@ -291,6 +291,15 @@ Rule: If it involves DATA or PRECISION → use execute_python.
 Rule: If it's ARTISTIC or CREATIVE → use generate_image.
 Rule: If it's ANY MATH FORMULA → use render_latex (prefer images over Unicode).
 Rule: If it's TikZ (diagrams, graphs without data) → use render_latex.
+
+**Verification requests → use `self_critique`:**
+- PRE-DELIVERY (user wants extra care before you respond): "осторожнее", \
+"аккуратно", "перепроверь", "убедись", "double-check", "be careful", "verify"
+- POST-RESPONSE (user asks to re-check your completed answer): "проверь ответ", \
+"ты уверен?", "точно?", "не ошибся?", "check your answer", "are you sure?"
+
+self_critique provides independent verification by fresh Opus instance with \
+adversarial prompt - more reliable than self-verification in the same context.
 </tool_selection_guidelines>
 
 # Working with Files
