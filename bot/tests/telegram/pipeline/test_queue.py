@@ -326,6 +326,8 @@ class TestProcessedMessageQueueErrorHandling:
         assert call_count == 2
 
     @pytest.mark.asyncio
+    @pytest.mark.filterwarnings(
+        "ignore::pytest.PytestUnraisableExceptionWarning")
     async def test_processing_continues_after_failure(
         self,
         sample_metadata: MessageMetadata,
