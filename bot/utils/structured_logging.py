@@ -34,9 +34,16 @@ class AiogramLogFilter(logging.Filter):
         msg = str(record.msg)
 
         # Network errors during polling - normal reconnection
+        # BUT: multiple bot instances conflict should remain a warning
         if record.levelno == logging.ERROR and "Failed to fetch updates" in msg:
-            record.levelno = logging.INFO
-            record.levelname = "INFO"
+            if "terminated by other getUpdates request" in msg:
+                # Multiple bot instances running - this is a serious issue
+                record.levelno = logging.WARNING
+                record.levelname = "WARNING"
+            else:
+                # Normal network errors (timeout, connection reset)
+                record.levelno = logging.INFO
+                record.levelname = "INFO"
 
         # SIGTERM/SIGINT - normal container shutdown
         if record.levelno == logging.WARNING and "signal" in msg.lower():

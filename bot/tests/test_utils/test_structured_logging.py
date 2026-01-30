@@ -14,6 +14,7 @@ from unittest.mock import patch
 
 import pytest
 import structlog
+from utils.structured_logging import AiogramLogFilter
 from utils.structured_logging import get_logger
 from utils.structured_logging import setup_logging
 
@@ -324,3 +325,87 @@ def test_setup_logging_multiple_calls():
         logger2.debug("test2")
 
     assert len(output.getvalue()) > 0
+
+
+class TestAiogramLogFilter:
+    """Tests for AiogramLogFilter class."""
+
+    def test_network_error_downgraded_to_info(self):
+        """Test that network errors are downgraded from ERROR to INFO."""
+        log_filter = AiogramLogFilter()
+        record = logging.LogRecord(
+            name="aiogram.dispatcher",
+            level=logging.ERROR,
+            pathname="",
+            lineno=0,
+            msg="Failed to fetch updates - TelegramNetworkError: timeout",
+            args=(),
+            exc_info=None,
+        )
+
+        log_filter.filter(record)
+
+        assert record.levelno == logging.INFO
+        assert record.levelname == "INFO"
+
+    def test_multiple_bot_instances_stays_warning(self):
+        """Test that multiple bot instances error is elevated to WARNING.
+
+        This is a critical error indicating multiple bots are running,
+        which can cause message processing issues.
+        """
+        log_filter = AiogramLogFilter()
+        record = logging.LogRecord(
+            name="aiogram.dispatcher",
+            level=logging.ERROR,
+            pathname="",
+            lineno=0,
+            msg=("Failed to fetch updates - TelegramConflictError: "
+                 "terminated by other getUpdates request; "
+                 "make sure that only one bot instance is running"),
+            args=(),
+            exc_info=None,
+        )
+
+        log_filter.filter(record)
+
+        # Should be WARNING, not downgraded to INFO
+        assert record.levelno == logging.WARNING
+        assert record.levelname == "WARNING"
+
+    def test_signal_warning_downgraded_to_info(self):
+        """Test that signal warnings are downgraded to INFO."""
+        log_filter = AiogramLogFilter()
+        record = logging.LogRecord(
+            name="aiogram.dispatcher",
+            level=logging.WARNING,
+            pathname="",
+            lineno=0,
+            msg="Received SIGTERM signal",
+            args=(),
+            exc_info=None,
+        )
+
+        log_filter.filter(record)
+
+        assert record.levelno == logging.INFO
+        assert record.levelname == "INFO"
+
+    def test_other_errors_unchanged(self):
+        """Test that unrelated errors remain unchanged."""
+        log_filter = AiogramLogFilter()
+        record = logging.LogRecord(
+            name="aiogram.dispatcher",
+            level=logging.ERROR,
+            pathname="",
+            lineno=0,
+            msg="Some other error message",
+            args=(),
+            exc_info=None,
+        )
+
+        log_filter.filter(record)
+
+        # Should remain ERROR
+        assert record.levelno == logging.ERROR
+        assert record.levelname == "ERROR"
