@@ -134,12 +134,12 @@ def serialize_content_block(block) -> dict:
     else:
         return block
 
-    # Remove 'citations' from server_tool_result blocks
-    # API returns this field but doesn't accept it on input
+    # Remove fields API returns but doesn't accept on input
     block_type = block_dict.get("type", "")
     if block_type in ("server_tool_result", "web_search_tool_result",
                       "web_fetch_tool_result"):
         block_dict.pop("citations", None)
+        block_dict.pop("text", None)  # web_fetch_tool_result has 'text'
 
     # Also check nested content for server tool results
     if "content" in block_dict and isinstance(block_dict["content"], list):
@@ -148,6 +148,7 @@ def serialize_content_block(block) -> dict:
             if isinstance(item, dict):
                 item_copy = item.copy()
                 item_copy.pop("citations", None)
+                item_copy.pop("text", None)
                 cleaned_content.append(item_copy)
             else:
                 cleaned_content.append(item)

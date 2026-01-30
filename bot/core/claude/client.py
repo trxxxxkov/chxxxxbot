@@ -703,7 +703,7 @@ class ClaudeProvider(LLMProvider):
         """Remove fields that API returns but doesn't accept on input.
 
         Server-side tool results (web_search, web_fetch) include 'citations'
-        field that must be stripped before sending back to API.
+        and 'text' fields that must be stripped before sending back to API.
 
         Args:
             block_dict: Serialized content block.
@@ -713,11 +713,12 @@ class ClaudeProvider(LLMProvider):
         """
         block_type = block_dict.get("type", "")
 
-        # Remove 'citations' from server tool result blocks
+        # Remove fields API doesn't accept from server tool result blocks
         if block_type in ("server_tool_result", "web_search_tool_result",
                           "web_fetch_tool_result"):
             block_dict = block_dict.copy()
             block_dict.pop("citations", None)
+            block_dict.pop("text", None)  # web_fetch_tool_result has 'text'
 
         # Also check nested content for server tool results
         if "content" in block_dict and isinstance(block_dict["content"], list):
@@ -726,6 +727,7 @@ class ClaudeProvider(LLMProvider):
                 if isinstance(item, dict):
                     item_copy = item.copy()
                     item_copy.pop("citations", None)
+                    item_copy.pop("text", None)
                     cleaned_content.append(item_copy)
                 else:
                     cleaned_content.append(item)
@@ -744,8 +746,8 @@ class ClaudeProvider(LLMProvider):
         IMPORTANT: The content must be preserved without modification to avoid
         'thinking blocks cannot be modified' errors from the API.
 
-        Note: Server-side tool results have 'citations' field stripped as API
-        doesn't accept it on input.
+        Note: Server-side tool results have 'citations' and 'text' fields
+        stripped as API doesn't accept them on input.
 
         Returns:
             JSON string of ALL content blocks or None if no message available.

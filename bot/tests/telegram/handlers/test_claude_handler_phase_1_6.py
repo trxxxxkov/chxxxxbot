@@ -213,6 +213,9 @@ async def test_voice_message_transcript_prefix(
 
 
 @pytest.mark.asyncio
+@pytest.mark.filterwarnings(
+    "ignore:Exception ignored in.*MagicMock.*:pytest.PytestUnraisableExceptionWarning"
+)
 async def test_image_with_caption(mock_session, mock_message, sample_metadata,
                                   mock_thread_repo, mock_message_repo,
                                   mock_claude_provider, mock_user_repo,
