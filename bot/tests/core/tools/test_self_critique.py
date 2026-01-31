@@ -345,7 +345,7 @@ class TestBalanceCheck:
 
             assert result["error"] == "insufficient_balance"
             assert result["verdict"] == "SKIPPED"
-            assert result["required_balance"] == 0.50
+            assert result["required_balance"] == 1.00
             assert result["current_balance"] == 0.25
 
     @pytest.mark.asyncio
@@ -1454,7 +1454,7 @@ class TestToolDefinitionIntegration:
         from core.tools.self_critique import SELF_CRITIQUE_TOOL
 
         desc = SELF_CRITIQUE_TOOL["description"]
-        assert "$0.50" in desc or "0.50" in desc
+        assert "$1.00" in desc or "1.00" in desc
 
     def test_tool_definition_mentions_opus(self):
         """Test tool definition mentions Opus model."""

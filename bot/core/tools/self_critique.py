@@ -12,7 +12,7 @@ The subagent has access to tools:
 - web_fetch: Read full content of web pages (documentation, articles)
 
 Cost:
-- Requires balance >= $0.50 to start
+- Requires balance >= $1.00 to start
 - Dynamic pricing: user pays actual Opus token costs + tool costs
 - All costs tracked in Grafana/Prometheus
 
@@ -53,7 +53,7 @@ logger = get_logger(__name__)
 VERIFICATION_MODEL_ID = "claude:opus"
 
 # Minimum balance required to start self_critique
-MIN_BALANCE_FOR_CRITIQUE = Decimal("0.50")
+MIN_BALANCE_FOR_CRITIQUE = Decimal("1.00")
 
 # Maximum iterations for subagent tool loop
 MAX_SUBAGENT_ITERATIONS = 10
@@ -62,7 +62,7 @@ MAX_SUBAGENT_ITERATIONS = 10
 THINKING_BUDGET_TOKENS = 10000
 
 # Cost cap - stop if estimated cost exceeds this threshold
-MAX_COST_USD = Decimal("0.50")
+MAX_COST_USD = Decimal("1.00")
 
 # =============================================================================
 # Prometheus Metrics
@@ -187,7 +187,7 @@ in 'content' field with the original 'user_request'.
 
 **Capabilities**: Run Python tests, analyze files/images/PDFs, web search, web fetch.
 
-**Cost**: Requires $0.50+ balance. Typical: $0.03-0.15 per call.
+**Cost**: Requires $1.00+ balance. Typical: $0.03-0.15 per call.
 
 **Returns**: Structured verdict (PASS/FAIL/NEEDS_IMPROVEMENT), confidence score, \
 specific issues list, recommendations.""",
@@ -507,7 +507,7 @@ async def execute_self_critique(  # pylint: disable=too-many-return-statements
                 has_content=bool(content),
                 file_count=len(file_ids) if file_ids else 0)
 
-    # 1. Check balance (minimum $0.50 to start)
+    # 1. Check balance (minimum $1.00 to start)
     # Use ServiceFactory for cleaner initialization (DRY - no manual repo creation)
     services = ServiceFactory(session)
     balance = await services.balance.get_balance(user_id)
@@ -589,6 +589,7 @@ async def execute_self_critique(  # pylint: disable=too-many-return-statements
                 "verdict": "CANCELLED",
                 "message": "Verification cancelled by user",
                 "cost_usd": float(total_cost),
+                "_already_charged": True,
                 "iterations": iteration,
                 "partial": True
             }
@@ -670,6 +671,8 @@ async def execute_self_critique(  # pylint: disable=too-many-return-statements
                     f"Verification stopped: cost cap ${MAX_COST_USD} reached",
                 "cost_usd":
                     float(total_cost),
+                "_already_charged":
+                    True,
                 "iterations":
                     iteration + 1,
                 "partial":
@@ -723,6 +726,7 @@ async def execute_self_critique(  # pylint: disable=too-many-return-statements
                     iterations=iteration + 1)
 
                 result["cost_usd"] = float(total_cost)
+                result["_already_charged"] = True
                 result["iterations"] = iteration + 1
                 result["tokens_used"] = {
                     "input": cost_tracker.total_input_tokens,
@@ -757,6 +761,7 @@ async def execute_self_critique(  # pylint: disable=too-many-return-statements
                     "error": "invalid_response_format",
                     "raw_response": result_text[:2000],
                     "cost_usd": float(total_cost),
+                    "_already_charged": True,
                     "iterations": iteration + 1
                 }
 
@@ -861,6 +866,7 @@ async def execute_self_critique(  # pylint: disable=too-many-return-statements
             iterations=MAX_SUBAGENT_ITERATIONS + 1)  # +1 for final call
 
         result["cost_usd"] = float(total_cost)
+        result["_already_charged"] = True
         result["iterations"] = MAX_SUBAGENT_ITERATIONS + 1
         result["tool_limit_reached"] = True
         result["tokens_used"] = {
@@ -895,6 +901,8 @@ async def execute_self_critique(  # pylint: disable=too-many-return-statements
                 f"Tool limit reached and final verdict extraction failed: {e}",
             "cost_usd":
                 float(total_cost),
+            "_already_charged":
+                True,
             "iterations":
                 MAX_SUBAGENT_ITERATIONS,
             "tool_limit_reached":
