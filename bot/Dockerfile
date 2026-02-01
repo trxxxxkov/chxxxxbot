@@ -56,5 +56,5 @@ COPY . .
 # Expose metrics port
 EXPOSE 8080
 
-# Start bot (migrations run separately via postgres service)
-CMD ["python", "main.py"]
+# Run migrations and start bot
+CMD ["sh", "-c", "cd /postgres && alembic upgrade head && cd /app && python main.py"]

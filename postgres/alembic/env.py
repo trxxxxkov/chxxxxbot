@@ -23,11 +23,15 @@ sys.path.insert(0, str(bot_path))
 
 # Import Base and all models (NO __init__.py - direct imports)
 # pylint: disable=wrong-import-position,unused-import
+from db.models.balance_operation import BalanceOperation  # noqa: E402,F401
 from db.models.base import Base  # noqa: E402
 from db.models.chat import Chat  # noqa: E402
 from db.models.message import Message  # noqa: E402
+from db.models.payment import Payment  # noqa: E402
 from db.models.thread import Thread  # noqa: E402
+from db.models.tool_call import ToolCall  # noqa: E402
 from db.models.user import User  # noqa: E402
+from db.models.user_file import UserFile  # noqa: E402
 
 # Alembic Config object
 config = context.config

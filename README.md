@@ -2,6 +2,22 @@
 
 Telegram bot with access to LLM models (Claude, OpenAI, Google) and tools via agents.
 
+## Quick Start
+
+```bash
+# 1. Clone repository
+git clone git@github.com:trxxxxkov/chxxxxbot.git && cd chxxxxbot
+
+# 2. Fill in secrets
+echo "YOUR_TELEGRAM_BOT_TOKEN" > secrets/telegram_bot_token.txt
+echo "YOUR_ANTHROPIC_API_KEY" > secrets/anthropic_api_key.txt
+echo "your_postgres_password" > secrets/postgres_password.txt
+echo "your_redis_password" > secrets/redis_password.txt
+
+# 3. Start (migrations run automatically)
+docker compose up -d
+```
+
 ## Working with the Project
 
 ### Start
@@ -91,28 +107,29 @@ docker compose exec bot env
 # Connect to PostgreSQL
 docker compose exec postgres psql -U postgres -d postgres
 
-# Database dump
-docker compose exec postgres pg_dump -U postgres postgres > backup.sql
+# Export database (full backup with schema)
+docker compose exec -T postgres pg_dump -U postgres postgres > backup.sql
 
-# Restore from dump
-cat backup.sql | docker compose exec -T postgres psql -U postgres postgres
+# Import database (restore from backup)
+cat backup.sql | docker compose exec -T postgres psql -U postgres
 ```
 
 ### Migrations (Alembic)
 
+Migrations run automatically on bot startup. Manual commands:
+
 ```bash
-# Create migration
-docker compose exec bot alembic revision --autogenerate -m "description"
+# Create new migration (after changing models)
+docker compose exec bot sh -c "cd /postgres && alembic revision --autogenerate -m 'description'"
 
-# Apply migrations
-docker compose exec bot alembic upgrade head
-
-# Rollback last migration
-docker compose exec bot alembic downgrade -1
+# Apply migrations manually (usually not needed)
+docker compose exec bot sh -c "cd /postgres && alembic upgrade head"
 
 # Show current version
-docker compose exec bot alembic current
+docker compose exec bot sh -c "cd /postgres && alembic current"
 ```
+
+After importing old backup, migrations auto-apply on next bot start.
 
 ### Cleanup
 
@@ -152,14 +169,21 @@ See [CLAUDE.md](CLAUDE.md) for full architecture documentation.
 ## Secrets
 
 Files in `secrets/` (empty templates in repo, fill with your values):
+
+**Required:**
 - `telegram_bot_token.txt` — Telegram Bot API token
 - `anthropic_api_key.txt` — Claude API key
-- `openai_api_key.txt` — OpenAI API key
-- `google_api_key.txt` — Google API key
 - `postgres_password.txt` — PostgreSQL password
+- `redis_password.txt` — Redis password
+
+**Optional:**
+- `openai_api_key.txt` — OpenAI API key (for Whisper)
+- `google_api_key.txt` — Google API key (for image generation)
+- `e2b_api_key.txt` — E2B API key (for code execution)
+- `grafana_password.txt` — Grafana admin password
 - `privileged_users.txt` — Admin user IDs (one per line)
 
-After filling in secrets, run to prevent accidental commits:
+After filling in secrets:
 ```bash
 git update-index --skip-worktree secrets/*
 ```
