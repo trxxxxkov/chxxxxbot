@@ -11,6 +11,7 @@ from aiogram.types import InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from config import get_models_by_provider
 from config import ModelConfig
+from i18n import get_text
 
 
 def get_model_keyboard(current: str) -> InlineKeyboardBuilder:
@@ -81,11 +82,12 @@ def get_model_keyboard(current: str) -> InlineKeyboardBuilder:
     return builder
 
 
-def format_model_info(model: ModelConfig) -> str:
+def format_model_info(model: ModelConfig, lang: str = "en") -> str:
     r"""Format model information for display.
 
     Args:
         model: ModelConfig to format.
+        lang: Language code ('en' or 'ru').
 
     Returns:
         Formatted string with model details.
@@ -96,17 +98,19 @@ def format_model_info(model: ModelConfig) -> str:
         'Claude Sonnet 4.5\n\nProvider: claude\nContext: 200,000 tokens...'
     """
     info = f"{model.display_name}\n\n"
-    info += f"Provider: {model.provider}\n"
-    info += f"Context window: {model.context_window:,} tokens\n"
-    info += f"Max output: {model.max_output:,} tokens\n"
-    info += f"Latency: {model.latency_tier}\n\n"
+    info += get_text("model.info_provider", lang, provider=model.provider)
+    info += get_text("model.info_context", lang, context=model.context_window)
+    info += get_text("model.info_max_output", lang, max_output=model.max_output)
+    info += get_text("model.info_latency", lang, latency=model.latency_tier)
 
-    info += "💰 Pricing (per million tokens):\n"
-    info += f"  Input: ${model.pricing_input}\n"
-    info += f"  Output: ${model.pricing_output}\n"
+    info += get_text("model.info_pricing", lang)
+    info += get_text("model.info_input", lang, price=model.pricing_input)
+    info += get_text("model.info_output", lang, price=model.pricing_output)
 
     if model.pricing_cache_read:
-        info += f"  Cache read: ${model.pricing_cache_read}\n"
+        info += get_text("model.info_cache_read",
+                         lang,
+                         price=model.pricing_cache_read)
 
     # Add key capabilities
     key_caps = []
@@ -118,6 +122,8 @@ def format_model_info(model: ModelConfig) -> str:
         key_caps.append("Effort Control")
 
     if key_caps:
-        info += f"\n✨ Features: {', '.join(key_caps)}"
+        info += get_text("model.info_features",
+                         lang,
+                         features=", ".join(key_caps))
 
     return info

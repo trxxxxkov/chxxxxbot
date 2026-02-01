@@ -9,9 +9,11 @@ NO __init__.py - use direct import:
 
 from aiogram.types import InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from i18n import get_text
 
 
-def get_personality_keyboard(has_custom_prompt: bool) -> InlineKeyboardBuilder:
+def get_personality_keyboard(has_custom_prompt: bool,
+                             lang: str = "en") -> InlineKeyboardBuilder:
     """Build inline keyboard for personality management.
 
     Creates keyboard with options:
@@ -22,6 +24,7 @@ def get_personality_keyboard(has_custom_prompt: bool) -> InlineKeyboardBuilder:
 
     Args:
         has_custom_prompt: Whether user has custom_prompt set.
+        lang: Language code ('en' or 'ru').
 
     Returns:
         InlineKeyboardBuilder with personality management buttons.
@@ -36,36 +39,38 @@ def get_personality_keyboard(has_custom_prompt: bool) -> InlineKeyboardBuilder:
     # View current (only if exists)
     if has_custom_prompt:
         builder.row(
-            InlineKeyboardButton(text="👁️ View Current",
+            InlineKeyboardButton(text=get_text("personality.btn_view", lang),
                                  callback_data="personality:view"))
 
     # Edit/Set new
-    button_text = "✏️ Edit" if has_custom_prompt else "✏️ Set New"
+    button_key = "personality.btn_edit" if has_custom_prompt else "personality.btn_set_new"
     builder.row(
-        InlineKeyboardButton(text=button_text,
+        InlineKeyboardButton(text=get_text(button_key, lang),
                              callback_data="personality:edit"))
 
     # Clear (only if exists)
     if has_custom_prompt:
         builder.row(
-            InlineKeyboardButton(text="🗑️ Clear",
+            InlineKeyboardButton(text=get_text("personality.btn_clear", lang),
                                  callback_data="personality:clear"))
 
     # Cancel (always)
     builder.row(
-        InlineKeyboardButton(text="❌ Cancel",
+        InlineKeyboardButton(text=get_text("personality.btn_cancel", lang),
                              callback_data="personality:cancel"))
 
     return builder
 
 
 def format_personality_info(custom_prompt: str | None,
-                            truncate: int = 500) -> str:
+                            truncate: int = 500,
+                            lang: str = "en") -> str:
     r"""Format custom prompt for display.
 
     Args:
         custom_prompt: User's custom prompt (or None).
         truncate: Maximum length before truncating. Defaults to 500.
+        lang: Language code ('en' or 'ru').
 
     Returns:
         Formatted string with custom prompt or "Not set" message.
@@ -78,7 +83,7 @@ def format_personality_info(custom_prompt: str | None,
         '_No personality set. Using default behavior._'
     """
     if not custom_prompt:
-        return "_No personality set. Using default behavior._"
+        return get_text("personality.not_set", lang)
 
     # Truncate if too long
     display_text = custom_prompt

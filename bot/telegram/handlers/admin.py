@@ -22,6 +22,8 @@ from aiogram.types import InlineKeyboardMarkup
 from aiogram.types import Message
 import config
 from db.repositories.thread_repository import ThreadRepository
+from i18n import get_lang
+from i18n import get_text
 from services.factory import ServiceFactory
 from sqlalchemy.ext.asyncio import AsyncSession
 from utils.structured_logging import get_logger
@@ -58,6 +60,7 @@ async def cmd_topup(message: Message, session: AsyncSession):
         /topup @username -5.00     (deduct $5.00)
     """
     user_id = message.from_user.id
+    lang = get_lang(message.from_user.language_code)
 
     # Check privileges
     if not is_privileged(user_id):
@@ -67,21 +70,13 @@ async def cmd_topup(message: Message, session: AsyncSession):
             username=message.from_user.username,
             msg="Unauthorized topup attempt",
         )
-        await message.answer(
-            "❌ This command is only available to privileged users.")
+        await message.answer(get_text("admin.unauthorized", lang))
         return
 
     # Parse arguments
     args = message.text.split()
     if len(args) < 3:
-        await message.answer(
-            "ℹ️ <b>Admin Balance Adjustment</b>\n\n"
-            "<b>Usage:</b> <code>/topup &lt;user_id or @username&gt; &lt;amount&gt;</code>\n\n"
-            "<b>Examples:</b>\n"
-            "<code>/topup 123456789 10.50</code>  (add $10.50)\n"
-            "<code>/topup @username -5.00</code>  (deduct $5.00)\n\n"
-            "💡 Positive amount = add to balance\n"
-            "💡 Negative amount = deduct from balance")
+        await message.answer(get_text("admin.topup_usage", lang))
         return
 
     target_str = args[1]
@@ -97,14 +92,14 @@ async def cmd_topup(message: Message, session: AsyncSession):
         try:
             target_user_id = int(target_str)
         except ValueError:
-            await message.answer("❌ Invalid user ID. Must be a number.")
+            await message.answer(get_text("admin.invalid_user_id", lang))
             return
 
     # Parse amount
     try:
         amount = Decimal(amount_str)
     except Exception:
-        await message.answer("❌ Invalid amount. Must be a number.")
+        await message.answer(get_text("admin.invalid_amount", lang))
         return
 
     logger.info(
@@ -131,13 +126,18 @@ async def cmd_topup(message: Message, session: AsyncSession):
         # Send confirmation
         target_display = (f"ID {target_user_id}"
                           if target_user_id else f"@{target_username}")
-        action = "Added" if amount > 0 else "Deducted"
+        action_key = ("admin.topup_action_added"
+                      if amount > 0 else "admin.topup_action_deducted")
+        action = get_text(action_key, lang)
 
-        await message.answer(f"✅ <b>Balance adjusted</b>\n\n"
-                             f"<b>Target:</b> {target_display}\n"
-                             f"<b>{action}:</b> ${abs(amount)}\n"
-                             f"<b>Before:</b> ${balance_before}\n"
-                             f"<b>After:</b> ${balance_after}")
+        await message.answer(
+            get_text("admin.topup_success",
+                     lang,
+                     target=target_display,
+                     action=action,
+                     amount=abs(amount),
+                     before=balance_before,
+                     after=balance_after))
 
         logger.info(
             "admin.topup_success",
@@ -157,7 +157,7 @@ async def cmd_topup(message: Message, session: AsyncSession):
             admin_user_id=user_id,
             error=str(e),
         )
-        await message.answer(f"❌ <b>Topup failed:</b>\n\n{str(e)}")
+        await message.answer(get_text("admin.topup_failed", lang, error=str(e)))
 
     except Exception as e:
         logger.error(
@@ -167,7 +167,7 @@ async def cmd_topup(message: Message, session: AsyncSession):
             exc_info=True,
             msg="Unexpected error during admin topup",
         )
-        await message.answer("❌ Topup failed. Please try again.")
+        await message.answer(get_text("admin.topup_error", lang))
 
 
 @router.message(Command("set_margin"))
@@ -188,6 +188,7 @@ async def cmd_set_margin(message: Message):
         /set_margin 0.0    (set 0% owner margin - no profit)
     """
     user_id = message.from_user.id
+    lang = get_lang(message.from_user.language_code)
 
     # Check privileges
     if not is_privileged(user_id):
@@ -197,8 +198,7 @@ async def cmd_set_margin(message: Message):
             username=message.from_user.username,
             msg="Unauthorized set_margin attempt",
         )
-        await message.answer(
-            "❌ This command is only available to privileged users.")
+        await message.answer(get_text("admin.unauthorized", lang))
         return
 
     # Parse k3 value
@@ -210,22 +210,19 @@ async def cmd_set_margin(message: Message):
         k3_max = 1.0 - k1 - k2
 
         await message.answer(
-            f"ℹ️ <b>Owner Margin Configuration</b>\n\n"
-            f"<b>Usage:</b> <code>/set_margin &lt;k3_value&gt;</code>\n\n"
-            f"<b>Current settings:</b>\n"
-            f"• k1 (Telegram withdrawal): {k1*100:.1f}%\n"
-            f"• k2 (Topics fee): {k2*100:.1f}%\n"
-            f"• k3 (Owner margin): {k3_current*100:.1f}%\n\n"
-            f"<b>Constraint:</b> k1 + k2 + k3 ≤ 1.0\n"
-            f"k3 must be in range [0, {k3_max:.2f}] ({k3_max*100:.1f}%)\n\n"
-            f"<b>Example:</b>\n"
-            f"<code>/set_margin 0.10</code>  (set 10% margin)")
+            get_text("admin.margin_usage",
+                     lang,
+                     k1=k1 * 100,
+                     k2=k2 * 100,
+                     k3=k3_current * 100,
+                     k3_max=k3_max,
+                     k3_max_pct=k3_max * 100))
         return
 
     try:
         k3 = float(args[1])
     except ValueError:
-        await message.answer("❌ Invalid value. Must be a number.")
+        await message.answer(get_text("admin.margin_invalid_value", lang))
         return
 
     # Validate k3
@@ -233,15 +230,18 @@ async def cmd_set_margin(message: Message):
     k2 = config.TELEGRAM_TOPICS_FEE
 
     if not (0 <= k3 <= 1):
-        await message.answer(f"❌ k3 must be in range [0, 1], got {k3}")
+        await message.answer(
+            get_text("admin.margin_out_of_range", lang, value=k3))
         return
 
     if k1 + k2 + k3 > 1.0001:  # Float precision tolerance
         k3_max = 1.0 - k1 - k2
         await message.answer(
-            f"❌ <b>Total commission exceeds 100%</b>\n\n"
-            f"k1 + k2 + k3 = {k1+k2+k3:.4f} > 1.0\n\n"
-            f"<b>Maximum k3:</b> {k3_max:.4f} ({k3_max*100:.1f}%)")
+            get_text("admin.margin_exceeds_100",
+                     lang,
+                     total=k1 + k2 + k3,
+                     k3_max=k3_max,
+                     k3_max_pct=k3_max * 100))
         return
 
     logger.info(
@@ -257,16 +257,15 @@ async def cmd_set_margin(message: Message):
     config.DEFAULT_OWNER_MARGIN = k3
 
     await message.answer(
-        f"✅ <b>Owner margin updated</b>\n\n"
-        f"<b>Old:</b> {old_margin*100:.1f}%\n"
-        f"<b>New:</b> {k3*100:.1f}%\n\n"
-        f"<b>Total commission breakdown:</b>\n"
-        f"• k1 (Telegram): {k1*100:.1f}%\n"
-        f"• k2 (Topics): {k2*100:.1f}%\n"
-        f"• k3 (Owner): {k3*100:.1f}%\n"
-        f"• <b>Total:</b> {(k1+k2+k3)*100:.1f}%\n\n"
-        f"💡 Users will receive <b>{(1-k1-k2-k3)*100:.1f}%</b> of nominal Stars value."
-    )
+        get_text("admin.margin_updated",
+                 lang,
+                 old=old_margin * 100,
+                 new=k3 * 100,
+                 k1=k1 * 100,
+                 k2=k2 * 100,
+                 k3=k3 * 100,
+                 total=(k1 + k2 + k3) * 100,
+                 user_gets=(1 - k1 - k2 - k3) * 100))
 
     logger.info(
         "admin.set_margin_success",
@@ -306,6 +305,7 @@ async def cmd_clear(
     """
     user_id = message.from_user.id
     chat_id = message.chat.id
+    lang = get_lang(message.from_user.language_code)
 
     current_topic_id = message.message_thread_id
     thread_repo = ThreadRepository(session)
@@ -346,10 +346,7 @@ async def cmd_clear(
                 chat_id=chat_id,
                 msg="User tried to clear all topics without admin rights",
             )
-            await message.answer(
-                "❌ Clearing all topics requires admin rights.\n"
-                "💡 Use /clear inside a specific topic to delete only that topic."
-            )
+            await message.answer(get_text("clear.requires_admin", lang))
             return
 
     if is_general:
@@ -359,13 +356,13 @@ async def cmd_clear(
         topic_count = len(topic_ids)
 
         if topic_count == 0:
-            await message.answer("ℹ️ No forum topics to delete.")
+            await message.answer(get_text("clear.no_topics", lang))
             return
 
         # Show confirmation dialog with exact count
         keyboard = InlineKeyboardMarkup(inline_keyboard=[[
             InlineKeyboardButton(
-                text=f"Yes, delete {topic_count} topics",
+                text=get_text("clear.confirm_button", lang, count=topic_count),
                 callback_data=f"clear_all:{chat_id}",
             )
         ]])
@@ -378,8 +375,7 @@ async def cmd_clear(
         )
 
         await message.answer(
-            f"⚠️ Are you sure you want to delete {topic_count} topics?\n\n"
-            "This action cannot be undone.",
+            get_text("clear.confirm_delete", lang, count=topic_count),
             reply_markup=keyboard,
         )
         return
@@ -469,6 +465,7 @@ async def handle_clear_all_confirmation(
         session: Database session from middleware.
     """
     user_id = callback.from_user.id
+    lang = get_lang(callback.from_user.language_code)
     # Extract chat_id from callback data
     chat_id = int(callback.data.split(":")[1])
 
@@ -485,7 +482,7 @@ async def handle_clear_all_confirmation(
 
         if not is_privileged(user_id) and not is_chat_admin:
             await callback.answer(
-                "You no longer have permission to do this.",
+                get_text("clear.no_permission", lang),
                 show_alert=True,
             )
             return
@@ -495,7 +492,8 @@ async def handle_clear_all_confirmation(
     topic_ids = await thread_repo.get_unique_topic_ids(chat_id)
 
     if not topic_ids:
-        await callback.answer("No topics to delete.", show_alert=True)
+        await callback.answer(get_text("clear.no_topics_to_delete", lang),
+                              show_alert=True)
         await callback.message.delete()
         return
 

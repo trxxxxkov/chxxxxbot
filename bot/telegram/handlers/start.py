@@ -8,6 +8,8 @@ from aiogram import Router
 from aiogram import types
 from aiogram.filters import Command
 from db.repositories.user_repository import UserRepository
+from i18n import get_lang
+from i18n import get_text
 from sqlalchemy.ext.asyncio import AsyncSession
 from utils.bot_response import log_bot_response
 from utils.structured_logging import get_logger
@@ -28,10 +30,11 @@ async def start_handler(message: types.Message, session: AsyncSession) -> None:
         session: Database session injected by DatabaseMiddleware.
     """
     if not message.from_user:
-        await message.answer("⚠️ Unable to identify user.")
+        await message.answer(get_text("common.unable_to_identify_user", "en"))
         return
 
     user = message.from_user
+    lang = get_lang(user.language_code)
     user_repo = UserRepository(session)
 
     # Get or create user in database
@@ -56,13 +59,10 @@ async def start_handler(message: types.Message, session: AsyncSession) -> None:
     # Note: user.new_user_joined is logged in UserRepository.get_or_create()
 
     # Different message for new vs returning users
-    greeting = "👋 Welcome!" if was_created else "👋 Welcome back!"
+    greeting_key = "start.welcome_new" if was_created else "start.welcome_back"
+    greeting = get_text(greeting_key, lang)
 
-    response_text = (f"{greeting} I'm an LLM bot.\n\n"
-                     "Available commands:\n"
-                     "/start - Show this message\n"
-                     "/help - Get help\n\n"
-                     "Send me any message and I'll echo it back!")
+    response_text = get_text("start.message", lang, greeting=greeting)
     await message.answer(response_text)
 
     log_bot_response(
@@ -89,14 +89,9 @@ async def help_handler(message: types.Message) -> None:
         user_id=message.from_user.id if message.from_user else None,
     )
 
-    response_text = ("🤖 *Help*\n\n"
-                     "*Commands:*\n"
-                     "/start - Start the bot\n"
-                     "/help - Show this help message\n\n"
-                     "*Usage:*\n"
-                     "Just send me any text message and I'll echo it back.\n\n"
-                     "This is a minimal bot implementation. "
-                     "LLM integration coming soon!")
+    lang = get_lang(
+        message.from_user.language_code if message.from_user else None)
+    response_text = get_text("help.message", lang)
     await message.answer(response_text, parse_mode="Markdown")
 
     log_bot_response(

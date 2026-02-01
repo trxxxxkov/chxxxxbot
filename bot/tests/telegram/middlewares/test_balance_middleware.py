@@ -65,6 +65,7 @@ class TestBalanceMiddlewareFreeCommands:
         mock_message.from_user = Mock(spec=User)
         mock_message.from_user.id = sample_user.id
         mock_message.from_user.is_bot = False
+        mock_message.from_user.language_code = "en"
         mock_message.text = command
         mock_message.caption = None
         mock_message.answer = AsyncMock()
@@ -103,6 +104,7 @@ class TestBalanceMiddlewareFreeCommands:
         mock_message.from_user = Mock(spec=User)
         mock_message.from_user.id = sample_user.id
         mock_message.from_user.is_bot = False
+        mock_message.from_user.language_code = "en"
         mock_message.text = "/pay 100"  # Command with argument
         mock_message.caption = None
         mock_message.answer = AsyncMock()
@@ -142,6 +144,7 @@ class TestBalanceMiddlewarePaidRequests:
         mock_message.from_user = Mock(spec=User)
         mock_message.from_user.id = sample_user.id
         mock_message.from_user.is_bot = False
+        mock_message.from_user.language_code = "en"
         mock_message.text = "Hello Claude!"  # Regular message
         mock_message.caption = None
         mock_message.answer = AsyncMock()
@@ -182,6 +185,7 @@ class TestBalanceMiddlewarePaidRequests:
         mock_message.from_user = Mock(spec=User)
         mock_message.from_user.id = sample_user.id
         mock_message.from_user.is_bot = False
+        mock_message.from_user.language_code = "en"
         mock_message.text = "Hello Claude!"
         mock_message.caption = None
         mock_message.answer = AsyncMock()
@@ -220,6 +224,7 @@ class TestBalanceMiddlewarePaidRequests:
         mock_callback.message.from_user = Mock(spec=User)
         mock_callback.message.from_user.id = sample_user.id
         mock_callback.message.from_user.is_bot = False
+        mock_callback.message.from_user.language_code = "en"
         mock_callback.message.text = ""
         mock_callback.message.caption = None
         mock_callback.message.answer = AsyncMock()
@@ -255,6 +260,7 @@ class TestBalanceMiddlewarePaidRequests:
         mock_message.from_user = Mock(spec=User)
         mock_message.from_user.id = sample_user.id
         mock_message.from_user.is_bot = False
+        mock_message.from_user.language_code = "en"
         mock_message.text = "Another request"
         mock_message.caption = None
         mock_message.answer = AsyncMock()
@@ -287,6 +293,7 @@ class TestBalanceMiddlewareEdgeCases:
         mock_message.from_user = Mock(spec=User)
         mock_message.from_user.id = sample_user.id
         mock_message.from_user.is_bot = False
+        mock_message.from_user.language_code = "en"
         mock_message.text = "Hello"
         mock_message.caption = None
         mock_message.answer = AsyncMock()
@@ -318,6 +325,7 @@ class TestBalanceMiddlewareEdgeCases:
         mock_message.from_user = Mock(spec=User)
         mock_message.from_user.id = new_user_id  # Non-existent user
         mock_message.from_user.is_bot = False
+        mock_message.from_user.language_code = "en"
         mock_message.from_user.first_name = "Test"
         mock_message.from_user.last_name = "User"
         mock_message.from_user.username = f"test_user_{new_user_id}"
@@ -362,6 +370,7 @@ class TestBalanceMiddlewareEdgeCases:
         mock_message.from_user = Mock(spec=User)
         mock_message.from_user.id = sample_user.id
         mock_message.from_user.is_bot = False
+        mock_message.from_user.language_code = "en"
         mock_message.text = "Hello"
         mock_message.caption = None
         mock_message.answer = AsyncMock()
@@ -401,6 +410,7 @@ class TestBalanceMiddlewareEdgeCases:
         mock_message.from_user = Mock(spec=User)
         mock_message.from_user.id = sample_user.id
         mock_message.from_user.is_bot = False
+        mock_message.from_user.language_code = "en"
         mock_message.text = None
         mock_message.caption = None
         mock_message.answer = AsyncMock()
@@ -438,6 +448,7 @@ class TestBalanceMiddlewareEdgeCases:
         mock_message.from_user = Mock(spec=User)
         mock_message.from_user.id = sample_user.id
         mock_message.from_user.is_bot = False
+        mock_message.from_user.language_code = "en"
         mock_message.text = "/unknown_command"  # Not in FREE_COMMANDS
         mock_message.caption = None
         mock_message.answer = AsyncMock()
@@ -489,6 +500,7 @@ class TestBalanceMiddlewareIntegration:
         mock_message.from_user = Mock(spec=User)
         mock_message.from_user.id = sample_user.id
         mock_message.from_user.is_bot = False
+        mock_message.from_user.language_code = "en"
         mock_message.text = "Paid request"
         mock_message.caption = None
         mock_message.answer = AsyncMock()
@@ -523,6 +535,7 @@ class TestBalanceMiddlewareIntegration:
         mock_message.from_user = Mock(spec=User)
         mock_message.from_user.id = sample_user.id
         mock_message.from_user.is_bot = False
+        mock_message.from_user.language_code = "en"
         mock_message.text = "Expensive request"
         mock_message.caption = None
         mock_message.answer = AsyncMock()

@@ -20,6 +20,8 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State
 from aiogram.fsm.state import StatesGroup
 from db.repositories.user_repository import UserRepository
+from i18n import get_lang
+from i18n import get_text
 from sqlalchemy.ext.asyncio import AsyncSession
 from telegram.keyboards.personality_selector import format_personality_info
 from telegram.keyboards.personality_selector import get_personality_keyboard
@@ -47,10 +49,11 @@ async def personality_command(message: types.Message,
         session: Database session injected by DatabaseMiddleware.
     """
     if not message.from_user:
-        await message.answer("⚠️ Unable to identify user.")
+        await message.answer(get_text("common.unable_to_identify_user", "en"))
         return
 
     user_id = message.from_user.id
+    lang = get_lang(message.from_user.language_code)
 
     # Get user
     user_repo = UserRepository(session)
@@ -72,15 +75,15 @@ async def personality_command(message: types.Message,
         await session.commit()
 
     # Format message
-    message_text = "🎭 **Personality Settings**\n\n"
-    message_text += "Your custom personality instructions will be added to "
-    message_text += "every conversation with the bot.\n\n"
-    message_text += "**Current personality:**\n"
-    message_text += format_personality_info(db_user.custom_prompt)
+    message_text = get_text("personality.title", lang)
+    message_text += get_text("personality.description", lang)
+    message_text += get_text("personality.current", lang)
+    message_text += format_personality_info(db_user.custom_prompt, lang=lang)
 
     # Send keyboard
-    keyboard = get_personality_keyboard(
-        has_custom_prompt=db_user.custom_prompt is not None)
+    keyboard = get_personality_keyboard(has_custom_prompt=db_user.custom_prompt
+                                        is not None,
+                                        lang=lang)
 
     logger.info("personality_command",
                 user_id=user_id,
@@ -103,21 +106,22 @@ async def personality_view_callback(callback: types.CallbackQuery,
         session: Database session injected by DatabaseMiddleware.
     """
     if not callback.from_user:
-        await callback.answer("⚠️ Unable to identify user")
+        await callback.answer(get_text("common.unable_to_identify_user", "en"))
         return
 
     user_id = callback.from_user.id
+    lang = get_lang(callback.from_user.language_code)
 
     # Get user
     user_repo = UserRepository(session)
     db_user = await user_repo.get_by_telegram_id(user_id)
 
     if not db_user or not db_user.custom_prompt:
-        await callback.answer("❌ No personality set")
+        await callback.answer(get_text("personality.no_personality_set", lang))
         return
 
     # Show full text (no truncation)
-    view_text = "🎭 **Your Current Personality:**\n\n"
+    view_text = get_text("personality.view_title", lang)
     view_text += f"```\n{db_user.custom_prompt}\n```"
 
     logger.info("personality.viewed", user_id=user_id)
@@ -140,8 +144,10 @@ async def personality_edit_callback(callback: types.CallbackQuery,
         session: Database session injected by DatabaseMiddleware.
     """
     if not callback.from_user:
-        await callback.answer("⚠️ Unable to identify user")
+        await callback.answer(get_text("common.unable_to_identify_user", "en"))
         return
+
+    lang = get_lang(callback.from_user.language_code)
 
     # Enter waiting state
     await state.set_state(PersonalityStates.waiting_for_text)
@@ -151,11 +157,7 @@ async def personality_edit_callback(callback: types.CallbackQuery,
 
     logger.info("personality.edit_started", user_id=callback.from_user.id)
 
-    await callback.message.answer(
-        "✏️ **Enter your new personality instructions:**\n\n"
-        "Send me a message with your desired personality. "
-        "This will be added to every conversation.\n\n"
-        "_Send /cancel to abort._")
+    await callback.message.answer(get_text("personality.edit_prompt", lang))
     await callback.answer()
 
 
@@ -171,8 +173,11 @@ async def personality_text_received(message: types.Message, state: FSMContext,
         state: FSM context for state management.
         session: Database session injected by DatabaseMiddleware.
     """
+    lang = get_lang(
+        message.from_user.language_code if message.from_user else None)
+
     if not message.text or not message.from_user:
-        await message.answer("⚠️ Please send text message")
+        await message.answer(get_text("common.send_text_message", lang))
         return
 
     user_id = message.from_user.id
@@ -180,9 +185,7 @@ async def personality_text_received(message: types.Message, state: FSMContext,
 
     # Validate length (optional, but good practice)
     if len(new_prompt) < 10:
-        await message.answer(
-            "⚠️ Personality text too short. Please provide at least 10 characters."
-        )
+        await message.answer(get_text("personality.text_too_short", lang))
         return
 
     # Get user
@@ -190,7 +193,7 @@ async def personality_text_received(message: types.Message, state: FSMContext,
     db_user = await user_repo.get_by_telegram_id(user_id)
 
     if not db_user:
-        await message.answer("⚠️ User not found")
+        await message.answer(get_text("common.user_not_found", lang))
         await state.clear()
         return
 
@@ -208,9 +211,9 @@ async def personality_text_received(message: types.Message, state: FSMContext,
     await state.clear()
 
     # Confirmation
-    success_text = "✅ **Personality updated successfully!**\n\n"
-    success_text += "Your new personality:\n"
-    success_text += format_personality_info(new_prompt, truncate=300)
+    success_text = get_text("personality.updated", lang)
+    success_text += get_text("personality.your_new", lang)
+    success_text += format_personality_info(new_prompt, truncate=300, lang=lang)
 
     await message.answer(success_text, parse_mode="Markdown")
 
@@ -227,17 +230,18 @@ async def personality_clear_callback(callback: types.CallbackQuery,
         session: Database session injected by DatabaseMiddleware.
     """
     if not callback.from_user:
-        await callback.answer("⚠️ Unable to identify user")
+        await callback.answer(get_text("common.unable_to_identify_user", "en"))
         return
 
     user_id = callback.from_user.id
+    lang = get_lang(callback.from_user.language_code)
 
     # Get user
     user_repo = UserRepository(session)
     db_user = await user_repo.get_by_telegram_id(user_id)
 
     if not db_user:
-        await callback.answer("⚠️ User not found")
+        await callback.answer(get_text("common.user_not_found", lang))
         return
 
     # Clear custom_prompt
@@ -247,11 +251,9 @@ async def personality_clear_callback(callback: types.CallbackQuery,
     logger.info("personality.cleared", user_id=user_id)
 
     # Update message
-    success_text = "🗑️ **Personality cleared**\n\n"
-    success_text += "_Using default behavior now._"
-
-    await callback.message.edit_text(success_text, parse_mode="Markdown")
-    await callback.answer("Personality cleared")
+    await callback.message.edit_text(get_text("personality.cleared", lang),
+                                     parse_mode="Markdown")
+    await callback.answer(get_text("personality.cleared_toast", lang))
 
 
 @router.callback_query(F.data == "personality:cancel")

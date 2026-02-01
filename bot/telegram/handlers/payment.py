@@ -24,6 +24,8 @@ from config import DEFAULT_OWNER_MARGIN
 from config import MAX_CUSTOM_STARS
 from config import MIN_CUSTOM_STARS
 from config import STARS_PACKAGES
+from i18n import get_lang
+from i18n import get_text
 from services.factory import ServiceFactory
 from sqlalchemy.ext.asyncio import AsyncSession
 from utils.bot_response import log_bot_response
@@ -53,11 +55,12 @@ async def cmd_pay(message: Message, state: FSMContext, session: AsyncSession):
         session: Database session from middleware.
     """
     if not message.from_user:
-        await message.answer("⚠️ Unable to identify user.")
+        await message.answer(get_text("common.unable_to_identify_user", "en"))
         return
 
     user = message.from_user
     user_id = user.id
+    lang = get_lang(user.language_code)
 
     # Ensure user exists in database (auto-create if first interaction)
     services = ServiceFactory(session)
@@ -107,17 +110,17 @@ async def cmd_pay(message: Message, state: FSMContext, session: AsyncSession):
     # Add custom amount button
     keyboard_buttons.append([
         InlineKeyboardButton(
-            text=f"✏️ Custom amount ({MIN_CUSTOM_STARS}-{MAX_CUSTOM_STARS}⭐)",
+            text=get_text("payment.custom_amount_button",
+                          lang,
+                          min=MIN_CUSTOM_STARS,
+                          max=MAX_CUSTOM_STARS),
             callback_data="buy_stars:custom",
         )
     ])
 
     keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
 
-    response_text = ("💰 <b>Top-up your balance</b>\n\n"
-                     "Choose a Stars package to purchase balance.\n"
-                     "You'll receive USD balance after commissions.\n\n"
-                     "💡 Use /balance to check your current balance")
+    response_text = get_text("payment.topup_title", lang)
     await message.answer(response_text, reply_markup=keyboard)
 
     log_bot_response(
@@ -147,10 +150,12 @@ async def callback_buy_stars(
     if data == "custom":
         # Ask for custom amount
         await state.set_state(BuyStarsStates.waiting_for_custom_amount)
+        lang = get_lang(callback.from_user.language_code)
         await callback.message.edit_text(
-            f"✏️ <b>Enter custom Stars amount</b>\n\n"
-            f"Amount must be between {MIN_CUSTOM_STARS} and {MAX_CUSTOM_STARS} Stars.\n\n"
-            f"Type the amount and send:")
+            get_text("payment.enter_custom_amount",
+                     lang,
+                     min=MIN_CUSTOM_STARS,
+                     max=MAX_CUSTOM_STARS))
         await callback.answer()
         return
 
@@ -163,7 +168,9 @@ async def callback_buy_stars(
             user_id=user_id,
             data=data,
         )
-        await callback.answer("Invalid amount", show_alert=True)
+        lang = get_lang(callback.from_user.language_code)
+        await callback.answer(get_text("payment.invalid_amount", lang),
+                              show_alert=True)
         return
 
     # Send invoice
@@ -177,10 +184,11 @@ async def process_custom_amount(message: Message, state: FSMContext,
                                 session: AsyncSession):
     """Process custom Stars amount input from user."""
     user_id = message.from_user.id
+    lang = get_lang(message.from_user.language_code)
 
     # Check if message has text (could be sticker, photo, etc.)
     if not message.text:
-        await message.answer("❌ Please send a number (text message).")
+        await message.answer(get_text("payment.invalid_not_number", lang))
         return
 
     try:
@@ -191,7 +199,7 @@ async def process_custom_amount(message: Message, state: FSMContext,
             user_id=user_id,
             text=message.text,
         )
-        await message.answer("❌ Invalid input. Please enter a valid number.")
+        await message.answer(get_text("payment.invalid_number", lang))
         return
 
     if not (MIN_CUSTOM_STARS <= stars_amount <= MAX_CUSTOM_STARS):
@@ -201,8 +209,10 @@ async def process_custom_amount(message: Message, state: FSMContext,
             stars_amount=stars_amount,
         )
         await message.answer(
-            f"❌ Amount must be between {MIN_CUSTOM_STARS} and {MAX_CUSTOM_STARS} Stars.\n\n"
-            f"Please try again:")
+            get_text("payment.amount_out_of_range",
+                     lang,
+                     min=MIN_CUSTOM_STARS,
+                     max=MAX_CUSTOM_STARS))
         return
 
     await state.clear()
@@ -252,8 +262,8 @@ async def _send_invoice_to_user(
             stars_amount=stars_amount,
             error=str(e),
         )
-        await message.answer(
-            "❌ Failed to create invoice. Please try again later.")
+        # Note: We don't have access to language_code here, use English fallback
+        await message.answer(get_text("payment.invoice_error", "en"))
 
 
 @router.pre_checkout_query()
@@ -286,8 +296,10 @@ async def process_pre_checkout_query(pre_checkout_query: PreCheckoutQuery,
             payload=pre_checkout_query.invoice_payload,
             msg="Invalid invoice payload format",
         )
-        await pre_checkout_query.answer(
-            ok=False, error_message="Invalid invoice. Please try again.")
+        lang = get_lang(pre_checkout_query.from_user.language_code)
+        await pre_checkout_query.answer(ok=False,
+                                        error_message=get_text(
+                                            "payment.invalid_invoice", lang))
         return
 
     # Validate currency
@@ -298,9 +310,10 @@ async def process_pre_checkout_query(pre_checkout_query: PreCheckoutQuery,
             currency=pre_checkout_query.currency,
             msg="Invalid currency - only XTR (Stars) accepted",
         )
+        lang = get_lang(pre_checkout_query.from_user.language_code)
         await pre_checkout_query.answer(
             ok=False,
-            error_message="Invalid currency. Only Telegram Stars accepted.",
+            error_message=get_text("payment.invalid_currency", lang),
         )
         return
 
@@ -327,6 +340,7 @@ async def process_successful_payment(message: Message, session: AsyncSession):
     """
     user_id = message.from_user.id
     payment = message.successful_payment
+    lang = get_lang(message.from_user.language_code)
 
     logger.info(
         "payment.successful_payment_received",
@@ -356,14 +370,11 @@ async def process_successful_payment(message: Message, session: AsyncSession):
 
         # Send confirmation with transaction ID
         await message.answer(
-            f"✅ <b>Payment successful!</b>\n\n"
-            f"💰 Added: <b>${payment_record.credited_usd_amount}</b>\n"
-            f"🔋 New balance: <b>${new_balance}</b>\n\n"
-            f"🆔 <b>Transaction ID:</b>\n"
-            f"<code>{payment.telegram_payment_charge_id}</code>\n\n"
-            f"💡 <b>Save this Transaction ID for refunds.</b>\n"
-            f"Use <code>/refund &lt;transaction_id&gt;</code> within 30 days if needed."
-        )
+            get_text("payment.success",
+                     lang,
+                     credited_usd=payment_record.credited_usd_amount,
+                     new_balance=new_balance,
+                     transaction_id=payment.telegram_payment_charge_id))
 
         logger.info(
             "payment.success_confirmed",
@@ -393,9 +404,9 @@ async def process_successful_payment(message: Message, session: AsyncSession):
             msg="CRITICAL: Failed to process successful payment!",
         )
         await message.answer(
-            "❌ Payment processing error. Contact support: /paysupport\n\n"
-            f"Your Transaction ID:\n"
-            f"<code>{payment.telegram_payment_charge_id}</code>")
+            get_text("payment.processing_error",
+                     lang,
+                     transaction_id=payment.telegram_payment_charge_id))
 
 
 @router.message(Command("refund"))
@@ -411,11 +422,12 @@ async def cmd_refund(message: Message, session: AsyncSession):
     - User has sufficient balance
     """
     if not message.from_user:
-        await message.answer("⚠️ Unable to identify user.")
+        await message.answer(get_text("common.unable_to_identify_user", "en"))
         return
 
     user = message.from_user
     user_id = user.id
+    lang = get_lang(user.language_code)
 
     # Create services
     services = ServiceFactory(session)
@@ -435,14 +447,7 @@ async def cmd_refund(message: Message, session: AsyncSession):
     # Parse transaction ID from command
     args = message.text.split(maxsplit=1)
     if len(args) < 2:
-        await message.answer(
-            "ℹ️ <b>Refund Instructions</b>\n\n"
-            "<b>Usage:</b> <code>/refund &lt;transaction_id&gt;</code>\n\n"
-            "<b>Example:</b>\n"
-            "<code>/refund telegram_charge_abc123</code>\n\n"
-            "💡 Transaction ID is provided when you make a payment.\n"
-            "💡 Refunds are available within 30 days.\n"
-            "💡 You must have sufficient balance.")
+        await message.answer(get_text("refund.instructions", lang))
         return
 
     transaction_id = args[1].strip()
@@ -473,8 +478,7 @@ async def cmd_refund(message: Message, session: AsyncSession):
                 transaction_id=transaction_id,
                 msg="Telegram refund API call failed, rolled back DB changes",
             )
-            await message.answer(
-                "❌ Refund failed. Please contact support: /paysupport")
+            await message.answer(get_text("refund.telegram_api_failed", lang))
             return
 
         # Get updated balance
@@ -482,10 +486,11 @@ async def cmd_refund(message: Message, session: AsyncSession):
 
         # Send confirmation
         await message.answer(
-            f"✅ <b>Refund successful!</b>\n\n"
-            f"⭐ Refunded: <b>{payment_record.stars_amount} Stars</b>\n"
-            f"💰 Deducted: <b>${payment_record.credited_usd_amount}</b>\n"
-            f"🔋 New balance: <b>${new_balance}</b>")
+            get_text("refund.success",
+                     lang,
+                     stars_amount=payment_record.stars_amount,
+                     usd_amount=payment_record.credited_usd_amount,
+                     new_balance=new_balance))
 
         logger.info(
             "payment.refund_success",
@@ -512,7 +517,7 @@ async def cmd_refund(message: Message, session: AsyncSession):
             transaction_id=transaction_id,
             error=str(e),
         )
-        await message.answer(f"❌ <b>Refund failed:</b>\n\n{str(e)}")
+        await message.answer(get_text("refund.failed", lang, error=str(e)))
 
     except Exception as e:
         logger.error(
@@ -523,8 +528,7 @@ async def cmd_refund(message: Message, session: AsyncSession):
             exc_info=True,
             msg="Unexpected error during refund",
         )
-        await message.answer(
-            "❌ Refund processing error. Contact support: /paysupport")
+        await message.answer(get_text("refund.processing_error", lang))
 
 
 @router.message(Command("balance"))
@@ -536,11 +540,12 @@ async def cmd_balance(message: Message, session: AsyncSession):
     - Recent 5 balance operations with type and amount
     """
     if not message.from_user:
-        await message.answer("⚠️ Unable to identify user.")
+        await message.answer(get_text("common.unable_to_identify_user", "en"))
         return
 
     user = message.from_user
     user_id = user.id
+    lang = get_lang(user.language_code)
 
     # Ensure user exists in database (auto-create if first interaction)
     services = ServiceFactory(session)
@@ -584,15 +589,14 @@ async def cmd_balance(message: Message, session: AsyncSession):
             history_lines.append(
                 f"{type_emoji} {date}: {amount_str} ({op.operation_type})")
 
-        history_text = ("\n".join(history_lines)
-                        if history_lines else "No history yet")
+        history_text = ("\n".join(history_lines) if history_lines else get_text(
+            "balance.no_history", lang))
 
         # Send response
-        response_text = (f"💰 <b>Your Balance</b>\n\n"
-                         f"Current: <b>${balance}</b>\n\n"
-                         f"📊 <b>Recent history:</b>\n"
-                         f"<pre>{history_text}</pre>\n\n"
-                         f"💡 Top up: /pay")
+        response_text = get_text("balance.info",
+                                 lang,
+                                 balance=balance,
+                                 history=history_text)
         await message.answer(response_text)
 
         logger.info(
@@ -617,7 +621,7 @@ async def cmd_balance(message: Message, session: AsyncSession):
             error=str(e),
             exc_info=True,
         )
-        await message.answer("❌ Failed to retrieve balance. Please try again.")
+        await message.answer(get_text("balance.check_error", lang))
 
 
 @router.message(Command("paysupport"))
@@ -627,22 +631,15 @@ async def cmd_paysupport(message: Message, session: AsyncSession):
     Required by Telegram for bots accepting payments.
     """
     user_id = message.from_user.id
+    lang = get_lang(
+        message.from_user.language_code if message.from_user else None)
 
     logger.info(
         "payment.paysupport_requested",
         user_id=user_id,
     )
 
-    response_text = (
-        "💬 <b>Payment Support</b>\n\n"
-        "If you have issues with payments, refunds, or balance:\n\n"
-        "<b>1.</b> Check your balance: /balance\n"
-        "<b>2.</b> Review refund policy:\n"
-        "   • Maximum 30 days since payment\n"
-        "   • Sufficient balance required\n"
-        "<b>3.</b> For refunds: <code>/refund &lt;transaction_id&gt;</code>\n\n"
-        "📧 <b>Contact:</b> @trxxxxkov\n\n"
-        "💡 Transaction IDs are provided after each payment.")
+    response_text = get_text("paysupport.info", lang)
     await message.answer(response_text)
 
     log_bot_response(

@@ -14,14 +14,53 @@ from aiogram import BaseMiddleware
 from aiogram.types import CallbackQuery
 from aiogram.types import Message
 from aiogram.types import Update
+from cache.client import get_redis
+from cache.keys import BALANCE_ERROR_COOLDOWN
+from cache.keys import balance_error_key
 from cache.user_cache import cache_user
 from cache.user_cache import get_balance_from_cached
 from cache.user_cache import get_cached_user
 from config import MINIMUM_BALANCE_FOR_REQUEST
+from i18n import get_lang
+from i18n import get_text
 from services.factory import ServiceFactory
 from utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
+
+
+async def _should_send_balance_error(user_id: int) -> bool:
+    """Check if we should send balance error message to user.
+
+    Uses rate limiting to prevent spamming users with repeated error messages
+    when they send multiple messages in quick succession.
+
+    Args:
+        user_id: Telegram user ID.
+
+    Returns:
+        True if we should send the error message, False if cooldown active.
+    """
+    redis = await get_redis()
+    if not redis:
+        # Redis unavailable - send message (fail-open)
+        return True
+
+    key = balance_error_key(user_id)
+    try:
+        # Try to set key with NX (only if not exists)
+        result = await redis.set(key, b"1", ex=BALANCE_ERROR_COOLDOWN, nx=True)
+        # If result is True, key was set (we should send message)
+        # If result is None, key already exists (cooldown active)
+        return result is True
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        logger.debug(
+            "balance_middleware.rate_limit_check_failed",
+            user_id=user_id,
+            error=str(e),
+        )
+        # On error, send message (fail-open)
+        return True
 
 
 class BalanceMiddleware(BaseMiddleware):
@@ -143,11 +182,13 @@ class BalanceMiddleware(BaseMiddleware):
                 return await handler(event, data)
             else:
                 # Cached balance insufficient - block immediately
-                await message.answer(
-                    f"❌ <b>Insufficient balance</b>\n\n"
-                    f"Current balance: <b>${cached_balance}</b>\n\n"
-                    f"To use paid features, please top up your balance.\n"
-                    f"Use /pay to purchase balance with Telegram Stars.")
+                # Use rate limiting to avoid spamming user with error messages
+                if await _should_send_balance_error(user_id):
+                    lang = get_lang(message.from_user.language_code)
+                    await message.answer(
+                        get_text("balance.insufficient",
+                                 lang,
+                                 balance=cached_balance))
 
                 logger.info(
                     "balance_middleware.cache_hit_blocked",
@@ -232,11 +273,11 @@ class BalanceMiddleware(BaseMiddleware):
                 # Block request - insufficient balance
                 balance = await services.balance.get_balance(user_id)
 
-                await message.answer(
-                    f"❌ <b>Insufficient balance</b>\n\n"
-                    f"Current balance: <b>${balance}</b>\n\n"
-                    f"To use paid features, please top up your balance.\n"
-                    f"Use /pay to purchase balance with Telegram Stars.")
+                # Use rate limiting to avoid spamming user with error messages
+                if await _should_send_balance_error(user_id):
+                    lang = get_lang(message.from_user.language_code)
+                    await message.answer(
+                        get_text("balance.insufficient", lang, balance=balance))
 
                 logger.info(
                     "balance_middleware.request_blocked",

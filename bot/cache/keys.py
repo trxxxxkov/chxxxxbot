@@ -164,3 +164,22 @@ def sandbox_key(thread_id: int) -> str:
         Redis key string (e.g., "sandbox:789").
     """
     return f"sandbox:{thread_id}"
+
+
+# Rate limiting constants
+BALANCE_ERROR_COOLDOWN = 10  # 10 seconds between balance error messages
+
+
+def balance_error_key(user_id: int) -> str:
+    """Generate key for balance error rate limiting.
+
+    Used to prevent spamming users with repeated "insufficient balance"
+    messages when they send multiple messages in quick succession.
+
+    Args:
+        user_id: Telegram user ID.
+
+    Returns:
+        Redis key string (e.g., "ratelimit:balance_error:123456").
+    """
+    return f"ratelimit:balance_error:{user_id}"

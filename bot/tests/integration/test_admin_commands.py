@@ -76,6 +76,7 @@ def create_admin_message(user_id: int, text: str, test_session=None) -> Mock:
     mock_message.from_user = Mock()
     mock_message.from_user.id = user_id
     mock_message.from_user.username = "admin_user" if user_id == ADMIN_USER_ID else "regular_user"
+    mock_message.from_user.language_code = "en"  # Explicit English for i18n
     mock_message.text = text
     mock_message.answer = AsyncMock()
     mock_message.bot = Mock()

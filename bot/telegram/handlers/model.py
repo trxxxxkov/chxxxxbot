@@ -15,6 +15,8 @@ from config import get_model
 from db.repositories.chat_repository import ChatRepository
 from db.repositories.thread_repository import ThreadRepository
 from db.repositories.user_repository import UserRepository
+from i18n import get_lang
+from i18n import get_text
 from sqlalchemy.ext.asyncio import AsyncSession
 from telegram.keyboards.model_selector import format_model_info
 from telegram.keyboards.model_selector import get_model_keyboard
@@ -37,11 +39,13 @@ async def model_command(  # pylint: disable=too-many-locals
         session: Database session injected by DatabaseMiddleware.
     """
     if not message.from_user or not message.chat:
-        await message.answer("⚠️ Unable to identify user or chat.")
+        await message.answer(
+            get_text("common.unable_to_identify_user_or_chat", "en"))
         return
 
     user = message.from_user
     chat = message.chat
+    lang = get_lang(user.language_code)
 
     # Get repositories
     user_repo = UserRepository(session)
@@ -109,10 +113,10 @@ async def model_command(  # pylint: disable=too-many-locals
         await session.commit()
 
     # Format message
-    message_text = "🤖 Model Selection\n\n"
-    message_text += "**Current model:**\n"
-    message_text += format_model_info(current_model)
-    message_text += "\n\n👇 Select new model:"
+    message_text = get_text("model.selection_title", lang)
+    message_text += get_text("model.current_model", lang)
+    message_text += format_model_info(current_model, lang)
+    message_text += get_text("model.select_new", lang)
 
     # Send keyboard
     keyboard = get_model_keyboard(current=db_user.model_id)
@@ -138,14 +142,17 @@ async def model_selection_callback(  # pylint: disable=too-many-locals
         session: Database session injected by DatabaseMiddleware.
     """
     if not callback.data or not callback.message or not callback.from_user:
-        await callback.answer("⚠️ Invalid callback data")
+        await callback.answer(get_text("common.invalid_callback", "en"))
         return
+
+    user = callback.from_user
+    lang = get_lang(user.language_code)
 
     # Parse model_id from callback data
     # Format: "model:claude:sonnet" -> "claude:sonnet"
     parts = callback.data.split(":", 1)
     if len(parts) != 2:
-        await callback.answer("⚠️ Invalid model selection")
+        await callback.answer(get_text("model.invalid_selection", lang))
         return
 
     new_model_id = parts[1]
@@ -157,10 +164,9 @@ async def model_selection_callback(  # pylint: disable=too-many-locals
         logger.error("model_selection.invalid_model",
                      model_id=new_model_id,
                      user_id=callback.from_user.id)
-        await callback.answer(f"⚠️ Model '{new_model_id}' not found")
+        await callback.answer(
+            get_text("model.not_found", lang, model_id=new_model_id))
         return
-
-    user = callback.from_user
 
     # Get repositories
     user_repo = UserRepository(session)
@@ -168,7 +174,7 @@ async def model_selection_callback(  # pylint: disable=too-many-locals
     # Get user
     db_user = await user_repo.get_by_telegram_id(user.id)
     if not db_user:
-        await callback.answer("⚠️ User not found")
+        await callback.answer(get_text("common.user_not_found", lang))
         return
 
     # Update user model (Phase 1.4.1: model is per user, not per thread)
@@ -185,11 +191,12 @@ async def model_selection_callback(  # pylint: disable=too-many-locals
                 new_model=new_model_id)
 
     # Update message
-    success_text = "✅ **Model changed**\n\n"
-    success_text += format_model_info(new_model)
+    success_text = get_text("model.changed", lang)
+    success_text += format_model_info(new_model, lang)
 
     await callback.message.edit_text(success_text, parse_mode="Markdown")
-    await callback.answer(f"Model changed to {new_model.display_name}")
+    await callback.answer(
+        get_text("model.changed_to", lang, model_name=new_model.display_name))
 
 
 @router.callback_query(F.data == "noop")
