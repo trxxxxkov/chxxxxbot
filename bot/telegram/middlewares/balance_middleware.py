@@ -23,6 +23,7 @@ from cache.user_cache import get_cached_user
 from config import MINIMUM_BALANCE_FOR_REQUEST
 from i18n import get_lang
 from i18n import get_text
+from i18n import get_user_lang
 from services.factory import ServiceFactory
 from utils.structured_logging import get_logger
 
@@ -184,7 +185,10 @@ class BalanceMiddleware(BaseMiddleware):
                 # Cached balance insufficient - block immediately
                 # Use rate limiting to avoid spamming user with error messages
                 if await _should_send_balance_error(user_id):
-                    lang = get_lang(message.from_user.language_code)
+                    lang = get_user_lang(
+                        message.from_user.language_code,
+                        cached_user.get("language_code"),
+                    )
                     await message.answer(
                         get_text("balance.insufficient",
                                  lang,
@@ -249,6 +253,7 @@ class BalanceMiddleware(BaseMiddleware):
                     model_id=user.model_id,
                     first_name=user.first_name,
                     username=user.username,
+                    language_code=user.language_code,
                 )
 
                 # Re-check balance after registration
@@ -258,12 +263,16 @@ class BalanceMiddleware(BaseMiddleware):
                 # User exists, cache their data for future requests
                 user = await services.users.get_by_id(user_id)
                 if user:
+                    # Update language_code from fresh Telegram data if available
+                    fresh_lang = message.from_user.language_code
+                    stored_lang = fresh_lang or user.language_code
                     await cache_user(
                         user_id=user.id,
                         balance=user.balance,
                         model_id=user.model_id,
                         first_name=user.first_name,
                         username=user.username,
+                        language_code=stored_lang,
                     )
 
             balance_check_ms = (time.perf_counter() -
@@ -275,7 +284,11 @@ class BalanceMiddleware(BaseMiddleware):
 
                 # Use rate limiting to avoid spamming user with error messages
                 if await _should_send_balance_error(user_id):
-                    lang = get_lang(message.from_user.language_code)
+                    stored_lang = user.language_code if user else None
+                    lang = get_user_lang(
+                        message.from_user.language_code,
+                        stored_lang,
+                    )
                     await message.answer(
                         get_text("balance.insufficient", lang, balance=balance))
 

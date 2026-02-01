@@ -191,6 +191,7 @@ async def warm_user_cache(logger) -> int:
                     model_id=user.model_id or "claude-sonnet-4-5-20250929",
                     first_name=user.first_name or "",
                     username=user.username,
+                    language_code=user.language_code,
                 )
                 if success:
                     cached_count += 1

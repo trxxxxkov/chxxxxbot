@@ -8,6 +8,7 @@ NO __init__.py - use direct import:
 
 from i18n import get_lang
 from i18n import get_text
+from i18n import get_user_lang
 from i18n import MESSAGES
 import pytest
 
@@ -135,3 +136,41 @@ class TestMessagesStructure:
                 # Some keys like "$" might be the same, so we just check non-empty
                 assert en_text, f"Key {key} has empty English"
                 assert ru_text, f"Key {key} has empty Russian"
+
+
+class TestGetUserLang:
+    """Test get_user_lang function with fallback logic."""
+
+    def test_fresh_russian_used_when_available(self):
+        """Test that fresh Russian language_code is used when available."""
+        assert get_user_lang("ru", None) == "ru"
+        assert get_user_lang("ru", "en") == "ru"  # Fresh overrides stored
+        assert get_user_lang("ru-RU", "en") == "ru"
+
+    def test_fresh_english_used_when_available(self):
+        """Test that fresh English language_code is used when available."""
+        assert get_user_lang("en", None) == "en"
+        assert get_user_lang("en", "ru") == "en"  # Fresh overrides stored
+        assert get_user_lang("en-US", "ru") == "en"
+
+    def test_fallback_to_stored_when_fresh_is_none(self):
+        """Test that stored language_code is used when fresh is None."""
+        assert get_user_lang(None, "ru") == "ru"
+        assert get_user_lang(None, "ru-RU") == "ru"
+        assert get_user_lang(None, "en") == "en"
+
+    def test_default_to_english_when_both_none(self):
+        """Test that English is default when both are None."""
+        assert get_user_lang(None, None) == "en"
+
+    def test_default_to_english_when_stored_is_other_language(self):
+        """Test fallback to English when stored is unsupported language."""
+        assert get_user_lang(None, "de") == "en"
+        assert get_user_lang(None, "fr") == "en"
+
+    def test_fresh_overrides_stored_even_when_english(self):
+        """Test that fresh value always takes precedence."""
+        # User changed Telegram language from Russian to English
+        assert get_user_lang("en", "ru") == "en"
+        # User changed from English to Russian
+        assert get_user_lang("ru", "en") == "ru"

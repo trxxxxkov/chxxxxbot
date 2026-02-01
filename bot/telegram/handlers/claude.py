@@ -367,6 +367,7 @@ async def _process_batch_with_session(
                     model_id=user_model_id,
                     first_name=user.first_name,
                     username=user.username,
+                    language_code=user.language_code,
                     custom_prompt=user_custom_prompt,
                 )
 

@@ -356,3 +356,97 @@ class TestCustomPromptCaching:
         saved_data = json.loads(call_args[0][2])
         assert saved_data["custom_prompt"] == custom_prompt
         assert saved_data["balance"] == "5.0"
+
+
+class TestLanguageCodeCaching:
+    """Tests for language_code field in user cache."""
+
+    @pytest.fixture
+    def mock_redis(self):
+        """Create mock Redis client."""
+        return AsyncMock()
+
+    @pytest.mark.asyncio
+    async def test_cache_user_with_language_code(self, mock_redis):
+        """Test caching user with language_code."""
+        user_id = 123456
+        language_code = "ru"
+
+        with patch("cache.user_cache.get_redis", return_value=mock_redis):
+            result = await cache_user(
+                user_id=user_id,
+                balance=Decimal("10.0"),
+                model_id="claude:sonnet",
+                first_name="Test",
+                username="testuser",
+                language_code=language_code,
+            )
+
+        assert result is True
+        call_args = mock_redis.setex.call_args
+        cached_json = json.loads(call_args[0][2])
+        assert cached_json["language_code"] == language_code
+
+    @pytest.mark.asyncio
+    async def test_cache_user_without_language_code(self, mock_redis):
+        """Test caching user without language_code (None)."""
+        user_id = 123456
+
+        with patch("cache.user_cache.get_redis", return_value=mock_redis):
+            result = await cache_user(
+                user_id=user_id,
+                balance=Decimal("10.0"),
+                model_id="claude:sonnet",
+                first_name="Test",
+            )
+
+        assert result is True
+        call_args = mock_redis.setex.call_args
+        cached_json = json.loads(call_args[0][2])
+        assert cached_json["language_code"] is None
+
+    @pytest.mark.asyncio
+    async def test_get_cached_user_with_language_code(self, mock_redis):
+        """Test retrieving cached user with language_code."""
+        user_id = 123456
+        mock_redis.get.return_value = json.dumps({
+            "balance": "10.0000",
+            "model_id": "claude:sonnet",
+            "first_name": "Test",
+            "username": "testuser",
+            "language_code": "ru-RU",
+            "custom_prompt": None,
+            "cached_at": 1234567890.0,
+        }).encode()
+
+        with patch("cache.user_cache.get_redis", return_value=mock_redis):
+            result = await get_cached_user(user_id)
+
+        assert result is not None
+        assert result["language_code"] == "ru-RU"
+
+    @pytest.mark.asyncio
+    async def test_update_preserves_language_code(self, mock_redis):
+        """Test that update_cached_balance preserves language_code."""
+        user_id = 123456
+        language_code = "ru"
+        mock_redis.get.return_value = json.dumps({
+            "balance": "10.0000",
+            "model_id": "claude:sonnet",
+            "first_name": "Test",
+            "username": "testuser",
+            "language_code": language_code,
+            "custom_prompt": None,
+            "cached_at": 1234567890.0,
+        }).encode()
+
+        from cache.user_cache import update_cached_balance
+
+        with patch("cache.user_cache.get_redis", return_value=mock_redis):
+            result = await update_cached_balance(user_id, Decimal("5.0"))
+
+        assert result is True
+        call_args = mock_redis.setex.call_args
+        saved_data = json.loads(call_args[0][2])
+        assert saved_data["language_code"] == language_code
+        assert saved_data["balance"] == "5.0"
