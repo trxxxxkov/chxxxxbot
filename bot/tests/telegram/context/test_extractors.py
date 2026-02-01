@@ -341,7 +341,7 @@ class TestExtractReplyContext:
         assert not snippet.endswith("...")
 
     def test_reply_no_content(self):
-        """Test reply with no text or caption."""
+        """Test reply with no text, caption, or media."""
         user = MagicMock()
         user.username = "user"
 
@@ -349,10 +349,82 @@ class TestExtractReplyContext:
         reply_msg.text = None
         reply_msg.caption = None
         reply_msg.from_user = user
+        # Explicitly set all media fields to None
+        reply_msg.voice = None
+        reply_msg.video_note = None
+        reply_msg.audio = None
+        reply_msg.video = None
+        reply_msg.photo = None
+        reply_msg.sticker = None
+        reply_msg.animation = None
+        reply_msg.document = None
+        reply_msg.contact = None
+        reply_msg.location = None
+        reply_msg.venue = None
+        reply_msg.poll = None
 
         snippet, sender = extract_reply_context(reply_msg)
 
         assert snippet is None
+        assert sender == "@user"
+
+    def test_reply_voice_message(self):
+        """Test reply with voice message generates description."""
+        user = MagicMock()
+        user.username = "user"
+
+        reply_msg = MagicMock()
+        reply_msg.text = None
+        reply_msg.caption = None
+        reply_msg.from_user = user
+        # Voice message with 15 seconds duration
+        reply_msg.voice = MagicMock()
+        reply_msg.voice.duration = 15
+        # Other media types should be None
+        reply_msg.video_note = None
+        reply_msg.audio = None
+        reply_msg.video = None
+        reply_msg.photo = None
+        reply_msg.sticker = None
+        reply_msg.animation = None
+        reply_msg.document = None
+        reply_msg.contact = None
+        reply_msg.location = None
+        reply_msg.venue = None
+        reply_msg.poll = None
+
+        snippet, sender = extract_reply_context(reply_msg)
+
+        assert snippet == "[Voice message, 15s]"
+        assert sender == "@user"
+
+    def test_reply_photo_no_caption(self):
+        """Test reply with photo but no caption generates description."""
+        user = MagicMock()
+        user.username = "user"
+
+        reply_msg = MagicMock()
+        reply_msg.text = None
+        reply_msg.caption = None
+        reply_msg.from_user = user
+        # Photo present
+        reply_msg.photo = [MagicMock()]  # Non-empty list = has photo
+        # Other media types should be None
+        reply_msg.voice = None
+        reply_msg.video_note = None
+        reply_msg.audio = None
+        reply_msg.video = None
+        reply_msg.sticker = None
+        reply_msg.animation = None
+        reply_msg.document = None
+        reply_msg.contact = None
+        reply_msg.location = None
+        reply_msg.venue = None
+        reply_msg.poll = None
+
+        snippet, sender = extract_reply_context(reply_msg)
+
+        assert snippet == "[Photo]"
         assert sender == "@user"
 
     def test_reply_no_user(self):

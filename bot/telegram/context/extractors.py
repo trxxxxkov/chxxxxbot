@@ -160,8 +160,66 @@ def extract_reply_context(
         snippet = text[:REPLY_SNIPPET_MAX_LENGTH]
         if len(text) > REPLY_SNIPPET_MAX_LENGTH:
             snippet += "..."
+    else:
+        # No text - generate media description
+        snippet = _describe_media(reply_to_message)
 
     return snippet, sender_display
+
+
+def _describe_media(message: types.Message) -> Optional[str]:  # pylint: disable=too-many-return-statements
+    """Generate a text description for media content.
+
+    Used when replying to a message that has no text (e.g., voice message,
+    photo without caption, etc.).
+
+    Args:
+        message: Telegram Message to describe.
+
+    Returns:
+        Description string or None if no media.
+    """
+    if message.voice:
+        return f"[Voice message, {message.voice.duration}s]"
+
+    if message.video_note:
+        return f"[Video message, {message.video_note.duration}s]"
+
+    if message.audio:
+        title = message.audio.title or message.audio.file_name or "audio"
+        return f"[Audio: {title}, {message.audio.duration}s]"
+
+    if message.video:
+        return f"[Video, {message.video.duration}s]"
+
+    if message.photo:
+        return "[Photo]"
+
+    if message.sticker:
+        return f"[Sticker {message.sticker.emoji or ''}]"
+
+    if message.animation:
+        return "[GIF/Animation]"
+
+    if message.document:
+        return f"[Document: {message.document.file_name or 'document'}]"
+
+    if message.contact:
+        name = message.contact.first_name
+        if message.contact.last_name:
+            name += f" {message.contact.last_name}"
+        return f"[Contact: {name}]"
+
+    if message.location:
+        return "[Location]"
+
+    if message.venue:
+        return f"[Venue: {message.venue.title}]"
+
+    if message.poll:
+        return f"[Poll: {message.poll.question[:50]}]"
+
+    return None
 
 
 def extract_message_context(message: types.Message) -> MessageContext:
