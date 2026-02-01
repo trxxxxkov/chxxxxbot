@@ -2,13 +2,15 @@
 
 Telegram bot with access to LLM models (Claude, OpenAI, Google) and tools via agents.
 
-## Quick Start
+## Quickstart
+
+### Minimal Setup
 
 ```bash
 # 1. Clone repository
 git clone git@github.com:trxxxxkov/chxxxxbot.git && cd chxxxxbot
 
-# 2. Fill in secrets
+# 2. Fill in required secrets
 echo "YOUR_TELEGRAM_BOT_TOKEN" > secrets/telegram_bot_token.txt
 echo "YOUR_ANTHROPIC_API_KEY" > secrets/anthropic_api_key.txt
 echo "your_postgres_password" > secrets/postgres_password.txt
@@ -17,6 +19,22 @@ echo "your_redis_password" > secrets/redis_password.txt
 # 3. Start (migrations run automatically)
 docker compose up -d
 ```
+
+Bot is ready. Grafana available at http://localhost:3000.
+
+### Import/Export Data
+
+```bash
+# Export database (full backup)
+docker compose exec -T postgres pg_dump -U postgres postgres > backup.sql
+
+# Import database (restore from backup)
+cat backup.sql | docker compose exec -T postgres psql -U postgres
+```
+
+After importing an old backup, migrations auto-apply on next bot start.
+
+---
 
 ## Working with the Project
 
@@ -106,13 +124,9 @@ docker compose exec bot env
 ```bash
 # Connect to PostgreSQL
 docker compose exec postgres psql -U postgres -d postgres
-
-# Export database (full backup with schema)
-docker compose exec -T postgres pg_dump -U postgres postgres > backup.sql
-
-# Import database (restore from backup)
-cat backup.sql | docker compose exec -T postgres psql -U postgres
 ```
+
+For import/export, see [Quickstart](#importexport-data).
 
 ### Migrations (Alembic)
 
@@ -128,8 +142,6 @@ docker compose exec bot sh -c "cd /postgres && alembic upgrade head"
 # Show current version
 docker compose exec bot sh -c "cd /postgres && alembic current"
 ```
-
-After importing old backup, migrations auto-apply on next bot start.
 
 ### Cleanup
 
