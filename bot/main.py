@@ -433,6 +433,12 @@ async def main() -> None:
         write_behind_handle = asyncio.create_task(write_behind_task(logger))
         logger.debug("write_behind_task_started")
 
+        # Start data cleanup task (runs daily at 3:00 AM UTC)
+        from services.cleanup import \
+            cleanup_task  # pylint: disable=import-outside-toplevel
+        cleanup_handle = asyncio.create_task(cleanup_task(logger))
+        logger.debug("cleanup_task_started")
+
         # Start polling
         logger.debug("starting_polling")
         try:
@@ -441,6 +447,7 @@ async def main() -> None:
             # Cancel background tasks on shutdown
             metrics_task.cancel()
             write_behind_handle.cancel()
+            cleanup_handle.cancel()
 
             # Wait for graceful shutdown (write-behind flushes pending writes)
             try:
@@ -450,6 +457,11 @@ async def main() -> None:
 
             try:
                 await write_behind_handle
+            except asyncio.CancelledError:
+                pass
+
+            try:
+                await cleanup_handle
             except asyncio.CancelledError:
                 pass
 
