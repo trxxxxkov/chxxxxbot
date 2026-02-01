@@ -81,6 +81,8 @@ class MessageRepository(BaseRepository[Message]):
         reply_snippet: Optional[str] = None,
         reply_sender_display: Optional[str] = None,
         quote_data: Optional[dict] = None,
+        # Model tracking
+        model_id: Optional[str] = None,
     ) -> Message:
         """Create new message with attachments.
 
@@ -106,6 +108,7 @@ class MessageRepository(BaseRepository[Message]):
             reply_snippet: First 200 chars of replied message. Defaults to None.
             reply_sender_display: Sender display of replied message. Defaults to None.
             quote_data: Quote dict {text, position, is_manual}. Defaults to None.
+            model_id: LLM model identifier for assistant messages. Defaults to None.
 
         Returns:
             Created Message instance.
@@ -161,6 +164,7 @@ class MessageRepository(BaseRepository[Message]):
             attachment_count=attachment_count,
             attachments=attachments,
             thinking_blocks=thinking_blocks,  # Phase 1.4.3: Extended Thinking
+            model_id=model_id,  # LLM model for assistant messages
             created_at=date,  # Use message date as record creation timestamp
         )
         self.session.add(message)
@@ -415,6 +419,7 @@ class MessageRepository(BaseRepository[Message]):
         cache_creation_tokens: Optional[int] = None,
         cache_read_tokens: Optional[int] = None,
         thinking_tokens: Optional[int] = None,
+        model_id: Optional[str] = None,
     ) -> None:
         """Track LLM token usage for billing.
 
@@ -429,6 +434,7 @@ class MessageRepository(BaseRepository[Message]):
             cache_creation_tokens: Cache creation tokens (Phase 1.4.2). Defaults to None.
             cache_read_tokens: Cache read tokens (Phase 1.4.2). Defaults to None.
             thinking_tokens: Extended thinking tokens (Phase 1.4.3). Defaults to None.
+            model_id: LLM model identifier. Defaults to None.
 
         Raises:
             ValueError: If message not found.
@@ -447,6 +453,8 @@ class MessageRepository(BaseRepository[Message]):
             message.cache_read_input_tokens = cache_read_tokens
         if thinking_tokens is not None:
             message.thinking_tokens = thinking_tokens
+        if model_id is not None:
+            message.model_id = model_id
 
         await self.session.flush()
 

@@ -311,6 +311,7 @@ async def _process_batch_with_session(
                     text_content=text_content,
                     reply_to_message_id=message.reply_to_message.message_id
                     if message.reply_to_message else None,
+                    media_group_id=message.media_group_id,
                     # Context fields (Telegram features)
                     sender_display=msg_context.sender_display,
                     forward_origin=msg_context.forward_origin,
@@ -909,6 +910,7 @@ async def _process_batch_with_session(
                     role=MessageRole.ASSISTANT,
                     text_content=response_text,
                     thinking_blocks=thinking_blocks_json,
+                    model_id=user_model_id,
                 )
                 await msg_repo.add_tokens(
                     chat_id=thread.chat_id,
@@ -1040,6 +1042,9 @@ async def _process_batch_with_session(
                             thread_id=thread_id,
                             error=str(naming_error),
                         )
+
+                    # Persist thread.title and thread.needs_topic_naming changes
+                    await session.flush()
 
     except ContextWindowExceededError as e:
         # External API limit - gracefully handled with user message
