@@ -448,10 +448,12 @@ class TestCleanupTask:
         # Cancel it
         task.cancel()
 
-        with pytest.raises(asyncio.CancelledError):
-            await task
+        # Task should complete without raising (graceful shutdown)
+        await task
 
-        logger.debug.assert_called()
+        # Verify debug log was called for cancellation
+        debug_calls = [str(call) for call in logger.debug.call_args_list]
+        assert any('cancel' in call.lower() for call in debug_calls)
 
     @pytest.mark.asyncio
     async def test_cleanup_task_schedules_correctly(self):
@@ -464,8 +466,8 @@ class TestCleanupTask:
                 # Make sleep raise CancelledError to exit loop
                 mock_sleep.side_effect = asyncio.CancelledError()
 
-                with pytest.raises(asyncio.CancelledError):
-                    await cleanup_task(logger)
+                # Task handles CancelledError gracefully, doesn't re-raise
+                await cleanup_task(logger)
 
                 # Verify sleep was called with some positive value
                 mock_sleep.assert_called_once()
