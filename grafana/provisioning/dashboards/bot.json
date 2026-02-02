@@ -966,8 +966,8 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.response_complete\"  | unwrap input_tokens [$__interval])) or vector(0)",
-          "legendFormat": "Input",
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.response_complete\"  | unwrap output_tokens [$__interval])) or vector(0)",
+          "legendFormat": "Output",
           "refId": "B"
         },
         {
@@ -975,8 +975,8 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.response_complete\"  | unwrap output_tokens [$__interval])) or vector(0)",
-          "legendFormat": "Output",
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.response_complete\"  | unwrap input_tokens [$__interval])) or vector(0)",
+          "legendFormat": "Input",
           "refId": "C"
         },
         {
