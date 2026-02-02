@@ -433,7 +433,7 @@
               {
                 "id": "color",
                 "value": {
-                  "fixedColor": "#BAE6FD",
+                  "fixedColor": "#EF4444",
                   "mode": "fixed"
                 }
               }
@@ -448,22 +448,7 @@
               {
                 "id": "color",
                 "value": {
-                  "fixedColor": "#7DD3FC",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "transcribe_audio"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "#38BDF8",
+                  "fixedColor": "#F97316",
                   "mode": "fixed"
                 }
               }
@@ -478,7 +463,37 @@
               {
                 "id": "color",
                 "value": {
-                  "fixedColor": "#0284C7",
+                  "fixedColor": "#F59E0B",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "preview_file"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#EAB308",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "transcribe_audio"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#84CC16",
                   "mode": "fixed"
                 }
               }
@@ -493,7 +508,37 @@
               {
                 "id": "color",
                 "value": {
-                  "fixedColor": "#1E40AF",
+                  "fixedColor": "#22C55E",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "topic_naming"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#14B8A6",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "cancelled"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#3B82F6",
                   "mode": "fixed"
                 }
               }
