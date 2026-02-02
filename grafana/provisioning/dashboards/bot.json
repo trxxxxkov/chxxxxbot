@@ -102,7 +102,7 @@
         "type": "loki",
         "uid": "loki"
       },
-      "description": "Total spent on Anthropic (Claude API, vision, web_search, topic_naming, cancelled, preview_file) in selected time range",
+      "description": "Total spent on Anthropic (Claude API, vision, web_search, topic_naming, stop_generation, preview_file) in selected time range",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -532,7 +532,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "cancelled"
+              "options": "stop_generation"
             },
             "properties": [
               {
@@ -665,7 +665,7 @@
             "uid": "loki"
           },
           "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.cancelled_user_charged\" | unwrap cost_usd [$__interval])) or vector(0)",
-          "legendFormat": "cancelled",
+          "legendFormat": "stop_generation",
           "refId": "H"
         }
       ],
