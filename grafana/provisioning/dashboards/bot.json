@@ -595,24 +595,6 @@
           "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"execute_python\" | source!=\"self_critique\" | unwrap cost_usd [$__interval])) or vector(0)",
           "legendFormat": "execute_python",
           "refId": "E"
-        },
-        {
-          "datasource": {
-            "type": "loki",
-            "uid": "loki"
-          },
-          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.response_complete\" | unwrap cache_read_cost [$__interval])) or vector(0)",
-          "legendFormat": "Cache Read (savings)",
-          "refId": "CR"
-        },
-        {
-          "datasource": {
-            "type": "loki",
-            "uid": "loki"
-          },
-          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.response_complete\" | unwrap cache_creation_cost [$__interval])) or vector(0)",
-          "legendFormat": "Cache Write",
-          "refId": "CW"
         }
       ],
       "title": "Costs",
@@ -888,6 +870,21 @@
           {
             "matcher": {
               "id": "byName",
+              "options": "Cache Write"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#EF4444",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
               "options": "Input"
             },
             "properties": [
@@ -918,22 +915,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "Thinking"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "#EF4444",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Cached"
+              "options": "Cache Read"
             },
             "properties": [
               {
@@ -975,18 +957,9 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.response_complete\"  | unwrap thinking_tokens [$__interval])) or vector(0)",
-          "legendFormat": "Thinking",
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.response_complete\"  | unwrap cache_creation_tokens [$__interval])) or vector(0)",
+          "legendFormat": "Cache Write",
           "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "loki",
-            "uid": "loki"
-          },
-          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.response_complete\"  | unwrap output_tokens [$__interval])) or vector(0)",
-          "legendFormat": "Output",
-          "refId": "B"
         },
         {
           "datasource": {
@@ -995,6 +968,15 @@
           },
           "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.response_complete\"  | unwrap input_tokens [$__interval])) or vector(0)",
           "legendFormat": "Input",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.response_complete\"  | unwrap output_tokens [$__interval])) or vector(0)",
+          "legendFormat": "Output",
           "refId": "C"
         },
         {
@@ -1005,15 +987,6 @@
           "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.response_complete\"  | unwrap cache_read_tokens [$__interval])) or vector(0)",
           "legendFormat": "Cache Read",
           "refId": "D"
-        },
-        {
-          "datasource": {
-            "type": "loki",
-            "uid": "loki"
-          },
-          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.response_complete\"  | unwrap cache_creation_tokens [$__interval])) or vector(0)",
-          "legendFormat": "Cache Write",
-          "refId": "E"
         }
       ],
       "title": "Tokens",
@@ -1508,7 +1481,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "sum(count_over_time({service=\"${service}\"} |~ \"${user_filter}\" | json | level=\"error\" | level=~\"${log_level:pipe}\" [$__interval])) or vector(0)",
+          "expr": "sum(count_over_time({service=\"${service}\", level=\"error\"} |~ \"${user_filter}\" [$__interval])) or vector(0)",
           "legendFormat": "error",
           "refId": "A"
         },
@@ -1517,7 +1490,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "sum(count_over_time({service=\"${service}\"} |~ \"${user_filter}\" | json | level=\"warning\" | level=~\"${log_level:pipe}\" [$__interval])) or vector(0)",
+          "expr": "sum(count_over_time({service=\"${service}\", level=\"warning\"} |~ \"${user_filter}\" [$__interval])) or vector(0)",
           "legendFormat": "warning",
           "refId": "B"
         },
@@ -1526,7 +1499,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "sum(count_over_time({service=\"${service}\"} |~ \"${user_filter}\" | json | level=\"info\" | level=~\"${log_level:pipe}\" [$__interval])) or vector(0)",
+          "expr": "sum(count_over_time({service=\"${service}\", level=\"info\"} |~ \"${user_filter}\" [$__interval])) or vector(0)",
           "legendFormat": "info",
           "refId": "C"
         },
@@ -1535,7 +1508,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "sum(count_over_time({service=\"${service}\"} |~ \"${user_filter}\" | json | level=\"debug\" | level=~\"${log_level:pipe}\" [$__interval])) or vector(0)",
+          "expr": "sum(count_over_time({service=\"${service}\", level=\"debug\"} |~ \"${user_filter}\" [$__interval])) or vector(0)",
           "legendFormat": "debug",
           "refId": "D"
         }
@@ -1572,7 +1545,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "{service=\"${service}\"} |~ \"${user_filter}\" | json | level=~\"${log_level:pipe}\" | line_format \"[{{ if .username }}{{.username}}{{ else if .user_id }}<None>{{ end }}] {{__line__}}\"",
+          "expr": "{service=\"${service}\", level=~\"${log_level:pipe}\"} |~ \"${user_filter}\"",
           "refId": "A"
         }
       ],
