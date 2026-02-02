@@ -25,6 +25,12 @@ Bot is ready. Web interfaces:
 - CloudBeaver: http://localhost:8978 (database UI)
 - Redis Commander: http://localhost:8081 (cache UI)
 
+Grafana comes with pre-built dashboards for user activity analysis and log exploration:
+
+![User activity dashboard](grafana_overview.png)
+
+![Log exploration dashboard](grafana_logs.png)
+
 ### Import/Export Data
 
 ```bash
