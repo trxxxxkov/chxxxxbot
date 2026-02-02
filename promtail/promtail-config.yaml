@@ -48,17 +48,20 @@ scrape_configs:
                   model: model
                   error: error
                   timestamp: timestamp
-            # Fallback: extract level from plain text (pytest output, etc.)
+            # Fallback: extract level from plain text (alembic, pytest, etc.)
             - regex:
-                expression: '^(?P<text_level>(INFO|WARN|ERROR|DEBUG|PASSED|FAILED|passed|failed)).*'
-            # Extract level as label for filtering
+                expression: '(?i)^(?P<text_level>INFO|WARN|WARNING|ERROR|DEBUG|PASSED|FAILED)\s*'
+            # Detect tracebacks as errors
+            - regex:
+                expression: '^(?P<is_traceback>Traceback \(most recent call last\)|.*Error:|.*Exception:)'
+            # Use text_level or traceback detection as fallback if JSON level not found
+            - template:
+                source: level
+                template: '{{ if .level }}{{ .level }}{{ else if .is_traceback }}error{{ else if .text_level }}{{ .text_level | ToLower }}{{ end }}'
+            # Now set labels after template has resolved level
             - labels:
                 level:
                 logger:
-            # Use text_level as fallback if JSON level not found
-            - template:
-                source: level
-                template: '{{ if .level }}{{ .level }}{{ else }}{{ .text_level }}{{ end }}'
             # Use timestamp from log if present
             - timestamp:
                 source: timestamp
