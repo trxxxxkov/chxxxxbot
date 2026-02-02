@@ -36,8 +36,9 @@ logger = get_logger(__name__)
 # Extended thinking budget - enough for deep analysis
 THINKING_BUDGET_TOKENS = 16000
 
-# Max output tokens - minimal, only need "Done." after thinking
-MAX_OUTPUT_TOKENS = 100
+# Max output tokens - we only need thinking, no text output
+# Set to 1 (API may not accept 0, but 1 token is negligible)
+MAX_OUTPUT_TOKENS = 1
 
 # =============================================================================
 # Prometheus Metrics
@@ -178,9 +179,8 @@ async def execute_extended_think_stream(
     if focus:
         user_message += f"\n\n<focus>{focus}</focus>"
 
-    # System prompt for reasoning - no conclusion needed, thinking is the output
-    system_prompt = """Analyze the problem step by step. Consider edge cases and verify your logic.
-Your thinking will be shown to the user - no written conclusion needed, just say "Done." when finished."""
+    # System prompt for reasoning - thinking is the only output
+    system_prompt = """Analyze the problem step by step. Consider edge cases and verify your logic."""
 
     # Prepare API parameters
     api_params = {
