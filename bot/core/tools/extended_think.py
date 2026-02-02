@@ -291,7 +291,7 @@ async def execute_extended_think(
         focus: Optional[str] = None,
         *,
         model_id: str = "claude:sonnet",
-        user_id: int,
+        user_id: Optional[int] = None,
         thread_id: Optional[int] = None,
         on_thinking_chunk: Optional[Callable[[str], Awaitable[None]]] = None,
         anthropic_client: Optional["AsyncAnthropic"] = None,
