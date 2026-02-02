@@ -318,6 +318,17 @@ async def execute_extended_think(
     Returns:
         Dict with conclusion, thinking summary, and cost.
     """
+    logger.info(
+        "extended_think.executor.called",
+        problem_length=len(problem),
+        has_context=bool(context),
+        focus=focus,
+        model_id=model_id,
+        user_id=user_id,
+        thread_id=thread_id,
+        has_thinking_callback=on_thinking_chunk is not None,
+    )
+
     # Get model config for actual model_id (needed for DB logging)
     model_config = get_model(model_id)
 
@@ -326,6 +337,7 @@ async def execute_extended_think(
     if client is None:
         from telegram.handlers.claude import claude_provider
         if claude_provider is None:
+            logger.error("extended_think.executor.no_provider")
             return {
                 "error": "Claude provider not initialized",
                 "conclusion": "",
@@ -362,6 +374,18 @@ async def execute_extended_think(
                 thinking_tokens = event.usage.get("thinking_tokens", 0)
                 input_tokens = event.usage.get("input_tokens", 0)
                 output_tokens = event.usage.get("output_tokens", 0)
+
+    logger.info(
+        "extended_think.executor.complete",
+        thinking_length=len(thinking_text),
+        conclusion_length=len(conclusion_text),
+        thinking_tokens=thinking_tokens,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        cost_usd=cost_usd,
+        user_id=user_id,
+        thread_id=thread_id,
+    )
 
     # Return result for Claude
     # Thinking is shown in UI, only conclusion goes to Claude
