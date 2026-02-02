@@ -70,13 +70,21 @@ EXTENDED_THINK_TOOL = {
     "name":
         "extended_think",
     "description":
-        """Extended reasoning for complex problems.
+        """Enables deep step-by-step reasoning (Extended Thinking mode).
 
-Use for: math proofs, algorithm design, debugging complex logic, multi-step reasoning, architectural decisions.
+IMPORTANT: Your default mode has quick responses but NO deep reasoning.
+Call this tool FIRST when the problem requires careful analysis.
 
-Skip for: simple questions, formatting, translations, factual lookups (use web_search).
+MUST use for:
+- Math proofs, equations, calculations with multiple steps
+- Algorithm design and complexity analysis
+- Debugging: finding root cause, tracing logic errors
+- Code review: security issues, edge cases, race conditions
+- Architecture decisions with trade-offs
 
-Returns structured reasoning that you incorporate into your response.""",
+Skip for: simple questions, formatting, translations, factual lookups.
+
+The tool returns structured analysis. Incorporate key insights into your response.""",
     "input_schema": {
         "type": "object",
         "properties": {
