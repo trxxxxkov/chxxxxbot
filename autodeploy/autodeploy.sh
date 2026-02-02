@@ -8,11 +8,40 @@ CHECK_INTERVAL="${CHECK_INTERVAL:-60}"
 BRANCH="${BRANCH:-main}"
 GRACEFUL_TIMEOUT="${GRACEFUL_TIMEOUT:-10}"
 
-cd "$REPO_DIR"
-
 log_info()  { echo "INFO $(date '+%Y-%m-%d %H:%M:%S') $*"; }
 log_warn()  { echo "WARN $(date '+%Y-%m-%d %H:%M:%S') $*"; }
 log_error() { echo "ERROR $(date '+%Y-%m-%d %H:%M:%S') $*"; }
+
+# Generate SSH config from available keys (files with matching .pub)
+generate_ssh_config() {
+    local ssh_dir="$HOME/.ssh"
+    local config_file="/tmp/ssh_config"
+
+    [ -d "$ssh_dir" ] || return 0
+
+    {
+        echo "Host github.com gitlab.com bitbucket.org"
+        echo "    StrictHostKeyChecking accept-new"
+        echo "    IdentitiesOnly yes"
+
+        # Find all private keys (files that have a corresponding .pub file)
+        for pub in "$ssh_dir"/*.pub; do
+            [ -f "$pub" ] || continue
+            key="${pub%.pub}"
+            [ -f "$key" ] && echo "    IdentityFile $key"
+        done
+    } > "$config_file"
+
+    # Use our generated config
+    export GIT_SSH_COMMAND="ssh -F $config_file"
+
+    key_count=$(grep -c "IdentityFile" "$config_file" 2>/dev/null || echo 0)
+    log_info "SSH config generated with $key_count key(s)"
+}
+
+generate_ssh_config
+
+cd "$REPO_DIR"
 
 log_info "Autodeploy started: checking $BRANCH every ${CHECK_INTERVAL}s"
 
