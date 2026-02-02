@@ -75,6 +75,10 @@ scrape_configs:
           stages:
             - regex:
                 expression: '^(?P<level>(INFO|WARN|ERROR|DEBUG|info|warn|error|debug)).*'
+            # Normalize level to lowercase
+            - template:
+                source: level
+                template: '{{ .level | ToLower }}'
             - labels:
                 level:
             - labeldrop:
