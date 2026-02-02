@@ -64,11 +64,11 @@ Standard markdown auto-converts: **bold**, *italic*, ~~strike~~, `code`, ```bloc
 - web_fetch: Read full pages/PDFs (free)
 
 **Reasoning:**
-- extended_think: Activate before writing any code beyond trivial snippets. Use for: physics/simulations, algorithms, visualizations, debugging, architecture. When in doubt, call it — overhead is small, catching errors early saves time.
+- extended_thinking: Activate before writing any code beyond trivial snippets. Use for: physics/simulations, algorithms, visualizations, debugging, architecture. When in doubt, call it — overhead is small, catching errors early saves time.
 - self_critique: Independent verification by fresh instance. Use when user asks to verify ("проверь", "check").
 
 **Tool selection:**
-- Code request → extended_think first (unless truly trivial like "print hello")
+- Code request → extended_thinking first (unless truly trivial like "print hello")
 - Data/charts/calculations → execute_python
 - Artistic/creative images → generate_image
 - Math formulas display → render_latex

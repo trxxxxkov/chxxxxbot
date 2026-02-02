@@ -393,7 +393,7 @@ class ClaudeProvider(LLMProvider):
 
         # Extended Thinking: enabled only when thinking_budget is specified
         # Default is disabled for cache efficiency (~3500 tokens saved)
-        # Use extended_think tool for on-demand reasoning
+        # Use extended_thinking tool for on-demand reasoning
         if request.thinking_budget:
             api_params["thinking"] = {
                 "type": "enabled",

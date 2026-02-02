@@ -91,7 +91,7 @@ class ModelConfig:  # pylint: disable=too-many-instance-attributes
         latency_tier: "fastest" | "fast" | "moderate" | "slow"
 
         capabilities: Dict with boolean flags for provider-specific features.
-            Claude: {"extended_thinking", "effort", "vision", "streaming"}
+            Claude: {"extended_thinkinging", "effort", "vision", "streaming"}
             OpenAI: {"function_calling", "vision", "json_mode"}
             Google: {"grounding", "code_execution", "vision"}
     """
@@ -168,7 +168,7 @@ MODEL_REGISTRY: dict[str, ModelConfig] = {
             pricing_cache_read=0.10,  # 0.1x multiplier
             latency_tier="fastest",
             capabilities={
-                "extended_thinking": True,
+                "extended_thinkinging": True,
                 "interleaved_thinking": True,
                 "effort": False,
                 "context_awareness": True,
@@ -192,7 +192,7 @@ MODEL_REGISTRY: dict[str, ModelConfig] = {
             pricing_cache_read=0.30,  # 0.1x multiplier
             latency_tier="fast",
             capabilities={
-                "extended_thinking": True,
+                "extended_thinkinging": True,
                 "interleaved_thinking": True,
                 "effort": False,
                 "context_awareness": True,
@@ -216,7 +216,7 @@ MODEL_REGISTRY: dict[str, ModelConfig] = {
             pricing_cache_read=0.50,  # 0.1x multiplier
             latency_tier="moderate",
             capabilities={
-                "extended_thinking": True,
+                "extended_thinkinging": True,
                 "interleaved_thinking": True,
                 "effort": True,  # Only Opus 4.5 supports effort parameter!
                 "context_awareness": True,

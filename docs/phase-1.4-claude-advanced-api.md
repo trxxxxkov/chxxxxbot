@@ -61,7 +61,7 @@ For each reviewed page, we'll add:
 - **Interleaved Thinking**: Enable beta header `interleaved-thinking-2025-05-14`
 - **Effort parameter**: Always `"high"` for Opus 4.5 (beta header: `effort-2025-11-24`)
 - **Stop reasons**: Add handling for `model_context_window_exceeded` and `refusal`
-- **Model registry capabilities**: Add flags `supports_extended_thinking`, `supports_interleaved_thinking`, `supports_effort_parameter`, `supports_context_awareness`
+- **Model registry capabilities**: Add flags `supports_extended_thinkinging`, `supports_interleaved_thinking`, `supports_effort_parameter`, `supports_context_awareness`
 - **System prompt**: Update for Claude 4 communication style (explicit instructions, concise responses)
 
 **Relationship to other features:**
@@ -1513,7 +1513,7 @@ All handled by Tool Runner automatically.
 - ✅ Update ClaudeClient to use selected model characteristics (max_tokens, max_output)
 - ✅ Update cost tracking to use model-specific pricing
 - ✅ Ensure architecture supports adding non-Claude providers later
-- ✅ Extend model registry with capability flags: `extended_thinking`, `interleaved_thinking`, `effort`, `context_awareness`, `vision`, `streaming`, `prompt_caching`
+- ✅ Extend model registry with capability flags: `extended_thinkinging`, `interleaved_thinking`, `effort`, `context_awareness`, `vision`, `streaming`, `prompt_caching`
 - ✅ Extend model registry with cache pricing: `pricing_cache_write_5m`, `pricing_cache_write_1h`, `pricing_cache_read`
 
 ### ✅ Phase 1.4.2: Prompt Caching (Completed)

@@ -133,7 +133,7 @@ async def execute_single_tool_safe(
         chat_id: Chat ID for typing indicator (optional).
         message_thread_id: Forum topic ID for typing indicator (optional).
         on_subagent_tool: Callback for self_critique subagent tool progress.
-        on_thinking_chunk: Callback for extended_think thinking chunks.
+        on_thinking_chunk: Callback for extended_thinking thinking chunks.
         cancel_event: Optional asyncio.Event for cancellation.
         **extra_kwargs: Additional kwargs passed to tool executor (e.g., model_id).
 
@@ -195,8 +195,8 @@ async def execute_single_tool_safe(
             if cancel_event:
                 tool_input_with_callback["cancel_event"] = cancel_event
 
-        # extended_think: thinking chunk callback and model_id
-        if tool_name == "extended_think":
+        # extended_thinking: thinking chunk callback and model_id
+        if tool_name == "extended_thinking":
             if on_thinking_chunk:
                 tool_input_with_callback[
                     "on_thinking_chunk"] = on_thinking_chunk

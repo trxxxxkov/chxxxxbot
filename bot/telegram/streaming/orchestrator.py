@@ -481,6 +481,17 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
             stop_reason=stream.stop_reason,
         )
 
+        # Safety net: if tools were executed (iterations > 1) but no text,
+        # provide a fallback to avoid empty_response error
+        if not final_display.strip() and iterations > 1:
+            logger.warning(
+                "orchestrator.empty_after_tools",
+                thread_id=self._thread_id,
+                iterations=iterations,
+            )
+            final_display = "✓ Analysis complete."
+            final_answer = final_display
+
         # Finalize draft
         final_message = None
         if final_display.strip():
@@ -551,7 +562,7 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
         async def on_subagent_tool(parent_tool: str, sub_tool: str) -> None:
             await stream.add_subagent_tool(parent_tool, sub_tool)
 
-        # Callback for extended_think thinking chunks (streaming to expandable blockquote)
+        # Callback for extended_thinking thinking chunks (streaming to expandable blockquote)
         async def on_thinking_chunk(chunk: str) -> None:
             await stream.handle_thinking_delta(chunk)
 

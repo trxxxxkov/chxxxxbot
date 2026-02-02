@@ -10,7 +10,7 @@ Key differences from self_critique:
 - Returns reasoning for Claude to incorporate into response
 
 NO __init__.py - use direct import:
-    from core.tools.extended_think import TOOL_CONFIG, execute_extended_think
+    from core.tools.extended_thinking import TOOL_CONFIG, execute_extended_thinking
 """
 
 from dataclasses import dataclass
@@ -47,15 +47,15 @@ try:
     from prometheus_client import Counter
     from prometheus_client import Histogram
 
-    EXTENDED_THINK_REQUESTS = Counter('extended_think_requests_total',
-                                      'Total extended_think invocations',
+    EXTENDED_THINK_REQUESTS = Counter('extended_thinking_requests_total',
+                                      'Total extended_thinking invocations',
                                       ['focus'])
     EXTENDED_THINK_COST = Histogram(
-        'extended_think_cost_usd',
-        'Cost of extended_think calls in USD',
+        'extended_thinking_cost_usd',
+        'Cost of extended_thinking calls in USD',
         buckets=[0.001, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2])
     EXTENDED_THINK_THINKING_TOKENS = Histogram(
-        'extended_think_thinking_tokens',
+        'extended_thinking_thinking_tokens',
         'Thinking tokens used per call',
         buckets=[1000, 2000, 5000, 10000, 15000, 20000])
     METRICS_AVAILABLE = True
@@ -68,7 +68,7 @@ except ImportError:
 
 EXTENDED_THINK_TOOL = {
     "name":
-        "extended_think",
+        "extended_thinking",
     "description":
         """Activate deep reasoning mode before writing any code beyond trivial snippets.
 
@@ -83,7 +83,7 @@ When in doubt whether a task is trivial, call this tool. The overhead is small
 but catching errors early saves much more time. Only skip for truly simple
 tasks like "print hello world" or "add two numbers".
 
-Examples that require extended_think:
+Examples that require extended_thinking:
 - "visualize three-body problem" → physics simulation, numerical integration
 - "implement LRU cache" → data structure design
 - "create animated chart" → calculation + visualization logic""",
@@ -120,7 +120,7 @@ Examples that require extended_think:
 
 @dataclass
 class DeepThinkResult:
-    """Result of extended_think execution."""
+    """Result of extended_thinking execution."""
 
     thinking: str  # Full thinking text
     conclusion: str  # Final conclusion/answer
@@ -134,7 +134,7 @@ class DeepThinkResult:
 # =============================================================================
 
 
-async def execute_extended_think_stream(
+async def execute_extended_thinking_stream(
     problem: str,
     context: Optional[str] = None,
     focus: Optional[str] = None,
@@ -164,7 +164,7 @@ async def execute_extended_think_stream(
     model_config = get_model(model_id)
 
     logger.info(
-        "extended_think.started",
+        "extended_thinking.started",
         model=model_id,
         problem_length=len(problem),
         has_context=bool(context),
@@ -178,8 +178,10 @@ async def execute_extended_think_stream(
     if focus:
         user_message += f"\n\n<focus>{focus}</focus>"
 
-    # System prompt for reasoning - thinking is the only output
-    system_prompt = """Analyze the problem step by step. Consider edge cases and verify your logic."""
+    # System prompt for reasoning - thinking is the main output, response is minimal
+    system_prompt = """Analyze the problem thoroughly in your thinking. Consider edge cases and verify your logic.
+
+After thinking, respond with only a number 1-10 rating the complexity of the analysis (1=trivial, 10=extremely complex). Nothing else."""
 
     # Prepare API parameters
     api_params = {
@@ -202,49 +204,38 @@ async def execute_extended_think_stream(
     input_tokens = 0
     output_tokens = 0
 
-    thinking_done = False
-
     try:
         async with anthropic_client.messages.stream(**api_params) as stream:
             async for event in stream:
                 # Check cancellation
                 if cancel_event and cancel_event.is_set():
-                    logger.info("extended_think.cancelled")
+                    logger.info("extended_thinking.cancelled")
                     break
 
-                # Handle thinking delta
+                # Handle thinking delta - stream to user
                 if (event.type == "content_block_delta" and
                         hasattr(event.delta, "thinking")):
                     chunk = event.delta.thinking
                     thinking_text += chunk
-                    logger.debug("extended_think.thinking_chunk",
+                    logger.debug("extended_thinking.thinking_chunk",
                                  chunk_len=len(chunk),
                                  total_thinking_len=len(thinking_text))
                     yield StreamEvent(type="thinking_delta", content=chunk)
 
-                # Text delta = thinking is done, stop immediately
-                # Don't wait for conclusion generation (saves ~50 seconds)
+                # Text delta - collect complexity rating (just 1 digit)
                 elif (event.type == "content_block_delta" and
                       hasattr(event.delta, "text")):
-                    logger.info("extended_think.thinking_done_stopping",
-                                thinking_length=len(thinking_text))
-                    thinking_done = True
-                    break
+                    conclusion_text += event.delta.text
 
-            # Get usage - if we broke early, estimate from thinking text
-            if thinking_done:
-                # Estimate: ~4 chars per token for thinking
-                output_tokens = len(thinking_text) // 4
-                input_tokens = 200  # Approximate input (system + user message)
-            else:
-                final_message = await stream.get_final_message()
-                input_tokens = final_message.usage.input_tokens
-                output_tokens = final_message.usage.output_tokens
-                thinking_tokens = getattr(final_message.usage,
-                                          'thinking_tokens', 0) or 0
+            # Get accurate usage from API
+            final_message = await stream.get_final_message()
+            input_tokens = final_message.usage.input_tokens
+            output_tokens = final_message.usage.output_tokens
+            thinking_tokens = getattr(final_message.usage, 'thinking_tokens',
+                                      0) or 0
 
     except Exception as e:
-        logger.exception("extended_think.stream_error", error=str(e))
+        logger.exception("extended_thinking.stream_error", error=str(e))
         yield StreamEvent(type="stream_complete",
                           content="",
                           usage={
@@ -269,7 +260,7 @@ async def execute_extended_think_stream(
         EXTENDED_THINK_THINKING_TOKENS.observe(thinking_tokens)
 
     logger.info(
-        "extended_think.complete",
+        "extended_thinking.complete",
         thinking_tokens=thinking_tokens,
         output_tokens=output_tokens,
         cost_usd=float(cost),
@@ -295,7 +286,7 @@ async def execute_extended_think_stream(
 # =============================================================================
 
 
-async def execute_extended_think(
+async def execute_extended_thinking(
         problem: str,
         context: Optional[str] = None,
         focus: Optional[str] = None,
@@ -329,7 +320,7 @@ async def execute_extended_think(
         Dict with conclusion, thinking summary, and cost.
     """
     logger.info(
-        "extended_think.executor.called",
+        "extended_thinking.executor.called",
         problem_length=len(problem),
         has_context=bool(context),
         focus=focus,
@@ -347,7 +338,7 @@ async def execute_extended_think(
     if client is None:
         from telegram.handlers.claude import claude_provider
         if claude_provider is None:
-            logger.error("extended_think.executor.no_provider")
+            logger.error("extended_thinking.executor.no_provider")
             return {
                 "error": "Claude provider not initialized",
                 "conclusion": "",
@@ -361,7 +352,7 @@ async def execute_extended_think(
     input_tokens = 0
     output_tokens = 0
 
-    async for event in execute_extended_think_stream(
+    async for event in execute_extended_thinking_stream(
             problem=problem,
             context=context,
             focus=focus,
@@ -373,7 +364,7 @@ async def execute_extended_think(
             thinking_text += event.content
             # Stream thinking to UI in real-time
             if on_thinking_chunk:
-                logger.debug("extended_think.calling_callback",
+                logger.debug("extended_thinking.calling_callback",
                              chunk_len=len(event.content))
                 await on_thinking_chunk(event.content)
 
@@ -382,13 +373,31 @@ async def execute_extended_think(
 
         elif event.type == "stream_complete":
             if event.usage:
+                # Check for error first
+                if event.usage.get("error"):
+                    error_msg = event.usage["error"]
+                    logger.error("extended_thinking.executor.stream_error",
+                                 error=error_msg)
+                    return {
+                        "error": error_msg,
+                        "reasoning": thinking_text or "Analysis failed",
+                        "complexity": 5,
+                        "thinking_tokens": 0,
+                        "cost_usd": 0.0,
+                    }
                 cost_usd = event.usage.get("cost_usd", 0.0)
                 thinking_tokens = event.usage.get("thinking_tokens", 0)
                 input_tokens = event.usage.get("input_tokens", 0)
                 output_tokens = event.usage.get("output_tokens", 0)
 
+    # Ensure reasoning is never empty
+    if not thinking_text.strip():
+        logger.warning("extended_thinking.executor.empty_thinking",
+                       problem_length=len(problem))
+        thinking_text = f"Analysis of: {problem[:200]}..."
+
     logger.info(
-        "extended_think.executor.complete",
+        "extended_thinking.executor.complete",
         thinking_length=len(thinking_text),
         conclusion_length=len(conclusion_text),
         thinking_tokens=thinking_tokens,
@@ -399,21 +408,26 @@ async def execute_extended_think(
         thread_id=thread_id,
     )
 
+    # Parse complexity rating (1-10 from conclusion)
+    complexity = 5  # default
+    stripped = conclusion_text.strip()
+    if stripped.isdigit():
+        complexity = int(stripped)
+        complexity = max(1, min(10, complexity))  # clamp to 1-10
+
     # Return result for Claude
-    # Thinking is shown in UI, only conclusion goes to Claude
+    # Thinking is returned so Claude can use the reasoning in its response
+    # UI shows thinking in expandable blockquote via on_thinking_chunk callback
     return {
-        "conclusion": conclusion_text,
-        "thinking_summary": f"Analyzed with {thinking_tokens} thinking tokens",
+        "reasoning": thinking_text,  # Full thinking for Claude to incorporate
+        "complexity": complexity,  # Self-assessed complexity 1-9
+        "thinking_tokens": thinking_tokens,  # Accurate count from API
         "cost_usd": cost_usd,
-        "thinking_tokens": thinking_tokens,
-        "output_tokens":
-            output_tokens,  # For format_result (without _ to survive clean_result)
-        "_thinking_text": thinking_text,  # Internal, for logging
         # DB logging metadata (tool_executor checks for _model_id)
         "_model_id": model_config.model_id,
         "_input_tokens": input_tokens,
         "_output_tokens": output_tokens,
-        "_cache_read_tokens": 0,  # extended_think doesn't use caching
+        "_cache_read_tokens": 0,  # extended_thinking doesn't use caching
         "_cache_creation_tokens": 0,
     }
 
@@ -423,23 +437,29 @@ async def execute_extended_think(
 # =============================================================================
 
 
-def format_extended_think_result(tool_input: dict[str, Any],
-                                 result: dict[str, Any]) -> str:
-    """Format extended_think result for system message.
+def format_extended_thinking_result(tool_input: dict[str, Any],
+                                    result: dict[str, Any]) -> str:
+    """Format extended_thinking result for system message.
 
     Shows brief summary (full thinking visible in expandable blockquote).
-    Note: Anthropic counts thinking as output_tokens, but we display as "thinking tokens"
-    for user clarity.
     """
     if result.get("error"):
-        return f"[🧠 extended_think failed: {result['error']}]"
+        error = result["error"]
+        # Truncate long error messages
+        if len(error) > 100:
+            error = error[:100] + "..."
+        return f"[🧠 extended_thinking failed: {error}]"
 
-    # Use output_tokens (without underscore - survives clean_result filtering)
-    # Display as "thinking tokens" for user, but internally it's output tokens
-    thinking_tokens = result.get("output_tokens", 0)
+    thinking_tokens = result.get("thinking_tokens", 0)
+    complexity = result.get("complexity", "?")
     cost = result.get("cost_usd", 0)
 
-    return f"[🧠 extended_think: {thinking_tokens} thinking tokens, ${cost:.4f}]"
+    # Validate we have reasoning
+    reasoning = result.get("reasoning", "")
+    if not reasoning:
+        return "[🧠 extended_thinking: no reasoning generated]"
+
+    return f"[🧠 extended_thinking: {thinking_tokens} tokens, complexity {complexity}/10, ${cost:.4f}]"
 
 
 # =============================================================================
@@ -447,10 +467,10 @@ def format_extended_think_result(tool_input: dict[str, Any],
 # =============================================================================
 
 TOOL_CONFIG = ToolConfig(
-    name="extended_think",
+    name="extended_thinking",
     definition=EXTENDED_THINK_TOOL,
-    executor=execute_extended_think,
+    executor=execute_extended_thinking,
     emoji="🧠",
     needs_bot_session=False,
-    format_result=format_extended_think_result,
+    format_result=format_extended_thinking_result,
 )
