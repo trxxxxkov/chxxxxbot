@@ -704,7 +704,7 @@ async def _process_batch_with_session(
                         logger.info(
                             "claude_handler.cancelled_user_charged",
                             user_id=user_id,
-                            partial_cost_usd=round(partial_cost, 6),
+                            cost_usd=round(partial_cost, 6),
                             balance_after=float(balance_after),
                         )
 

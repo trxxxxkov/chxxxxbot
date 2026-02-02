@@ -102,7 +102,7 @@
         "type": "loki",
         "uid": "loki"
       },
-      "description": "Total spent on Anthropic (Claude API, vision, web_search) in selected time range",
+      "description": "Total spent on Anthropic (Claude API, vision, web_search, topic_naming, cancelled, preview_file) in selected time range",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -153,7 +153,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "(sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=~\"claude_handler.user_charged|tools.web_search.user_charged\" | unwrap cost_usd [$__interval])) or vector(0)) + (sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=~\"analyze_image|analyze_pdf\" | unwrap cost_usd [$__interval])) or vector(0))",
+          "expr": "(sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=~\"claude_handler.user_charged|claude_handler.cancelled_user_charged|tools.web_search.user_charged|topic_naming.user_charged\" | unwrap cost_usd [$__interval])) or vector(0)) + (sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=~\"analyze_image|analyze_pdf|preview_file\" | unwrap cost_usd [$__interval])) or vector(0))",
           "refId": "A"
         }
       ],
@@ -595,6 +595,33 @@
           "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"execute_python\" | source!=\"self_critique\" | unwrap cost_usd [$__interval])) or vector(0)",
           "legendFormat": "execute_python",
           "refId": "E"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.cancelled_user_charged\" | unwrap cost_usd [$__interval])) or vector(0)",
+          "legendFormat": "cancelled",
+          "refId": "F"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"topic_naming.user_charged\" | unwrap cost_usd [$__interval])) or vector(0)",
+          "legendFormat": "topic_naming",
+          "refId": "G"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"preview_file\" | unwrap cost_usd [$__interval])) or vector(0)",
+          "legendFormat": "preview_file",
+          "refId": "H"
         }
       ],
       "title": "Costs",
