@@ -481,16 +481,8 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
             stop_reason=stream.stop_reason,
         )
 
-        # Safety net: if tools were executed (iterations > 1) but no text,
-        # provide a fallback to avoid empty_response error
-        if not final_display.strip() and iterations > 1:
-            logger.warning(
-                "orchestrator.empty_after_tools",
-                thread_id=self._thread_id,
-                iterations=iterations,
-            )
-            final_display = "✓ Analysis complete."
-            final_answer = final_display
+        # Note: if tools were executed but no final text, that's OK.
+        # Tool results are already displayed via sent_parts.
 
         # Finalize draft
         final_message = None
