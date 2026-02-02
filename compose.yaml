@@ -196,6 +196,20 @@ services:
     networks:
       - botnet
 
+  # === Auto-deploy (checks GitHub every minute) ===
+  autodeploy:
+    build: ./autodeploy
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - .:/repo
+    environment:
+      - CHECK_INTERVAL=60
+      - BRANCH=main
+      - GRACEFUL_TIMEOUT=10
+    networks:
+      - botnet
+
 networks:
   botnet:
     driver: bridge
