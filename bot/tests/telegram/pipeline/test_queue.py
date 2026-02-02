@@ -118,8 +118,7 @@ class TestProcessedMessageQueueBasic:
         queue = ProcessedMessageQueue(callback)
         msg = create_text_message("Test", sample_metadata, mock_message)
 
-        # Add with immediate to avoid timer
-        await queue.add(thread_id=1, message=msg, immediate=True)
+        await queue.add(thread_id=1, message=msg)
 
         stats = queue.get_stats()
         assert stats["total_threads"] == 1
@@ -129,11 +128,11 @@ class TestProcessedMessageQueueBatching:
     """Tests for message batching behavior."""
 
     @pytest.mark.asyncio
-    async def test_short_text_messages_immediate(
+    async def test_text_messages_processed_after_delay(
         self,
         sample_metadata: MessageMetadata,
     ) -> None:
-        """Short text messages (<1000 chars) are processed immediately."""
+        """All text messages wait 150ms + normalization timeout."""
         callback = AsyncMock()
         queue = ProcessedMessageQueue(callback)
 
@@ -142,19 +141,19 @@ class TestProcessedMessageQueueBatching:
         mock_msg.message_id = 100
         mock_msg.media_group_id = None
 
-        msg = create_text_message("Short message", sample_metadata, mock_msg)
+        msg = create_text_message("Test message", sample_metadata, mock_msg)
         await queue.add(thread_id=1, message=msg)
 
-        # Short text - processed immediately
+        # Should be called after delay
         callback.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_media_messages_immediate(
+    async def test_media_messages_processed(
         self,
         sample_metadata: MessageMetadata,
         mock_message: MagicMock,
     ) -> None:
-        """Media messages are processed immediately."""
+        """Media messages are processed after delay."""
         callback = AsyncMock()
         queue = ProcessedMessageQueue(callback)
 
@@ -166,18 +165,17 @@ class TestProcessedMessageQueueBatching:
 
         await queue.add(thread_id=1, message=msg)
 
-        # Should be called immediately
         callback.assert_called_once()
         args = callback.call_args[0]
         assert len(args[1]) == 1
 
     @pytest.mark.asyncio
-    async def test_transcript_messages_immediate(
+    async def test_transcript_messages_processed(
         self,
         sample_metadata: MessageMetadata,
         mock_message: MagicMock,
     ) -> None:
-        """Messages with transcript are processed immediately."""
+        """Messages with transcript are processed after delay."""
         callback = AsyncMock()
         queue = ProcessedMessageQueue(callback)
 
@@ -188,22 +186,6 @@ class TestProcessedMessageQueueBatching:
         )
 
         await queue.add(thread_id=1, message=msg)
-
-        callback.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_explicit_immediate_flag(
-        self,
-        sample_metadata: MessageMetadata,
-        mock_message: MagicMock,
-    ) -> None:
-        """Explicit immediate flag bypasses batching."""
-        callback = AsyncMock()
-        queue = ProcessedMessageQueue(callback)
-
-        msg = create_text_message("Test", sample_metadata, mock_message)
-
-        await queue.add(thread_id=1, message=msg, immediate=True)
 
         callback.assert_called_once()
 
@@ -239,8 +221,8 @@ class TestProcessedMessageQueueProcessing:
         task = asyncio.create_task(queue.add(thread_id=1, message=msg1))
         await process_started.wait()
 
-        # Add second message during processing
-        await queue.add(thread_id=1, message=msg2, immediate=True)
+        # Add second message during processing (will accumulate)
+        task2 = asyncio.create_task(queue.add(thread_id=1, message=msg2))
 
         # Stats should show messages accumulated
         stats = queue.get_stats()
@@ -249,6 +231,7 @@ class TestProcessedMessageQueueProcessing:
         # Let processing complete
         process_continue.set()
         await task
+        await task2
 
     @pytest.mark.asyncio
     async def test_next_batch_after_processing(
@@ -284,13 +267,14 @@ class TestProcessedMessageQueueProcessing:
         # Give time for first batch to start
         await asyncio.sleep(0.01)
 
-        # Add during processing
-        await queue.add(thread_id=1, message=msg2, immediate=True)
+        # Add during processing (will accumulate)
+        task2 = asyncio.create_task(queue.add(thread_id=1, message=msg2))
 
         # Wait for all processing
-        await asyncio.sleep(0.2)
+        await asyncio.sleep(0.5)
+        await task2
 
-        # Should have processed two batches
+        # Should have processed at least one batch
         assert call_count >= 1
 
 
@@ -357,7 +341,6 @@ class TestProcessedMessageQueueStats:
     """Tests for queue statistics."""
 
     @pytest.mark.asyncio
-    @patch("telegram.pipeline.queue.MESSAGE_BATCH_DELAY_MS", 1000)
     async def test_stats_waiting_threads(
         self,
         sample_metadata: MessageMetadata,
@@ -369,7 +352,7 @@ class TestProcessedMessageQueueStats:
 
         msg = create_text_message("Test", sample_metadata, mock_message)
 
-        # Add without immediate - will wait for batch delay
+        # Add message - will wait 150ms + normalization timeout
         await queue.add(thread_id=1, message=msg)
 
         stats = queue.get_stats()
@@ -413,8 +396,12 @@ class TestProcessedMessageQueueStats:
         await asyncio.wait_for(callback_started.wait(), timeout=2.0)
 
         # Now add second message - it should accumulate since processing=True
+        # When processing=True, add() returns immediately after appending
         msg2 = create_text_message("Pending", sample_metadata, mock_msg)
-        await queue.add(thread_id=1, message=msg2, immediate=True)
+        task2 = asyncio.create_task(queue.add(thread_id=1, message=msg2))
+
+        # Give task2 a chance to run (it returns immediately when processing=True)
+        await asyncio.sleep(0)
 
         # Check stats while first batch is still processing
         stats = queue.get_stats()
@@ -423,79 +410,7 @@ class TestProcessedMessageQueueStats:
         # Cleanup
         callback_finish.set()
         await task
-
-
-class TestSmartQueueDelay:
-    """Tests for smart queue delay (skip delay for standalone messages)."""
-
-    def test_looks_like_split_empty_text(self) -> None:
-        """Empty or None text is not split."""
-        queue = ProcessedMessageQueue(AsyncMock())
-        assert queue._looks_like_split_message(None) is False
-        assert queue._looks_like_split_message("") is False
-        assert queue._looks_like_split_message("   ") is False
-
-    def test_looks_like_split_continuation_markers(self) -> None:
-        """Messages with continuation markers are split."""
-        queue = ProcessedMessageQueue(AsyncMock())
-        assert queue._looks_like_split_message("And then...") is True
-        assert queue._looks_like_split_message("To be continued…") is True
-        assert queue._looks_like_split_message("Word-") is True
-        assert queue._looks_like_split_message("Sentence—") is True
-
-    def test_looks_like_split_short_without_punctuation(self) -> None:
-        """Short messages without punctuation might be split."""
-        queue = ProcessedMessageQueue(AsyncMock())
-        assert queue._looks_like_split_message("Hello") is True
-        assert queue._looks_like_split_message("Yes ok") is True
-        assert queue._looks_like_split_message("I think") is True
-
-    def test_standalone_with_punctuation(self) -> None:
-        """Messages ending with punctuation are standalone."""
-        queue = ProcessedMessageQueue(AsyncMock())
-        assert queue._looks_like_split_message("Hello!") is False
-        assert queue._looks_like_split_message("How are you?") is False
-        assert queue._looks_like_split_message("I agree.") is False
-        assert queue._looks_like_split_message("He said \"yes\"") is False
-        assert queue._looks_like_split_message("Код работает。") is False
-
-    def test_long_message_without_punctuation_is_split(self) -> None:
-        """Long messages without punctuation might be split by Telegram."""
-        queue = ProcessedMessageQueue(AsyncMock())
-        # Message without ending punctuation - could be split by Telegram
-        long_msg = ("This is a longer message that could be split by Telegram "
-                    "because it does not end with sentence punctuation")
-        assert len(long_msg) >= 100
-        assert queue._looks_like_split_message(long_msg) is True
-
-    def test_long_message_with_punctuation_is_standalone(self) -> None:
-        """Long messages with punctuation are standalone."""
-        queue = ProcessedMessageQueue(AsyncMock())
-        # Message with ending punctuation - standalone
-        long_msg = ("This is a longer message that is standalone because it "
-                    "ends with proper punctuation and has more than 100 chars.")
-        assert len(long_msg) >= 100
-        assert queue._looks_like_split_message(long_msg) is False
-
-    @pytest.mark.asyncio
-    async def test_text_immediate_processing(
-        self,
-        sample_metadata: MessageMetadata,
-    ) -> None:
-        """Text messages are processed immediately when no pending."""
-        callback = AsyncMock()
-        queue = ProcessedMessageQueue(callback)
-
-        # Create mock without media_group_id
-        mock_msg = MagicMock()
-        mock_msg.message_id = 100
-        mock_msg.media_group_id = None
-
-        msg = create_text_message("Hello, world!", sample_metadata, mock_msg)
-        await queue.add(thread_id=1, message=msg)
-
-        # Should be called immediately (no pending messages)
-        callback.assert_called_once()
+        await task2
 
 
 class TestProcessedMessageQueueMultipleThreads:

@@ -49,9 +49,6 @@ FILES_API_TTL_HOURS = int(os.getenv("FILES_API_TTL_HOURS", "24"))
 # Database settings
 MAX_QUERY_LIMIT = 1000  # Hard cap for get_all() queries to prevent memory issues
 
-# Message queue settings
-MESSAGE_BATCH_DELAY_MS = 200  # Batching window for split message detection (ms)
-
 # Streaming settings
 # With sendMessageDraft (Bot API 9.3), no flood control - update immediately
 DRAFT_KEEPALIVE_INTERVAL = 5.0  # Keep draft visible during long operations (seconds)

@@ -16,14 +16,12 @@ import asyncio
 from dataclasses import dataclass
 from dataclasses import field
 import time
-from typing import Awaitable, Callable, Dict, List, Optional, TYPE_CHECKING
+from typing import Awaitable, Callable, Dict, List, TYPE_CHECKING
 
-from config import MESSAGE_BATCH_DELAY_MS
 from utils.structured_logging import get_logger
 
 if TYPE_CHECKING:
     from telegram.pipeline.models import ProcessedMessage
-    from telegram.pipeline.tracker import NormalizationTracker
 
 logger = get_logger(__name__)
 
@@ -38,12 +36,10 @@ class MessageBatch:
     Attributes:
         messages: List of ProcessedMessage objects.
         processing: Whether this thread is currently processing.
-        timer_task: Asyncio task for batch delay timer.
     """
 
     messages: List['ProcessedMessage'] = field(default_factory=list)
     processing: bool = False
-    timer_task: Optional[asyncio.Task] = None
 
 
 class ProcessedMessageQueue:
@@ -54,8 +50,8 @@ class ProcessedMessageQueue:
     all files are already uploaded before messages enter the queue.
 
     Batching strategy:
-    - Text-only messages: 200ms delay to collect split parts
-    - Media messages: Immediate processing (no batching delay)
+    - All messages: 150ms delay + wait for pending normalizations
+    - Media groups: Smart wait until no new files for 300ms
     - During processing: Accumulate for next batch
 
     Usage:
@@ -96,73 +92,24 @@ class ProcessedMessageQueue:
             logger.debug("processed_queue.queue_created", thread_id=thread_id)
         return self._queues[thread_id]
 
-    def _looks_like_split_message(self, text: str | None) -> bool:
-        """Check if message might be part of a split message sequence.
-
-        Split messages happen when user types a long message that Telegram
-        splits into multiple parts (~4096 char limit). Heuristics:
-        - Ends with "..." or "…" → likely continues
-        - Ends mid-sentence (no punctuation) → might continue
-        - Ends with sentence punctuation → likely complete
-
-        Args:
-            text: Message text to analyze.
-
-        Returns:
-            True if message might be split, False if likely standalone.
-        """
-        if not text:
-            return False
-
-        text = text.strip()
-        if not text:
-            return False
-
-        # Continuation markers → definitely might be split
-        if text.endswith(('...', '…', '-', '—')):
-            return True
-
-        # Messages ending with sentence-ending punctuation are likely complete
-        if text[-1] in '.!?»"\')}]。！？':
-            return False
-
-        # Messages NOT ending with punctuation might be split by Telegram
-        # (Telegram splits at ~4096 chars, often mid-sentence)
-        # Add 200ms delay to collect potential continuation
-        return True
-
     async def add(
         self,
         thread_id: int,
         message: 'ProcessedMessage',
-        immediate: bool = False,
     ) -> None:
         """Add message to queue.
 
         Args:
             thread_id: Database thread ID.
             message: ProcessedMessage (all I/O complete).
-            immediate: Process immediately without batching delay.
         """
         queue = self._get_or_create_queue(thread_id)
-
-        # Batching strategy:
-        # All messages are processed immediately, BUT we wait for pending
-        # normalizations first. This handles:
-        # - Telegram split messages (arrive ~100ms apart)
-        # - Media groups (multiple files)
-        # - Mixed content (text + photo sent together)
-        #
-        # The wait_for_pending_normalizations() call below ensures all
-        # messages that arrived together are collected before processing.
-        should_be_immediate = True  # Always immediate, wait handles batching
 
         logger.debug(
             "processed_queue.add",
             thread_id=thread_id,
             has_text=bool(message.text),
             has_media=message.has_media,
-            immediate=should_be_immediate,
             processing=queue.processing,
             batch_size=len(queue.messages),
         )
@@ -180,123 +127,54 @@ class ProcessedMessageQueue:
         # Add to queue
         queue.messages.append(message)
 
-        # Immediate processing (media, standalone text, or explicit)
-        if should_be_immediate:
-            if queue.timer_task and not queue.timer_task.done():
-                queue.timer_task.cancel()
-
-            # Check if this is part of a media group
-            media_group_id = getattr(message.original_message, 'media_group_id',
-                                     None)
-
-            # Determine reason for immediate processing
-            reason = "explicit" if immediate else "media"
-
-            logger.info(
-                "processed_queue.immediate",
-                thread_id=thread_id,
-                reason=reason,
-                has_media=message.has_media,
-                media_group_id=media_group_id,
-                text_length=len(message.text) if message.text else 0,
-            )
-
-            # Wait for other messages that might be arriving together
-            chat_id = message.metadata.chat_id
-            text_length = len(message.text) if message.text else 0
-            is_short_text = text_length < 1000 and not message.has_media
-
-            if media_group_id:
-                # Media group: smart wait for all files
-                # Uses MediaGroupTracker to detect when group is complete
-                # (no new files for 300ms = group complete)
-                logger.info(
-                    "processed_queue.media_group_detected",
-                    thread_id=thread_id,
-                    media_group_id=media_group_id,
-                )
-                await self._wait_for_media_group(str(media_group_id))
-                # After media group complete, wait for normalizations
-                # 3 seconds is enough: files normalize in parallel (~1-2s each)
-                await self._wait_for_pending_normalizations(chat_id,
-                                                            timeout=3.0)
-            elif is_short_text:
-                # Short text without attachments: process immediately
-                # These are typical user replies, no need to delay
-                # Just quick check for any pending normalizations
-                await self._wait_for_pending_normalizations(chat_id,
-                                                            timeout=0.1)
-            else:
-                # Long text, media, or files: delay to collect related messages
-                # - Long text may be split by Telegram (~100ms between parts)
-                # - Files may come with text description
-                # - Multiple files may arrive together
-                await asyncio.sleep(0.15)  # 150ms
-                # 1 second timeout: enough for photo+text arriving together
-                await self._wait_for_pending_normalizations(chat_id,
-                                                            timeout=1.0)
-
-            # Check if another coroutine started processing while we waited
-            # This prevents race condition where multiple coroutines call
-            # _process_batch() after waiting, first one gets messages, rest get empty
-            if queue.processing:
-                logger.debug(
-                    "processed_queue.skip_processing_already_active",
-                    thread_id=thread_id,
-                )
-                return
-
-            await self._process_batch(thread_id)
-            return
-
-        # Text messages that might be split: batch with delay
-        if queue.timer_task and not queue.timer_task.done():
-            queue.timer_task.cancel()
-            logger.debug(
-                "processed_queue.timer_cancelled",
-                thread_id=thread_id,
-                batch_size=len(queue.messages),
-            )
-
-        queue.timer_task = asyncio.create_task(
-            self._wait_and_process(thread_id))
+        # Check if this is part of a media group
+        media_group_id = getattr(message.original_message, 'media_group_id',
+                                 None)
 
         logger.info(
-            "processed_queue.scheduled",
+            "processed_queue.processing",
             thread_id=thread_id,
-            batch_size=len(queue.messages),
-            delay_ms=MESSAGE_BATCH_DELAY_MS,
-            reason="potential_split_message",
-            text_preview=message.text[:50] if message.text else None,
+            has_media=message.has_media,
+            media_group_id=media_group_id,
+            text_length=len(message.text) if message.text else 0,
         )
 
-    async def _wait_and_process(self, thread_id: int) -> None:
-        """Wait for batch delay then process.
+        # Wait for other messages that might be arriving together
+        chat_id = message.metadata.chat_id
 
-        Waits for:
-        1. Batch delay (200ms) to collect split messages
-        2. Any pending normalizations in the same chat
+        if media_group_id:
+            # Media group: smart wait for all files
+            # Uses MediaGroupTracker to detect when group is complete
+            # (no new files for 300ms = group complete)
+            logger.info(
+                "processed_queue.media_group_detected",
+                thread_id=thread_id,
+                media_group_id=media_group_id,
+            )
+            await self._wait_for_media_group(str(media_group_id))
+            # After media group complete, wait for normalizations
+            # 3 seconds is enough: files normalize in parallel (~1-2s each)
+            await self._wait_for_pending_normalizations(chat_id, timeout=3.0)
+        else:
+            # All messages: delay to collect related messages
+            # - Text may be split by Telegram (~100ms between parts)
+            # - Files may come with text description
+            # - Multiple files may arrive together
+            await asyncio.sleep(0.15)  # 150ms
+            # 1 second timeout: enough for photo+text arriving together
+            await self._wait_for_pending_normalizations(chat_id, timeout=1.0)
 
-        Args:
-            thread_id: Database thread ID.
-        """
-        try:
-            await asyncio.sleep(MESSAGE_BATCH_DELAY_MS / 1000)
-
-            # Wait for any pending normalizations in this chat
-            # This handles cases like forwarded photo+text arriving separately
-            queue = self._queues.get(thread_id)
-            if queue and queue.messages:
-                chat_id = queue.messages[0].metadata.chat_id
-                await self._wait_for_pending_normalizations(chat_id)
-
-            await self._process_batch(thread_id)
-
-        except asyncio.CancelledError:
+        # Check if another coroutine started processing while we waited
+        # This prevents race condition where multiple coroutines call
+        # _process_batch() after waiting, first one gets messages, rest get empty
+        if queue.processing:
             logger.debug(
-                "processed_queue.timer_cancelled_during_wait",
+                "processed_queue.skip_processing_already_active",
                 thread_id=thread_id,
             )
+            return
+
+        await self._process_batch(thread_id)
 
     async def _wait_for_media_group(
         self,
@@ -401,7 +279,6 @@ class ProcessedMessageQueue:
         # Mark as processing BEFORE clearing messages to prevent race
         queue.processing = True
         queue.messages = []
-        queue.timer_task = None
         processing_start = time.perf_counter()
 
         # Calculate queue wait times for each message
