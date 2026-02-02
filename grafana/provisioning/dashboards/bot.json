@@ -565,7 +565,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"generate_image\"  | unwrap cost_usd [$__interval])) or vector(0)",
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"generate_image\" | unwrap cost_usd [$__interval])) or vector(0)",
           "legendFormat": "generate_image",
           "refId": "B"
         },
@@ -574,8 +574,8 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"transcribe_audio\"  | unwrap cost_usd [$__interval])) or vector(0)",
-          "legendFormat": "transcribe_audio",
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.web_search.user_charged\" | source!=\"self_critique\" | unwrap cost_usd [$__interval])) or vector(0)",
+          "legendFormat": "web_search",
           "refId": "C"
         },
         {
@@ -583,9 +583,18 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.web_search.user_charged\" | source!=\"self_critique\" | unwrap cost_usd [$__interval])) or vector(0)",
-          "legendFormat": "web_search",
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"preview_file\" | unwrap cost_usd [$__interval])) or vector(0)",
+          "legendFormat": "preview_file",
           "refId": "D"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"transcribe_audio\" | unwrap cost_usd [$__interval])) or vector(0)",
+          "legendFormat": "transcribe_audio",
+          "refId": "E"
         },
         {
           "datasource": {
@@ -594,15 +603,6 @@
           },
           "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"execute_python\" | source!=\"self_critique\" | unwrap cost_usd [$__interval])) or vector(0)",
           "legendFormat": "execute_python",
-          "refId": "E"
-        },
-        {
-          "datasource": {
-            "type": "loki",
-            "uid": "loki"
-          },
-          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.cancelled_user_charged\" | unwrap cost_usd [$__interval])) or vector(0)",
-          "legendFormat": "cancelled",
           "refId": "F"
         },
         {
@@ -619,8 +619,8 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"preview_file\" | unwrap cost_usd [$__interval])) or vector(0)",
-          "legendFormat": "preview_file",
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.cancelled_user_charged\" | unwrap cost_usd [$__interval])) or vector(0)",
+          "legendFormat": "cancelled",
           "refId": "H"
         }
       ],
