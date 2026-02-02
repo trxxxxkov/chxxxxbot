@@ -108,14 +108,16 @@ class TestFlushWritesBatch:
 
     @pytest.mark.asyncio
     async def test_flush_writes_batch_empty(self):
-        """Test empty queue returns empty list."""
+        """Test empty queue returns empty list and batch_size."""
         mock_redis = AsyncMock()
         mock_redis.lpop = AsyncMock(return_value=None)
+        mock_redis.llen = AsyncMock(return_value=0)
 
         with patch("cache.write_behind.get_redis", return_value=mock_redis):
-            writes = await flush_writes_batch()
+            writes, batch_size = await flush_writes_batch()
 
         assert writes == []
+        assert batch_size == 100  # Default batch size for depth < 100
 
     @pytest.mark.asyncio
     async def test_flush_writes_batch_with_items(self):
@@ -145,13 +147,15 @@ class TestFlushWritesBatch:
 
         mock_redis = AsyncMock()
         mock_redis.lpop = mock_lpop
+        mock_redis.llen = AsyncMock(return_value=2)
 
         with patch("cache.write_behind.get_redis", return_value=mock_redis):
-            writes = await flush_writes_batch()
+            writes, batch_size = await flush_writes_batch()
 
         assert len(writes) == 2
         assert writes[0]["data"]["id"] == 1
         assert writes[1]["data"]["id"] == 2
+        assert batch_size == 100  # Default for depth < 100
 
 
 class TestFlushWrites:

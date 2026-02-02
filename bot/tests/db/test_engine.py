@@ -74,11 +74,11 @@ async def test_init_db_pool_config():
     """Test that init_db configures connection pool correctly.
 
     Verifies connection pool settings:
-    - pool_size=5 (base connections)
-    - max_overflow=10 (additional connections)
+    - pool_size=15 (base connections for parallel queries)
+    - max_overflow=20 (additional connections for spikes)
     - pool_pre_ping=True (test before use)
     - pool_recycle=3600 (recycle every hour)
-    - pool_timeout=30 (wait up to 30 seconds)
+    - pool_timeout=10 (fast failure for blocked connections)
     Note: create_async_engine uses AsyncAdaptedQueuePool by default
     """
     with patch('db.engine.create_async_engine') as mock_create_engine, \
@@ -89,11 +89,11 @@ async def test_init_db_pool_config():
         call_kwargs = mock_create_engine.call_args[1]
         # poolclass not specified - uses AsyncAdaptedQueuePool by default
         assert 'poolclass' not in call_kwargs
-        assert call_kwargs['pool_size'] == 5
-        assert call_kwargs['max_overflow'] == 10
+        assert call_kwargs['pool_size'] == 15
+        assert call_kwargs['max_overflow'] == 20
         assert call_kwargs['pool_pre_ping'] is True
         assert call_kwargs['pool_recycle'] == 3600
-        assert call_kwargs['pool_timeout'] == 30
+        assert call_kwargs['pool_timeout'] == 10
 
 
 @pytest.mark.asyncio

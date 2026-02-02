@@ -491,24 +491,41 @@ class TestProcessBatchWithSession:
                 ),
             "logger":
                 patch("telegram.handlers.claude.logger"),
+            "user_file_repo":
+                patch(
+                    "telegram.handlers.claude.UserFileRepository",
+                    return_value=AsyncMock(),
+                ),
+            "get_available_files":
+                patch(
+                    "telegram.handlers.claude.get_available_files",
+                    AsyncMock(return_value=[]),
+                ),
+            "get_pending_files":
+                patch(
+                    "telegram.handlers.claude.get_pending_files_for_thread",
+                    AsyncMock(return_value=[]),
+                ),
         }
 
         with patches["get_session"], patches["thread_repo"], patches[
                 "msg_repo"]:
             with patches["services"], patches["cache"], patches["invalidate"]:
-                with patches["logger"]:
-                    from telegram.handlers.claude import \
-                        _process_batch_with_session
+                with patches["logger"], patches["user_file_repo"]:
+                    with patches["get_available_files"], patches[
+                            "get_pending_files"]:
+                        from telegram.handlers.claude import \
+                            _process_batch_with_session
 
-                    await _process_batch_with_session(
-                        thread_id=42,
-                        messages=[processed],
-                        first_message=mock_telegram_message,
-                    )
+                        await _process_batch_with_session(
+                            thread_id=42,
+                            messages=[processed],
+                            first_message=mock_telegram_message,
+                        )
 
-                    mock_telegram_message.answer.assert_called()
-                    call_args = mock_telegram_message.answer.call_args[0][0]
-                    assert "User not found" in call_args
+                        mock_telegram_message.answer.assert_called()
+                        call_args = mock_telegram_message.answer.call_args[0][0]
+                        assert "User not found" in call_args
 
 
 # ============================================================================
