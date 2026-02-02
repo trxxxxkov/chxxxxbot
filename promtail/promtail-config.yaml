@@ -48,16 +48,27 @@ scrape_configs:
                   model: model
                   error: error
                   timestamp: timestamp
+            # Fallback: extract level from plain text (pytest output, etc.)
+            - regex:
+                expression: '^(?P<text_level>(INFO|WARN|ERROR|DEBUG|PASSED|FAILED|passed|failed)).*'
             # Extract level as label for filtering
             - labels:
                 level:
                 logger:
+            # Use text_level as fallback if JSON level not found
+            - template:
+                source: level
+                template: '{{ if .level }}{{ .level }}{{ else }}{{ .text_level }}{{ end }}'
             # Use timestamp from log if present
             - timestamp:
                 source: timestamp
                 format: RFC3339Nano
                 fallback_formats:
                   - UnixMs
+            # Drop JSON parse error labels (non-JSON lines are fine)
+            - labeldrop:
+                - __error__
+                - __error_details__
       # For non-bot services, just capture the log line
       - match:
           selector: '{service!="bot"}'
@@ -66,3 +77,6 @@ scrape_configs:
                 expression: '^(?P<level>(INFO|WARN|ERROR|DEBUG|info|warn|error|debug)).*'
             - labels:
                 level:
+            - labeldrop:
+                - __error__
+                - __error_details__
