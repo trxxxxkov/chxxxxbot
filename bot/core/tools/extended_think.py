@@ -70,20 +70,23 @@ EXTENDED_THINK_TOOL = {
     "name":
         "extended_think",
     "description":
-        """Analyze complex problems with extended step-by-step reasoning.
+        """Activate deep reasoning mode before writing any code beyond trivial snippets.
 
-Call this tool before responding when the task involves:
-- Writing non-trivial code (algorithms, data structures, async logic)
-- Mathematical derivations or multi-step calculations
-- Debugging or finding root causes in code
-- Architecture decisions with trade-offs
-- Problems where you need to consider multiple approaches
+Call this tool FIRST when asked to:
+- Write code involving physics, math, simulations, numerical methods
+- Implement algorithms, data structures, state machines
+- Create visualizations, animations, charts with calculations
+- Debug issues or find root causes
+- Design architecture or make technical decisions
 
-The tool activates deep analysis mode and returns structured reasoning.
-Incorporate the conclusions into your response to the user.
+When in doubt whether a task is trivial, call this tool. The overhead is small
+but catching errors early saves much more time. Only skip for truly simple
+tasks like "print hello world" or "add two numbers".
 
-Example: User asks "implement a LRU cache" → call extended_think first,
-then write the code based on the analysis.""",
+Examples that require extended_think:
+- "visualize three-body problem" → physics simulation, numerical integration
+- "implement LRU cache" → data structure design
+- "create animated chart" → calculation + visualization logic""",
     "input_schema": {
         "type": "object",
         "properties": {
