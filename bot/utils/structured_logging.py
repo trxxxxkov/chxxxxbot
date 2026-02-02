@@ -178,6 +178,20 @@ def setup_logging(level: str = "INFO") -> None:
         e2b_related_logger = logging.getLogger(logger_name)
         e2b_related_logger.addFilter(E2BLogFilter())
 
+    # Override sys.excepthook to log uncaught exceptions as JSON
+    def json_excepthook(exc_type, exc_value, exc_traceback):
+        """Log uncaught exceptions as JSON instead of plain text."""
+        if issubclass(exc_type, KeyboardInterrupt):
+            sys.__excepthook__(exc_type, exc_value, exc_traceback)
+            return
+        logger = structlog.get_logger("uncaught_exception")
+        logger.error(
+            "uncaught_exception",
+            exc_info=(exc_type, exc_value, exc_traceback),
+        )
+
+    sys.excepthook = json_excepthook
+
 
 def get_logger(name: str) -> structlog.BoundLogger:
     """Gets a configured logger instance.
