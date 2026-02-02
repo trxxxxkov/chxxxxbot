@@ -22,6 +22,51 @@ from utils.structured_logging import get_logger
 logger = get_logger(__name__)
 
 
+def _get_unclosed_code_block_prefix(text: str) -> str:
+    r"""Check if text has an unclosed code block and return the opening prefix.
+
+    When text is split mid-code-block, we need to continue the code block
+    in the next message. This function detects unclosed ``` blocks and
+    returns the prefix to prepend (e.g., "```python\n").
+
+    Args:
+        text: Raw text to check.
+
+    Returns:
+        Opening prefix if unclosed code block found, empty string otherwise.
+        Example: "```python\n" or "```\n"
+    """
+    # Count code block markers
+    # Each ``` toggles code block state
+    code_block_count = text.count("```")
+
+    if code_block_count % 2 == 0:
+        # Balanced - no unclosed code block
+        return ""
+
+    # Odd number of ``` means unclosed code block
+    # Find the last opening ``` to get the language
+    last_open_pos = text.rfind("```")
+    if last_open_pos == -1:
+        return ""
+
+    # Extract language (if any) - it's between ``` and first newline
+    after_marker = text[last_open_pos + 3:]
+    newline_pos = after_marker.find("\n")
+
+    if newline_pos == -1:
+        # No newline after ``` - just code block start
+        language = after_marker.strip()
+    else:
+        language = after_marker[:newline_pos].strip()
+
+    # Build the prefix
+    if language:
+        return f"```{language}\n"
+    else:
+        return "```\n"
+
+
 # pylint: disable=too-many-public-methods
 class StreamingSession:  # pylint: disable=too-many-instance-attributes
     """Encapsulates state for a single streaming response.
@@ -68,6 +113,11 @@ class StreamingSession:  # pylint: disable=too-many-instance-attributes
         self._last_sent_text = ""
         self._pending_tools: list[ToolCall] = []
         self._message_part = 1  # Track message parts for splitting
+
+        # Continuation prefix for split messages
+        # When message is split mid-code-block, this stores the opening marker
+        # (e.g., "```python\n") to prepend to the next message part
+        self._continuation_prefix = ""
 
         # TTFT optimization: track if first update was sent
         # First update is forced (bypasses throttle) for fast time-to-first-token
@@ -150,9 +200,22 @@ class StreamingSession:  # pylint: disable=too-many-instance-attributes
         Adds empty line before text if previous thinking ends with ]
         (tool marker) for visual separation.
 
+        Also handles continuation after message split: if previous message
+        was split mid-code-block, prepends the opening marker to continue
+        the code block formatting.
+
         Args:
             content: Text content chunk.
         """
+        # Check if we need to continue formatting from split message
+        # This happens when previous message was split mid-code-block
+        if self._continuation_prefix and not self._current_text:
+            content = self._continuation_prefix + content
+            logger.debug("stream.session.continuation_prefix_applied",
+                         thread_id=self._thread_id,
+                         prefix=repr(self._continuation_prefix))
+            self._continuation_prefix = ""  # Clear after use
+
         # Check if this is first text after tool markers
         # Add empty line for separation if needed
         if not self._current_text:  # First text chunk
@@ -535,10 +598,22 @@ class StreamingSession:  # pylint: disable=too-many-instance-attributes
 
         Finalizes current text as a message part and clears display
         for continuation. Thinking blocks are discarded (already truncated).
+
+        If the text ends mid-code-block (unclosed ```), saves the opening
+        marker as continuation prefix for the next message part.
         """
         text_blocks = self._display.get_text_blocks()
         if not text_blocks:
             return
+
+        # Get raw text to check for unclosed code blocks BEFORE formatting
+        raw_text = "\n\n".join(b.content.strip() for b in text_blocks)
+        self._continuation_prefix = _get_unclosed_code_block_prefix(raw_text)
+
+        if self._continuation_prefix:
+            logger.info("stream.session.unclosed_code_block",
+                        thread_id=self._thread_id,
+                        prefix=repr(self._continuation_prefix))
 
         # Format text only (no thinking)
         from telegram.streaming.formatting import format_blocks
