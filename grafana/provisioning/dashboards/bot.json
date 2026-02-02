@@ -102,7 +102,7 @@
         "type": "loki",
         "uid": "loki"
       },
-      "description": "Total spent on Anthropic (Claude API, vision, web_search, topic_naming, stop_generation, preview_file) in selected time range",
+      "description": "Total spent on Anthropic (Claude API, vision, web_search, extended_think, stop_generation, preview_file) in selected time range",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -153,7 +153,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "(sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=~\"claude_handler.user_charged|claude_handler.cancelled_user_charged|tools.web_search.user_charged|topic_naming.user_charged\" | unwrap cost_usd [$__interval])) or vector(0)) + (sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=~\"analyze_image|analyze_pdf|preview_file\" | unwrap cost_usd [$__interval])) or vector(0))",
+          "expr": "(sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=~\"claude_handler.user_charged|claude_handler.cancelled_user_charged|tools.web_search.user_charged\" | unwrap cost_usd [$__interval])) or vector(0)) + (sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=~\"analyze_image|analyze_pdf|preview_file|extended_think\" | unwrap cost_usd [$__interval])) or vector(0))",
           "refId": "A"
         }
       ],
@@ -517,7 +517,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "topic_naming"
+              "options": "extended_think"
             },
             "properties": [
               {
@@ -655,8 +655,8 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"topic_naming.user_charged\" | unwrap cost_usd [$__interval])) or vector(0)",
-          "legendFormat": "topic_naming",
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"extended_think\" | unwrap cost_usd [$__interval])) or vector(0)",
+          "legendFormat": "extended_think",
           "refId": "G"
         },
         {

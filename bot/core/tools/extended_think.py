@@ -10,7 +10,7 @@ Key differences from self_critique:
 - Returns reasoning for Claude to incorporate into response
 
 NO __init__.py - use direct import:
-    from core.tools.deep_think import TOOL_CONFIG, execute_deep_think
+    from core.tools.extended_think import TOOL_CONFIG, execute_extended_think
 """
 
 from dataclasses import dataclass
@@ -47,14 +47,15 @@ try:
     from prometheus_client import Counter
     from prometheus_client import Histogram
 
-    DEEP_THINK_REQUESTS = Counter('deep_think_requests_total',
-                                  'Total deep_think invocations', ['focus'])
-    DEEP_THINK_COST = Histogram(
-        'deep_think_cost_usd',
-        'Cost of deep_think calls in USD',
+    EXTENDED_THINK_REQUESTS = Counter('extended_think_requests_total',
+                                      'Total extended_think invocations',
+                                      ['focus'])
+    EXTENDED_THINK_COST = Histogram(
+        'extended_think_cost_usd',
+        'Cost of extended_think calls in USD',
         buckets=[0.001, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2])
-    DEEP_THINK_THINKING_TOKENS = Histogram(
-        'deep_think_thinking_tokens',
+    EXTENDED_THINK_THINKING_TOKENS = Histogram(
+        'extended_think_thinking_tokens',
         'Thinking tokens used per call',
         buckets=[1000, 2000, 5000, 10000, 15000, 20000])
     METRICS_AVAILABLE = True
@@ -65,9 +66,9 @@ except ImportError:
 # Tool Definition
 # =============================================================================
 
-DEEP_THINK_TOOL = {
+EXTENDED_THINK_TOOL = {
     "name":
-        "deep_think",
+        "extended_think",
     "description":
         """Extended reasoning for complex problems.
 
@@ -109,7 +110,7 @@ Returns structured reasoning that you incorporate into your response.""",
 
 @dataclass
 class DeepThinkResult:
-    """Result of deep_think execution."""
+    """Result of extended_think execution."""
 
     thinking: str  # Full thinking text
     conclusion: str  # Final conclusion/answer
@@ -123,7 +124,7 @@ class DeepThinkResult:
 # =============================================================================
 
 
-async def execute_deep_think_stream(
+async def execute_extended_think_stream(
     problem: str,
     context: Optional[str] = None,
     focus: Optional[str] = None,
@@ -153,7 +154,7 @@ async def execute_deep_think_stream(
     model_config = get_model(model_id)
 
     logger.info(
-        "deep_think.started",
+        "extended_think.started",
         model=model_id,
         problem_length=len(problem),
         has_context=bool(context),
@@ -198,7 +199,7 @@ After thinking, provide a clear, actionable conclusion."""
             async for event in stream:
                 # Check cancellation
                 if cancel_event and cancel_event.is_set():
-                    logger.info("deep_think.cancelled")
+                    logger.info("extended_think.cancelled")
                     break
 
                 # Handle thinking delta
@@ -223,7 +224,7 @@ After thinking, provide a clear, actionable conclusion."""
                                       0) or 0
 
     except Exception as e:
-        logger.exception("deep_think.stream_error", error=str(e))
+        logger.exception("extended_think.stream_error", error=str(e))
         yield StreamEvent(type="stream_complete",
                           content="",
                           usage={
@@ -243,12 +244,12 @@ After thinking, provide a clear, actionable conclusion."""
 
     # Record metrics
     if METRICS_AVAILABLE:
-        DEEP_THINK_REQUESTS.labels(focus=focus or "none").inc()
-        DEEP_THINK_COST.observe(float(cost))
-        DEEP_THINK_THINKING_TOKENS.observe(thinking_tokens)
+        EXTENDED_THINK_REQUESTS.labels(focus=focus or "none").inc()
+        EXTENDED_THINK_COST.observe(float(cost))
+        EXTENDED_THINK_THINKING_TOKENS.observe(thinking_tokens)
 
     logger.info(
-        "deep_think.complete",
+        "extended_think.complete",
         thinking_tokens=thinking_tokens,
         output_tokens=output_tokens,
         cost_usd=float(cost),
@@ -274,7 +275,7 @@ After thinking, provide a clear, actionable conclusion."""
 # =============================================================================
 
 
-async def execute_deep_think(
+async def execute_extended_think(
         problem: str,
         context: Optional[str] = None,
         focus: Optional[str] = None,
@@ -328,7 +329,7 @@ async def execute_deep_think(
     input_tokens = 0
     output_tokens = 0
 
-    async for event in execute_deep_think_stream(
+    async for event in execute_extended_think_stream(
             problem=problem,
             context=context,
             focus=focus,
@@ -364,7 +365,7 @@ async def execute_deep_think(
         "_model_id": model_config.model_id,
         "_input_tokens": input_tokens,
         "_output_tokens": output_tokens,
-        "_cache_read_tokens": 0,  # deep_think doesn't use caching
+        "_cache_read_tokens": 0,  # extended_think doesn't use caching
         "_cache_creation_tokens": 0,
     }
 
@@ -374,19 +375,19 @@ async def execute_deep_think(
 # =============================================================================
 
 
-def format_deep_think_result(tool_input: dict[str, Any],
-                             result: dict[str, Any]) -> str:
-    """Format deep_think result for system message.
+def format_extended_think_result(tool_input: dict[str, Any],
+                                 result: dict[str, Any]) -> str:
+    """Format extended_think result for system message.
 
     Shows brief summary (full thinking visible in expandable blockquote).
     """
     if result.get("error"):
-        return f"[🧠 deep_think failed: {result['error']}]"
+        return f"[🧠 extended_think failed: {result['error']}]"
 
     thinking_tokens = result.get("thinking_tokens", 0)
     cost = result.get("cost_usd", 0)
 
-    return f"[🧠 deep_think: {thinking_tokens} thinking tokens, ${cost:.4f}]"
+    return f"[🧠 extended_think: {thinking_tokens} thinking tokens, ${cost:.4f}]"
 
 
 # =============================================================================
@@ -394,10 +395,10 @@ def format_deep_think_result(tool_input: dict[str, Any],
 # =============================================================================
 
 TOOL_CONFIG = ToolConfig(
-    name="deep_think",
-    definition=DEEP_THINK_TOOL,
-    executor=execute_deep_think,
+    name="extended_think",
+    definition=EXTENDED_THINK_TOOL,
+    executor=execute_extended_think,
     emoji="🧠",
     needs_bot_session=False,
-    format_result=format_deep_think_result,
+    format_result=format_extended_think_result,
 )

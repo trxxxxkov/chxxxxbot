@@ -127,8 +127,8 @@ class ToolExecutor:
             cancel_event: Optional event to check for cancellation.
             on_file_ready: Callback for file processing (called for each file).
             on_subagent_tool: Callback (parent_tool, sub_tool) for subagent progress.
-            on_thinking_chunk: Callback for deep_think thinking chunks.
-            model_id: User's current model ID (for deep_think).
+            on_thinking_chunk: Callback for extended_think thinking chunks.
+            model_id: User's current model ID (for extended_think).
 
         Returns:
             BatchExecutionResult with all results in original order.
@@ -155,14 +155,14 @@ class ToolExecutor:
 
                 tool_callback = _subagent_callback
 
-            # Create callback for deep_think thinking chunks
+            # Create callback for extended_think thinking chunks
             thinking_callback = None
-            if tool.name == "deep_think" and on_thinking_chunk:
+            if tool.name == "extended_think" and on_thinking_chunk:
                 thinking_callback = on_thinking_chunk
 
-            # Add model_id for deep_think
+            # Add model_id for extended_think
             extra_kwargs = {}
-            if tool.name == "deep_think" and model_id:
+            if tool.name == "extended_think" and model_id:
                 extra_kwargs["model_id"] = model_id
 
             result = await execute_single_tool_safe(

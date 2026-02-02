@@ -64,7 +64,7 @@ Standard markdown auto-converts: **bold**, *italic*, ~~strike~~, `code`, ```bloc
 - web_fetch: Read full pages/PDFs (free)
 
 **Reasoning:**
-- deep_think: Extended analysis for complex problems (math proofs, algorithms, debugging). Use when problem needs careful step-by-step reasoning.
+- extended_think: Extended analysis for complex problems (math proofs, algorithms, debugging). Use when problem needs careful step-by-step reasoning.
 - self_critique: Independent verification by fresh instance. Use when user asks to verify ("проверь", "check").
 
 **Tool selection:**

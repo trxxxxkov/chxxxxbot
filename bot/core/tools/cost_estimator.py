@@ -23,7 +23,7 @@ PAID_TOOLS: set[str] = {
     "analyze_image",  # Claude API: separate call for image analysis
     "analyze_pdf",  # Claude API: separate call for PDF analysis
     "preview_file",  # Claude Vision API for images/PDF (free for text)
-    "deep_think",  # Claude API: Extended Thinking call
+    "extended_think",  # Claude API: Extended Thinking call
 }
 
 # Free tools (for reference, not used in checks)

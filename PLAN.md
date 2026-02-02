@@ -2,7 +2,7 @@
 
 ## Цель
 
-Экономия ~3500 токенов cache overhead на каждый запрос путём отключения Extended Thinking по умолчанию, с возможностью глубокого анализа через tool `deep_think`.
+Экономия ~3500 токенов cache overhead на каждый запрос путём отключения Extended Thinking по умолчанию, с возможностью глубокого анализа через tool `extended_think`.
 
 ## Ожидаемый результат
 
@@ -12,15 +12,15 @@
 
 ---
 
-## Фаза 1: Tool `deep_think`
+## Фаза 1: Tool `extended_think`
 
-### 1.1 Создать `bot/core/tools/deep_think.py`
+### 1.1 Создать `bot/core/tools/extended_think.py`
 
 **Tool definition (сжатый, по Claude 4 best practices):**
 
 ```python
 DEEP_THINK_TOOL = {
-    "name": "deep_think",
+    "name": "extended_think",
     "description": """Extended reasoning for complex problems.
 
 Use for: math proofs, algorithm design, debugging complex logic, architectural decisions.
@@ -50,10 +50,10 @@ Cost: ~$0.01-0.03 per call (thinking tokens).""",
 }
 ```
 
-### 1.2 Реализация `execute_deep_think()`
+### 1.2 Реализация `execute_extended_think()`
 
 ```python
-async def execute_deep_think(
+async def execute_extended_think(
     problem: str,
     context: str | None,
     focus: str | None,
@@ -105,11 +105,11 @@ Structure your thinking, consider edge cases, verify your logic."""
 
 ```python
 # core/tools/registry.py
-from core.tools.deep_think import TOOL_CONFIG as DEEP_THINK_CONFIG
+from core.tools.extended_think import TOOL_CONFIG as DEEP_THINK_CONFIG
 
 TOOLS = {
     ...
-    "deep_think": DEEP_THINK_CONFIG,
+    "extended_think": DEEP_THINK_CONFIG,
 }
 ```
 
@@ -123,10 +123,10 @@ TOOLS = {
 
 ### 2.2 Новое поведение
 1. Сообщение начинается БЕЗ blockquote (обычный текст)
-2. Когда `deep_think` вызван:
+2. Когда `extended_think` вызван:
    - В существующее сообщение добавляется `<blockquote expandable>` сверху
    - Внутри blockquote стримятся thinking токены
-3. После завершения deep_think:
+3. После завершения extended_think:
    - Blockquote остаётся (свёрнут по умолчанию)
    - Текст продолжается ниже
 
@@ -141,7 +141,7 @@ class StreamingSession:
         self.text_blocks: list[str] = []
 
     async def add_thinking(self, text: str):
-        """Добавить thinking блок (от deep_think tool)."""
+        """Добавить thinking блок (от extended_think tool)."""
         if not self.has_thinking:
             self.has_thinking = True
             # Нужно пересобрать сообщение с blockquote сверху
@@ -177,19 +177,19 @@ def format_blocks_dynamic(
 
 **`telegram/handlers/claude.py`:**
 ```python
-async def _handle_deep_think_tool(
+async def _handle_extended_think_tool(
     self,
     tool_input: dict,
     session: StreamingSession,
     ...
 ):
-    """Обработка deep_think с добавлением thinking в сообщение."""
+    """Обработка extended_think с добавлением thinking в сообщение."""
 
     # Показываем статус
     await session.add_tool_status("🧠 Думаю...")
 
-    # Выполняем deep_think со стримингом thinking
-    async for chunk in execute_deep_think_stream(...):
+    # Выполняем extended_think со стримингом thinking
+    async for chunk in execute_extended_think_stream(...):
         if chunk.type == "thinking":
             await session.add_thinking(chunk.text)  # Стримится в blockquote
         else:
@@ -242,7 +242,7 @@ request = LLMRequest(
     # thinking_budget не указан = выключен
 )
 
-# deep_think tool - с thinking
+# extended_think tool - с thinking
 request = LLMRequest(
     ...
     thinking_budget=16000,  # Включён
@@ -258,14 +258,14 @@ request = LLMRequest(
 ```
 User: "Напиши алгоритм сортировки и проверь его"
           ↓
-Claude: "Вот алгоритм..." [deep_think для логики]
+Claude: "Вот алгоритм..." [extended_think для логики]
           ↓
 Claude: "Проверю..." [self_critique на результат]
 ```
 
 ### 4.2 Оба tool могут работать вместе
 
-- `deep_think` — размышление над проблемой (thinking токены)
+- `extended_think` — размышление над проблемой (thinking токены)
 - `self_critique` — независимая проверка ответа (отдельный Opus запрос)
 
 Конфликта нет — они решают разные задачи.
@@ -276,25 +276,25 @@ Claude: "Проверю..." [self_critique на результат]
 
 ### 5.1 Unit тесты
 
-- `test_deep_think.py` — базовая функциональность
-- `test_deep_think_streaming.py` — стриминг thinking
+- `test_extended_think.py` — базовая функциональность
+- `test_extended_think_streaming.py` — стриминг thinking
 - `test_formatting_dynamic.py` — динамическое добавление blockquote
 
 ### 5.2 Integration тесты
 
 - Запрос без thinking → быстрый ответ
-- Запрос с deep_think → thinking в blockquote
-- deep_think + self_critique → оба работают
+- Запрос с extended_think → thinking в blockquote
+- extended_think + self_critique → оба работают
 
 ---
 
 ## Порядок реализации
 
-1. **[Фаза 1]** ✅ Создать tool deep_think — `core/tools/deep_think.py`
+1. **[Фаза 1]** ✅ Создать tool extended_think — `core/tools/extended_think.py`
 2. **[Фаза 3]** ✅ Отключить thinking по умолчанию — `core/claude/client.py`, `core/models.py`
 3. **[Фаза 2]** ✅ UX — thinking стримится через `on_thinking_chunk` → `handle_thinking_delta`
 4. **[Фаза 4]** ✅ Совместимость с self_critique — оба tools в registry
-5. **[Фаза 5]** ⏳ Тесты — нужны unit/integration тесты для deep_think
+5. **[Фаза 5]** ⏳ Тесты — нужны unit/integration тесты для extended_think
 6. **[Фаза 6]** ✅ Аудит безопасности и биллинга (2026-02-02)
 
 ---
@@ -303,7 +303,7 @@ Claude: "Проверю..." [self_critique на результат]
 
 | Риск | Митигация |
 |------|-----------|
-| Claude не вызывает deep_think когда нужно | Хороший промпт в tool description |
+| Claude не вызывает extended_think когда нужно | Хороший промпт в tool description |
 | Латентность на tool call | Минимальна (~1 сек), компенсируется экономией |
 | Сложность UX с динамическим blockquote | Fallback: добавить blockquote при перерисовке |
 
@@ -313,13 +313,13 @@ Claude: "Проверю..." [self_critique на результат]
 
 - cache_read снижается с ~7340 до ~3800 токенов
 - Качество ответов на сложные запросы не падает
-- deep_think вызывается на ~20-30% запросов (эвристика)
+- extended_think вызывается на ~20-30% запросов (эвристика)
 
 ---
 
 ## Решения (согласовано 2026-02-02)
 
-1. **Модель для deep_think** — текущая модель пользователя
+1. **Модель для extended_think** — текущая модель пользователя
 2. **Стриминг thinking** — в реальном времени (видно как Claude думает)
 3. **Лимит вызовов** — пока не нужен (без ограничений по балансу)
 
@@ -331,8 +331,8 @@ Claude: "Проверю..." [self_critique на результат]
 
 | Проблема | Статус | Файл |
 |----------|--------|------|
-| deep_think не в PAID_TOOLS | ✅ Исправлено | `cost_estimator.py` |
-| Отсутствует DB logging | ✅ Исправлено | `deep_think.py` |
+| extended_think не в PAID_TOOLS | ✅ Исправлено | `cost_estimator.py` |
+| Отсутствует DB logging | ✅ Исправлено | `extended_think.py` |
 | Тест на количество PAID_TOOLS | ✅ Обновлён | `test_cost_estimator.py` |
 
 ### Добавленные поля для DB logging
