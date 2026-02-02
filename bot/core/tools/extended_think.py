@@ -398,7 +398,9 @@ async def execute_extended_think(
         "conclusion": conclusion_text,
         "thinking_summary": f"Analyzed with {thinking_tokens} thinking tokens",
         "cost_usd": cost_usd,
-        "thinking_tokens": thinking_tokens,  # For format_result
+        "thinking_tokens": thinking_tokens,
+        "output_tokens":
+            output_tokens,  # For format_result (without _ to survive clean_result)
         "_thinking_text": thinking_text,  # Internal, for logging
         # DB logging metadata (tool_executor checks for _model_id)
         "_model_id": model_config.model_id,
@@ -419,21 +421,18 @@ def format_extended_think_result(tool_input: dict[str, Any],
     """Format extended_think result for system message.
 
     Shows brief summary (full thinking visible in expandable blockquote).
+    Note: Anthropic counts thinking as output_tokens, but we display as "thinking tokens"
+    for user clarity.
     """
     if result.get("error"):
         return f"[🧠 extended_think failed: {result['error']}]"
 
-    output_tokens = result.get("_output_tokens", 0)
+    # Use output_tokens (without underscore - survives clean_result filtering)
+    # Display as "thinking tokens" for user, but internally it's output tokens
+    thinking_tokens = result.get("output_tokens", 0)
     cost = result.get("cost_usd", 0)
 
-    logger.debug(
-        "extended_think.format_result",
-        result_keys=list(result.keys()),
-        output_tokens=output_tokens,
-        cost=cost,
-    )
-
-    return f"[🧠 extended_think: {output_tokens} output tokens, ${cost:.4f}]"
+    return f"[🧠 extended_think: {thinking_tokens} thinking tokens, ${cost:.4f}]"
 
 
 # =============================================================================
