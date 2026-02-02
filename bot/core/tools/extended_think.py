@@ -36,9 +36,8 @@ logger = get_logger(__name__)
 # Extended thinking budget - enough for deep analysis
 THINKING_BUDGET_TOKENS = 16000
 
-# Max output tokens - we only need thinking, no text output
-# Set to 1 (API may not accept 0, but 1 token is negligible)
-MAX_OUTPUT_TOKENS = 1
+# Max output tokens - includes thinking, not just text output
+MAX_OUTPUT_TOKENS = 16000
 
 # =============================================================================
 # Prometheus Metrics
