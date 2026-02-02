@@ -74,8 +74,7 @@ scrape_configs:
           selector: '{service!="bot"}'
           stages:
             - regex:
-                expression: '^(?P<level>(INFO|WARN|ERROR|DEBUG|info|warn|error|debug)).*'
-            # Normalize level to lowercase
+                expression: '(?i)^(?P<level>info|warn|warning|error|debug).*'
             - template:
                 source: level
                 template: '{{ .level | ToLower }}'
