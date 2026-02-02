@@ -1508,7 +1508,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "sum(count_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | level=\"error\" | level=~\"${log_level:pipe}\" [$__interval])) or vector(0)",
+          "expr": "sum(count_over_time({service=\"${service}\"} |~ \"${user_filter}\" | json | level=\"error\" | level=~\"${log_level:pipe}\" [$__interval])) or vector(0)",
           "legendFormat": "error",
           "refId": "A"
         },
@@ -1517,7 +1517,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "sum(count_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | level=\"warning\" | level=~\"${log_level:pipe}\" [$__interval])) or vector(0)",
+          "expr": "sum(count_over_time({service=\"${service}\"} |~ \"${user_filter}\" | json | level=\"warning\" | level=~\"${log_level:pipe}\" [$__interval])) or vector(0)",
           "legendFormat": "warning",
           "refId": "B"
         },
@@ -1526,7 +1526,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "sum(count_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | level=\"info\" | level=~\"${log_level:pipe}\" [$__interval])) or vector(0)",
+          "expr": "sum(count_over_time({service=\"${service}\"} |~ \"${user_filter}\" | json | level=\"info\" | level=~\"${log_level:pipe}\" [$__interval])) or vector(0)",
           "legendFormat": "info",
           "refId": "C"
         },
@@ -1535,7 +1535,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "sum(count_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | level=\"debug\" | level=~\"${log_level:pipe}\" [$__interval])) or vector(0)",
+          "expr": "sum(count_over_time({service=\"${service}\"} |~ \"${user_filter}\" | json | level=\"debug\" | level=~\"${log_level:pipe}\" [$__interval])) or vector(0)",
           "legendFormat": "debug",
           "refId": "D"
         }
@@ -1572,7 +1572,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "{service=\"bot\"} |~ \"${user_filter}\" | json | level=~\"${log_level:pipe}\" | line_format \"[{{ if .username }}{{.username}}{{ else if .user_id }}<None>{{ end }}] {{__line__}}\"",
+          "expr": "{service=\"${service}\"} |~ \"${user_filter}\" | json | level=~\"${log_level:pipe}\" | line_format \"[{{ if .username }}{{.username}}{{ else if .user_id }}<None>{{ end }}] {{__line__}}\"",
           "refId": "A"
         }
       ],
@@ -1611,6 +1611,30 @@
         "regex": "",
         "skipUrlSync": false,
         "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": true,
+          "text": "bot",
+          "value": "bot"
+        },
+        "datasource": {
+          "type": "loki",
+          "uid": "loki"
+        },
+        "definition": "label_values(service)",
+        "hide": 0,
+        "includeAll": false,
+        "label": "Service",
+        "multi": false,
+        "name": "service",
+        "options": [],
+        "query": "label_values(service)",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
         "type": "query"
       },
       {
