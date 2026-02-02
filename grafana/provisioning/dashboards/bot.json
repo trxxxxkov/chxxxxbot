@@ -1545,7 +1545,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "{service=\"${service}\", service=\"bot\"} |~ \"${user_filter}\" | json | line_format \"{{ if .username }}[{{.username}}] {{ else if .user_id }}[id:{{.user_id}}] {{ end }}{{__line__}}\"",
+          "expr": "{service=\"${service}\", service=\"bot\"} |~ \"${user_filter}\" | json | level=~\"(?i)(${log_level:pipe})\" | line_format \"{{ if .username }}[{{.username}}] {{ else if .user_id }}[id:{{.user_id}}] {{ end }}{{__line__}}\"",
           "refId": "A"
         },
         {
@@ -1553,7 +1553,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "{service=\"${service}\", service!=\"bot\"} |~ \"${user_filter}\"",
+          "expr": "{service=\"${service}\", service!=\"bot\", level=~\"(?i)(${log_level:pipe})\"} |~ \"${user_filter}\"",
           "refId": "B"
         }
       ],

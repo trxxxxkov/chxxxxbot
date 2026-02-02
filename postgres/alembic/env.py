@@ -6,7 +6,6 @@ imports all models directly (no __init__.py).
 # pylint: disable=duplicate-code
 
 import asyncio
-from logging.config import fileConfig
 import os
 from pathlib import Path
 import sys
@@ -21,8 +20,14 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 bot_path = Path("/app")
 sys.path.insert(0, str(bot_path))
 
+# Setup JSON logging BEFORE any other imports that might log
+# pylint: disable=wrong-import-position
+from utils.structured_logging import setup_logging  # noqa: E402
+
+setup_logging("INFO")
+
 # Import Base and all models (NO __init__.py - direct imports)
-# pylint: disable=wrong-import-position,unused-import
+# pylint: disable=unused-import
 from db.models.balance_operation import BalanceOperation  # noqa: E402,F401
 from db.models.base import Base  # noqa: E402
 from db.models.chat import Chat  # noqa: E402
@@ -36,9 +41,7 @@ from db.models.user_file import UserFile  # noqa: E402
 # Alembic Config object
 config = context.config
 
-# Interpret config file for Python logging
-if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+# Note: We don't use fileConfig() anymore - setup_logging() handles all logging
 
 # Target metadata for autogenerate
 target_metadata = Base.metadata
