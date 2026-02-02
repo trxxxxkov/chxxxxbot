@@ -330,37 +330,61 @@ async def _process_batch_with_session(
                          thread_id=thread_id,
                          batch_size=len(messages))
 
-            # 3. Get user for model config and custom prompt (cache-first)
+            # 3. Parallel loading of user, files, and history
+            # Uses asyncio.gather() to reduce latency (~100-200ms savings)
             services = ServiceFactory(session)
-            user = None  # Will be loaded from DB if cache miss
             user_id = thread.user_id  # Telegram user ID
+            user_file_repo = UserFileRepository(session)
 
-            # Try cache first (Phase 3.3: Cache-First pattern)
-            cached_user = await get_cached_user(user_id)
+            # Define coroutines for parallel execution
+            async def load_user_data():
+                """Load user from cache or DB."""
+                cached = await get_cached_user(user_id)
+                if cached:
+                    logger.debug("claude_handler.user_cache_hit",
+                                 user_id=user_id,
+                                 model_id=cached["model_id"])
+                    return cached["model_id"], cached.get("custom_prompt"), None
+                # Cache miss - load from DB
+                db_user = await services.users.get_by_id(user_id)
+                if db_user:
+                    logger.debug("claude_handler.user_cache_miss",
+                                 user_id=user_id,
+                                 model_id=db_user.model_id)
+                return (
+                    db_user.model_id if db_user else None,
+                    db_user.custom_prompt if db_user else None,
+                    db_user,
+                )
 
-            if cached_user:
-                # Cache hit - use cached data
-                user_model_id = cached_user["model_id"]
-                user_custom_prompt = cached_user.get("custom_prompt")
-                logger.debug("claude_handler.user_cache_hit",
-                             user_id=user_id,
-                             model_id=user_model_id)
-            else:
-                # Cache miss - load from DB and cache
-                user = await services.users.get_by_id(user_id)
+            async def load_files():
+                """Load available and pending files."""
+                avail = await get_available_files(thread_id, user_file_repo)
+                pending = await get_pending_files_for_thread(thread_id)
+                return avail, pending
 
-                if not user:
-                    logger.error("claude_handler.user_not_found",
-                                 user_id=user_id)
-                    await first_message.answer(
-                        "User not found. Please contact administrator.")
-                    return
+            async def load_history():
+                """Load thread history."""
+                return await msg_repo.get_thread_messages(thread_id, limit=500)
 
-                # Extract values from user object
-                user_model_id = user.model_id
-                user_custom_prompt = user.custom_prompt
+            # Execute in parallel
+            (user_model_id, user_custom_prompt, user), \
+                (available_files, pending_files), \
+                history = await asyncio.gather(
+                    load_user_data(),
+                    load_files(),
+                    load_history(),
+                )
 
-                # Cache user data for next request
+            # Handle user not found
+            if user_model_id is None:
+                logger.error("claude_handler.user_not_found", user_id=user_id)
+                await first_message.answer(
+                    "User not found. Please contact administrator.")
+                return
+
+            # Cache user data if loaded from DB
+            if user is not None:
                 await cache_user(
                     user_id=user_id,
                     balance=user.balance,
@@ -371,40 +395,12 @@ async def _process_batch_with_session(
                     custom_prompt=user_custom_prompt,
                 )
 
-                logger.debug("claude_handler.user_cache_miss",
-                             user_id=user_id,
-                             model_id=user_model_id)
-
-            # 3.5. Get available files for this thread (Phase 1.5)
-            # Unified file architecture: fetch both delivered and pending files
-            logger.debug("claude_handler.creating_file_repo",
-                         thread_id=thread_id)
-            user_file_repo = UserFileRepository(session)
-
-            # Get delivered files from database
-            logger.debug("claude_handler.calling_get_available_files",
-                         thread_id=thread_id,
-                         repo_type=type(user_file_repo).__name__)
-            available_files = await get_available_files(thread_id,
-                                                        user_file_repo)
-
-            # Get pending files from exec_cache (not yet delivered)
-            pending_files = await get_pending_files_for_thread(thread_id)
-
             logger.info("claude_handler.files_retrieved",
                         thread_id=thread_id,
                         delivered_count=len(available_files),
                         pending_count=len(pending_files))
 
-            # 4. Get thread history (includes newly saved messages)
-            # Limit to 500 most recent messages for performance
-            # Context manager will trim based on token budget
-            # Note: We always read from DB after saving user messages
-            # (cache was invalidated above to ensure fresh data)
-            history = await msg_repo.get_thread_messages(thread_id, limit=500)
-
-            # Cache history for potential future requests in same thread
-            # (e.g., rapid follow-up messages, tool continuations)
+            # Cache history for potential future requests
             history_for_cache = [{
                 "role": msg.role.value,
                 "text_content": msg.text_content,

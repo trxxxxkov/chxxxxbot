@@ -75,9 +75,19 @@ while true; do
             cp -r secrets /tmp/secrets_backup
         fi
 
-        # 4. Hard reset to match GitHub exactly
+        # 4. Merge remote changes (preserves local commits)
         log_info "Updating code from GitHub..."
-        git reset --hard "origin/$BRANCH"
+        if ! git merge --ff-only "origin/$BRANCH" 2>&1; then
+            log_info "Fast-forward not possible, trying rebase..."
+            if ! git rebase "origin/$BRANCH" 2>&1; then
+                log_error "Rebase failed - local changes conflict with remote!"
+                log_error "Manual intervention required. Aborting rebase..."
+                git rebase --abort 2>/dev/null || true
+                # Restart services without code update
+                docker compose up -d
+                continue
+            fi
+        fi
 
         # 5. Restore secrets
         if [ -d "/tmp/secrets_backup" ]; then

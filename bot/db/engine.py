@@ -51,20 +51,21 @@ def init_db(database_url: str, echo: bool = False) -> None:
     from db.models.user_file import UserFile  # noqa: F401
 
     # pylint: enable=import-outside-toplevel,unused-import
-    # Connection pool configuration optimized for Telegram bot
-    # pool_size=5: Max 5 base connections
-    # max_overflow=10: Allow up to 10 additional connections during spikes
+    # Connection pool configuration optimized for parallel async operations
+    # pool_size=15: Base connections for concurrent requests
+    # max_overflow=20: Additional connections during spikes
     # pool_pre_ping=True: Test connections before using (auto-reconnect)
     # pool_recycle=3600: Recycle connections after 1 hour
+    # pool_timeout=10: Fast failure for blocked connections
     # Note: create_async_engine uses AsyncAdaptedQueuePool by default
     _engine = create_async_engine(
         database_url,
         echo=echo,
-        pool_size=5,
-        max_overflow=10,
+        pool_size=15,  # Increased for parallel query support
+        max_overflow=20,  # Additional overflow for load spikes
         pool_pre_ping=True,
         pool_recycle=3600,
-        pool_timeout=30,
+        pool_timeout=10,  # Faster failure for blocked connections
     )
 
     _session_factory = async_sessionmaker(

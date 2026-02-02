@@ -305,6 +305,14 @@ class Message(Base):
         doc="Record creation timestamp (Unix)",
     )
 
+    # Cached total tokens for billing performance
+    # Computed as: input + output + cache_read + cache_creation + thinking
+    total_tokens: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        nullable=True,
+        doc="Cached sum of all tokens (computed on save for billing perf)",
+    )
+
     # Indexes and constraints
     __table_args__ = (
         # Index for finding messages by thread

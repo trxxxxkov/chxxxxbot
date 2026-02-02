@@ -60,6 +60,28 @@ class UserRepository(BaseRepository[User]):
                      found=user is not None)
         return user
 
+    async def get_by_id_for_update(self, telegram_id: int) -> Optional[User]:
+        """Get user by Telegram ID with row-level lock (SELECT FOR UPDATE).
+
+        Use this method when updating balance to prevent race conditions.
+        The lock is held until the transaction commits or rolls back.
+
+        Args:
+            telegram_id: Telegram user ID.
+
+        Returns:
+            User instance with lock or None if not found.
+        """
+        logger.debug("user_repository.get_by_id_for_update",
+                     telegram_id=telegram_id)
+        stmt = select(User).where(User.id == telegram_id).with_for_update()
+        result = await self.session.execute(stmt)
+        user = result.scalar_one_or_none()
+        logger.debug("user_repository.get_by_id_for_update.result",
+                     telegram_id=telegram_id,
+                     found=user is not None)
+        return user
+
     async def get_by_username(self, username: str) -> Optional[User]:
         """Get user by username.
 

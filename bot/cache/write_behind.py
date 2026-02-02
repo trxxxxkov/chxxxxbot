@@ -31,12 +31,24 @@ logger = get_logger(__name__)
 # Redis key for write queue
 WRITE_QUEUE_KEY = "write:queue"
 
+# Dead Letter Queue for items that exceed max retries
+WRITE_DLQ_KEY = "write:dlq"
+
 # Flush configuration
 FLUSH_INTERVAL = 5  # seconds between flushes
-BATCH_SIZE = 100  # max writes per flush
+BATCH_SIZE = 100  # default max writes per flush (can be adaptive)
+
+# Adaptive batch size thresholds (queue_depth, batch_size)
+# Higher queue depth = larger batch size for faster drain
+ADAPTIVE_BATCH_THRESHOLDS = [
+    (1000, 1000),  # depth >= 1000: batch=1000
+    (500, 500),  # depth >= 500: batch=500
+    (100, 250),  # depth >= 100: batch=250
+    (0, 100),  # depth < 100: batch=100 (default)
+]
 
 # Retry configuration
-MAX_RETRY_ATTEMPTS = 3  # max retries before discarding
+MAX_RETRY_ATTEMPTS = 3  # max retries before moving to DLQ
 RETRY_BACKOFF_BASE = 2  # exponential backoff base (seconds)
 
 
@@ -122,10 +134,75 @@ async def get_queue_depth() -> int:
         return 0
 
 
+def get_adaptive_batch_size(queue_depth: int) -> int:
+    """Calculate adaptive batch size based on queue depth.
+
+    Higher queue depth = larger batch size for faster drain.
+
+    Args:
+        queue_depth: Current number of items in queue.
+
+    Returns:
+        Batch size to use for flush.
+    """
+    for threshold, batch_size in ADAPTIVE_BATCH_THRESHOLDS:
+        if queue_depth >= threshold:
+            return batch_size
+    return BATCH_SIZE
+
+
+async def move_to_dlq(item: Dict[str, Any]) -> bool:
+    """Move failed item to Dead Letter Queue.
+
+    Items in DLQ can be manually reviewed and reprocessed.
+
+    Args:
+        item: Write payload that exceeded max retries.
+
+    Returns:
+        True if moved successfully, False otherwise.
+    """
+    redis = await get_redis()
+    if redis is None:
+        return False
+
+    try:
+        await redis.rpush(WRITE_DLQ_KEY, json.dumps(item))
+        logger.info(
+            "write_behind.item_moved_to_dlq",
+            write_type=item.get("type"),
+            data_keys=list(item.get("data", {}).keys()),
+        )
+        return True
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        logger.error(
+            "write_behind.dlq_push_error",
+            error=str(e),
+            write_type=item.get("type"),
+        )
+        return False
+
+
+async def get_dlq_depth() -> int:
+    """Get Dead Letter Queue depth.
+
+    Returns:
+        Number of items in DLQ.
+    """
+    redis = await get_redis()
+    if redis is None:
+        return 0
+
+    try:
+        return await redis.llen(WRITE_DLQ_KEY)
+    except Exception:  # pylint: disable=broad-exception-caught
+        return 0
+
+
 async def requeue_failed_items(failed_items: List[Dict[str, Any]]) -> int:
     """Re-queue failed items for retry with exponential backoff.
 
-    Items that have exceeded MAX_RETRY_ATTEMPTS are discarded.
+    Items that have exceeded MAX_RETRY_ATTEMPTS are moved to DLQ.
 
     Args:
         failed_items: List of write payloads that failed processing.
@@ -142,13 +219,14 @@ async def requeue_failed_items(failed_items: List[Dict[str, Any]]) -> int:
         retry_count = item.get("retry_count", 0) + 1
 
         if retry_count > MAX_RETRY_ATTEMPTS:
-            # Max retries exceeded - discard item
+            # Max retries exceeded - move to DLQ instead of discarding
             logger.error(
-                "write_behind.item_discarded_max_retries",
+                "write_behind.item_max_retries_exceeded",
                 write_type=item.get("type"),
                 retry_count=retry_count,
                 data_keys=list(item.get("data", {}).keys()),
             )
+            await move_to_dlq(item)
             continue
 
         # Add retry metadata
@@ -178,29 +256,39 @@ async def requeue_failed_items(failed_items: List[Dict[str, Any]]) -> int:
     return requeued
 
 
-async def flush_writes_batch() -> List[Dict[str, Any]]:
+async def flush_writes_batch() -> tuple[List[Dict[str, Any]], int]:
     """Get batch of writes from queue for processing.
 
+    Uses adaptive batch size based on queue depth.
+
     Returns:
-        List of write payloads (up to BATCH_SIZE).
+        Tuple of (writes list, batch_size used).
     """
     redis = await get_redis()
     if redis is None:
-        return []
+        return [], BATCH_SIZE
+
+    # Get queue depth for adaptive batch sizing
+    try:
+        queue_depth = await redis.llen(WRITE_QUEUE_KEY)
+    except Exception:  # pylint: disable=broad-exception-caught
+        queue_depth = 0
+
+    batch_size = get_adaptive_batch_size(queue_depth)
 
     writes = []
     try:
-        for _ in range(BATCH_SIZE):
+        for _ in range(batch_size):
             data = await redis.lpop(WRITE_QUEUE_KEY)
             if data is None:
                 break
             writes.append(json.loads(data))
 
-        return writes
+        return writes, batch_size
 
     except Exception as e:  # pylint: disable=broad-exception-caught
         logger.error("write_behind.get_batch_error", error=str(e))
-        return writes
+        return writes, batch_size
 
 
 async def _batch_insert_messages(
@@ -242,53 +330,45 @@ async def _batch_insert_messages(
             elif date_value is None:
                 date_value = int(datetime.now(timezone.utc).timestamp())
 
+            # Get token counts for total_tokens computation
+            input_tokens = data.get("input_tokens", 0) or 0
+            output_tokens = data.get("output_tokens", 0) or 0
+            cache_read_tokens = data.get("cache_read_tokens", 0) or 0
+            cache_write_tokens = data.get("cache_write_tokens", 0) or 0
+            thinking_tokens = data.get("thinking_tokens", 0) or 0
+
+            # Compute total_tokens for billing performance
+            total_tokens = (input_tokens + output_tokens + cache_read_tokens +
+                            cache_write_tokens +
+                            thinking_tokens) or None  # None if all are 0
+
             values_list.append({
-                "chat_id":
-                    data["chat_id"],
-                "message_id":
-                    data["message_id"],
-                "thread_id":
-                    data["thread_id"],
-                "from_user_id":
-                    data.get("from_user_id"),
-                "date":
-                    date_value,
-                "role":
-                    MessageRole(data["role"]),
-                "text_content":
-                    data.get("text_content"),
-                "input_tokens":
-                    data.get("input_tokens", 0),
-                "output_tokens":
-                    data.get("output_tokens", 0),
+                "chat_id": data["chat_id"],
+                "message_id": data["message_id"],
+                "thread_id": data["thread_id"],
+                "from_user_id": data.get("from_user_id"),
+                "date": date_value,
+                "role": MessageRole(data["role"]),
+                "text_content": data.get("text_content"),
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
                 # Field mapping: queue uses cache_read/write_tokens,
                 # Message model uses cache_read/creation_input_tokens
-                "cache_read_input_tokens":
-                    data.get("cache_read_tokens", 0),
-                "cache_creation_input_tokens":
-                    data.get("cache_write_tokens", 0),
-                "thinking_tokens":
-                    data.get("thinking_tokens", 0),
-                "thinking_blocks":
-                    data.get("thinking_blocks"),
-                "model_id":
-                    data.get("model_id"),
-                "created_at":
-                    date_value,
+                "cache_read_input_tokens": cache_read_tokens,
+                "cache_creation_input_tokens": cache_write_tokens,
+                "thinking_tokens": thinking_tokens,
+                "thinking_blocks": data.get("thinking_blocks"),
+                "model_id": data.get("model_id"),
+                "created_at": date_value,
+                "total_tokens": total_tokens,
                 # Set defaults for boolean/count fields
-                "has_photos":
-                    False,
-                "has_documents":
-                    False,
-                "has_voice":
-                    False,
-                "has_video":
-                    False,
-                "attachment_count":
-                    0,
+                "has_photos": False,
+                "has_documents": False,
+                "has_voice": False,
+                "has_video": False,
+                "attachment_count": 0,
                 "attachments": [],
-                "edit_count":
-                    0,
+                "edit_count": 0,
             })
         except Exception as e:  # pylint: disable=broad-exception-caught
             logger.error(
@@ -495,7 +575,7 @@ async def flush_writes(session) -> int:
         Number of writes successfully flushed.
     """
     flush_start = time.time()
-    writes = await flush_writes_batch()
+    writes, batch_size = await flush_writes_batch()
 
     if not writes:
         # Update queue depth metric (queue is empty)
@@ -612,6 +692,7 @@ async def flush_writes(session) -> int:
         balance_ops=balance_count,
         tool_calls=tool_count,
         queue_items=len(ready_writes),
+        batch_size=batch_size,
         failed_items=len(all_failed),
         flush_duration_ms=round(flush_duration * 1000, 2),
         remaining_queue_depth=queue_depth,

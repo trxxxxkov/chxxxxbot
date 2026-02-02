@@ -194,6 +194,7 @@ def upgrade() -> None:
         sa.Column('thinking_blocks', sa.Text(), nullable=True),
         sa.Column('model_id', sa.String(64), nullable=True),
         sa.Column('created_at', sa.Integer(), nullable=False),
+        sa.Column('total_tokens', sa.Integer(), nullable=True),
         sa.PrimaryKeyConstraint('chat_id', 'message_id'),
         sa.ForeignKeyConstraint(['chat_id'], ['chats.id'], ondelete='CASCADE'),
         sa.ForeignKeyConstraint(['thread_id'], ['threads.id'],
@@ -224,6 +225,9 @@ def upgrade() -> None:
                     'messages', ['attachments'],
                     postgresql_using='gin',
                     postgresql_ops={'attachments': 'jsonb_path_ops'})
+    op.create_index('idx_messages_total_tokens',
+                    'messages', ['total_tokens'],
+                    postgresql_where=sa.text('total_tokens IS NOT NULL'))
 
     # Create payments table
     op.create_table(

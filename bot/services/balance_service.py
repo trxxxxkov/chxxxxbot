@@ -169,8 +169,9 @@ class BalanceService:
             related_message_id=related_message_id,
         )
 
-        # Get user
-        user = await self.user_repo.get_by_id(user_id)
+        # Get user with row-level lock (SELECT FOR UPDATE)
+        # Prevents race conditions in concurrent charge operations
+        user = await self.user_repo.get_by_id_for_update(user_id)
         if not user:
             logger.error(
                 "balance.charge_user_not_found",
