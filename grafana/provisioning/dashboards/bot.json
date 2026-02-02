@@ -595,6 +595,24 @@
           "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"execute_python\" | source!=\"self_critique\" | unwrap cost_usd [$__interval])) or vector(0)",
           "legendFormat": "execute_python",
           "refId": "E"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.response_complete\" | unwrap cache_read_cost [$__interval])) or vector(0)",
+          "legendFormat": "Cache Read (savings)",
+          "refId": "CR"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.response_complete\" | unwrap cache_creation_cost [$__interval])) or vector(0)",
+          "legendFormat": "Cache Write",
+          "refId": "CW"
         }
       ],
       "title": "Costs",
@@ -985,8 +1003,17 @@
             "uid": "loki"
           },
           "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.response_complete\"  | unwrap cache_read_tokens [$__interval])) or vector(0)",
-          "legendFormat": "Cached",
+          "legendFormat": "Cache Read",
           "refId": "D"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.response_complete\"  | unwrap cache_creation_tokens [$__interval])) or vector(0)",
+          "legendFormat": "Cache Write",
+          "refId": "E"
         }
       ],
       "title": "Tokens",
