@@ -205,7 +205,7 @@ services:
       - .:/repo
       - ~/.ssh:/root/.ssh:ro
     environment:
-      - CHECK_INTERVAL=60
+      - CHECK_INTERVAL=300
       - BRANCH=main
       - GRACEFUL_TIMEOUT=10
     networks:

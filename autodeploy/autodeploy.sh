@@ -1,10 +1,10 @@
 #!/bin/bash
-# Auto-deploy: checks GitHub every minute, redeploys on new commits
+# Auto-deploy: checks GitHub every 5 minutes, redeploys on new commits
 
 set -e
 
 REPO_DIR="/repo"
-CHECK_INTERVAL="${CHECK_INTERVAL:-60}"
+CHECK_INTERVAL="${CHECK_INTERVAL:-300}"
 BRANCH="${BRANCH:-main}"
 GRACEFUL_TIMEOUT="${GRACEFUL_TIMEOUT:-10}"
 
@@ -49,10 +49,15 @@ while true; do
     sleep "$CHECK_INTERVAL"
 
     # Fetch latest
-    git fetch origin "$BRANCH" --quiet 2>/dev/null || continue
+    log_info "Checking for updates..."
+    if ! git fetch origin "$BRANCH" --quiet 2>&1; then
+        log_error "git fetch failed"
+        continue
+    fi
 
     LOCAL=$(git rev-parse HEAD)
     REMOTE=$(git rev-parse "origin/$BRANCH")
+    log_info "Local: ${LOCAL:0:7}, Remote: ${REMOTE:0:7}"
 
     if [ "$LOCAL" != "$REMOTE" ]; then
         log_info "New commits detected ($LOCAL -> $REMOTE)"
