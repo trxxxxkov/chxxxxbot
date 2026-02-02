@@ -20,7 +20,10 @@ echo "your_redis_password" > secrets/redis_password.txt
 docker compose up -d
 ```
 
-Bot is ready. Grafana available at http://localhost:3000.
+Bot is ready. Web interfaces:
+- Grafana: http://localhost:3000 (dashboards, logs)
+- CloudBeaver: http://localhost:8978 (database UI)
+- Redis Commander: http://localhost:8081 (cache UI)
 
 ### Import/Export Data
 
@@ -175,8 +178,9 @@ See [CLAUDE.md](CLAUDE.md) for full architecture documentation.
 
 | Service | URL | Purpose |
 |---------|-----|---------|
-| Grafana | http://localhost:3000 | Dashboards, metrics |
-| CloudBeaver | http://localhost:8978 | SQL interface to DB |
+| Grafana | http://localhost:3000 | Dashboards, logs, metrics |
+| CloudBeaver | http://localhost:8978 | Database UI (SQL) |
+| Redis Commander | http://localhost:8081 | Cache UI (Redis) |
 
 ## Secrets
 
