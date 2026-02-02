@@ -638,3 +638,5 @@ class StreamingSession:  # pylint: disable=too-many-instance-attributes
         # Clear display for continuation (thinking already gone)
         self._display.clear()
         self._last_sent_text = ""
+        # Reset current text so continuation prefix is applied to next chunk
+        self._current_text = ""
