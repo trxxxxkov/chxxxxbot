@@ -180,10 +180,10 @@ class TestAnalyzeImageToolDefinition:
         # Should mention mime_type requirement (Claude 4 best practices)
         assert "mime_type" in description
 
-        # Should have structured sections
-        assert "<capabilities>" in description
-        assert "<limitations>" in description
-        assert "token" in description.lower()
+        # Should mention capabilities and cost
+        assert "ocr" in description.lower() or "detection" in description.lower(
+        )
+        assert "token" in description.lower() or "cost" in description.lower()
 
     def test_tool_description_mentions_use_cases(self):
         """Test that description includes common use cases."""

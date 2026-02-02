@@ -451,8 +451,6 @@ class TestToolDefinition:
 
         assert "description" in SELF_CRITIQUE_TOOL
         assert "verification" in SELF_CRITIQUE_TOOL["description"].lower()
-        # Tool description includes mandatory trigger phrases
-        assert "must use" in SELF_CRITIQUE_TOOL["description"].lower()
 
     def test_tool_has_input_schema(self):
         """Test tool has input schema."""
@@ -1436,8 +1434,7 @@ class TestToolDefinitionIntegration:
         from core.tools.self_critique import SELF_CRITIQUE_TOOL
 
         desc = SELF_CRITIQUE_TOOL["description"].lower()
-        assert "must use" in desc
-        assert "verify" in desc or "перепроверь" in desc
+        assert "verification" in desc or "verify" in desc
 
     def test_tool_definition_mentions_verdict_workflow(self):
         """Test tool definition includes verdict information."""

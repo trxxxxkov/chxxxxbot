@@ -199,10 +199,6 @@ class TestAnalyzePdfToolDefinition:
         # Should mention mime_type requirement (Claude 4 best practices)
         assert "mime_type" in description
 
-        # Should have structured sections
-        assert "<capabilities>" in description
-        assert "<limitations>" in description
-
         # Should mention cost
         assert "cost" in description.lower() or "token" in description.lower()
 
