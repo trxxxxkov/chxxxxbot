@@ -4,8 +4,6 @@ Telegram bot with access to LLM models (Claude, OpenAI, Google) and tools via ag
 
 ## Quickstart
 
-### Minimal Setup
-
 ```bash
 # 1. Clone repository
 git clone git@github.com:trxxxxkov/chxxxxbot.git && cd chxxxxbot
@@ -25,7 +23,7 @@ Bot is ready. Web interfaces:
 - CloudBeaver: http://localhost:8978 (database UI)
 - Redis Commander: http://localhost:8081 (cache UI)
 
-Grafana comes with pre-built dashboards for user activity analysis and log exploration:
+Grafana comes with a pre-built dashboard for user activity analysis and log exploration:
 
 ![User activity dashboard](grafana_overview.png)
 
