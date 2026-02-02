@@ -442,7 +442,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "generate_image"
+              "options": "extended_think"
             },
             "properties": [
               {
@@ -457,7 +457,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "web_search"
+              "options": "generate_image"
             },
             "properties": [
               {
@@ -472,7 +472,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "preview_file"
+              "options": "web_search"
             },
             "properties": [
               {
@@ -487,7 +487,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "transcribe_audio"
+              "options": "preview_file"
             },
             "properties": [
               {
@@ -502,7 +502,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "execute_python"
+              "options": "transcribe_audio"
             },
             "properties": [
               {
@@ -517,7 +517,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "extended_think"
+              "options": "execute_python"
             },
             "properties": [
               {
@@ -610,9 +610,18 @@
             "type": "loki",
             "uid": "loki"
           },
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"extended_think\" | unwrap cost_usd [$__interval])) or vector(0)",
+          "legendFormat": "extended_think",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
           "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"generate_image\" | unwrap cost_usd [$__interval])) or vector(0)",
           "legendFormat": "generate_image",
-          "refId": "B"
+          "refId": "C"
         },
         {
           "datasource": {
@@ -621,7 +630,7 @@
           },
           "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.web_search.user_charged\" | source!=\"self_critique\" | unwrap cost_usd [$__interval])) or vector(0)",
           "legendFormat": "web_search",
-          "refId": "C"
+          "refId": "D"
         },
         {
           "datasource": {
@@ -630,7 +639,7 @@
           },
           "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"preview_file\" | unwrap cost_usd [$__interval])) or vector(0)",
           "legendFormat": "preview_file",
-          "refId": "D"
+          "refId": "E"
         },
         {
           "datasource": {
@@ -639,7 +648,7 @@
           },
           "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"transcribe_audio\" | unwrap cost_usd [$__interval])) or vector(0)",
           "legendFormat": "transcribe_audio",
-          "refId": "E"
+          "refId": "F"
         },
         {
           "datasource": {
@@ -648,15 +657,6 @@
           },
           "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"execute_python\" | source!=\"self_critique\" | unwrap cost_usd [$__interval])) or vector(0)",
           "legendFormat": "execute_python",
-          "refId": "F"
-        },
-        {
-          "datasource": {
-            "type": "loki",
-            "uid": "loki"
-          },
-          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"extended_think\" | unwrap cost_usd [$__interval])) or vector(0)",
-          "legendFormat": "extended_think",
           "refId": "G"
         },
         {
