@@ -109,6 +109,10 @@ class LLMRequest(BaseModel):
                                description="Sampling temperature")
     tools: Optional[List[Dict[str, Any]]] = Field(
         default=None, description="Tool definitions for tool use (Phase 1.5)")
+    thinking_budget: Optional[int] = Field(
+        default=None,
+        description=
+        "Extended Thinking budget in tokens. None = thinking disabled.")
 
 
 class TokenUsage(BaseModel):

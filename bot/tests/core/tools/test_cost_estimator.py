@@ -151,5 +151,5 @@ class TestPaidToolsCount:
     """Test that PAID_TOOLS set has expected count."""
 
     def test_paid_tools_count(self):
-        """Exactly 7 paid tools in the set."""
-        assert len(PAID_TOOLS) == 7
+        """Exactly 8 paid tools in the set."""
+        assert len(PAID_TOOLS) == 8

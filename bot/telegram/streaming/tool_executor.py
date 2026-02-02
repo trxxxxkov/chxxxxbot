@@ -117,6 +117,8 @@ class ToolExecutor:
         cancel_event: "Event | None" = None,
         on_file_ready: "Callable | None" = None,
         on_subagent_tool: "Callable[[str, str], Awaitable[None]] | None" = None,
+        on_thinking_chunk: "Callable[[str], Awaitable[None]] | None" = None,
+        model_id: str | None = None,
     ) -> BatchExecutionResult:
         """Execute tools in parallel, process results as completed.
 
@@ -125,6 +127,8 @@ class ToolExecutor:
             cancel_event: Optional event to check for cancellation.
             on_file_ready: Callback for file processing (called for each file).
             on_subagent_tool: Callback (parent_tool, sub_tool) for subagent progress.
+            on_thinking_chunk: Callback for deep_think thinking chunks.
+            model_id: User's current model ID (for deep_think).
 
         Returns:
             BatchExecutionResult with all results in original order.
@@ -151,6 +155,16 @@ class ToolExecutor:
 
                 tool_callback = _subagent_callback
 
+            # Create callback for deep_think thinking chunks
+            thinking_callback = None
+            if tool.name == "deep_think" and on_thinking_chunk:
+                thinking_callback = on_thinking_chunk
+
+            # Add model_id for deep_think
+            extra_kwargs = {}
+            if tool.name == "deep_think" and model_id:
+                extra_kwargs["model_id"] = model_id
+
             result = await execute_single_tool_safe(
                 tool_name=tool.name,
                 tool_input=tool.input,
@@ -161,7 +175,9 @@ class ToolExecutor:
                 chat_id=self._chat_id,
                 message_thread_id=self._message_thread_id,
                 on_subagent_tool=tool_callback,
+                on_thinking_chunk=thinking_callback,
                 cancel_event=cancel_event,
+                **extra_kwargs,
             )
             return (idx, result)
 

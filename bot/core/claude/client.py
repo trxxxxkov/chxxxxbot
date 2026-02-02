@@ -192,9 +192,12 @@ class ClaudeProvider(LLMProvider):
         if model_config.has_capability("effort"):
             api_params["effort"] = "high"
 
-        # Phase 1.4.3: Extended Thinking (for tool loop)
-        # NOW ENABLED: thinking blocks are saved to DB and properly handled
-        api_params["thinking"] = {"type": "enabled", "budget_tokens": 16000}
+        # Extended Thinking: enabled only when thinking_budget is specified
+        if request.thinking_budget:
+            api_params["thinking"] = {
+                "type": "enabled",
+                "budget_tokens": request.thinking_budget
+            }
 
         try:
             # Non-streaming API call
@@ -388,9 +391,16 @@ class ClaudeProvider(LLMProvider):
                             model_full_id=request.model,
                             error=str(e))
 
-        # Phase 1.4.3: Extended Thinking
-        # NOW ENABLED: thinking blocks are saved to DB and properly handled
-        api_params["thinking"] = {"type": "enabled", "budget_tokens": 16000}
+        # Extended Thinking: enabled only when thinking_budget is specified
+        # Default is disabled for cache efficiency (~3500 tokens saved)
+        # Use deep_think tool for on-demand reasoning
+        if request.thinking_budget:
+            api_params["thinking"] = {
+                "type": "enabled",
+                "budget_tokens": request.thinking_budget
+            }
+            logger.debug("claude.thinking.enabled",
+                         budget_tokens=request.thinking_budget)
 
         # Note: context_management not supported in current SDK version
         # Will be added in Phase 1.5 when SDK supports it
@@ -885,8 +895,12 @@ class ClaudeProvider(LLMProvider):
         # NOTE: Effort parameter NOT supported in streaming API
         # Only works with non-streaming messages.create()
 
-        # Extended Thinking
-        api_params["thinking"] = {"type": "enabled", "budget_tokens": 16000}
+        # Extended Thinking: enabled only when thinking_budget is specified
+        if request.thinking_budget:
+            api_params["thinking"] = {
+                "type": "enabled",
+                "budget_tokens": request.thinking_budget
+            }
 
         # Track current block type and accumulated data
         current_block_type: Optional[str] = None

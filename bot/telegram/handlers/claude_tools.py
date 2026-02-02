@@ -107,7 +107,9 @@ async def execute_single_tool_safe(
     chat_id: Optional[int] = None,
     message_thread_id: Optional[int] = None,
     on_subagent_tool: Optional[Callable[[str], Awaitable[None]]] = None,
+    on_thinking_chunk: Optional[Callable[[str], Awaitable[None]]] = None,
     cancel_event: Optional[asyncio.Event] = None,
+    **extra_kwargs,
 ) -> dict:
     """Execute a single tool with error handling for parallel execution.
 
@@ -131,7 +133,9 @@ async def execute_single_tool_safe(
         chat_id: Chat ID for typing indicator (optional).
         message_thread_id: Forum topic ID for typing indicator (optional).
         on_subagent_tool: Callback for self_critique subagent tool progress.
-        cancel_event: Optional asyncio.Event for cancellation (self_critique).
+        on_thinking_chunk: Callback for deep_think thinking chunks.
+        cancel_event: Optional asyncio.Event for cancellation.
+        **extra_kwargs: Additional kwargs passed to tool executor (e.g., model_id).
 
     Returns:
         Dict with result or error. Always includes:
@@ -181,13 +185,25 @@ async def execute_single_tool_safe(
         # - File is being uploaded (uploading scope in claude_files.py)
         # - Bot continues writing text (generating scope in claude.py)
 
-        # For self_critique, pass the subagent tool callback and cancel event
+        # Pass callbacks and extra params for special tools
         tool_input_with_callback = dict(tool_input)
+
+        # self_critique: subagent tool callback and cancel event
         if tool_name == "self_critique":
             if on_subagent_tool:
                 tool_input_with_callback["on_subagent_tool"] = on_subagent_tool
             if cancel_event:
                 tool_input_with_callback["cancel_event"] = cancel_event
+
+        # deep_think: thinking chunk callback and model_id
+        if tool_name == "deep_think":
+            if on_thinking_chunk:
+                tool_input_with_callback[
+                    "on_thinking_chunk"] = on_thinking_chunk
+            if cancel_event:
+                tool_input_with_callback["cancel_event"] = cancel_event
+            # Pass any extra kwargs (like model_id)
+            tool_input_with_callback.update(extra_kwargs)
 
         result = await execute_tool(tool_name,
                                     tool_input_with_callback,

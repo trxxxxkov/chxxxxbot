@@ -551,6 +551,10 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
         async def on_subagent_tool(parent_tool: str, sub_tool: str) -> None:
             await stream.add_subagent_tool(parent_tool, sub_tool)
 
+        # Callback for deep_think thinking chunks (streaming to expandable blockquote)
+        async def on_thinking_chunk(chunk: str) -> None:
+            await stream.handle_thinking_delta(chunk)
+
         # Execute tools
         executor = self._get_tool_executor()
         batch_result = await executor.execute_batch(
@@ -558,6 +562,8 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
             cancel_event=cancel_event,
             on_file_ready=on_file_ready,
             on_subagent_tool=on_subagent_tool,
+            on_thinking_chunk=on_thinking_chunk,
+            model_id=self._request.model,
         )
 
         # Add system messages

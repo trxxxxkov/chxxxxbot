@@ -34,6 +34,7 @@ from core.exceptions import ToolValidationError
 from core.tools.analyze_image import TOOL_CONFIG as ANALYZE_IMAGE_CONFIG
 from core.tools.analyze_pdf import TOOL_CONFIG as ANALYZE_PDF_CONFIG
 from core.tools.base import ToolConfig
+from core.tools.deep_think import TOOL_CONFIG as DEEP_THINK_CONFIG
 from core.tools.deliver_file import TOOL_CONFIG as DELIVER_FILE_CONFIG
 from core.tools.execute_python import TOOL_CONFIG as EXECUTE_PYTHON_CONFIG
 from core.tools.generate_image import TOOL_CONFIG as GENERATE_IMAGE_CONFIG
@@ -94,6 +95,7 @@ TOOLS: Dict[str, ToolConfig] = {
     "execute_python": EXECUTE_PYTHON_CONFIG,
     "preview_file": PREVIEW_FILE_CONFIG,
     "deliver_file": DELIVER_FILE_CONFIG,
+    "deep_think": DEEP_THINK_CONFIG,
     "self_critique": SELF_CRITIQUE_CONFIG,
     "web_search": WEB_SEARCH_CONFIG,
     "web_fetch": WEB_FETCH_CONFIG,
