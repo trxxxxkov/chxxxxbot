@@ -1481,9 +1481,36 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "sum by (level) (count_over_time({service=\"${service}\", level=~\"(?i)(${log_level:pipe})\"} |~ \"${user_filter}\" [$__interval]))",
-          "legendFormat": "{{level}}",
+          "expr": "sum(count_over_time({service=\"${service}\", level=~\"(?i)error\"} |~ \"${user_filter}\" [$__interval])) or vector(0)",
+          "legendFormat": "error",
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(count_over_time({service=\"${service}\", level=~\"(?i)warn.*\"} |~ \"${user_filter}\" [$__interval])) or vector(0)",
+          "legendFormat": "warning",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(count_over_time({service=\"${service}\", level=~\"(?i)info\"} |~ \"${user_filter}\" [$__interval])) or vector(0)",
+          "legendFormat": "info",
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(count_over_time({service=\"${service}\", level=~\"(?i)debug\"} |~ \"${user_filter}\" [$__interval])) or vector(0)",
+          "legendFormat": "debug",
+          "refId": "D"
         }
       ],
       "title": "Logs History",
