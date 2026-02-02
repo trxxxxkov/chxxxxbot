@@ -202,6 +202,8 @@ async def execute_extended_think_stream(
     input_tokens = 0
     output_tokens = 0
 
+    thinking_done = False
+
     try:
         async with anthropic_client.messages.stream(**api_params) as stream:
             async for event in stream:
@@ -220,19 +222,26 @@ async def execute_extended_think_stream(
                                  total_thinking_len=len(thinking_text))
                     yield StreamEvent(type="thinking_delta", content=chunk)
 
-                # Handle text delta (conclusion)
+                # Text delta = thinking is done, stop immediately
+                # Don't wait for conclusion generation (saves ~50 seconds)
                 elif (event.type == "content_block_delta" and
                       hasattr(event.delta, "text")):
-                    chunk = event.delta.text
-                    conclusion_text += chunk
-                    yield StreamEvent(type="text_delta", content=chunk)
+                    logger.info("extended_think.thinking_done_stopping",
+                                thinking_length=len(thinking_text))
+                    thinking_done = True
+                    break
 
-            # Get final usage
-            final_message = await stream.get_final_message()
-            input_tokens = final_message.usage.input_tokens
-            output_tokens = final_message.usage.output_tokens
-            thinking_tokens = getattr(final_message.usage, 'thinking_tokens',
-                                      0) or 0
+            # Get usage - if we broke early, estimate from thinking text
+            if thinking_done:
+                # Estimate: ~4 chars per token for thinking
+                output_tokens = len(thinking_text) // 4
+                input_tokens = 200  # Approximate input (system + user message)
+            else:
+                final_message = await stream.get_final_message()
+                input_tokens = final_message.usage.input_tokens
+                output_tokens = final_message.usage.output_tokens
+                thinking_tokens = getattr(final_message.usage,
+                                          'thinking_tokens', 0) or 0
 
     except Exception as e:
         logger.exception("extended_think.stream_error", error=str(e))
