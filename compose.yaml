@@ -203,6 +203,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - .:/repo
+      - ~/.ssh:/root/.ssh:ro
     environment:
       - CHECK_INTERVAL=60
       - BRANCH=main
