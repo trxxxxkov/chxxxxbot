@@ -1450,33 +1450,6 @@
                 "value": "error"
               }
             ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "other"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "#9CA3AF",
-                  "mode": "fixed"
-                }
-              },
-              {
-                "id": "custom.fillOpacity",
-                "value": 10
-              },
-              {
-                "id": "custom.axisPlacement",
-                "value": "hidden"
-              },
-              {
-                "id": "custom.axisLabel",
-                "value": "other"
-              }
-            ]
           }
         ]
       },
@@ -1538,15 +1511,6 @@
           "expr": "sum(count_over_time({service=\"${service}\", level=~\"(?i)debug\"} |~ \"${user_filter}\" [$__interval])) or vector(0)",
           "legendFormat": "debug",
           "refId": "D"
-        },
-        {
-          "datasource": {
-            "type": "loki",
-            "uid": "loki"
-          },
-          "expr": "sum(count_over_time({service=\"${service}\", level=\"\"} |~ \"${user_filter}\" [$__interval])) or vector(0)",
-          "legendFormat": "other",
-          "refId": "E"
         }
       ],
       "title": "Logs History",
