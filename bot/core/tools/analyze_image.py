@@ -155,34 +155,13 @@ ANALYZE_IMAGE_TOOL = {
     "name":
         "analyze_image",
     "description":
-        """Analyze an image using Claude's vision capabilities.
+        """Analyze image using Claude Vision.
 
-This tool accepts files where mime_type starts with "image/" (check the
-"Available files" section). The vision API processes the image pixels to
-understand visual content - it cannot parse structured data formats.
+Supports: OCR, object detection, scene understanding, chart analysis, visual Q&A.
+Pass claude_file_id from "Available files" (mime_type starts with "image/") and specific question.
 
-For files with other mime_types, use execute_python to read and parse content.
-
-<capabilities>
-- Identify objects, scenes, and visual elements in photos
-- Extract text from images (OCR) including screenshots
-- Analyze charts, diagrams, and data visualizations
-- Describe image content and answer questions about it
-- Verify generated images for quality (colors, layout, text rendering)
-</capabilities>
-
-<parallel_execution>
-This tool works well in parallel with execute_python. For example, analyze
-an input image while simultaneously preparing processing code.
-</parallel_execution>
-
-<limitations>
-- Cannot identify people by name
-- Approximate counting only for many small objects
-- Limited spatial reasoning (analog clocks, chess positions)
-</limitations>
-
-Token cost: ~1600 tokens per 1092x1092px image.""",
+For non-image files, use execute_python to parse content.
+Cost: ~1600 tokens per 1092x1092px image.""",
     "input_schema": {
         "type": "object",
         "properties": {

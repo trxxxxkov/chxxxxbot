@@ -529,136 +529,29 @@ EXECUTE_PYTHON_TOOL = {
     "name":
         "execute_python",
     "description":
-        """Execute Python code in secure E2B sandbox with file I/O support.
-
-Use this when you need to: run code, perform calculations, analyze data,
-make HTTP requests, process files, generate files (PDF/PNG/CSV/etc.),
-or use Python libraries. Full internet + pip install support.
+        """Execute Python in E2B sandbox with file I/O and internet.
 
 <environment>
-E2B sandbox - Debian Linux, Python 3.11+, headless:
-- Working directory: /home/user
-- Input files (if file_inputs provided): /tmp/inputs/{filename}
-- Output files: Save to /tmp/ or subdirectories (e.g., /tmp/output.pdf)
-- System: Full Debian with apt-get, subprocess for shell commands
-- Pre-installed: Python standard library, pip, basic CLI tools
+Python 3.11+, Debian Linux, pip + apt-get available.
+- Input files: /tmp/inputs/{filename} (from file_inputs parameter)
+- Output files: Save to /tmp/, returned as output_files with temp_id
+- System packages: subprocess.run('apt-get update && apt-get install -y ffmpeg libreoffice imagemagick', shell=True)
 </environment>
 
-<system_package_installation>
-You can install ANY system packages via apt-get (sandbox is Debian-based).
-This capability is crucial for tasks requiring specialized tools like document
-conversion (libreoffice), media processing (ffmpeg), or image manipulation (imagemagick).
+<file_workflow>
+1. file_inputs=[{"file_id": "file_xxx", "name": "doc.pdf"}] → files at /tmp/inputs/
+2. Code saves to /tmp/output.png → output_files: [{temp_id: "exec_xxx", preview: "..."}]
+3. Verify with preview_file(file_id="exec_xxx") if needed (does NOT send to user)
+4. Send with deliver_file(temp_id="exec_xxx")
+</file_workflow>
 
-Installation command:
-  subprocess.run('apt-get update && apt-get install -y package-name',
-                 shell=True, capture_output=True)
+<output_files>
+Returns metadata: temp_id, filename, size_bytes, mime_type, preview.
+Images <1MB include base64 preview for visual verification.
+Files cached 30 min.
+</output_files>
 
-Examples: libreoffice, ffmpeg, imagemagick, pandoc, texlive, ghostscript, etc.
-Check availability: subprocess.run(['which', 'command'], ...)
-List packages: subprocess.run(['dpkg', '-l'], ...)
-Installation typically takes 10-60 seconds depending on package size.
-</system_package_installation>
-
-<file_input_output>
-INPUT FILES:
-Specify file_inputs with file_id and name from "Available files" section.
-Files uploaded to /tmp/inputs/ before execution.
-Example: file_inputs=[{"file_id": "file_abc...", "name": "document.pdf"}]
-In code: open('/tmp/inputs/document.pdf', 'rb')
-
-OUTPUT FILES:
-Save to /tmp/ (any format: PDF, PNG, CSV, XLSX, TXT, etc.)
-Files are cached temporarily (30 min TTL) and returned as output_files metadata.
-YOU DECIDE whether to deliver files to user based on:
-- User's explicit request ("create a chart", "generate PDF")
-- File quality and correctness (verify before delivering)
-- Relevance to conversation
-
-To deliver: use deliver_file tool with temp_id from output_files.
-Example: deliver_file(temp_id="exec_abc123_chart.png")
-
-output_files format:
-[{"temp_id": "exec_abc123_chart.png", "filename": "chart.png",
-  "size_bytes": 45678, "mime_type": "image/png",
-  "preview": "Image 800x600 (RGB), 44.6 KB"}]
-
-Preview helps you understand file content without seeing binary data.
-</file_input_output>
-
-<verification_workflow>
-VERIFY BEFORE DELIVERING - especially after negative feedback:
-
-After generating files, verify the result BEFORE delivering to user.
-Verification catches issues that code-level checks miss (corrupted files,
-encoding problems, incomplete conversions, wrong output format).
-
-**Verification process:**
-1. Check output_files preview (size, dimensions, format info)
-2. For images <1MB: base64 preview is included in tool results — examine it!
-3. If preview insufficient or need detailed analysis:
-   - Use preview_file(file_id="exec_xxx", question="...") for ANY file type
-   - preview_file handles images/PDFs by uploading to Files API internally
-   - This does NOT send the file to user — it's YOUR internal verification
-4. If problems found, iterate with different approach
-5. Only deliver_file when YOU are confident file is correct
-
-**Key point:** preview_file does NOT deliver to user. Use it freely for verification.
-deliver_file is what sends to user — call it only after verification.
-
-**Example workflow (PDF generation with verification):**
-Turn 1: execute_python → output_files: [{temp_id: "exec_abc_out.pdf", preview: "PDF, 8KB"}]
-        Preview shows suspiciously small size
-Turn 2: preview_file(file_id="exec_abc_out.pdf", question="Is this complete?")
-        → "PDF has only 2 pages with placeholder text"
-Turn 3: execute_python (fix code) → output_files: [{preview: "PDF, 245KB"}]
-Turn 4: preview_file → confirms content is correct
-Turn 5: deliver_file(temp_id=...) → sends PDF to user ✓
-</verification_workflow>
-
-<workflow_examples>
-Example 1 - Data analysis with chart:
-User: "Analyze data.csv and create a chart"
-1. execute_python(file_inputs=[...], code="...plt.savefig('/tmp/chart.png')...")
-2. Result: output_files: [{"temp_id": "exec_abc_chart.png", "preview": "Image 800x600..."}]
-3. deliver_file(temp_id="exec_abc_chart.png") → sends chart to user
-
-Example 2 - Iterative approach:
-User: "Convert presentation.pptx to PDF"
-1. execute_python(conversion code) → output_files shows small file
-2. execute_python(with libreoffice) → output_files shows proper size
-3. deliver_file(temp_id=...) → sends final PDF to user
-</workflow_examples>
-
-<key_features>
-- Secure isolated environment with sandbox reuse (packages/files persist within thread)
-- Internet access (API calls, web scraping, downloads)
-- Pip packages (numpy, pandas, matplotlib, requests, pillow, etc.)
-- System packages (libreoffice, ffmpeg, imagemagick, pandoc, etc.)
-- File processing (read/write/convert any format)
-- Return: stdout, stderr, results, output_files metadata
-- Use preview_file to verify output, deliver_file to send to user
-</key_features>
-
-<when_to_use>
-Use when user asks to: run code, perform calculations, analyze data, make HTTP requests,
-process files, generate files (reports/charts/images), use Python libraries,
-data transformations, file format conversions, image processing, or any Python-based task.
-</when_to_use>
-
-<when_not_to_use>
-Do NOT use for: simple arithmetic (use built-in capabilities), tasks not requiring code
-execution, or when user explicitly asks NOT to run code.
-</when_not_to_use>
-
-<limitations>
-- 1 hour default timeout (3600 seconds, can be reduced for simple tasks)
-- Sandbox reused within thread (packages/files persist up to 1 hour idle)
-- Limited CPU/RAM (1 vCPU, reasonable memory)
-- Headless (no GUI/display output, but can save to files)
-</limitations>
-
-COST: ~$0.05/hour of runtime. Typical execution: <1 second = <$0.0001.
-Free tier: $100 credit (~2000 hours).""",
+Cost: ~$0.05/hour. Typical <1s = <$0.0001.""",
     "input_schema": {
         "type": "object",
         "properties": {

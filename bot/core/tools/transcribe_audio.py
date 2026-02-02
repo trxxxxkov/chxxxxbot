@@ -164,90 +164,18 @@ TRANSCRIBE_AUDIO_TOOL = {
     "name":
         "transcribe_audio",
     "description":
-        """Transcribe audio from audio/video files using OpenAI Whisper.
+        """Transcribe audio/video using OpenAI Whisper.
 
-<purpose>
-Convert speech to text from any audio or video file. Supports 90+ languages
-with automatic detection. Essential for understanding spoken content in
-user-uploaded files.
-</purpose>
+Supports 90+ languages with auto-detection. Extracts audio from video automatically.
+Formats: MP3, FLAC, OGG, WAV, M4A, MP4, MOV, AVI, MKV, WebM.
 
-<when_to_use>
-Use this tool when:
-- User asks about spoken content in audio/video files
-- Extracting lyrics from songs
-- Getting dialogue/narration from videos
-- Transcribing voice messages (for detailed analysis beyond auto-transcript)
-- Converting any speech to text for further processing
+Returns: transcript, language, duration, cost_usd.
 
-Note: Voice messages are AUTO-TRANSCRIBED on receipt. Use this tool only
-if you need the detailed audio analysis or if the auto-transcript wasn't saved.
-</when_to_use>
+Note: Voice messages are auto-transcribed on receipt. Use this only for audio files
+from "Available files" or when detailed analysis needed.
 
-<supported_formats>
-Audio formats: MP3, FLAC, OGG, WAV, M4A, AAC, OPUS, WebM
-Video formats: MP4, MOV, AVI, MKV, WebM (audio track extracted automatically)
-Voice messages: OGG/OPUS (Telegram format)
-
-The tool automatically extracts audio from video files - you can transcribe
-videos directly without manual extraction.
-</supported_formats>
-
-<output>
-Returns:
-- transcript: Full text of transcription
-- language: Detected language code (ru, en, es, etc.)
-- duration: Audio duration in seconds
-- cost_usd: API cost for this transcription
-
-The transcript is optimized for readability (punctuation, capitalization).
-</output>
-
-<examples>
-Example 1 - Song lyrics:
-  User uploads: song.mp3
-  You call: transcribe_audio("file_abc123")
-  Returns: Full lyrics as text
-
-Example 2 - Video dialogue:
-  User uploads: interview.mp4
-  You call: transcribe_audio("file_def456")
-  Returns: Full spoken dialogue from video
-
-Example 3 - Multi-language detection:
-  User uploads: mixed_language.mp3
-  You call: transcribe_audio("file_ghi789", language="auto")
-  Returns: Transcript with auto-detected language
-</examples>
-
-<cost>
-Pricing: $0.006 per minute of audio
-- 15 sec voice message: ~$0.0015
-- 3 min song: ~$0.018
-- 10 min video: ~$0.06
-- 1 hour podcast: ~$0.36
-
-Cost is automatically tracked and logged.
-</cost>
-
-<limitations>
-- Max file size: 25 MB (OpenAI limit)
-- If file too large, use execute_python to split audio first
-- Background noise may affect accuracy
-- Multiple overlapping speakers may reduce quality
-- Non-speech audio (music only) returns empty or minimal text
-</limitations>
-
-<best_practices>
-1. Use language parameter if you know the language (better accuracy)
-2. For long audio (>10 min), inform user about processing time
-3. For videos, consider if transcription is needed or visual analysis sufficient
-4. Combine with execute_python for advanced audio processing (pitch, tempo, etc.)
-</best_practices>
-
-API: OpenAI Whisper (whisper-1 model)
-Language support: 90+ languages including English, Russian, Spanish, French,
-German, Chinese, Japanese, and many more.""",
+Cost: $0.006/min (~$0.0015 for 15s, ~$0.36 for 1hr).
+Max size: 25MB. For larger files, split with execute_python first.""",
     "input_schema": {
         "type": "object",
         "properties": {

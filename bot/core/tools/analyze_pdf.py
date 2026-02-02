@@ -182,33 +182,14 @@ ANALYZE_PDF_TOOL = {
     "name":
         "analyze_pdf",
     "description":
-        """Analyze a PDF document using Claude's vision and text extraction.
+        """Analyze PDF using Claude's text extraction and vision.
 
-This tool accepts files where mime_type is "application/pdf" (check the
-"Available files" section). Each page is rendered as both text and image
-for comprehensive multimodal analysis.
+Extracts text and analyzes visual elements (charts, tables, diagrams).
+Pass claude_file_id from "Available files" (mime_type "application/pdf") and specific question.
+Use pages parameter to limit scope: "1-5", "1,3,5", or "all".
 
-For files with other mime_types, use execute_python to read and parse content.
-
-<capabilities>
-- Extract and summarize text content from documents
-- Analyze charts, tables, diagrams, and visual elements
-- Answer questions about document structure and content
-- Verify generated PDFs for quality (encoding, formatting, completeness)
-</capabilities>
-
-<page_ranges>
-Use the pages parameter to analyze specific sections and reduce token cost.
-Syntax: "1-5" (range), "1,3,5" (specific pages), "all" (entire document).
-</page_ranges>
-
-<limitations>
-- Password-protected PDFs are not supported
-- Best for documents under 100 pages
-- Prompt caching makes repeated analysis 90% cheaper
-</limitations>
-
-Token cost: ~3,000-5,000 tokens per page.""",
+Prompt caching makes repeated analysis 90% cheaper.
+Cost: ~3,000-5,000 tokens per page.""",
     "input_schema": {
         "type": "object",
         "properties": {

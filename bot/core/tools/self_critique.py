@@ -166,31 +166,16 @@ SELF_CRITIQUE_TOOL = {
     "name":
         "self_critique",
     "description":
-        """**MANDATORY** independent verification by Claude Opus 4.5.
+        """Independent verification by fresh Claude Opus instance.
 
-**CRITICAL**: When user asks you to verify/check your answer, you MUST use this tool. \
-Do NOT attempt to verify manually - self-verification in the same context confirms \
-your own biases. This tool launches a FRESH Opus instance with adversarial prompt.
+Launches separate context with adversarial prompt for truly independent review.
+Use when user asks to verify your answer ("проверь", "перепроверь", "verify", "check").
 
-**MUST USE when user message contains ANY of these (case-insensitive):**
-- Russian: "перепроверь", "проверь", "перепроверка", "проверка", "проверить", \
-"убедись", "точно?", "уверен?", "не ошибся", "ошибка?", "правильно?", \
-"осторожнее", "аккуратно", "внимательно"
-- English: "verify", "check", "double-check", "recheck", "re-check", \
-"are you sure", "is this correct", "make sure", "be careful"
+Provide your previous answer in content field. Subagent can run Python tests,
+analyze files, web search/fetch.
 
-**DO NOT** respond with "Проверю пошагово..." or "Давайте проверим..." without \
-calling this tool first. Manual re-verification is PROHIBITED for explicit requests.
-
-**POST-RESPONSE verification**: When user questions your previous answer, pass it \
-in 'content' field with the original 'user_request'.
-
-**Capabilities**: Run Python tests, analyze files/images/PDFs, web search, web fetch.
-
-**Cost**: Requires $1.00+ balance. Typical: $0.03-0.15 per call.
-
-**Returns**: Structured verdict (PASS/FAIL/NEEDS_IMPROVEMENT), confidence score, \
-specific issues list, recommendations.""",
+Returns: verdict (PASS/FAIL/NEEDS_IMPROVEMENT), confidence score, issues, recommendations.
+Cost: requires $1.00+ balance, typical $0.03-0.15 per call.""",
     "input_schema": {
         "type": "object",
         "properties": {

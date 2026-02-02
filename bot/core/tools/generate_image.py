@@ -48,104 +48,33 @@ GENERATE_IMAGE_TOOL = {
     "name":
         "generate_image",
     "description":
-        """Create, edit, or compose images using Gemini 3 Pro Image.
+        """Create/edit images using Gemini 3 Pro Image.
 
-This tool operates in three modes based on the parameters you provide:
+<modes>
+- Generation: prompt only → new image
+- Editing: prompt + source_file_ids → modify existing images
+- Grounded: use_google_search=true → real-time web data (weather, stocks, news)
+</modes>
 
-<generation_mode>
-When source_file_ids is empty or omitted, the tool generates a new image
-from your text prompt. Write detailed prompts in English describing the
-subject, style, composition, lighting, colors, and mood. The model excels
-at photorealistic images, artistic styles, and creative compositions.
-</generation_mode>
+<parameters>
+- aspect_ratio: 1:1 (avatar), 3:4 (portrait), 4:3 (landscape), 9:16/16:9 (widescreen)
+- image_size: 1K (preview), 2K (default), 4K (high quality, print, wallpaper)
+- source_file_ids: up to 14 images for editing/composition (file_xxx or exec_xxx)
+</parameters>
 
-<editing_mode>
-When source_file_ids contains one or more image file IDs, the tool edits
-or transforms those images according to your prompt. You can remove objects,
-change backgrounds, adjust lighting, apply style transfers, or combine
-elements from multiple images. The model preserves visual context and
-maintains consistency with the source material.
+<output>
+Saved to cache with temp_id. Base64 preview included for verification.
+Use deliver_file(temp_id) to send. 4K auto-delivers as document.
+</output>
 
-For identity preservation across multiple outputs, include face reference
-images and specify "preserve identity" or "maintain facial features" in
-your prompt.
-</editing_mode>
+<prompt_tips>
+Describe scene: subject, style (photorealistic/artistic), lighting, colors, mood.
+English only, max 480 tokens.
+</prompt_tips>
 
-<grounded_mode>
-When use_google_search is true, the tool grounds generation in real-time
-web data before creating the image. Use this for current weather maps,
-live stock charts, recent news visualizations, or any content requiring
-up-to-date information. The model searches, verifies facts, then generates
-accurate imagery.
-</grounded_mode>
-
-<output_handling>
-Generated images are saved to temporary cache for your review. You receive
-a visual preview to verify the result meets requirements. If the image
-needs adjustments, call generate_image again with refined prompt or
-source_file_ids pointing to the generated image for iterative editing.
-
-When satisfied with the result, use deliver_file(temp_id) to send the
-image to the user. You can also use preview_file(temp_id) for detailed
-analysis before delivery.
-
-4K images are automatically delivered as documents (preserving full quality).
-For other resolutions, you can override with send_mode="document" if user
-explicitly requests maximum quality or uncompressed delivery.
-</output_handling>
-
-<prompt_writing>
-Effective prompts describe the scene rather than listing keywords. Include:
-- Subject and main focus with specific details
-- Visual style (photorealistic, oil painting, watercolor, anime, minimalist)
-- Composition (close-up, wide shot, birds-eye view, symmetrical)
-- Lighting conditions (natural, dramatic, soft, golden hour, neon)
-- Color palette and mood
-
-Example: "A serene Japanese garden at sunset, photorealistic style. Cherry
-blossom trees in full bloom, koi pond reflecting golden light, traditional
-wooden bridge. Soft warm lighting, pastel pink and orange palette, peaceful
-contemplative mood."
-</prompt_writing>
-
-<parameters_guide>
-aspect_ratio: Choose based on intended use
-- 1:1 square for avatars, icons, social media posts
-- 3:4 portrait for character portraits, mobile wallpapers
-- 4:3 landscape for scenes, presentations, thumbnails
-- 9:16 vertical for stories, phone backgrounds, vertical displays
-- 16:9 widescreen for desktop wallpapers, banners, cinematic shots
-
-image_size: Match resolution to user's quality requirements
-- 1K for quick previews and thumbnails
-- 2K for standard quality, suitable for most uses
-- 4K for high detail, print quality, professional assets
-
-Choose 4K automatically when user mentions: "high quality", "maximum quality",
-"high resolution", "high res", "4K", "print quality", "detailed", "professional",
-"wallpaper", "poster", or similar quality-focused requests.
-
-source_file_ids: Provide file IDs from Available Files or Pending Files
-- Single image for direct editing or style transfer
-- Multiple images for composition or identity preservation
-- Up to 14 reference images supported (6 objects + 5 humans max)
-- Accepts both claude_file_id (file_xxx) and temp_id (exec_xxx)
-</parameters_guide>
-
-<cost_info>
-Generation costs $0.134 per image at 1K/2K, $0.240 at 4K resolution.
-Google Search grounding adds approximately $0.02 per query.
-Editing uses the same pricing as generation.
-</cost_info>
-
-<appropriate_uses>
-Use this tool for photos, portraits, artwork, illustrations, logos, icons,
-memes, abstract art, patterns, textures, product mockups, and concept art.
-
-For charts, graphs, data visualizations, diagrams, flowcharts, or any
-content requiring precise data representation, use execute_python with
-matplotlib or plotly instead.
-</appropriate_uses>""",
+Use for: photos, artwork, illustrations, logos, memes.
+NOT for: charts, graphs, data viz → use execute_python.
+Cost: $0.134 (1K/2K), $0.24 (4K).""",
     "input_schema": {
         "type": "object",
         "properties": {

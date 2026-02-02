@@ -273,57 +273,17 @@ RENDER_LATEX_TOOL = {
     "name":
         "render_latex",
     "description":
-        """Render LaTeX to PNG image (supports full LaTeX including TikZ).
+        """Render LaTeX to PNG image.
 
-<purpose>
-Convert LaTeX code into PNG images. Supports complex formulas, matrices,
-TikZ diagrams, and all standard LaTeX packages.
-Images are cached - use deliver_file to send to user after reviewing preview.
-</purpose>
+Supports: amsmath, amssymb, tikz, pgfplots, xcolor — all standard packages.
+Write LaTeX without delimiters: "\\frac{a}{b}" not "$$\\frac{a}{b}$$".
 
-<capabilities>
-- Math: fractions, integrals, sums, limits, matrices
-- Matrices: bmatrix, pmatrix, vmatrix, cases, align
-- TikZ: diagrams, graphs, flowcharts, plots
-- Packages: amsmath, amssymb, tikz, pgfplots, xcolor
-</capabilities>
+Returns base64 preview with temp_id. Use deliver_file(temp_id) to send.
+dpi: 150 (fast), 200 (default), 300 (high quality).
 
-<workflow>
-1. Call render_latex with LaTeX code
-2. IMPORTANT: You will SEE the actual rendered image in the response
-3. Visually verify the formula/diagram looks correct
-4. If issues found, re-render with LaTeX corrections
-5. Call deliver_file(temp_id='...') to send to user
-</workflow>
-
-<input_format>
-Either:
-- LaTeX fragment (auto-wrapped in document): "\\frac{a}{b}"
-- Full document with \\documentclass: "\\documentclass..."
-
-Delimiters ($, $$, \\[, \\]) are auto-stripped.
-</input_format>
-
-<examples>
-Simple fraction:
-  latex="\\frac{a}{b}"
-
-Matrix:
-  latex="\\begin{bmatrix} 1 & 2 \\\\ 3 & 4 \\end{bmatrix}"
-
-TikZ diagram:
-  latex="\\begin{tikzpicture}\\node[draw] {Hello};\\end{tikzpicture}"
-
-System of equations:
-  latex="\\begin{cases} x + y = 1 \\\\ x - y = 0 \\end{cases}"
-
-Quadratic formula:
-  latex="x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}"
-</examples>
-
-<cost>
-FREE - local rendering (no external API).
-</cost>""",
+Use for: formulas, matrices, TikZ diagrams.
+NOT for: simple expressions like x² (use Unicode: α, β, ±).
+Cost: FREE (local pdflatex).""",
     "input_schema": {
         "type": "object",
         "properties": {
