@@ -217,6 +217,9 @@ After thinking, provide a clear, actionable conclusion."""
                         hasattr(event.delta, "thinking")):
                     chunk = event.delta.thinking
                     thinking_text += chunk
+                    logger.debug("extended_think.thinking_chunk",
+                                 chunk_len=len(chunk),
+                                 total_thinking_len=len(thinking_text))
                     yield StreamEvent(type="thinking_delta", content=chunk)
 
                 # Handle text delta (conclusion)
@@ -363,6 +366,8 @@ async def execute_extended_think(
             thinking_text += event.content
             # Stream thinking to UI in real-time
             if on_thinking_chunk:
+                logger.debug("extended_think.calling_callback",
+                             chunk_len=len(event.content))
                 await on_thinking_chunk(event.content)
 
         elif event.type == "text_delta":
@@ -420,6 +425,13 @@ def format_extended_think_result(tool_input: dict[str, Any],
 
     output_tokens = result.get("_output_tokens", 0)
     cost = result.get("cost_usd", 0)
+
+    logger.debug(
+        "extended_think.format_result",
+        result_keys=list(result.keys()),
+        output_tokens=output_tokens,
+        cost=cost,
+    )
 
     return f"[🧠 extended_think: {output_tokens} output tokens, ${cost:.4f}]"
 
