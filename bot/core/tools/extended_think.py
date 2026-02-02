@@ -418,10 +418,10 @@ def format_extended_think_result(tool_input: dict[str, Any],
     if result.get("error"):
         return f"[🧠 extended_think failed: {result['error']}]"
 
-    thinking_tokens = result.get("thinking_tokens", 0)
+    output_tokens = result.get("_output_tokens", 0)
     cost = result.get("cost_usd", 0)
 
-    return f"[🧠 extended_think: {thinking_tokens} thinking tokens, ${cost:.4f}]"
+    return f"[🧠 extended_think: {output_tokens} output tokens, ${cost:.4f}]"
 
 
 # =============================================================================
