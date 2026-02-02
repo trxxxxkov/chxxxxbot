@@ -70,21 +70,20 @@ EXTENDED_THINK_TOOL = {
     "name":
         "extended_think",
     "description":
-        """Enables deep step-by-step reasoning (Extended Thinking mode).
+        """Analyze complex problems with extended step-by-step reasoning.
 
-IMPORTANT: Your default mode has quick responses but NO deep reasoning.
-Call this tool FIRST when the problem requires careful analysis.
-
-MUST use for:
-- Math proofs, equations, calculations with multiple steps
-- Algorithm design and complexity analysis
-- Debugging: finding root cause, tracing logic errors
-- Code review: security issues, edge cases, race conditions
+Call this tool before responding when the task involves:
+- Writing non-trivial code (algorithms, data structures, async logic)
+- Mathematical derivations or multi-step calculations
+- Debugging or finding root causes in code
 - Architecture decisions with trade-offs
+- Problems where you need to consider multiple approaches
 
-Skip for: simple questions, formatting, translations, factual lookups.
+The tool activates deep analysis mode and returns structured reasoning.
+Incorporate the conclusions into your response to the user.
 
-The tool returns structured analysis. Incorporate key insights into your response.""",
+Example: User asks "implement a LRU cache" → call extended_think first,
+then write the code based on the analysis.""",
     "input_schema": {
         "type": "object",
         "properties": {

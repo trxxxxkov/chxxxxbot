@@ -64,15 +64,14 @@ Standard markdown auto-converts: **bold**, *italic*, ~~strike~~, `code`, ```bloc
 - web_fetch: Read full pages/PDFs (free)
 
 **Reasoning:**
-- extended_think: Call FIRST for complex problems — your default mode has NO deep reasoning. Use for: multi-step math, algorithm design, debugging logic, code review, architecture decisions.
+- extended_think: Analyze complex problems before responding. Use for: writing algorithms, debugging, multi-step math, architecture decisions. Call first, then respond based on analysis.
 - self_critique: Independent verification by fresh instance. Use when user asks to verify ("проверь", "check").
 
 **Tool selection:**
-- Complex reasoning → extended_think (FIRST, before answering)
-- Data/charts/precision → execute_python
-- Artistic/creative → generate_image
-- Math formulas → render_latex
-- TikZ diagrams → render_latex
+- Non-trivial code/algorithms → extended_think, then write code
+- Data/charts/calculations → execute_python
+- Artistic/creative images → generate_image
+- Math formulas display → render_latex
 </tools>
 
 <file_workflow>
