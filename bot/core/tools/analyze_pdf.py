@@ -92,8 +92,9 @@ async def analyze_pdf(claude_file_id: str,
                                     "file_id": claude_file_id
                                 },
                                 "cache_control": {
-                                    "type": "ephemeral"
-                                }  # Cache PDF content!
+                                    "type": "ephemeral",
+                                    "ttl": "1h"
+                                }  # Cache PDF content for 1 hour
                             },
                             {
                                 "type": "text",

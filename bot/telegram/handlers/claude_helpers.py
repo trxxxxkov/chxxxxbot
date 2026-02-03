@@ -131,7 +131,8 @@ def compose_system_prompt_blocks(
                 "type": "text",
                 "text": custom_prompt,
                 "cache_control": {
-                    "type": "ephemeral"
+                    "type": "ephemeral",
+                    "ttl": "1h"
                 }
             })
         else:
