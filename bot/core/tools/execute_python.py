@@ -522,9 +522,7 @@ async def execute_python(code: str,
 
 
 # Tool definition for Claude API (anthropic tools format)
-# Phase 1.5 Stage 6: Added cache_control for tool caching optimization
-# This is the LAST tool in TOOL_DEFINITIONS, so cache_control here
-# enables caching for ALL tool definitions (~3,268 tokens)
+# Tools are cached via system prompt breakpoint (no cache_control needed here)
 EXECUTE_PYTHON_TOOL = {
     "name":
         "execute_python",

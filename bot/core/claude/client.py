@@ -182,7 +182,8 @@ class ClaudeProvider(LLMProvider):
                         "type": "text",
                         "text": request.system_prompt,
                         "cache_control": {
-                            "type": "ephemeral"
+                            "type": "ephemeral",
+                            "ttl": "1h"
                         }
                     }]
                 else:
