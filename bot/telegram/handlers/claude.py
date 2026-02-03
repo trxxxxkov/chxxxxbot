@@ -32,7 +32,9 @@ if TYPE_CHECKING:
     from telegram.pipeline.models import ProcessedMessage
 
 from cache.exec_cache import get_pending_files_for_thread
+from cache.thread_cache import cache_files
 from cache.thread_cache import cache_messages
+from cache.thread_cache import get_cached_files
 from cache.thread_cache import get_cached_messages
 from cache.thread_cache import invalidate_messages
 from cache.thread_cache import update_cached_messages
@@ -330,51 +332,83 @@ async def _process_batch_with_session(
                          thread_id=thread_id,
                          batch_size=len(messages))
 
-            # 3. Parallel loading of user, files, and history
-            # Uses asyncio.gather() to reduce latency (~100-200ms savings)
+            # 3. Cache-first parallel, DB-sequential loading
+            # Phase 1: Check all caches in parallel (Redis only, no DB)
+            # Phase 2: Load DB only for cache misses (sequential to avoid
+            #          SQLAlchemy "concurrent operations not permitted" error)
             services = ServiceFactory(session)
             user_id = thread.user_id  # Telegram user ID
             user_file_repo = UserFileRepository(session)
 
-            # Define coroutines for parallel execution
-            async def load_user_data():
-                """Load user from cache or DB."""
-                cached = await get_cached_user(user_id)
-                if cached:
-                    logger.debug("claude_handler.user_cache_hit",
-                                 user_id=user_id,
-                                 model_id=cached["model_id"])
-                    return cached["model_id"], cached.get("custom_prompt"), None
+            # Phase 1: Parallel cache lookups (Redis only)
+            cached_user, cached_files_data, cached_messages_data, pending_files = \
+                await asyncio.gather(
+                    get_cached_user(user_id),
+                    get_cached_files(thread_id),
+                    get_cached_messages(thread_id),
+                    get_pending_files_for_thread(thread_id),
+                )
+
+            # Phase 2: Sequential DB fallback for cache misses
+            user = None
+            if cached_user:
+                logger.debug("claude_handler.user_cache_hit",
+                             user_id=user_id,
+                             model_id=cached_user["model_id"])
+                user_model_id = cached_user["model_id"]
+                user_custom_prompt = cached_user.get("custom_prompt")
+            else:
                 # Cache miss - load from DB
-                db_user = await services.users.get_by_id(user_id)
-                if db_user:
+                user = await services.users.get_by_id(user_id)
+                if user:
                     logger.debug("claude_handler.user_cache_miss",
                                  user_id=user_id,
-                                 model_id=db_user.model_id)
-                return (
-                    db_user.model_id if db_user else None,
-                    db_user.custom_prompt if db_user else None,
-                    db_user,
-                )
+                                 model_id=user.model_id)
+                    user_model_id = user.model_id
+                    user_custom_prompt = user.custom_prompt
+                else:
+                    user_model_id = None
+                    user_custom_prompt = None
 
-            async def load_files():
-                """Load available and pending files."""
-                avail = await get_available_files(thread_id, user_file_repo)
-                pending = await get_pending_files_for_thread(thread_id)
-                return avail, pending
+            if cached_files_data is not None:
+                logger.debug("claude_handler.files_cache_hit",
+                             thread_id=thread_id,
+                             file_count=len(cached_files_data))
+                # Convert cached dicts to CachedUserFile objects
+                from core.tools.helpers import CachedUserFile
+                available_files = [CachedUserFile(f) for f in cached_files_data]
+            else:
+                # Cache miss - load from DB
+                db_files = await user_file_repo.get_by_thread_id(thread_id)
+                available_files = db_files
+                # Cache for next time
+                if db_files:
+                    from core.tools.helpers import _user_file_to_dict
+                    files_data = [_user_file_to_dict(f) for f in db_files]
+                    await cache_files(thread_id, files_data)
 
-            async def load_history():
-                """Load thread history."""
-                return await msg_repo.get_thread_messages(thread_id, limit=500)
-
-            # Execute in parallel
-            (user_model_id, user_custom_prompt, user), \
-                (available_files, pending_files), \
-                history = await asyncio.gather(
-                    load_user_data(),
-                    load_files(),
-                    load_history(),
-                )
+            if cached_messages_data is not None:
+                logger.debug("claude_handler.messages_cache_hit",
+                             thread_id=thread_id,
+                             message_count=len(cached_messages_data))
+                # Reconstruct Message objects from cached data
+                history = []
+                for msg_data in cached_messages_data:
+                    msg = Message(
+                        chat_id=msg_data.get("chat_id", 0),
+                        message_id=msg_data.get("message_id", 0),
+                        thread_id=msg_data.get("thread_id"),
+                        from_user_id=msg_data.get("from_user_id"),
+                        date=msg_data["date"],
+                        role=MessageRole(msg_data["role"]),
+                        text_content=msg_data.get("text_content"),
+                        thinking_blocks=msg_data.get("thinking_blocks"),
+                    )
+                    history.append(msg)
+            else:
+                # Cache miss - load from DB
+                history = await msg_repo.get_thread_messages(thread_id,
+                                                             limit=500)
 
             # Handle user not found
             if user_model_id is None:
@@ -400,14 +434,19 @@ async def _process_batch_with_session(
                         delivered_count=len(available_files),
                         pending_count=len(pending_files))
 
-            # Cache history for potential future requests
-            history_for_cache = [{
-                "role": msg.role.value,
-                "text_content": msg.text_content,
-                "message_id": msg.message_id,
-                "date": msg.date,
-            } for msg in history]
-            await cache_messages(thread_id, history_for_cache)
+            # Cache history only if loaded from DB (cache miss)
+            if cached_messages_data is None:
+                history_for_cache = [{
+                    "role": msg.role.value,
+                    "text_content": msg.text_content,
+                    "message_id": msg.message_id,
+                    "chat_id": msg.chat_id,
+                    "thread_id": msg.thread_id,
+                    "from_user_id": msg.from_user_id,
+                    "date": msg.date,
+                    "thinking_blocks": msg.thinking_blocks,
+                } for msg in history]
+                await cache_messages(thread_id, history_for_cache)
 
             logger.debug("claude_handler.history_retrieved",
                          thread_id=thread_id,

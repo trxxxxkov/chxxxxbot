@@ -161,8 +161,8 @@ class ProcessedMessageQueue:
             # - Files may come with text description
             # - Multiple files may arrive together
             await asyncio.sleep(0.15)  # 150ms
-            # 1 second timeout: enough for photo+text arriving together
-            await self._wait_for_pending_normalizations(chat_id, timeout=1.0)
+            # 2 second timeout: file downloads from Telegram can be slow
+            await self._wait_for_pending_normalizations(chat_id, timeout=2.0)
 
         # Check if another coroutine started processing while we waited
         # This prevents race condition where multiple coroutines call
