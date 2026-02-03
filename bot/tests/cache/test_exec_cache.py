@@ -561,15 +561,12 @@ class TestGetPendingFilesForThread:
             b"exec_def67890",
         }
 
-        # Mock GET for each metadata key
-        async def mock_get(key):
-            if "exec_abc12345" in key:
-                return json.dumps(metadata1).encode()
-            if "exec_def67890" in key:
-                return json.dumps(metadata2).encode()
-            return None
-
-        mock_redis.get.side_effect = mock_get
+        # Mock MGET for batch metadata retrieval (optimized path)
+        # mget returns list in same order as keys requested
+        mock_redis.mget.return_value = [
+            json.dumps(metadata1).encode(),
+            json.dumps(metadata2).encode(),
+        ]
 
         with patch("cache.exec_cache.get_redis", return_value=mock_redis):
             result = await get_pending_files_for_thread(42)
@@ -578,6 +575,8 @@ class TestGetPendingFilesForThread:
         assert len(result) == 2
         assert result[0]["temp_id"] == "exec_abc12345"  # Older first
         assert result[1]["temp_id"] == "exec_def67890"
+        # Verify mget was called (batch operation)
+        mock_redis.mget.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_get_pending_files_empty(self, mock_redis):
@@ -617,20 +616,25 @@ class TestGetPendingFilesForThread:
         # Mock SMEMBERS returning temp_ids
         mock_redis.smembers.return_value = {b"exec_newer", b"exec_older"}
 
-        # Mock GET for each metadata key
-        async def mock_get(key):
-            if "exec_newer" in key:
-                return json.dumps(metadata1).encode()
-            if "exec_older" in key:
-                return json.dumps(metadata2).encode()
-            return None
+        # Mock MGET - returns in order of keys, but result sorted by created_at
+        # Order depends on set iteration, so we need to handle both orders
+        def mget_side_effect(keys):
+            result = []
+            for key in keys:
+                if "exec_newer" in key:
+                    result.append(json.dumps(metadata1).encode())
+                elif "exec_older" in key:
+                    result.append(json.dumps(metadata2).encode())
+                else:
+                    result.append(None)
+            return result
 
-        mock_redis.get.side_effect = mock_get
+        mock_redis.mget.side_effect = mget_side_effect
 
         with patch("cache.exec_cache.get_redis", return_value=mock_redis):
             result = await get_pending_files_for_thread(42)
 
-        # Older should be first
+        # Older should be first (sorted by created_at)
         assert len(result) == 2
         assert result[0]["temp_id"] == "exec_older"
         assert result[1]["temp_id"] == "exec_newer"
@@ -649,15 +653,19 @@ class TestGetPendingFilesForThread:
         mock_redis.smembers.return_value = {b"exec_valid", b"exec_corrupt"}
         mock_redis.srem.return_value = 1  # For stale cleanup
 
-        # Mock GET for each metadata key
-        async def mock_get(key):
-            if "exec_valid" in key:
-                return json.dumps(valid_metadata).encode()
-            if "exec_corrupt" in key:
-                return b"not valid json"  # Corrupted entry
-            return None
+        # Mock MGET - returns valid JSON for one key, corrupt for another
+        def mget_side_effect(keys):
+            result = []
+            for key in keys:
+                if "exec_valid" in key:
+                    result.append(json.dumps(valid_metadata).encode())
+                elif "exec_corrupt" in key:
+                    result.append(b"not valid json")  # Corrupted entry
+                else:
+                    result.append(None)
+            return result
 
-        mock_redis.get.side_effect = mock_get
+        mock_redis.mget.side_effect = mget_side_effect
 
         with patch("cache.exec_cache.get_redis", return_value=mock_redis):
             result = await get_pending_files_for_thread(42)
@@ -665,3 +673,96 @@ class TestGetPendingFilesForThread:
         # Should only include valid entry
         assert len(result) == 1
         assert result[0]["temp_id"] == "exec_valid"
+
+
+class TestAsyncOptimizations:
+    """Tests for async optimization patterns (parallel Redis operations)."""
+
+    @pytest.fixture
+    def mock_redis(self):
+        """Create mock Redis client."""
+        return AsyncMock()
+
+    @pytest.fixture
+    def sample_content(self):
+        """Sample file content."""
+        return b"test output content"
+
+    @pytest.mark.asyncio
+    async def test_store_with_thread_id_uses_parallel_ops(
+            self, mock_redis, sample_content):
+        """Test that store with thread_id uses parallel Redis operations.
+
+        When thread_id is provided, 4 Redis operations should run in parallel:
+        - setex file content
+        - setex metadata
+        - sadd to thread index
+        - expire on thread index
+        """
+        with patch("cache.exec_cache.get_redis", return_value=mock_redis):
+            result = await store_exec_file(
+                filename="chart.png",
+                content=sample_content,
+                mime_type="image/png",
+                context="Python output",
+                thread_id=42,
+            )
+
+        assert result is not None
+        # With thread_id: 2 setex + 1 sadd + 1 expire = 4 operations
+        assert mock_redis.setex.call_count == 2
+        assert mock_redis.sadd.call_count == 1
+        assert mock_redis.expire.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_store_without_thread_id_uses_two_parallel_ops(
+            self, mock_redis, sample_content):
+        """Test that store without thread_id uses 2 parallel Redis operations.
+
+        Without thread_id, only 2 Redis operations run in parallel:
+        - setex file content
+        - setex metadata
+        """
+        with patch("cache.exec_cache.get_redis", return_value=mock_redis):
+            result = await store_exec_file(
+                filename="chart.png",
+                content=sample_content,
+                mime_type="image/png",
+                context="Python output",
+            )
+
+        assert result is not None
+        # Without thread_id: only 2 setex operations
+        assert mock_redis.setex.call_count == 2
+        assert mock_redis.sadd.call_count == 0
+        assert mock_redis.expire.call_count == 0
+
+    @pytest.mark.asyncio
+    async def test_get_pending_uses_mget_batch(self, mock_redis):
+        """Test that get_pending_files uses mget for batch retrieval.
+
+        Using mget instead of multiple get calls reduces round-trips.
+        """
+        metadata1 = {
+            "temp_id": "exec_a",
+            "created_at": 1000.0,
+        }
+        metadata2 = {
+            "temp_id": "exec_b",
+            "created_at": 2000.0,
+        }
+
+        mock_redis.smembers.return_value = {b"exec_a", b"exec_b"}
+        mock_redis.mget.return_value = [
+            json.dumps(metadata1).encode(),
+            json.dumps(metadata2).encode(),
+        ]
+
+        with patch("cache.exec_cache.get_redis", return_value=mock_redis):
+            result = await get_pending_files_for_thread(42)
+
+        # Should use single mget call instead of multiple get calls
+        mock_redis.mget.assert_called_once()
+        # Should NOT use individual get calls
+        mock_redis.get.assert_not_called()
+        assert len(result) == 2

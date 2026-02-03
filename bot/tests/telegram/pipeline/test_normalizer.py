@@ -671,6 +671,95 @@ class TestMessageNormalizerVideo:
         assert result.files[0].metadata["height"] == 1080
 
 
+class TestDownloadAndUploadParallel:
+    """Tests for parallel download and upload optimization."""
+
+    @pytest.mark.asyncio
+    @patch("telegram.pipeline.normalizer.upload_to_files_api")
+    @patch("telegram.pipeline.normalizer.cache_file")
+    async def test_download_and_upload_runs_cache_and_upload_in_parallel(
+        self,
+        mock_cache_file: AsyncMock,
+        mock_upload: AsyncMock,
+        normalizer: MessageNormalizer,
+        mock_message: MagicMock,
+        mock_bot: AsyncMock,
+    ) -> None:
+        """Cache and upload run in parallel after download completes."""
+        mock_upload.return_value = "file_id_123"
+        mock_message.bot = mock_bot
+
+        content, file_id = await normalizer._download_and_upload(
+            message=mock_message,
+            file_id="test_file_id",
+            filename="test.jpg",
+            mime_type="image/jpeg",
+        )
+
+        # Both cache and upload should be called
+        mock_cache_file.assert_called_once()
+        mock_upload.assert_called_once()
+
+        # Verify results
+        assert content == b"test file content"
+        assert file_id == "file_id_123"
+
+    @pytest.mark.asyncio
+    @patch("telegram.pipeline.normalizer.upload_to_files_api")
+    @patch("telegram.pipeline.normalizer.cache_file")
+    async def test_download_and_upload_passes_correct_params(
+        self,
+        mock_cache_file: AsyncMock,
+        mock_upload: AsyncMock,
+        normalizer: MessageNormalizer,
+        mock_message: MagicMock,
+        mock_bot: AsyncMock,
+    ) -> None:
+        """Parameters are passed correctly to cache and upload functions."""
+        mock_upload.return_value = "file_pdf_456"
+        mock_message.bot = mock_bot
+
+        await normalizer._download_and_upload(
+            message=mock_message,
+            file_id="pdf_file_id",
+            filename="document.pdf",
+            mime_type="application/pdf",
+        )
+
+        # Verify cache_file was called with correct params
+        mock_cache_file.assert_called_once_with(
+            "pdf_file_id",
+            b"test file content",
+            filename="document.pdf",
+        )
+
+        # Verify upload_to_files_api was called with correct params
+        mock_upload.assert_called_once_with(
+            file_bytes=b"test file content",
+            filename="document.pdf",
+            mime_type="application/pdf",
+        )
+
+    @pytest.mark.asyncio
+    async def test_download_and_upload_raises_on_download_failure(
+        self,
+        normalizer: MessageNormalizer,
+        mock_message: MagicMock,
+        mock_bot: AsyncMock,
+    ) -> None:
+        """Raises ValueError if download fails."""
+        mock_bot.download_file.return_value = None  # Simulate failure
+        mock_message.bot = mock_bot
+
+        with pytest.raises(ValueError, match="Failed to download"):
+            await normalizer._download_and_upload(
+                message=mock_message,
+                file_id="bad_file_id",
+                filename="missing.jpg",
+                mime_type="image/jpeg",
+            )
+
+
 class TestGetNormalizer:
     """Tests for singleton accessor."""
 

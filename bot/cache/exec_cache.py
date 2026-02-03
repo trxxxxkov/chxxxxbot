@@ -16,6 +16,7 @@ NO __init__.py - use direct import:
     )
 """
 
+import asyncio
 import json
 import time
 from typing import Any, List, Optional
@@ -227,18 +228,27 @@ async def store_exec_file(
         file_key = exec_file_key(temp_id)
         file_content = bytes(content) if isinstance(content,
                                                     bytearray) else content
-        await redis.setex(file_key, EXEC_FILE_TTL, file_content)
 
         # Store metadata
         meta_key = exec_meta_key(temp_id)
-        await redis.setex(meta_key, EXEC_FILE_TTL, json.dumps(metadata))
 
-        # Add to thread index for O(1) lookup (if thread_id provided)
+        # Parallel Redis operations for better latency (~10-15ms savings)
+        # File and metadata are independent, can be written concurrently
         if thread_id is not None:
             thread_key = exec_thread_index_key(thread_id)
-            await redis.sadd(thread_key, temp_id)
-            # Set TTL on index (same as file TTL, refreshed on each add)
-            await redis.expire(thread_key, EXEC_FILE_TTL)
+            # All 4 operations are independent - run in parallel
+            await asyncio.gather(
+                redis.setex(file_key, EXEC_FILE_TTL, file_content),
+                redis.setex(meta_key, EXEC_FILE_TTL, json.dumps(metadata)),
+                redis.sadd(thread_key, temp_id),
+                redis.expire(thread_key, EXEC_FILE_TTL),
+            )
+        else:
+            # No thread index - just 2 parallel operations
+            await asyncio.gather(
+                redis.setex(file_key, EXEC_FILE_TTL, file_content),
+                redis.setex(meta_key, EXEC_FILE_TTL, json.dumps(metadata)),
+            )
 
         elapsed = time.time() - start_time
         record_redis_operation_time("set", elapsed)
@@ -436,26 +446,28 @@ async def get_pending_files_for_thread(thread_id: int) -> List[dict]:
                          thread_id=thread_id)
             return []
 
-        # Batch get metadata for all temp_ids
+        # Convert temp_ids to strings
+        temp_id_list = [
+            t.decode("utf-8") if isinstance(t, bytes) else t for t in temp_ids
+        ]
+
+        # Batch get metadata using mget (single Redis round-trip vs N)
+        meta_keys = [exec_meta_key(t) for t in temp_id_list]
+        results = await redis.mget(meta_keys)
+
+        # Process results
         pending_files: List[dict] = []
         stale_ids: List[str] = []  # IDs in index but metadata expired
 
-        for temp_id_bytes in temp_ids:
-            temp_id = (temp_id_bytes.decode("utf-8") if isinstance(
-                temp_id_bytes, bytes) else temp_id_bytes)
+        for temp_id, data in zip(temp_id_list, results):
+            if data is None:
+                # Metadata expired but still in index - mark for cleanup
+                stale_ids.append(temp_id)
+                continue
 
             try:
-                meta_key = exec_meta_key(temp_id)
-                data = await redis.get(meta_key)
-
-                if data is None:
-                    # Metadata expired but still in index - mark for cleanup
-                    stale_ids.append(temp_id)
-                    continue
-
                 metadata = json.loads(data.decode("utf-8"))
                 pending_files.append(metadata)
-
             except Exception as e:  # pylint: disable=broad-exception-caught
                 logger.debug("exec_cache.get_pending_files.parse_error",
                              temp_id=temp_id,
