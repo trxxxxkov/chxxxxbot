@@ -612,16 +612,8 @@ Cost: ~$0.05/hour. Typical <1s = <$0.0001.""",
         },
         "required": ["code"]
     },
-    # Phase 1.5 Stage 6: Enable prompt caching for all tool definitions
-    # This MUST be on the LAST tool in TOOL_DEFINITIONS list
-    # Caches all 5 tools (~3,268 tokens) with 1-hour ephemeral cache
-    # Cost: 10x reduction on cache hits ($0.15 → $0.015 per 1M tokens)
-    # Shared across ALL users (same tool definitions for everyone)
-    # 1-hour TTL: 2x write cost but lasts 12x longer → ~41% savings vs 5-min
-    "cache_control": {
-        "type": "ephemeral",
-        "ttl": "1h"  # 1-hour cache for better cost efficiency
-    }
+    # NOTE: cache_control removed - it must be on the LAST tool (web_fetch)
+    # See registry.py WEB_FETCH_CONFIG for cache_control placement
 }
 
 

@@ -70,6 +70,8 @@ WEB_FETCH_CONFIG = ToolConfig(
             "enabled": True
         },
         "max_content_tokens": 100000,  # Protect against huge pages
+        # NOTE: No cache_control here - tools are cached via system prompt breakpoint
+        # Order: tools → system → messages. Breakpoint on system caches tools + system.
     },
     executor=None,
     emoji="🌐",
