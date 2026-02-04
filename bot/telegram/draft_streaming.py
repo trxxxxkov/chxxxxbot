@@ -309,7 +309,7 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
         Returns:
             True on success, False on failure.
         """
-        if not text:
+        if not text or not text.strip():
             return True
 
         # Skip if already finalized
@@ -464,7 +464,7 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
                          reason="finalized")
             return True
 
-        if not self.last_text:
+        if not self.last_text or not self.last_text.strip():
             logger.debug("draft_streamer.keepalive_skipped",
                          chat_id=self.chat_id,
                          draft_id=self.draft_id,
