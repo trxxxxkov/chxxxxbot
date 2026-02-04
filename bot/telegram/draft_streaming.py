@@ -389,9 +389,11 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
                 return False
 
         except TelegramBadRequest as e:
+            error_msg = str(e).lower()
+
             # Architectural trade-off: MarkdownV2 formatting vs compatibility
             # This is expected behavior - fallback to plain text when parse fails
-            if "can't parse entities" in str(e).lower() and parse_mode:
+            if "can't parse entities" in error_msg and parse_mode:
                 logger.debug("draft_streamer.parse_error_fallback",
                              chat_id=self.chat_id,
                              draft_id=self.draft_id,
@@ -400,6 +402,17 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
                 return await self.update(text_to_send,
                                          parse_mode=None,
                                          force=force)
+
+            # Expected edge case during streaming: first chunk may produce
+            # MarkdownV2 that Telegram considers "empty" (only control chars).
+            # Skip silently - next update with more content will succeed.
+            if "text must be non-empty" in error_msg:
+                logger.debug("draft_streamer.skipped_visually_empty",
+                             chat_id=self.chat_id,
+                             draft_id=self.draft_id,
+                             text_length=len(text_to_send))
+                return True  # Skip gracefully, next update will succeed
+
             logger.info("draft_streamer.update_failed",
                         chat_id=self.chat_id,
                         draft_id=self.draft_id,

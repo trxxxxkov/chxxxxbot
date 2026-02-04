@@ -444,3 +444,53 @@ class TestDraftManager:
             first = dm.current
             second = dm.current
             assert first is second
+
+
+class TestDraftStreamerErrorHandling:
+    """Tests for error handling in update() method."""
+
+    @pytest.mark.asyncio
+    async def test_update_handles_text_must_be_non_empty(
+            self, streamer, mock_bot):
+        """Update should return True on 'text must be non-empty' error.
+
+        This is an expected edge case during streaming when first chunk
+        produces MarkdownV2 that Telegram considers visually empty.
+        """
+        from aiogram.exceptions import TelegramBadRequest
+
+        # Mock bot to raise "text must be non-empty" error
+        mock_bot.side_effect = TelegramBadRequest(
+            method=MagicMock(), message="Bad Request: text must be non-empty")
+
+        result = await streamer.update("**>||", force=True)
+
+        # Should return True (graceful skip), not False
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_update_handles_parse_error_with_fallback(
+            self, streamer, mock_bot):
+        """Update should retry with parse_mode=None on parse error."""
+        from aiogram.exceptions import TelegramBadRequest
+
+        call_count = 0
+
+        async def side_effect(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise TelegramBadRequest(
+                    method=MagicMock(),
+                    message="Bad Request: can't parse entities")
+            return None
+
+        mock_bot.side_effect = side_effect
+
+        result = await streamer.update("test",
+                                       parse_mode="MarkdownV2",
+                                       force=True)
+
+        # Should succeed on retry
+        assert result is True
+        assert call_count == 2  # First call failed, second succeeded
