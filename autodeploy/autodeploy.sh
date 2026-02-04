@@ -43,12 +43,7 @@ generate_ssh_config
 
 cd "$REPO_DIR"
 
-# Track the last deployed commit to detect local changes
-# This is needed because commits made locally on the server won't be detected
-# by comparing LOCAL vs REMOTE (they'll be equal after push)
-LAST_DEPLOYED_COMMIT=$(git rev-parse HEAD)
 log_info "Autodeploy started: checking $BRANCH every ${CHECK_INTERVAL}s"
-log_info "Initial deployed commit: ${LAST_DEPLOYED_COMMIT:0:7}"
 
 while true; do
     sleep "$CHECK_INTERVAL"
@@ -62,22 +57,10 @@ while true; do
 
     LOCAL=$(git rev-parse HEAD)
     REMOTE=$(git rev-parse "origin/$BRANCH")
-    log_info "Local: ${LOCAL:0:7}, Remote: ${REMOTE:0:7}, Deployed: ${LAST_DEPLOYED_COMMIT:0:7}"
+    log_info "Local: ${LOCAL:0:7}, Remote: ${REMOTE:0:7}"
 
-    # Deploy needed if:
-    # 1. Remote has new commits (REMOTE != LOCAL) - normal case
-    # 2. Local has new commits since last deploy (LOCAL != LAST_DEPLOYED) - local commit case
-    NEEDS_DEPLOY=false
     if [ "$LOCAL" != "$REMOTE" ]; then
-        log_info "Remote has new commits ($LOCAL -> $REMOTE)"
-        NEEDS_DEPLOY=true
-    elif [ "$LOCAL" != "$LAST_DEPLOYED_COMMIT" ]; then
-        log_info "Local has new commits since last deploy (${LAST_DEPLOYED_COMMIT:0:7} -> ${LOCAL:0:7})"
-        NEEDS_DEPLOY=true
-    fi
-
-    if [ "$NEEDS_DEPLOY" = true ]; then
-        log_info "Starting deployment..."
+        log_info "New commits detected ($LOCAL -> $REMOTE)"
 
         # 1. Graceful shutdown bot first (allows write-behind flush)
         log_info "Stopping bot gracefully..."
@@ -125,10 +108,6 @@ while true; do
         else
             log_info "Deploy completed successfully"
         fi
-
-        # Update last deployed commit
-        LAST_DEPLOYED_COMMIT=$(git rev-parse HEAD)
-        log_info "Updated deployed commit: ${LAST_DEPLOYED_COMMIT:0:7}"
     fi
 
     # Cleanup any leftover backup
