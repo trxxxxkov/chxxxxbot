@@ -153,7 +153,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "(sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=~\"claude_handler.user_charged|claude_handler.cancelled_user_charged|tools.web_search.user_charged\" | unwrap cost_usd [$__interval])) or vector(0)) + (sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=~\"analyze_image|analyze_pdf|preview_file|extended_thinking\" | unwrap cost_usd [$__interval])) or vector(0)) + (sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"self_critique.cost_charged\" | unwrap total_cost [$__interval])) or vector(0))",
+          "expr": "(sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=~\"claude_handler.user_charged|claude_handler.cancelled_user_charged|tools.web_search.user_charged|topic_naming.user_charged\" | unwrap cost_usd [$__interval])) or vector(0)) + (sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=~\"analyze_image|analyze_pdf|preview_file|extended_thinking\" | unwrap cost_usd [$__interval])) or vector(0)) + (sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"self_critique.cost_charged\" | unwrap total_cost [$__interval])) or vector(0))",
           "refId": "A"
         }
       ],
@@ -463,7 +463,7 @@
               {
                 "id": "color",
                 "value": {
-                  "fixedColor": "#F59E0B",
+                  "fixedColor": "#FBBF24",
                   "mode": "fixed"
                 }
               }
@@ -472,7 +472,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "web_search"
+              "options": "execute_python"
             },
             "properties": [
               {
@@ -487,7 +487,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "preview_file"
+              "options": "web_search"
             },
             "properties": [
               {
@@ -517,7 +517,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "execute_python"
+              "options": "analyze_pdf"
             },
             "properties": [
               {
@@ -532,13 +532,58 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "stop_generation"
+              "options": "analyze_image"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#06B6D4",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "preview_file"
             },
             "properties": [
               {
                 "id": "color",
                 "value": {
                   "fixedColor": "#3B82F6",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "stop_generation"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#6366F1",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "topic_naming"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#8B5CF6",
                   "mode": "fixed"
                 }
               }
@@ -628,8 +673,8 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.web_search.user_charged\" | source!=\"self_critique\" | unwrap cost_usd [$__interval])) or vector(0)",
-          "legendFormat": "web_search",
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"execute_python\" | source!=\"self_critique\" | unwrap cost_usd [$__interval])) or vector(0)",
+          "legendFormat": "execute_python",
           "refId": "D"
         },
         {
@@ -637,27 +682,9 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"preview_file\" | unwrap cost_usd [$__interval])) or vector(0)",
-          "legendFormat": "preview_file",
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.web_search.user_charged\" | source!=\"self_critique\" | unwrap cost_usd [$__interval])) or vector(0)",
+          "legendFormat": "web_search",
           "refId": "E"
-        },
-        {
-          "datasource": {
-            "type": "loki",
-            "uid": "loki"
-          },
-          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"analyze_image\" | unwrap cost_usd [$__interval])) or vector(0)",
-          "legendFormat": "analyze_image",
-          "refId": "AI"
-        },
-        {
-          "datasource": {
-            "type": "loki",
-            "uid": "loki"
-          },
-          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"analyze_pdf\" | unwrap cost_usd [$__interval])) or vector(0)",
-          "legendFormat": "analyze_pdf",
-          "refId": "AP"
         },
         {
           "datasource": {
@@ -673,9 +700,27 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"execute_python\" | source!=\"self_critique\" | unwrap cost_usd [$__interval])) or vector(0)",
-          "legendFormat": "execute_python",
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"analyze_pdf\" | unwrap cost_usd [$__interval])) or vector(0)",
+          "legendFormat": "analyze_pdf",
           "refId": "G"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"analyze_image\" | unwrap cost_usd [$__interval])) or vector(0)",
+          "legendFormat": "analyze_image",
+          "refId": "H"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"preview_file\" | unwrap cost_usd [$__interval])) or vector(0)",
+          "legendFormat": "preview_file",
+          "refId": "I"
         },
         {
           "datasource": {
@@ -684,7 +729,7 @@
           },
           "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.cancelled_user_charged\" | unwrap cost_usd [$__interval])) or vector(0)",
           "legendFormat": "stop_generation",
-          "refId": "H"
+          "refId": "J"
         },
         {
           "datasource": {
@@ -693,7 +738,7 @@
           },
           "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"topic_naming.user_charged\" | unwrap cost_usd [$__interval])) or vector(0)",
           "legendFormat": "topic_naming",
-          "refId": "TN"
+          "refId": "K"
         }
       ],
       "title": "Costs",
