@@ -20,6 +20,7 @@ from telegram.streaming.session import StreamingSession
 from telegram.streaming.tool_executor import ToolExecutor
 from telegram.streaming.types import CancellationReason
 from telegram.streaming.types import StreamResult
+from utils.serialization import serialize_content_block
 from utils.structured_logging import get_logger
 
 if TYPE_CHECKING:
@@ -113,48 +114,6 @@ def is_empty_content(content) -> bool:
                 return False
         return True
     return False
-
-
-def serialize_content_block(block) -> dict:
-    """Serialize a content block for Claude API.
-
-    Removes fields that are returned by API but not accepted on input,
-    such as 'citations' in server_tool_result blocks.
-
-    Args:
-        block: Content block (Pydantic model or dict).
-
-    Returns:
-        Serialized dict safe to send back to API.
-    """
-    if hasattr(block, 'model_dump'):
-        block_dict = block.model_dump()
-    elif isinstance(block, dict):
-        block_dict = block.copy()
-    else:
-        return block
-
-    # Remove fields API returns but doesn't accept on input
-    block_type = block_dict.get("type", "")
-    if block_type in ("server_tool_result", "web_search_tool_result",
-                      "web_fetch_tool_result"):
-        block_dict.pop("citations", None)
-        block_dict.pop("text", None)  # web_fetch_tool_result has 'text'
-
-    # Also check nested content for server tool results
-    if "content" in block_dict and isinstance(block_dict["content"], list):
-        cleaned_content = []
-        for item in block_dict["content"]:
-            if isinstance(item, dict):
-                item_copy = item.copy()
-                item_copy.pop("citations", None)
-                item_copy.pop("text", None)
-                cleaned_content.append(item_copy)
-            else:
-                cleaned_content.append(item)
-        block_dict["content"] = cleaned_content
-
-    return block_dict
 
 
 class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
