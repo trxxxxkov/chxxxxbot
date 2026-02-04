@@ -7,7 +7,7 @@ NO __init__.py - use direct import:
 """
 
 from decimal import Decimal
-from typing import Optional
+from typing import Literal, Optional
 
 from utils.structured_logging import get_logger
 
@@ -95,6 +95,7 @@ def calculate_claude_cost(
     cache_read_tokens: int = 0,
     cache_creation_tokens: int = 0,
     thinking_tokens: int = 0,
+    cache_ttl: Literal["5m", "1h"] = "1h",
 ) -> Decimal:
     """Calculate Claude API cost.
 
@@ -105,6 +106,8 @@ def calculate_claude_cost(
         cache_read_tokens: Number of cache read tokens.
         cache_creation_tokens: Number of cache creation tokens.
         thinking_tokens: Number of thinking tokens (billed as output).
+        cache_ttl: Cache TTL used ("5m" = 1.25x, "1h" = 2x input price).
+            Default is "1h" since the bot uses 1-hour cache everywhere.
 
     Returns:
         Cost in USD as Decimal.
@@ -144,10 +147,16 @@ def calculate_claude_cost(
                            Decimal("1000000") *
                            Decimal(str(model_config.pricing_cache_read)))
 
-    if model_config.pricing_cache_write_5m and cache_creation_tokens > 0:
-        cache_creation_cost = (
-            Decimal(str(cache_creation_tokens)) / Decimal("1000000") *
-            Decimal(str(model_config.pricing_cache_write_5m)))
+    if cache_creation_tokens > 0:
+        # Use correct pricing based on cache TTL
+        if cache_ttl == "1h" and model_config.pricing_cache_write_1h:
+            cache_creation_cost = (
+                Decimal(str(cache_creation_tokens)) / Decimal("1000000") *
+                Decimal(str(model_config.pricing_cache_write_1h)))
+        elif model_config.pricing_cache_write_5m:
+            cache_creation_cost = (
+                Decimal(str(cache_creation_tokens)) / Decimal("1000000") *
+                Decimal(str(model_config.pricing_cache_write_5m)))
 
     total = (input_cost + output_cost + thinking_cost + cache_read_cost +
              cache_creation_cost)

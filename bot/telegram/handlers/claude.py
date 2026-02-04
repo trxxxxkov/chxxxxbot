@@ -59,6 +59,7 @@ from core.exceptions import RateLimitError
 from core.exceptions import ToolValidationError
 from core.models import LLMRequest
 from core.models import Message
+from core.pricing import calculate_claude_cost
 from core.tools.helpers import extract_tool_uses
 from core.tools.helpers import format_tool_results
 from core.tools.helpers import format_unified_files_section
@@ -768,29 +769,30 @@ async def _process_batch_with_session(
             # (required for Extended Thinking - API needs signatures in context)
             thinking_blocks_json = claude_provider.get_thinking_blocks_json()
 
-            # Calculate Claude API cost (including cache tokens!)
+            # Calculate Claude API cost using centralized pricing
             # See: https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching#pricing
-            # - input_tokens: tokens after last cache breakpoint (full price)
-            # - cache_read_tokens: tokens read from cache (0.1x input price)
-            # - cache_creation_tokens: tokens written to cache (1.25x input price)
+            # Uses 1h cache TTL since GLOBAL_SYSTEM_PROMPT uses ttl="1h"
+            cost_usd = float(
+                calculate_claude_cost(
+                    model_id=model_config.model_id,
+                    input_tokens=usage.input_tokens,
+                    output_tokens=usage.output_tokens,
+                    cache_read_tokens=usage.cache_read_tokens or 0,
+                    cache_creation_tokens=usage.cache_creation_tokens or 0,
+                    thinking_tokens=usage.thinking_tokens,
+                    cache_ttl="1h",
+                ))
+
+            # Calculate cache costs separately for logging
             cache_read_cost = 0.0
             cache_creation_cost = 0.0
-
             if usage.cache_read_tokens and model_config.pricing_cache_read:
                 cache_read_cost = ((usage.cache_read_tokens / 1_000_000) *
                                    model_config.pricing_cache_read)
-
-            # Use 1h cache pricing since GLOBAL_SYSTEM_PROMPT uses 1h TTL
             if usage.cache_creation_tokens and model_config.pricing_cache_write_1h:
                 cache_creation_cost = (
                     (usage.cache_creation_tokens / 1_000_000) *
                     model_config.pricing_cache_write_1h)
-
-            cost_usd = (
-                (usage.input_tokens / 1_000_000) * model_config.pricing_input +
-                cache_read_cost + cache_creation_cost +
-                ((usage.output_tokens + usage.thinking_tokens) / 1_000_000) *
-                model_config.pricing_output)
 
             # Calculate web_search cost ($0.01 per search request)
             web_search_cost = usage.web_search_requests * 0.01

@@ -685,6 +685,15 @@
           "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.cancelled_user_charged\" | unwrap cost_usd [$__interval])) or vector(0)",
           "legendFormat": "stop_generation",
           "refId": "H"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"topic_naming.user_charged\" | unwrap cost_usd [$__interval])) or vector(0)",
+          "legendFormat": "topic_naming",
+          "refId": "TN"
         }
       ],
       "title": "Costs",

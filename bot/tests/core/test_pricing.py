@@ -30,7 +30,7 @@ import pytest
 
 
 @dataclass
-class MockModelConfig:
+class MockModelConfig:  # pylint: disable=too-many-instance-attributes
     """Mock model config for testing Claude pricing."""
 
     provider: str
@@ -41,6 +41,7 @@ class MockModelConfig:
     pricing_output: float
     pricing_cache_read: float | None = None
     pricing_cache_write_5m: float | None = None
+    pricing_cache_write_1h: float | None = None
 
 
 @pytest.fixture
@@ -56,7 +57,8 @@ def mock_model_registry():
                 pricing_input=1.0,  # $1 per 1M input tokens
                 pricing_output=5.0,  # $5 per 1M output tokens
                 pricing_cache_read=0.1,  # $0.10 per 1M cache read
-                pricing_cache_write_5m=1.25,  # $1.25 per 1M cache write
+                pricing_cache_write_5m=1.25,  # $1.25 per 1M cache write (1.25x)
+                pricing_cache_write_1h=2.0,  # $2.00 per 1M cache write (2x)
             ),
         "claude:sonnet":
             MockModelConfig(
@@ -67,7 +69,8 @@ def mock_model_registry():
                 pricing_input=3.0,  # $3 per 1M input tokens
                 pricing_output=15.0,  # $15 per 1M output tokens
                 pricing_cache_read=0.30,  # $0.30 per 1M cache read
-                pricing_cache_write_5m=3.75,  # $3.75 per 1M cache write
+                pricing_cache_write_5m=3.75,  # $3.75 per 1M cache write (1.25x)
+                pricing_cache_write_1h=6.0,  # $6.00 per 1M cache write (2x)
             ),
         "claude:opus":
             MockModelConfig(
@@ -78,7 +81,8 @@ def mock_model_registry():
                 pricing_input=15.0,  # $15 per 1M input tokens
                 pricing_output=75.0,  # $75 per 1M output tokens
                 pricing_cache_read=1.5,  # $1.50 per 1M cache read
-                pricing_cache_write_5m=18.75,  # $18.75 per 1M cache write
+                pricing_cache_write_5m=18.75,  # $18.75 per 1M cache write (1.25x)
+                pricing_cache_write_1h=30.0,  # $30.00 per 1M cache write (2x)
             ),
         "claude:no_cache":
             MockModelConfig(
@@ -90,6 +94,7 @@ def mock_model_registry():
                 pricing_output=10.0,
                 pricing_cache_read=None,  # No cache support
                 pricing_cache_write_5m=None,
+                pricing_cache_write_1h=None,
             ),
     }
 
@@ -293,17 +298,32 @@ class TestCalculateClaudeCost:
             )
             assert result == Decimal("0.1")
 
-    def test_cache_creation_tokens(self, mock_model_registry):
-        """Should calculate cache creation token cost."""
+    def test_cache_creation_tokens_1h_default(self, mock_model_registry):
+        """Should calculate cache creation cost with 1h TTL (default)."""
         with patch.dict("config.MODEL_REGISTRY",
                         mock_model_registry,
                         clear=True):
-            # Haiku: $1.25/1M cache write
+            # Haiku: $2.00/1M cache write for 1h TTL (default)
             result = calculate_claude_cost(
                 model_id="claude-haiku-test",
                 input_tokens=0,
                 output_tokens=0,
-                cache_creation_tokens=1_000_000,  # $1.25
+                cache_creation_tokens=1_000_000,  # $2.00 for 1h
+            )
+            assert result == Decimal("2.0")
+
+    def test_cache_creation_tokens_5m(self, mock_model_registry):
+        """Should calculate cache creation cost with 5m TTL."""
+        with patch.dict("config.MODEL_REGISTRY",
+                        mock_model_registry,
+                        clear=True):
+            # Haiku: $1.25/1M cache write for 5m TTL
+            result = calculate_claude_cost(
+                model_id="claude-haiku-test",
+                input_tokens=0,
+                output_tokens=0,
+                cache_creation_tokens=1_000_000,  # $1.25 for 5m
+                cache_ttl="5m",
             )
             assert result == Decimal("1.25")
 
@@ -322,21 +342,22 @@ class TestCalculateClaudeCost:
             assert result == Decimal("5")
 
     def test_combined_all_token_types(self, mock_model_registry):
-        """Should correctly sum all token type costs."""
+        """Should correctly sum all token type costs with 1h TTL (default)."""
         with patch.dict("config.MODEL_REGISTRY",
                         mock_model_registry,
                         clear=True):
-            # Haiku: $1 input, $5 output, $0.10 cache read, $1.25 cache write
+            # Haiku: $1 input, $5 output, $0.10 cache read, $2.00 cache write (1h)
             result = calculate_claude_cost(
                 model_id="claude-haiku-test",
                 input_tokens=1_000_000,  # $1
                 output_tokens=200_000,  # $1
                 cache_read_tokens=2_000_000,  # $0.20
-                cache_creation_tokens=800_000,  # $1
+                cache_creation_tokens=800_000,  # $1.60 (0.8M * $2.00 for 1h)
                 thinking_tokens=100_000,  # $0.50
             )
+            # $1 + $1 + $0.20 + $1.60 + $0.50 = $4.30
             expected = Decimal("1") + Decimal("1") + Decimal("0.2") + Decimal(
-                "1") + Decimal("0.5")
+                "1.6") + Decimal("0.5")
             assert result == expected
 
     def test_model_without_cache_support(self, mock_model_registry):
@@ -344,17 +365,19 @@ class TestCalculateClaudeCost:
         with patch.dict("config.MODEL_REGISTRY",
                         mock_model_registry,
                         clear=True):
-            # Model with None cache pricing
-            result = calculate_claude_cost(
-                model_id="claude-no-cache",
-                input_tokens=1_000_000,
-                output_tokens=500_000,
-                cache_read_tokens=1_000_000,  # Should be ignored
-                cache_creation_tokens=1_000_000,  # Should be ignored
-            )
-            # Only input + output: $2 + $5 = $7
-            expected = Decimal("2") + Decimal("5")
-            assert result == expected
+            # Model with None cache pricing - both TTLs should work
+            for ttl in ["5m", "1h"]:
+                result = calculate_claude_cost(
+                    model_id="claude-no-cache",
+                    input_tokens=1_000_000,
+                    output_tokens=500_000,
+                    cache_read_tokens=1_000_000,  # Should be ignored
+                    cache_creation_tokens=1_000_000,  # Should be ignored
+                    cache_ttl=ttl,
+                )
+                # Only input + output: $2 + $5 = $7
+                expected = Decimal("2") + Decimal("5")
+                assert result == expected
 
     def test_unknown_model_returns_zero(self, mock_model_registry):
         """Should return 0 for unknown model IDs."""
