@@ -65,6 +65,25 @@ class MockContentBlock:
         return {"type": self.type, "text": self.text}
 
 
+@dataclass
+class MockToolUseBlock:
+    """Mock tool use block for testing tool execution."""
+
+    id: str
+    name: str
+    input: dict
+    type: str = "tool_use"
+
+    def model_dump(self) -> dict:
+        """Return dict representation."""
+        return {
+            "type": self.type,
+            "id": self.id,
+            "name": self.name,
+            "input": self.input,
+        }
+
+
 # ============================================================================
 # Fixtures
 # ============================================================================
@@ -1164,6 +1183,163 @@ class TestStreamingOrchestratorStream:
         # Should still return a result
         assert isinstance(result, StreamResult)
         assert result.was_cancelled is False
+
+    @pytest.mark.asyncio
+    async def test_stream_file_delivered_then_empty_response(
+        self,
+        mock_llm_request,
+        mock_telegram_message,
+        mock_session,
+        mock_user_file_repo,
+        mock_claude_provider,
+        mock_draft_manager,
+        mock_cancel_event,
+        mock_action_manager,
+    ):
+        """Should track has_delivered_files when file is delivered but final response is empty.
+
+        Regression test for bug where user saw "Claude returned an empty response"
+        after file was successfully delivered via deliver_file tool.
+        """
+        # Iteration 1: Claude uses deliver_file tool
+        iter1_events = [
+            MockStreamEvent(
+                type="tool_use",
+                tool_id="tool_1",
+                tool_name="deliver_file",
+            ),
+            MockStreamEvent(
+                type="block_end",
+                tool_id="tool_1",
+                tool_name="deliver_file",
+                tool_input={
+                    "temp_id": "test123",
+                    "caption": "Here's your file"
+                },
+            ),
+            MockStreamEvent(type="message_end", stop_reason="tool_use"),
+            MockStreamEvent(
+                type="stream_complete",
+                final_message=MockMessage(content=[
+                    MockToolUseBlock(
+                        id="tool_1",
+                        name="deliver_file",
+                        input={
+                            "temp_id": "test123",
+                            "caption": "Here's your file"
+                        },
+                    )
+                ]),
+            ),
+        ]
+
+        # Iteration 2: Claude returns end_turn with empty text (this caused the bug)
+        iter2_events = [
+            MockStreamEvent(type="message_end", stop_reason="end_turn"),
+            MockStreamEvent(
+                type="stream_complete",
+                final_message=MockMessage(content=[]),
+            ),
+        ]
+
+        iteration = [0]
+
+        async def mock_stream_events(request):
+            if iteration[0] == 0:
+                iteration[0] += 1
+                for event in iter1_events:
+                    yield event
+            else:
+                for event in iter2_events:
+                    yield event
+
+        mock_claude_provider.stream_events = mock_stream_events
+
+        # Mock tool execution result with _file_contents
+        mock_tool_result = ToolExecutionResult(
+            tool=ToolCall(
+                tool_id="tool_1",
+                name="deliver_file",
+                input={
+                    "temp_id": "test123",
+                    "caption": "Here's your file"
+                },
+            ),
+            result={"success": "true"},
+            raw_result={
+                "success":
+                    "true",
+                "_file_contents": [{
+                    "content": b"test content",
+                    "filename": "test.png",
+                    "mime_type": "image/png",
+                }],
+            },
+            is_error=False,
+            duration=0.1,
+            cost_usd=Decimal("0"),
+            force_turn_break=False,  # Not sequential mode
+        )
+        mock_batch_result = BatchExecutionResult(
+            results=[mock_tool_result],
+            force_turn_break=False,
+            turn_break_tool=None,
+            first_file_committed=True,
+        )
+
+        orchestrator = StreamingOrchestrator(
+            request=mock_llm_request,
+            first_message=mock_telegram_message,
+            thread_id=1,
+            session=mock_session,
+            user_file_repo=mock_user_file_repo,
+            chat_id=123,
+            user_id=456,
+            claude_provider=mock_claude_provider,
+        )
+
+        with (
+                patch("telegram.streaming.orchestrator.generation_context") as
+                mock_gen_ctx,
+                patch(
+                    "telegram.streaming.orchestrator.DraftManager",
+                    return_value=mock_draft_manager,
+                ),
+                patch("telegram.streaming.orchestrator.ChatActionManager") as
+                mock_action_cls,
+                patch("telegram.streaming.orchestrator.process_generated_files")
+                as mock_process_files,
+        ):
+            mock_gen_ctx.return_value.__aenter__ = AsyncMock(
+                return_value=mock_cancel_event)
+            mock_gen_ctx.return_value.__aexit__ = AsyncMock(return_value=None)
+            mock_draft_manager.__aenter__ = AsyncMock(
+                return_value=mock_draft_manager)
+            mock_draft_manager.__aexit__ = AsyncMock(return_value=None)
+            mock_action_cls.get.return_value = mock_action_manager
+
+            # Mock tool executor to return our controlled result
+            mock_executor = AsyncMock()
+            mock_executor.execute_batch = AsyncMock(
+                return_value=mock_batch_result)
+            orchestrator._tool_executor = mock_executor
+
+            # Mock on_file_ready callback to simulate file delivery
+            original_execute_tools = orchestrator._execute_tools
+
+            async def patched_execute_tools(*args, **kwargs):
+                # Simulate file delivery by setting the flag
+                orchestrator._has_delivered_files = True
+                return None  # Continue to next iteration
+
+            orchestrator._execute_tools = patched_execute_tools
+
+            result = await orchestrator.stream()
+
+        # Key assertion: has_delivered_files should be True even with empty final text
+        assert result.has_delivered_files is True
+        assert result.was_cancelled is False
+        assert result.text == ""  # Empty final text (this was the bug scenario)
 
 
 class TestStreamingOrchestratorMaxIterations:

@@ -182,6 +182,9 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
         # Lazy-loaded components
         self._tool_executor: ToolExecutor | None = None
 
+        # Track if files were delivered across iterations
+        self._has_delivered_files = False
+
     def _get_claude_provider(self):
         """Get Claude provider (lazy import to avoid circular deps)."""
         if self._claude_provider is not None:
@@ -420,6 +423,7 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
             thinking_chars=thinking_chars,
             output_chars=total_output_chars,
             has_sent_parts=stream.has_sent_parts,
+            has_delivered_files=self._has_delivered_files,
         )
 
     async def _handle_completion(
@@ -464,6 +468,7 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
             message=final_message,
             iterations=iterations,
             has_sent_parts=stream.has_sent_parts,
+            has_delivered_files=self._has_delivered_files,
         )
 
     async def _execute_tools(
@@ -498,6 +503,8 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
             if not first_file_committed:
                 await stream.commit_for_files()
                 first_file_committed = True
+            # Track file delivery at orchestrator level for empty response handling
+            self._has_delivered_files = True
             await process_generated_files(
                 result,
                 self._first_message,
@@ -570,6 +577,7 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
                 "⚠️ Tool execution error: missing assistant context",
                 was_cancelled=True,
                 cancellation_reason=CancellationReason.ERROR,
+                has_delivered_files=self._has_delivered_files,
             )
 
         await stream.update_display()
@@ -614,8 +622,7 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
                 needs_continuation=True,
                 conversation=conversation,
                 has_sent_parts=stream.has_sent_parts,
-                has_delivered_files=batch_result.turn_break_tool ==
-                "deliver_file",
+                has_delivered_files=self._has_delivered_files,
             )
 
         # Continue to next iteration
@@ -656,6 +663,7 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
             display_text=final_display or final_answer,
             message=final_message,
             has_sent_parts=stream.has_sent_parts,
+            has_delivered_files=self._has_delivered_files,
         )
 
     async def _handle_max_iterations(
@@ -685,4 +693,5 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
             message=final_message,
             was_cancelled=True,
             cancellation_reason=CancellationReason.MAX_ITERATIONS,
+            has_delivered_files=self._has_delivered_files,
         )

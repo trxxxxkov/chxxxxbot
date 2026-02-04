@@ -639,14 +639,14 @@ async def _process_batch_with_session(
                         # Had content in previous continuations, split parts,
                         # or files delivered via deliver_file tool
                         logger.debug(
-                            "claude_handler.continuations_exhausted",
+                            "claude_handler.silent_completion",
                             thread_id=thread_id,
                             all_response_parts=bool(all_response_parts),
                             has_sent_parts=result.has_sent_parts,
                             any_files_delivered=any_files_delivered)
-                        # Content was already delivered, just acknowledge
-                        bot_message = await _send_with_retry(
-                            first_message, "✓ Response delivered.")
+                        # Content was already delivered, no need to send anything
+                        # Use first_message as virtual bot_message for DB storage
+                        bot_message = first_message
                     else:
                         # External API returned empty - this shouldn't happen
                         logger.warning("claude_handler.empty_response",
