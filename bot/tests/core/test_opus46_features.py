@@ -318,8 +318,10 @@ class TestCompactionParams:
             await provider.get_message(request)
 
         call_args = provider.client.messages.create.call_args[1]
-        assert "context_management" in call_args
-        edits = call_args["context_management"]["edits"]
+        # Compaction is beta — passed via extra_body, not as direct param
+        assert "extra_body" in call_args
+        cm = call_args["extra_body"]["context_management"]
+        edits = cm["edits"]
         assert len(edits) == 1
         assert edits[0]["type"] == "compact_20260112"
         assert edits[0]["trigger"]["type"] == "input_tokens"
@@ -356,7 +358,7 @@ class TestCompactionParams:
             await provider.get_message(request)
 
         call_args = provider.client.messages.create.call_args[1]
-        assert "context_management" not in call_args
+        assert "extra_body" not in call_args
 
 
 # =============================================================================

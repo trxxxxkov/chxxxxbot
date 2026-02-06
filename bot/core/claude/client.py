@@ -205,18 +205,8 @@ class ClaudeProvider(LLMProvider):
                 "budget_tokens": request.thinking_budget
             }
 
-        # Server-side compaction (Opus 4.6)
-        if model_config.has_capability("compaction"):
-            api_params["context_management"] = {
-                "edits": [{
-                    "type": "compact_20260112",
-                    "trigger": {
-                        "type": "input_tokens",
-                        "value": 100_000
-                    }
-                }]
-            }
-            logger.debug("claude.compaction.enabled", trigger_tokens=100_000)
+        # Server-side compaction (Opus 4.6, beta)
+        self._apply_compaction_config(api_params, model_config)
 
         try:
             # Non-streaming API call
@@ -427,18 +417,8 @@ class ClaudeProvider(LLMProvider):
             api_params["output_config"] = {"effort": "high"}
             logger.debug("claude.effort.enabled", effort="high")
 
-        # Server-side compaction (Opus 4.6)
-        if model_config.has_capability("compaction"):
-            api_params["context_management"] = {
-                "edits": [{
-                    "type": "compact_20260112",
-                    "trigger": {
-                        "type": "input_tokens",
-                        "value": 100_000
-                    }
-                }]
-            }
-            logger.debug("claude.compaction.enabled", trigger_tokens=100_000)
+        # Server-side compaction (Opus 4.6, beta)
+        self._apply_compaction_config(api_params, model_config)
 
         # Phase 1.4.2: System prompt with conditional caching
         # Supports both string (legacy) and list of blocks (multi-block caching)
@@ -737,6 +717,34 @@ class ClaudeProvider(LLMProvider):
         """
         return self.last_thinking
 
+    @staticmethod
+    def _apply_compaction_config(api_params: dict, model_config) -> None:
+        """Add server-side compaction for models that support it.
+
+        Compaction is a beta feature not yet in the SDK's method signature,
+        so it must be passed via extra_body. The beta header is already set
+        at the client level in default_headers.
+
+        Args:
+            api_params: Mutable dict of API parameters to augment.
+            model_config: Model configuration from registry.
+        """
+        if not model_config.has_capability("compaction"):
+            return
+
+        api_params["extra_body"] = {
+            "context_management": {
+                "edits": [{
+                    "type": "compact_20260112",
+                    "trigger": {
+                        "type": "input_tokens",
+                        "value": 100_000
+                    }
+                }]
+            }
+        }
+        logger.debug("claude.compaction.enabled", trigger_tokens=100_000)
+
     def _sanitize_block_for_api(self, block_dict: dict) -> dict:
         """Remove fields that API returns but doesn't accept on input.
 
@@ -935,18 +943,8 @@ class ClaudeProvider(LLMProvider):
                 "budget_tokens": request.thinking_budget
             }
 
-        # Server-side compaction (Opus 4.6)
-        if model_config.has_capability("compaction"):
-            api_params["context_management"] = {
-                "edits": [{
-                    "type": "compact_20260112",
-                    "trigger": {
-                        "type": "input_tokens",
-                        "value": 100_000
-                    }
-                }]
-            }
-            logger.debug("claude.compaction.enabled", trigger_tokens=100_000)
+        # Server-side compaction (Opus 4.6, beta)
+        self._apply_compaction_config(api_params, model_config)
 
         # Track current block type and accumulated data
         current_block_type: Optional[str] = None
