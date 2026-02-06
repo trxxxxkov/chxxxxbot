@@ -70,21 +70,21 @@ class ClaudeProvider(LLMProvider):
         Args:
             api_key: Anthropic API key.
         """
-        # Phase 1.4 & 1.5: Add beta headers for advanced features
+        # Beta headers for advanced features
         # - interleaved-thinking: Extended Thinking feature
         # - context-management: Context editing (thinking block clearing)
-        # - effort: Effort parameter for Opus 4.5
-        # Phase 1.5: Files API and Web Tools
+        # - compact: Server-side compaction (Opus 4.6)
         # - files-api: Files API for multimodal content
         # - web-search: Server-side web search tool
         # - web-fetch: Server-side web page/PDF fetching tool
         # - extended-cache-ttl: 1-hour prompt caching TTL
+        # Note: effort is now GA via output_config, no beta header needed
         self.client = anthropic.AsyncAnthropic(
             api_key=api_key,
             default_headers={
                 "anthropic-beta": ("interleaved-thinking-2025-05-14,"
                                    "context-management-2025-06-27,"
-                                   "effort-2025-11-24,"
+                                   "compact-2026-01-12,"
                                    "files-api-2025-04-14,"
                                    "web-search-2025-03-05,"
                                    "web-fetch-2025-09-10,"
@@ -95,11 +95,12 @@ class ClaudeProvider(LLMProvider):
             anthropic.types.Message] = None  # Phase 1.5: for tool use
         self.last_thinking: Optional[
             str] = None  # Phase 1.4.3: Extended Thinking
+        self.last_compaction: Optional[str] = None  # Opus 4.6: compaction
 
         logger.debug("claude_provider.initialized",
                      beta_features=[
-                         "interleaved-thinking", "context-management", "effort",
-                         "files-api", "web-search", "web-fetch"
+                         "interleaved-thinking", "context-management",
+                         "compact", "files-api", "web-search", "web-fetch"
                      ])
 
     # pylint: disable=too-many-locals,too-many-branches,too-many-statements
@@ -189,15 +190,29 @@ class ClaudeProvider(LLMProvider):
                 else:
                     api_params["system"] = request.system_prompt
 
-        # Effort parameter for Opus 4.5
+        # Effort parameter (GA via output_config)
         if model_config.has_capability("effort"):
-            api_params["effort"] = "high"
+            api_params["output_config"] = {"effort": "high"}
 
-        # Extended Thinking: enabled only when thinking_budget is specified
-        if request.thinking_budget:
+        # Adaptive thinking (Opus 4.6) or manual extended thinking
+        if model_config.has_capability("adaptive_thinking"):
+            api_params["thinking"] = {"type": "adaptive"}
+        elif request.thinking_budget:
             api_params["thinking"] = {
                 "type": "enabled",
                 "budget_tokens": request.thinking_budget
+            }
+
+        # Server-side compaction (Opus 4.6)
+        if model_config.has_capability("compaction"):
+            api_params["context_management"] = {
+                "edits": [{
+                    "type": "compact_20260112",
+                    "trigger": {
+                        "type": "input_tokens",
+                        "value": 100_000
+                    }
+                }]
             }
 
         try:
@@ -392,10 +407,11 @@ class ClaudeProvider(LLMProvider):
                             model_full_id=request.model,
                             error=str(e))
 
-        # Extended Thinking: enabled only when thinking_budget is specified
-        # Default is disabled for cache efficiency (~3500 tokens saved)
-        # Use extended_thinking tool for on-demand reasoning
-        if request.thinking_budget:
+        # Adaptive thinking (Opus 4.6) or manual extended thinking
+        if model_config.has_capability("adaptive_thinking"):
+            api_params["thinking"] = {"type": "adaptive"}
+            logger.debug("claude.thinking.adaptive")
+        elif request.thinking_budget:
             api_params["thinking"] = {
                 "type": "enabled",
                 "budget_tokens": request.thinking_budget
@@ -403,15 +419,21 @@ class ClaudeProvider(LLMProvider):
             logger.debug("claude.thinking.enabled",
                          budget_tokens=request.thinking_budget)
 
-        # Note: context_management not supported in current SDK version
-        # Will be added in Phase 1.5 when SDK supports it
-        # api_params["context_management"] = [{
-        #     "type": "clear_thinking_20251015",
-        #     "keep": "all"
-        # }]
+        # Effort parameter (GA via output_config)
+        if model_config.has_capability("effort"):
+            api_params["output_config"] = {"effort": "high"}
 
-        # NOTE: Effort parameter NOT supported in streaming API
-        # Only works with non-streaming messages.create()
+        # Server-side compaction (Opus 4.6)
+        if model_config.has_capability("compaction"):
+            api_params["context_management"] = {
+                "edits": [{
+                    "type": "compact_20260112",
+                    "trigger": {
+                        "type": "input_tokens",
+                        "value": 100_000
+                    }
+                }]
+            }
 
         # Phase 1.4.2: System prompt with conditional caching
         # Supports both string (legacy) and list of blocks (multi-block caching)
@@ -893,14 +915,29 @@ class ClaudeProvider(LLMProvider):
                 else:
                     api_params["system"] = request.system_prompt
 
-        # NOTE: Effort parameter NOT supported in streaming API
-        # Only works with non-streaming messages.create()
+        # Effort parameter (GA via output_config)
+        if model_config.has_capability("effort"):
+            api_params["output_config"] = {"effort": "high"}
 
-        # Extended Thinking: enabled only when thinking_budget is specified
-        if request.thinking_budget:
+        # Adaptive thinking (Opus 4.6) or manual extended thinking
+        if model_config.has_capability("adaptive_thinking"):
+            api_params["thinking"] = {"type": "adaptive"}
+        elif request.thinking_budget:
             api_params["thinking"] = {
                 "type": "enabled",
                 "budget_tokens": request.thinking_budget
+            }
+
+        # Server-side compaction (Opus 4.6)
+        if model_config.has_capability("compaction"):
+            api_params["context_management"] = {
+                "edits": [{
+                    "type": "compact_20260112",
+                    "trigger": {
+                        "type": "input_tokens",
+                        "value": 100_000
+                    }
+                }]
             }
 
         # Track current block type and accumulated data
@@ -910,12 +947,14 @@ class ClaudeProvider(LLMProvider):
         accumulated_json = ""
         thinking_text = ""
         response_text = ""
+        compaction_content = ""
 
         # Reset state before new request to prevent stale data on errors
         # This prevents tool_use_id mismatch if previous request failed
         self.last_message = None
         self.last_usage = None
         self.last_thinking = None
+        self.last_compaction = None
 
         try:
             async with self.client.messages.stream(**api_params) as stream:
@@ -945,6 +984,10 @@ class ClaudeProvider(LLMProvider):
                                               tool_id=block.id,
                                               is_server_tool=True)
 
+                        # Server-side compaction (Opus 4.6)
+                        elif block.type == "compaction":
+                            current_block_type = "compaction"
+
                     # Content block delta - yield appropriate event
                     elif event.type == "content_block_delta":
                         delta = event.delta
@@ -963,6 +1006,10 @@ class ClaudeProvider(LLMProvider):
                             accumulated_json += delta.partial_json
                             yield StreamEvent(type="input_json_delta",
                                               content=delta.partial_json)
+
+                        elif (hasattr(delta, "type") and
+                              delta.type == "compaction_delta"):
+                            compaction_content += getattr(delta, "content", "")
 
                     # Content block stop
                     elif event.type == "content_block_stop":
@@ -1016,6 +1063,11 @@ class ClaudeProvider(LLMProvider):
 
             self.last_message = final_message
             self.last_thinking = thinking_text if thinking_text else None
+            self.last_compaction = compaction_content if compaction_content else None
+
+            if compaction_content:
+                logger.info("claude.compaction.triggered",
+                            summary_length=len(compaction_content))
 
             # Yield stream_complete event with all data to avoid race condition
             # Consumer MUST capture this before another request resets state

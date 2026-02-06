@@ -1,6 +1,6 @@
 """Self-critique subagent tool for critical verification.
 
-This tool launches an independent verification session using Claude Opus 4.5
+This tool launches an independent verification session using Claude Opus 4.6
 with an adversarial system prompt focused on finding flaws.
 
 The subagent has access to tools:
@@ -456,7 +456,7 @@ async def execute_self_critique(  # pylint: disable=too-many-return-statements
 ) -> dict[str, Any]:
     """Execute critical self-verification subagent.
 
-    ALWAYS uses Claude Opus 4.5 for maximum verification quality.
+    ALWAYS uses Claude Opus 4.6 for maximum verification quality.
     Cost is dynamic - user pays actual Opus token costs + tool costs.
 
     Args:

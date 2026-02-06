@@ -288,6 +288,14 @@ class Message(Base):
         doc="Extended thinking content (can be large, full reasoning)",
     )
 
+    # Opus 4.6: Server-side compaction summary
+    compaction_summary: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        doc="Server-side compaction summary (Opus 4.6). "
+        "When present, API ignores all messages before this one.",
+    )
+
     # Model tracking for cost attribution
     model_id: Mapped[Optional[str]] = mapped_column(
         Text,

@@ -56,7 +56,7 @@ chxxxxbot/
 ## Current Capabilities
 
 ### LLM Integration
-- **Models:** Claude Haiku/Sonnet/Opus 4.5 (selectable via /model)
+- **Models:** Claude Haiku/Sonnet 4.5, Opus 4.6 (selectable via /model)
 - **Streaming:** Real-time token streaming to Telegram
 - **Context:** 200K token window with automatic management
 - **Extended Thinking:** 16K budget tokens for complex reasoning

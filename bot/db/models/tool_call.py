@@ -38,7 +38,7 @@ class ToolCall(Base):
         thread_id: Thread context.
         message_id: Related message ID (if any).
         tool_name: Name of the tool executed.
-        model_id: Model used for the tool call (e.g., claude-opus-4-5).
+        model_id: Model used for the tool call (e.g., claude-opus-4-6).
         input_tokens: Input tokens used.
         output_tokens: Output tokens used.
         cache_read_tokens: Cache read tokens (if applicable).

@@ -101,7 +101,7 @@ class LLMRequest(BaseModel):
     model: str = Field(..., description="Model identifier")
     max_tokens: int = Field(default=64000,
                             ge=1,
-                            le=64000,
+                            le=128000,
                             description="Max tokens to generate")
     temperature: float = Field(default=1.0,
                                ge=0.0,

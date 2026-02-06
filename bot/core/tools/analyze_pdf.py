@@ -63,7 +63,7 @@ async def analyze_pdf(claude_file_id: str,
 
     # Use centralized client factory with Files API beta header
     client = get_anthropic_client(use_files_api=True)
-    model_id = "claude-opus-4-5-20251101"
+    model_id = "claude-opus-4-6"
 
     # Build question with page range
     if pages != "all":

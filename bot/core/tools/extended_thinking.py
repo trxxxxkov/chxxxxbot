@@ -187,16 +187,22 @@ After thinking, respond with only a number 1-10 rating the complexity of the ana
     api_params = {
         "model": model_config.model_id,
         "max_tokens": MAX_OUTPUT_TOKENS,
-        "thinking": {
-            "type": "enabled",
-            "budget_tokens": THINKING_BUDGET_TOKENS
-        },
         "system": system_prompt,
         "messages": [{
             "role": "user",
             "content": user_message
         }],
     }
+
+    # Adaptive thinking (Opus 4.6) or manual budget
+    if model_config.has_capability("adaptive_thinking"):
+        api_params["thinking"] = {"type": "adaptive"}
+        api_params["output_config"] = {"effort": "max"}
+    else:
+        api_params["thinking"] = {
+            "type": "enabled",
+            "budget_tokens": THINKING_BUDGET_TOKENS
+        }
 
     thinking_text = ""
     conclusion_text = ""

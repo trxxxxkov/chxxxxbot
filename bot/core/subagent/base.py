@@ -83,7 +83,7 @@ class BaseSubagent(ABC):  # pylint: disable=too-many-instance-attributes
         class SelfCritiqueSubagent(BaseSubagent):
             def __init__(self, ...):
                 config = SubagentConfig(
-                    model_id="claude-opus-4-5-20251101",
+                    model_id="claude-opus-4-6",
                     system_prompt=CRITICAL_REVIEWER_PROMPT,
                     tools=VERIFICATION_TOOLS,
                 )
@@ -224,17 +224,39 @@ class BaseSubagent(ABC):  # pylint: disable=too-many-instance-attributes
 
     async def _call_api(self, messages: list[dict[str, Any]]) -> Any:
         """Call Claude API with extended thinking."""
-        return await self.client.messages.create(
-            model=self.config.model_id,
-            max_tokens=self.config.max_tokens,
-            thinking={
+        from config import \
+            get_model_by_provider_id  # pylint: disable=import-outside-toplevel
+
+        try:
+            model_config = get_model_by_provider_id("claude",
+                                                    self.config.model_id)
+        except ValueError:
+            model_config = None
+
+        # Adaptive thinking (Opus 4.6) or manual budget
+        thinking_param: dict[str, Any]
+        if model_config and model_config.has_capability("adaptive_thinking"):
+            thinking_param = {"type": "adaptive"}
+        else:
+            thinking_param = {
                 "type": "enabled",
                 "budget_tokens": self.config.thinking_budget_tokens
-            },
-            system=self.config.system_prompt,
-            tools=self.config.tools,
-            messages=messages,
-        )
+            }
+
+        api_params: dict[str, Any] = {
+            "model": self.config.model_id,
+            "max_tokens": self.config.max_tokens,
+            "thinking": thinking_param,
+            "system": self.config.system_prompt,
+            "tools": self.config.tools,
+            "messages": messages,
+        }
+
+        # Effort parameter (GA via output_config)
+        if model_config and model_config.has_capability("effort"):
+            api_params["output_config"] = {"effort": "high"}
+
+        return await self.client.messages.create(**api_params)
 
     def _track_api_usage(self, response: Any) -> None:
         """Track API token usage from response."""

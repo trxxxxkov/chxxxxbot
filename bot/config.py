@@ -204,11 +204,12 @@ MODEL_REGISTRY: dict[str, ModelConfig] = {
     "claude:opus":
         ModelConfig(
             provider="claude",
-            model_id="claude-opus-4-5-20251101",
+            model_id="claude-opus-4-6",
             alias="opus",
-            display_name="Claude Opus 4.5",
-            context_window=200_000,
-            max_output=64_000,
+            display_name="Claude Opus 4.6",
+            context_window=
+            200_000,  # 1M beta available, keep 200K for cost safety
+            max_output=128_000,
             pricing_input=5.0,
             pricing_output=25.0,
             pricing_cache_write_5m=6.25,  # 1.25x multiplier
@@ -218,7 +219,10 @@ MODEL_REGISTRY: dict[str, ModelConfig] = {
             capabilities={
                 "extended_thinkinging": True,
                 "interleaved_thinking": True,
-                "effort": True,  # Only Opus 4.5 supports effort parameter!
+                "adaptive_thinking": True,
+                "effort": True,
+                "effort_max": True,
+                "compaction": True,
                 "context_awareness": True,
                 "vision": True,
                 "streaming": True,
@@ -396,7 +400,7 @@ def list_all_models() -> list[tuple[str, str]]:
         >>> models = list_all_models()
         >>> models
         [('claude:haiku', 'Claude Haiku 4.5'),
-         ('claude:opus', 'Claude Opus 4.5'),
+         ('claude:opus', 'Claude Opus 4.6'),
          ('claude:sonnet', 'Claude Sonnet 4.5')]
     """
     items = [(full_id, model.display_name)

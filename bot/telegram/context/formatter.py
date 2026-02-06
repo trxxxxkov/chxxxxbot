@@ -63,6 +63,21 @@ class ContextFormatter:
         # Ensure we never return empty content (API requires non-empty)
         if not text_content:
             text_content = "[empty message]"
+
+        # Opus 4.6: If assistant message has compaction summary,
+        # format as content blocks with compaction block first.
+        # The API ignores all messages before the compaction block.
+        compaction = getattr(msg, 'compaction_summary', None)
+        if role == "assistant" and isinstance(compaction, str) and compaction:
+            content_blocks: list[dict[str, Any]] = [{
+                "type": "compaction",
+                "content": compaction
+            }, {
+                "type": "text",
+                "text": text_content
+            }]
+            return LLMMessage(role=role, content=content_blocks)
+
         return LLMMessage(role=role, content=text_content)
 
     def _format_content(self, msg: DBMessage) -> str:
@@ -205,6 +220,21 @@ class ContextFormatter:
         # Always use text_content - thinking blocks are not passed to context
         # to save tokens (up to 16K per response with extended thinking)
         text_content = self._format_content(msg)
+
+        # Opus 4.6: If assistant message has compaction summary,
+        # format as content blocks with compaction block first.
+        compaction = getattr(msg, 'compaction_summary', None)
+        if role == "assistant" and isinstance(compaction, str) and compaction:
+            if not text_content:
+                text_content = "[empty message]"
+            content_blocks: list[dict[str, Any]] = [{
+                "type": "compaction",
+                "content": compaction
+            }, {
+                "type": "text",
+                "text": text_content
+            }]
+            return LLMMessage(role=role, content=content_blocks)
 
         # For user messages, check for ALL attached files
         if msg.from_user_id:

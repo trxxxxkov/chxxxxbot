@@ -356,7 +356,7 @@ class TestBalanceService:
             user_id=pg_sample_user.id,
             amount=Decimal("0.0123"),
             description=
-            "Claude Opus 4.5: 5000 input + 1000 output tokens, execute_python tool",
+            "Claude Opus 4.6: 5000 input + 1000 output tokens, execute_python tool",
             related_message_id=54321,
         )
 
@@ -367,7 +367,7 @@ class TestBalanceService:
                     BalanceOperation.created_at.desc()))
         operation = result.scalars().first()
 
-        assert "Claude Opus 4.5" in operation.description
+        assert "Claude Opus 4.6" in operation.description
         assert "execute_python" in operation.description
         assert operation.related_message_id == 54321
 

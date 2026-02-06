@@ -768,6 +768,8 @@ async def _process_batch_with_session(
             # Phase 1.4.3: Get thinking blocks with signatures for DB storage
             # (required for Extended Thinking - API needs signatures in context)
             thinking_blocks_json = claude_provider.get_thinking_blocks_json()
+            # Opus 4.6: Get compaction summary if triggered
+            compaction_summary = claude_provider.last_compaction
 
             # Calculate Claude API cost using centralized pricing
             # See: https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching#pricing
@@ -923,6 +925,7 @@ async def _process_batch_with_session(
                 "role": MessageRole.ASSISTANT.value,
                 "text_content": response_text,
                 "thinking_blocks": thinking_blocks_json,
+                "compaction_summary": compaction_summary,
                 # Token usage included in message data
                 "input_tokens": usage.input_tokens,
                 "output_tokens": usage.output_tokens,

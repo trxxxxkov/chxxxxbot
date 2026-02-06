@@ -56,7 +56,7 @@ async def analyze_image(claude_file_id: str, question: str) -> Dict[str, Any]:
 
     # Use centralized client factory with Files API beta header
     client = get_anthropic_client(use_files_api=True)
-    model_id = "claude-opus-4-5-20251101"
+    model_id = "claude-opus-4-6"
 
     last_error = None
     for attempt in range(MAX_RETRIES):

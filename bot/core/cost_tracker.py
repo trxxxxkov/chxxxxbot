@@ -34,7 +34,7 @@ class CostTracker:  # pylint: disable=too-many-instance-attributes
     Supports optional callbacks for metrics/monitoring integration.
 
     Example:
-        tracker = CostTracker(model_id="claude-opus-4-5", user_id=123)
+        tracker = CostTracker(model_id="claude-opus-4-6", user_id=123)
         tracker.add_api_usage(1000, 500, thinking_tokens=200)
         tracker.add_tool_cost("execute_python", Decimal("0.001"))
         total = tracker.calculate_total_cost()
