@@ -198,6 +198,7 @@ After thinking, respond with only a number 1-10 rating the complexity of the ana
     if model_config.has_capability("adaptive_thinking"):
         api_params["thinking"] = {"type": "adaptive"}
         api_params["output_config"] = {"effort": "max"}
+        logger.info("extended_thinking.adaptive", model=model_id, effort="max")
     else:
         api_params["thinking"] = {
             "type": "enabled",

@@ -193,10 +193,12 @@ class ClaudeProvider(LLMProvider):
         # Effort parameter (GA via output_config)
         if model_config.has_capability("effort"):
             api_params["output_config"] = {"effort": "high"}
+            logger.debug("claude.effort.enabled", effort="high")
 
         # Adaptive thinking (Opus 4.6) or manual extended thinking
         if model_config.has_capability("adaptive_thinking"):
             api_params["thinking"] = {"type": "adaptive"}
+            logger.debug("claude.thinking.adaptive")
         elif request.thinking_budget:
             api_params["thinking"] = {
                 "type": "enabled",
@@ -214,6 +216,7 @@ class ClaudeProvider(LLMProvider):
                     }
                 }]
             }
+            logger.debug("claude.compaction.enabled", trigger_tokens=100_000)
 
         try:
             # Non-streaming API call
@@ -422,6 +425,7 @@ class ClaudeProvider(LLMProvider):
         # Effort parameter (GA via output_config)
         if model_config.has_capability("effort"):
             api_params["output_config"] = {"effort": "high"}
+            logger.debug("claude.effort.enabled", effort="high")
 
         # Server-side compaction (Opus 4.6)
         if model_config.has_capability("compaction"):
@@ -434,6 +438,7 @@ class ClaudeProvider(LLMProvider):
                     }
                 }]
             }
+            logger.debug("claude.compaction.enabled", trigger_tokens=100_000)
 
         # Phase 1.4.2: System prompt with conditional caching
         # Supports both string (legacy) and list of blocks (multi-block caching)
@@ -918,10 +923,12 @@ class ClaudeProvider(LLMProvider):
         # Effort parameter (GA via output_config)
         if model_config.has_capability("effort"):
             api_params["output_config"] = {"effort": "high"}
+            logger.debug("claude.effort.enabled", effort="high")
 
         # Adaptive thinking (Opus 4.6) or manual extended thinking
         if model_config.has_capability("adaptive_thinking"):
             api_params["thinking"] = {"type": "adaptive"}
+            logger.debug("claude.thinking.adaptive")
         elif request.thinking_budget:
             api_params["thinking"] = {
                 "type": "enabled",
@@ -939,6 +946,7 @@ class ClaudeProvider(LLMProvider):
                     }
                 }]
             }
+            logger.debug("claude.compaction.enabled", trigger_tokens=100_000)
 
         # Track current block type and accumulated data
         current_block_type: Optional[str] = None

@@ -237,6 +237,8 @@ class BaseSubagent(ABC):  # pylint: disable=too-many-instance-attributes
         thinking_param: dict[str, Any]
         if model_config and model_config.has_capability("adaptive_thinking"):
             thinking_param = {"type": "adaptive"}
+            logger.debug("subagent.thinking.adaptive",
+                         model_id=self.config.model_id)
         else:
             thinking_param = {
                 "type": "enabled",
@@ -255,6 +257,9 @@ class BaseSubagent(ABC):  # pylint: disable=too-many-instance-attributes
         # Effort parameter (GA via output_config)
         if model_config and model_config.has_capability("effort"):
             api_params["output_config"] = {"effort": "high"}
+            logger.debug("subagent.effort.enabled",
+                         model_id=self.config.model_id,
+                         effort="high")
 
         return await self.client.messages.create(**api_params)
 
