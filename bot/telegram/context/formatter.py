@@ -64,21 +64,42 @@ class ContextFormatter:
         if not text_content:
             text_content = "[empty message]"
 
-        # Opus 4.6: If assistant message has compaction summary,
-        # format as content blocks with compaction block first.
-        # The API ignores all messages before the compaction block.
-        compaction = getattr(msg, 'compaction_summary', None)
-        if role == "assistant" and isinstance(compaction, str) and compaction:
-            content_blocks: list[dict[str, Any]] = [{
-                "type": "compaction",
-                "content": compaction
-            }, {
-                "type": "text",
-                "text": text_content
-            }]
-            return LLMMessage(role=role, content=content_blocks)
+        # Opus 4.6: compaction block for assistant messages with summary
+        compaction_msg = self._maybe_compaction_message(msg, role, text_content)
+        if compaction_msg:
+            return compaction_msg
 
         return LLMMessage(role=role, content=text_content)
+
+    @staticmethod
+    def _maybe_compaction_message(
+        msg: DBMessage,
+        role: str,
+        text_content: str,
+    ) -> LLMMessage | None:
+        """Return a compaction-wrapped message if applicable.
+
+        When an assistant message has a compaction_summary, the API expects
+        a compaction block before the text. All messages prior to the
+        compaction block are ignored by the API.
+
+        Returns:
+            LLMMessage with compaction blocks, or None if not applicable.
+        """
+        compaction = getattr(msg, 'compaction_summary', None)
+        if role != "assistant" or not isinstance(compaction,
+                                                 str) or not compaction:
+            return None
+
+        text = text_content or "[empty message]"
+        content_blocks: list[dict[str, Any]] = [{
+            "type": "compaction",
+            "content": compaction
+        }, {
+            "type": "text",
+            "text": text
+        }]
+        return LLMMessage(role=role, content=content_blocks)
 
     def _format_content(self, msg: DBMessage) -> str:
         """Format message content with context.
@@ -221,20 +242,10 @@ class ContextFormatter:
         # to save tokens (up to 16K per response with extended thinking)
         text_content = self._format_content(msg)
 
-        # Opus 4.6: If assistant message has compaction summary,
-        # format as content blocks with compaction block first.
-        compaction = getattr(msg, 'compaction_summary', None)
-        if role == "assistant" and isinstance(compaction, str) and compaction:
-            if not text_content:
-                text_content = "[empty message]"
-            content_blocks: list[dict[str, Any]] = [{
-                "type": "compaction",
-                "content": compaction
-            }, {
-                "type": "text",
-                "text": text_content
-            }]
-            return LLMMessage(role=role, content=content_blocks)
+        # Opus 4.6: compaction block for assistant messages with summary
+        compaction_msg = self._maybe_compaction_message(msg, role, text_content)
+        if compaction_msg:
+            return compaction_msg
 
         # For user messages, check for ALL attached files
         if msg.from_user_id:

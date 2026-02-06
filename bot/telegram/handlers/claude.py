@@ -555,6 +555,7 @@ async def _process_batch_with_session(
                 thinking_chars = 0  # Track thinking chars for partial payment
                 output_chars = 0  # Track output chars for partial payment
                 any_files_delivered = False  # Track if files delivered across continuations
+                compaction_summary = None  # Preserve compaction across continuations
                 for continuation_idx in range(max_continuations + 1):
                     # Use StreamingOrchestrator for cleaner streaming flow
                     orchestrator = StreamingOrchestrator(
@@ -585,6 +586,11 @@ async def _process_batch_with_session(
                     # Track file deliveries across continuations
                     if result.has_delivered_files:
                         any_files_delivered = True
+
+                    # Preserve compaction: stream_events() resets last_compaction
+                    # each call, so capture it when it fires (any iteration)
+                    if claude_provider.last_compaction:
+                        compaction_summary = claude_provider.last_compaction
 
                     # Collect response parts
                     if response_text:
@@ -768,8 +774,8 @@ async def _process_batch_with_session(
             # Phase 1.4.3: Get thinking blocks with signatures for DB storage
             # (required for Extended Thinking - API needs signatures in context)
             thinking_blocks_json = claude_provider.get_thinking_blocks_json()
-            # Opus 4.6: Get compaction summary if triggered
-            compaction_summary = claude_provider.last_compaction
+            # Opus 4.6: compaction_summary already captured in continuation
+            # loop above (stream_events resets last_compaction each call)
 
             # Calculate Claude API cost using centralized pricing
             # See: https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching#pricing

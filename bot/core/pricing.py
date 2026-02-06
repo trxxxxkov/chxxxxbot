@@ -88,55 +88,6 @@ def calculate_gemini_image_cost(resolution: str = "2048x2048") -> Decimal:
 # This module provides calculation utilities
 
 
-def calculate_claude_cost_with_iterations(
-    usage: Any,
-    model_id: str,
-    cache_ttl: Literal["5m", "1h"] = "1h",
-) -> Decimal:
-    """Calculate Claude API cost including compaction iterations.
-
-    When compaction fires, usage.iterations contains per-iteration tokens.
-    This function sums across all iterations for accurate cost tracking.
-
-    Args:
-        usage: API usage object (may have iterations attribute).
-        model_id: Model identifier.
-        cache_ttl: Cache TTL used.
-
-    Returns:
-        Cost in USD as Decimal.
-    """
-    iterations = getattr(usage, 'iterations', None)
-    if iterations:
-        total_input = sum(getattr(it, 'input_tokens', 0) for it in iterations)
-        total_output = sum(getattr(it, 'output_tokens', 0) for it in iterations)
-        total_cache_read = sum(
-            getattr(it, 'cache_read_input_tokens', 0) for it in iterations)
-        total_cache_creation = sum(
-            getattr(it, 'cache_creation_input_tokens', 0) for it in iterations)
-        total_thinking = sum(
-            getattr(it, 'thinking_tokens', 0) for it in iterations)
-        return calculate_claude_cost(
-            model_id=model_id,
-            input_tokens=total_input,
-            output_tokens=total_output,
-            cache_read_tokens=total_cache_read,
-            cache_creation_tokens=total_cache_creation,
-            thinking_tokens=total_thinking,
-            cache_ttl=cache_ttl,
-        )
-    # No iterations — use standard fields
-    return calculate_claude_cost(
-        model_id=model_id,
-        input_tokens=getattr(usage, 'input_tokens', 0),
-        output_tokens=getattr(usage, 'output_tokens', 0),
-        cache_read_tokens=getattr(usage, 'cache_read_input_tokens', 0),
-        cache_creation_tokens=getattr(usage, 'cache_creation_input_tokens', 0),
-        thinking_tokens=getattr(usage, 'thinking_tokens', 0),
-        cache_ttl=cache_ttl,
-    )
-
-
 def calculate_claude_cost(
     model_id: str,
     input_tokens: int,

@@ -41,7 +41,7 @@ def _opus_config() -> ModelConfig:
         pricing_cache_read=0.50,
         latency_tier="moderate",
         capabilities={
-            "extended_thinkinging": True,
+            "extended_thinking": True,
             "interleaved_thinking": True,
             "adaptive_thinking": True,
             "effort": True,
@@ -71,7 +71,7 @@ def _sonnet_config() -> ModelConfig:
         pricing_cache_read=0.30,
         latency_tier="fast",
         capabilities={
-            "extended_thinkinging": True,
+            "extended_thinking": True,
             "interleaved_thinking": True,
             "effort": False,
             "context_awareness": True,
@@ -444,86 +444,6 @@ class TestFormatterCompaction:
         assert result.role == "user"
         # User messages never get compaction blocks
         assert result.content == "Hello"
-
-
-# =============================================================================
-# Cost Calculation with Iterations Tests
-# =============================================================================
-
-
-class TestCostWithIterations:
-    """Tests for calculate_claude_cost_with_iterations."""
-
-    def test_with_iterations(self):
-        """Should sum tokens across all iterations."""
-        from core.pricing import calculate_claude_cost_with_iterations
-
-        # Mock iterations (two compaction rounds)
-        iter1 = Mock(
-            input_tokens=50000,
-            output_tokens=5000,
-            cache_read_input_tokens=1000,
-            cache_creation_input_tokens=2000,
-            thinking_tokens=3000,
-        )
-        iter2 = Mock(
-            input_tokens=30000,
-            output_tokens=4000,
-            cache_read_input_tokens=500,
-            cache_creation_input_tokens=1000,
-            thinking_tokens=2000,
-        )
-
-        usage = Mock()
-        usage.iterations = [iter1, iter2]
-        usage.input_tokens = 80000  # Should be ignored in favor of iterations
-        usage.output_tokens = 9000
-
-        result = calculate_claude_cost_with_iterations(
-            usage=usage,
-            model_id="claude-opus-4-6",
-        )
-
-        # Should use iteration totals: 80K in, 9K out, 1.5K cache_read,
-        # 3K cache_create, 5K thinking
-        assert result > Decimal("0")
-
-    def test_without_iterations(self):
-        """Should use standard usage fields when no iterations."""
-        from core.pricing import calculate_claude_cost_with_iterations
-
-        usage = Mock(spec=[])
-        usage.input_tokens = 10000
-        usage.output_tokens = 2000
-        usage.cache_read_input_tokens = 500
-        usage.cache_creation_input_tokens = 200
-        usage.thinking_tokens = 100
-
-        result = calculate_claude_cost_with_iterations(
-            usage=usage,
-            model_id="claude-opus-4-6",
-        )
-
-        assert result > Decimal("0")
-
-    def test_empty_iterations_list(self):
-        """Empty iterations list should use standard fields."""
-        from core.pricing import calculate_claude_cost_with_iterations
-
-        usage = Mock()
-        usage.iterations = []  # Empty, falsy
-        usage.input_tokens = 10000
-        usage.output_tokens = 2000
-        usage.cache_read_input_tokens = 500
-        usage.cache_creation_input_tokens = 200
-        usage.thinking_tokens = 100
-
-        result = calculate_claude_cost_with_iterations(
-            usage=usage,
-            model_id="claude-opus-4-6",
-        )
-
-        assert result > Decimal("0")
 
 
 # =============================================================================

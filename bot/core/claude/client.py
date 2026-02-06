@@ -212,12 +212,16 @@ class ClaudeProvider(LLMProvider):
             # Non-streaming API call
             response = await self.client.messages.create(**api_params)
 
-            # Phase 1.4.3: Extract thinking blocks from non-streaming response
+            # Extract thinking and compaction blocks from non-streaming response
             thinking_text = ""
+            compaction_text = ""
             for block in response.content:
                 if hasattr(block, 'type') and block.type == "thinking":
                     thinking_text += block.thinking
+                elif hasattr(block, 'type') and block.type == "compaction":
+                    compaction_text += getattr(block, 'content', '')
             self.last_thinking = thinking_text if thinking_text else None
+            self.last_compaction = compaction_text if compaction_text else None
 
             # Store usage and message
             thinking_tokens = getattr(response.usage, 'thinking_tokens', 0)
@@ -732,16 +736,15 @@ class ClaudeProvider(LLMProvider):
         if not model_config.has_capability("compaction"):
             return
 
-        api_params["extra_body"] = {
-            "context_management": {
-                "edits": [{
-                    "type": "compact_20260112",
-                    "trigger": {
-                        "type": "input_tokens",
-                        "value": 100_000
-                    }
-                }]
-            }
+        extra_body = api_params.setdefault("extra_body", {})
+        extra_body["context_management"] = {
+            "edits": [{
+                "type": "compact_20260112",
+                "trigger": {
+                    "type": "input_tokens",
+                    "value": 100_000
+                }
+            }]
         }
         logger.debug("claude.compaction.enabled", trigger_tokens=100_000)
 
