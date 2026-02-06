@@ -512,6 +512,12 @@ async def _process_batch_with_session(
 
             # 6. Prepare Claude request with multi-block cached system prompt
             # GLOBAL (cached) + user custom (cached if large) + files (NOT cached)
+            # Opus 4.6 has native adaptive thinking — skip extended_thinking tool
+            # to avoid redundant API calls and broken formatting
+            exclude_tools = set()
+            if model_config.has_capability("adaptive_thinking"):
+                exclude_tools.add("extended_thinking")
+
             request = LLMRequest(
                 messages=context,
                 system_prompt=
@@ -519,7 +525,7 @@ async def _process_batch_with_session(
                 model=user_model_id,
                 max_tokens=model_config.max_output,
                 temperature=config.CLAUDE_TEMPERATURE,
-                tools=get_tool_definitions())  # Always pass tools
+                tools=get_tool_definitions(exclude=exclude_tools))
 
             logger.info("claude_handler.request_prepared",
                         thread_id=thread_id,

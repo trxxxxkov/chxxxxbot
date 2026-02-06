@@ -108,12 +108,22 @@ TOOLS: Dict[str, ToolConfig] = {
 # ============================================================================
 
 
-def get_tool_definitions() -> List[Dict[str, Any]]:
-    """Get all tool definitions for Claude API.
+def get_tool_definitions(
+    exclude: Optional[set[str]] = None,) -> List[Dict[str, Any]]:
+    """Get tool definitions for Claude API.
+
+    Args:
+        exclude: Optional set of tool names to exclude.
 
     Returns:
         List of tool schema dictionaries.
     """
+    if exclude:
+        return [
+            tool.definition
+            for tool in TOOLS.values()
+            if tool.name not in exclude
+        ]
     return [tool.definition for tool in TOOLS.values()]
 
 
