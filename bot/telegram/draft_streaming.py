@@ -40,6 +40,39 @@ DEFAULT_KEEPALIVE_INTERVAL = 6.0
 # If we recently sent an update, skip keepalive to avoid flood control
 MIN_TIME_BEFORE_KEEPALIVE = 4.0
 
+# Telegram message character limit
+TELEGRAM_MESSAGE_LIMIT = 4096
+
+
+def _truncate_for_telegram(text: str, parse_mode: Optional[str] = None) -> str:
+    """Truncate text to fit Telegram's message character limit.
+
+    For MarkdownV2, leaves room for fix_truncated_md2 to close any
+    formatting markers broken by truncation.
+
+    Args:
+        text: Text to truncate.
+        parse_mode: Parse mode ("MarkdownV2", "HTML", or None).
+
+    Returns:
+        Text truncated to fit within TELEGRAM_MESSAGE_LIMIT.
+    """
+    if len(text) <= TELEGRAM_MESSAGE_LIMIT:
+        return text
+
+    if parse_mode == "MarkdownV2":
+        from telegram.streaming.markdown_v2 import fix_truncated_md2
+
+        # Leave room for formatting fixes (closing markers like *, _, ```)
+        truncated = text[:TELEGRAM_MESSAGE_LIMIT - 20] + "…"
+        truncated = fix_truncated_md2(truncated)
+        # Safety check: fix_truncated_md2 may add chars
+        if len(truncated) > TELEGRAM_MESSAGE_LIMIT:
+            truncated = truncated[:TELEGRAM_MESSAGE_LIMIT - 1] + "…"
+        return truncated
+
+    return text[:TELEGRAM_MESSAGE_LIMIT - 1] + "…"
+
 
 class DraftManager:
     """Manages multiple DraftStreamers with automatic cleanup.
@@ -339,8 +372,9 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
             self._pending_text = None
 
         # Truncate if too long (Telegram limit)
-        if len(text_to_send) > 4096:
-            text_to_send = text_to_send[:4093] + "..."
+        # Use Unicode ellipsis (not "..." which has unescaped dots in MarkdownV2)
+        if len(text_to_send) > TELEGRAM_MESSAGE_LIMIT:
+            text_to_send = text_to_send[:TELEGRAM_MESSAGE_LIMIT - 1] + "…"
 
         try:
             await self.bot(
@@ -613,6 +647,10 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
         # Determine what text to send (after any updates)
         text_to_send = final_text if final_text else self.last_text
 
+        # Truncate if exceeds Telegram limit (formatted text can exceed 4096
+        # after MarkdownV2 escaping even if raw text was within split threshold)
+        text_to_send = _truncate_for_telegram(text_to_send, parse_mode)
+
         logger.info("draft_streamer.finalizing",
                     chat_id=self.chat_id,
                     topic_id=self.topic_id,
@@ -620,7 +658,7 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
                     final_length=len(text_to_send))
 
         # Send final message directly with correct text (no edit needed)
-        # Falls back to plain text if MarkdownV2 parsing fails
+        # Falls back to plain text if MarkdownV2 parsing or length fails
         try:
             message = await self.bot.send_message(
                 chat_id=self.chat_id,
@@ -629,12 +667,18 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
                 parse_mode=parse_mode,
             )
         except TelegramBadRequest as e:
-            if "can't parse entities" in str(e).lower() and parse_mode:
-                # Expected with complex content - fallback to plain text
-                logger.debug("draft_streamer.finalize_parse_error_fallback",
+            error_msg = str(e).lower()
+
+            if ("can't parse entities" in error_msg or
+                    "message is too long" in error_msg) and parse_mode:
+                # Parse error or length overflow — fallback to plain text
+                # Re-truncate: MarkdownV2 escapes (\= \+ etc.) make text longer
+                logger.debug("draft_streamer.finalize_fallback",
                              chat_id=self.chat_id,
                              parse_mode=parse_mode,
+                             text_length=len(text_to_send),
                              error=str(e))
+                text_to_send = _truncate_for_telegram(text_to_send, None)
                 message = await self.bot.send_message(
                     chat_id=self.chat_id,
                     text=text_to_send,

@@ -647,16 +647,22 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
         final_display = stream.get_final_display()
         if final_display:
             await dm.current.update(final_display, force=True)
+            try:
+                final_message = await dm.current.finalize(
+                    final_text=final_display)
+            except Exception:  # pylint: disable=broad-exception-caught
+                final_message = None
         else:
-            from telegram.streaming.formatting import escape_html
-            await dm.current.update(
-                escape_html(f"⚠️ Unexpected stop: {stream.stop_reason}"),
-                force=True)
-
-        try:
-            final_message = await dm.current.finalize()
-        except Exception:  # pylint: disable=broad-exception-caught
-            final_message = None
+            # Plain text error message — use parse_mode=None to avoid
+            # MarkdownV2 escaping issues with special chars like ( ) :
+            error_display = (f"⚠️ Unexpected stop: {stream.stop_reason}")
+            await dm.current.update(error_display, parse_mode=None, force=True)
+            try:
+                final_message = await dm.current.finalize(
+                    final_text=error_display, parse_mode=None)
+            except Exception:  # pylint: disable=broad-exception-caught
+                final_message = None
+            final_display = error_display
 
         return StreamResult(
             text=final_answer,
@@ -682,8 +688,10 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
             "The task might be too complex.")
 
         try:
-            await dm.current.update(error_msg)
-            final_message = await dm.current.finalize()
+            # Plain text — avoid MarkdownV2 escaping issues with ( ) .
+            await dm.current.update(error_msg, parse_mode=None)
+            final_message = await dm.current.finalize(final_text=error_msg,
+                                                      parse_mode=None)
         except Exception:  # pylint: disable=broad-exception-caught
             final_message = None
 

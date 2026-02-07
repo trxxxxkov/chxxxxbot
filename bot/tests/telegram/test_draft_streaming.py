@@ -13,9 +13,12 @@ from unittest.mock import MagicMock
 from unittest.mock import patch
 
 from aiogram import Bot
+from aiogram.exceptions import TelegramBadRequest
 import pytest
+from telegram.draft_streaming import _truncate_for_telegram
 from telegram.draft_streaming import DraftStreamer
 from telegram.draft_streaming import MIN_UPDATE_INTERVAL
+from telegram.draft_streaming import TELEGRAM_MESSAGE_LIMIT
 
 
 @pytest.fixture
@@ -92,12 +95,12 @@ class TestDraftStreamerUpdate:
 
     @pytest.mark.asyncio
     async def test_update_truncates_long_text(self, streamer, mock_bot):
-        """Text longer than 4096 chars should be truncated."""
+        """Text longer than 4096 chars should be truncated with Unicode ellipsis."""
         long_text = "x" * 5000
         await streamer.update(long_text, force=True)
 
         assert len(streamer.last_text) == 4096
-        assert streamer.last_text.endswith("...")
+        assert streamer.last_text.endswith("…")
 
 
 class TestDraftStreamerFinalize:
@@ -494,3 +497,151 @@ class TestDraftStreamerErrorHandling:
         # Should succeed on retry
         assert result is True
         assert call_count == 2  # First call failed, second succeeded
+
+
+class TestTruncateForTelegram:
+    """Tests for _truncate_for_telegram helper function."""
+
+    def test_short_text_unchanged(self):
+        """Text within limit should be returned unchanged."""
+        text = "Short text"
+        assert _truncate_for_telegram(text) == text
+
+    def test_exactly_at_limit_unchanged(self):
+        """Text exactly at 4096 should be returned unchanged."""
+        text = "x" * TELEGRAM_MESSAGE_LIMIT
+        assert _truncate_for_telegram(text) == text
+
+    def test_plain_text_truncated(self):
+        """Plain text over limit should be truncated with ellipsis."""
+        text = "x" * 5000
+        result = _truncate_for_telegram(text, None)
+        assert len(result) == TELEGRAM_MESSAGE_LIMIT
+        assert result.endswith("…")
+
+    def test_markdown_v2_truncated(self):
+        """MarkdownV2 text should be truncated with room for formatting fix."""
+        text = "x" * 5000
+        result = _truncate_for_telegram(text, "MarkdownV2")
+        assert len(result) <= TELEGRAM_MESSAGE_LIMIT
+
+    def test_markdown_v2_fixes_broken_formatting(self):
+        """MarkdownV2 truncation should close unclosed formatting."""
+        # Text with unclosed bold that gets cut
+        text = "*bold text " + "x" * 5000
+        result = _truncate_for_telegram(text, "MarkdownV2")
+        assert len(result) <= TELEGRAM_MESSAGE_LIMIT
+        # Bold should be closed
+        bold_count = result.count("*")
+        assert bold_count % 2 == 0
+
+    def test_markdown_v2_with_special_chars(self):
+        """MarkdownV2 with escaped special chars should fit in limit."""
+        # Each \= is 2 chars — text with many special chars
+        text = "a\\=b\\+c\\-d\\." * 1000
+        result = _truncate_for_telegram(text, "MarkdownV2")
+        assert len(result) <= TELEGRAM_MESSAGE_LIMIT
+
+    def test_safety_check_after_fix(self):
+        """If fix_truncated_md2 makes text longer, re-truncate."""
+        # Create text that when truncated at 4076 + fix might exceed 4096
+        # Use unclosed code block to trigger fix_truncated_md2 adding ```
+        text = "```python\n" + "x" * 5000
+        result = _truncate_for_telegram(text, "MarkdownV2")
+        assert len(result) <= TELEGRAM_MESSAGE_LIMIT
+
+
+class TestFinalizeErrorHandling:
+    """Tests for finalize() error handling improvements."""
+
+    @pytest.fixture
+    def mock_bot(self):
+        """Create a mock Bot instance."""
+        bot = AsyncMock(spec=Bot)
+        bot.send_message = AsyncMock(return_value=MagicMock(message_id=123))
+        return bot
+
+    @pytest.fixture
+    def streamer(self, mock_bot):
+        """Create a DraftStreamer instance."""
+        return DraftStreamer(bot=mock_bot, chat_id=100, topic_id=200)
+
+    @pytest.mark.asyncio
+    async def test_finalize_truncates_long_text(self, streamer, mock_bot):
+        """finalize() should truncate text exceeding 4096 chars."""
+        long_text = "x" * 5000
+        streamer.last_text = long_text
+
+        await streamer.finalize(final_text=long_text, parse_mode=None)
+
+        # send_message should be called with truncated text
+        call_args = mock_bot.send_message.call_args
+        assert len(call_args.kwargs["text"]) <= TELEGRAM_MESSAGE_LIMIT
+
+    @pytest.mark.asyncio
+    async def test_finalize_handles_message_too_long(self, streamer, mock_bot):
+        """finalize() should fallback on 'message is too long' error."""
+        call_count = 0
+
+        async def side_effect(**kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise TelegramBadRequest(
+                    method=MagicMock(),
+                    message="Bad Request: message is too long")
+            return MagicMock(message_id=123)
+
+        mock_bot.send_message = AsyncMock(side_effect=side_effect)
+
+        # Text within our truncation limit but Telegram still rejects
+        streamer.last_text = "x" * 4000
+
+        message = await streamer.finalize(final_text="x" * 4000,
+                                          parse_mode="MarkdownV2")
+
+        assert message.message_id == 123
+        assert call_count == 2  # First failed, second succeeded with plain text
+
+    @pytest.mark.asyncio
+    async def test_finalize_parse_error_with_truncation(self, streamer,
+                                                        mock_bot):
+        """finalize() should truncate when falling back to plain text."""
+        # MarkdownV2 escaped text is long; plain text fallback should truncate
+        escaped_text = "\\=" * 3000  # 6000 chars (3000 \= pairs)
+        streamer.last_text = escaped_text
+
+        call_count = 0
+
+        async def side_effect(**kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise TelegramBadRequest(
+                    method=MagicMock(),
+                    message="Bad Request: can't parse entities: "
+                    "Character '=' is reserved")
+            return MagicMock(message_id=123)
+
+        mock_bot.send_message = AsyncMock(side_effect=side_effect)
+
+        message = await streamer.finalize(final_text=escaped_text,
+                                          parse_mode="MarkdownV2")
+
+        # Second call should have truncated text
+        second_call_text = mock_bot.send_message.call_args_list[1].kwargs[
+            "text"]
+        assert len(second_call_text) <= TELEGRAM_MESSAGE_LIMIT
+        assert message.message_id == 123
+
+    @pytest.mark.asyncio
+    async def test_finalize_non_parse_error_still_raised(
+            self, streamer, mock_bot):
+        """finalize() should re-raise non-parse, non-length errors."""
+        mock_bot.send_message = AsyncMock(side_effect=TelegramBadRequest(
+            method=MagicMock(), message="Bad Request: chat not found"))
+
+        streamer.last_text = "test"
+
+        with pytest.raises(TelegramBadRequest, match="chat not found"):
+            await streamer.finalize(final_text="test")

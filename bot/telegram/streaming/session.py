@@ -625,13 +625,19 @@ class StreamingSession:  # pylint: disable=too-many-instance-attributes
         if not final_text.strip():
             return
 
+        # MarkdownV2 escaping can make formatted text much longer than raw text
+        # (each special char gets a \ prefix). Truncate if exceeds Telegram limit.
+        from telegram.draft_streaming import _truncate_for_telegram
+        final_text = _truncate_for_telegram(final_text.strip(),
+                                            self._parse_mode)
+
         logger.info("stream.session.splitting_message",
                     thread_id=self._thread_id,
                     part=self._message_part,
                     text_length=len(final_text))
 
         # Commit current part and create new draft
-        await self._dm.commit_and_create_new(final_text=final_text.strip(),
+        await self._dm.commit_and_create_new(final_text=final_text,
                                              parse_mode=self._parse_mode)
         self._message_part += 1
 
