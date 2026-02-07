@@ -10,6 +10,7 @@ from unittest.mock import patch
 from cache.client import _is_circuit_open
 from cache.client import _record_failure
 from cache.client import _record_success
+from cache.client import _try_reconnect
 from cache.client import CIRCUIT_FAILURE_THRESHOLD
 from cache.client import CIRCUIT_RESET_TIMEOUT
 from cache.client import get_circuit_breaker_state
@@ -162,3 +163,92 @@ class TestCircuitBreakerState:
         state = get_circuit_breaker_state()
         assert state["seconds_until_retry"] > 0
         assert state["seconds_until_retry"] <= CIRCUIT_RESET_TIMEOUT
+
+
+class TestReconnection:
+    """Tests for reconnection on connection loss."""
+
+    def setup_method(self):
+        """Reset circuit breaker before each test."""
+        reset_circuit_breaker()
+
+    @pytest.mark.asyncio
+    async def test_reconnects_on_connection_error(self):
+        """Test get_redis reconnects when ping fails then succeeds."""
+        import redis.asyncio as aioredis  # type: ignore[import-untyped]
+
+        mock_client = AsyncMock()
+        # First ping fails with ConnectionError, second (reconnect) succeeds
+        mock_client.ping.side_effect = [
+            aioredis.ConnectionError("Connection lost"),
+            True,
+        ]
+
+        mock_pool = AsyncMock()
+
+        with patch("cache.client._redis_client", mock_client), \
+             patch("cache.client._connection_pool", mock_pool):
+            result = await get_redis()
+
+        assert result is mock_client
+        # Pool was disconnected to clear stale connections
+        mock_pool.disconnect.assert_awaited_once()
+        # Ping called twice: initial fail + reconnect success
+        assert mock_client.ping.await_count == 2
+        # Circuit should be closed (success)
+        state = get_circuit_breaker_state()
+        assert state["failure_count"] == 0
+
+    @pytest.mark.asyncio
+    async def test_records_failure_when_reconnect_also_fails(self):
+        """Test failure recorded when both ping and reconnect fail."""
+        import redis.asyncio as aioredis  # type: ignore[import-untyped]
+
+        mock_client = AsyncMock()
+        mock_client.ping.side_effect = aioredis.ConnectionError("Down")
+
+        mock_pool = AsyncMock()
+
+        with patch("cache.client._redis_client", mock_client), \
+             patch("cache.client._connection_pool", mock_pool):
+            result = await get_redis()
+
+        assert result is None
+        state = get_circuit_breaker_state()
+        assert state["failure_count"] == 1
+
+    @pytest.mark.asyncio
+    async def test_reconnects_on_generic_exception(self):
+        """Test reconnection attempted on non-ConnectionError too."""
+        mock_client = AsyncMock()
+        # First ping fails with generic error, reconnect succeeds
+        mock_client.ping.side_effect = [
+            OSError("Network unreachable"),
+            True,
+        ]
+
+        mock_pool = AsyncMock()
+
+        with patch("cache.client._redis_client", mock_client), \
+             patch("cache.client._connection_pool", mock_pool):
+            result = await get_redis()
+
+        assert result is mock_client
+        mock_pool.disconnect.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_try_reconnect_without_pool(self):
+        """Test _try_reconnect handles None connection pool gracefully."""
+        mock_client = AsyncMock()
+        mock_client.ping.return_value = True
+
+        with patch("cache.client._redis_client", mock_client), \
+             patch("cache.client._connection_pool", None):
+            result = await _try_reconnect()
+
+        assert result is mock_client
+
+    @pytest.mark.asyncio
+    async def test_circuit_timeout_reduced(self):
+        """Test circuit reset timeout is 5s for local Redis."""
+        assert CIRCUIT_RESET_TIMEOUT == 5.0

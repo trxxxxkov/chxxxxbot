@@ -35,7 +35,7 @@ _connection_pool: Optional[ConnectionPool] = None
 # After CIRCUIT_FAILURE_THRESHOLD consecutive failures, circuit opens
 # Circuit stays open for CIRCUIT_RESET_TIMEOUT seconds before trying again
 CIRCUIT_FAILURE_THRESHOLD = 3
-CIRCUIT_RESET_TIMEOUT = 30.0  # seconds
+CIRCUIT_RESET_TIMEOUT = 5.0  # seconds (short timeout for local Redis)
 
 _circuit_failure_count: int = 0
 _circuit_open_until: float = 0.0  # timestamp when circuit should close
@@ -185,6 +185,27 @@ def _record_failure() -> None:
         )
 
 
+async def _try_reconnect() -> Optional[redis.Redis]:
+    """Try to reconnect by clearing stale pool connections and retrying ping.
+
+    When a connection is lost (e.g. Redis restart), existing connections in the
+    pool are dead. Disconnecting the pool forces fresh connections on next use.
+
+    Returns:
+        Redis client if reconnection succeeds, None otherwise.
+    """
+    try:
+        if _connection_pool is not None:
+            await _connection_pool.disconnect()
+        await _redis_client.ping()  # type: ignore[union-attr]
+        logger.info("redis.reconnected")
+        _record_success()
+        return _redis_client
+    except Exception:  # pylint: disable=broad-exception-caught
+        _record_failure()
+        return None
+
+
 async def get_redis() -> Optional[redis.Redis]:
     """Get the Redis client instance.
 
@@ -192,9 +213,13 @@ async def get_redis() -> Optional[redis.Redis]:
     Does NOT raise exceptions - returns None for graceful degradation.
 
     Uses circuit breaker pattern to avoid repeated slow failures:
-    - After 3 consecutive failures, stops trying for 30 seconds
+    - After 3 consecutive failures, stops trying for 5 seconds
     - After timeout, tries once (half-open state)
     - On success, closes circuit and resumes normal operation
+
+    On connection loss, attempts to reconnect by clearing stale pool
+    connections before recording a failure. This handles brief Redis
+    restarts gracefully.
 
     Returns:
         Redis client or None if not available.
@@ -215,12 +240,10 @@ async def get_redis() -> Optional[redis.Redis]:
         return _redis_client
     except redis.ConnectionError:
         logger.info("redis.connection_lost")
-        _record_failure()
-        return None
+        return await _try_reconnect()
     except Exception as e:  # pylint: disable=broad-exception-caught
         logger.info("redis.ping_failed", error=str(e))
-        _record_failure()
-        return None
+        return await _try_reconnect()
 
 
 def reset_circuit_breaker() -> None:
