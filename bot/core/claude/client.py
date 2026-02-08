@@ -1001,17 +1001,18 @@ class ClaudeProvider(LLMProvider):
                     elif event.type == "content_block_delta":
                         delta = event.delta
 
-                        if hasattr(delta, "thinking"):
+                        if hasattr(delta, "thinking") and delta.thinking:
                             thinking_text += delta.thinking
                             yield StreamEvent(type="thinking_delta",
                                               content=delta.thinking)
 
-                        elif hasattr(delta, "text"):
+                        elif hasattr(delta, "text") and delta.text:
                             response_text += delta.text
                             yield StreamEvent(type="text_delta",
                                               content=delta.text)
 
-                        elif hasattr(delta, "partial_json"):
+                        elif hasattr(delta,
+                                     "partial_json") and delta.partial_json:
                             accumulated_json += delta.partial_json
                             yield StreamEvent(type="input_json_delta",
                                               content=delta.partial_json)
