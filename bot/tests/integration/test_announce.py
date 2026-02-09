@@ -22,7 +22,6 @@ from unittest.mock import MagicMock
 from unittest.mock import Mock
 from unittest.mock import patch
 
-from aiogram.exceptions import TelegramBadRequest
 import config
 from db.models.user import User
 from db.repositories.user_repository import UserRepository
@@ -279,8 +278,8 @@ class TestAnnounceAllUsers:
 class TestAnnounceMessageReceived:
     """Test message received in waiting_for_message state."""
 
-    async def test_message_received_shows_preview_and_confirmation(self):
-        """Admin message shows copy_message preview + confirmation buttons."""
+    async def test_message_received_shows_confirmation(self):
+        """Admin message shows reply-quote confirmation with buttons."""
         msg = make_message(ADMIN_USER_ID, "Hello everyone!")
         state = make_state({
             "admin_user_id": ADMIN_USER_ID,
@@ -296,41 +295,12 @@ class TestAnnounceMessageReceived:
         assert call_kwargs["broadcast_chat_id"] == msg.chat.id
         assert call_kwargs["broadcast_message_id"] == msg.message_id
 
-        # Should copy message as preview to admin's chat
-        msg.bot.copy_message.assert_called_once_with(
-            chat_id=msg.chat.id,
-            from_chat_id=msg.chat.id,
-            message_id=msg.message_id,
-        )
-
         # Should reply with confirmation + inline buttons
         msg.reply.assert_called_once()
         reply_kwargs = msg.reply.call_args[1]
         assert reply_kwargs["reply_markup"] is not None
 
         # State set AFTER buttons sent successfully
-        state.set_state.assert_called_once_with(
-            AnnounceStates.waiting_for_confirmation)
-
-    async def test_message_received_copy_fails_still_shows_buttons(self):
-        """If copy_message fails, still shows reply-quote + buttons."""
-        msg = make_message(ADMIN_USER_ID, "Hello everyone!")
-        msg.bot.copy_message = AsyncMock(side_effect=TelegramBadRequest(
-            method=MagicMock(), message="can't be copied"))
-        state = make_state({
-            "admin_user_id": ADMIN_USER_ID,
-            "target_ids": [1, 2, 3],
-            "is_all": False,
-        })
-
-        await announce_message_received(msg, state)
-
-        # copy_message failed, but reply with buttons still sent
-        msg.reply.assert_called_once()
-        reply_kwargs = msg.reply.call_args[1]
-        assert reply_kwargs["reply_markup"] is not None
-
-        # State still transitions
         state.set_state.assert_called_once_with(
             AnnounceStates.waiting_for_confirmation)
 

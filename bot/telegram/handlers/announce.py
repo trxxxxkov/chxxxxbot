@@ -195,22 +195,7 @@ async def announce_message_received(
         broadcast_message_id=message.message_id,
     )
 
-    # Show preview: try copy_message, fall back to reply-quote
-    try:
-        await message.bot.copy_message(
-            chat_id=message.chat.id,
-            from_chat_id=message.chat.id,
-            message_id=message.message_id,
-        )
-    except TelegramBadRequest:
-        logger.debug(
-            "announce.copy_preview_failed",
-            admin_user_id=admin_user_id,
-            message_id=message.message_id,
-        )
-        # Not all message types can be copied; reply-quote is fine
-
-    # Send confirmation text with buttons
+    # Send confirmation text with buttons (reply-quote acts as preview)
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(
             text=get_text("announce.confirm_button", lang),
