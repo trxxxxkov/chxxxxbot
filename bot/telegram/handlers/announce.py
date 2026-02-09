@@ -158,7 +158,11 @@ async def cmd_announce(
         )
 
 
-@router.message(StateFilter(AnnounceStates.waiting_for_message))
+@router.message(
+    StateFilter(AnnounceStates.waiting_for_message),
+    F.text | F.caption | F.photo | F.document | F.voice | F.audio | F.video |
+    F.video_note | F.sticker | F.animation,
+)
 async def announce_message_received(
     message: Message,
     state: FSMContext,
@@ -190,14 +194,21 @@ async def announce_message_received(
         broadcast_chat_id=message.chat.id,
         broadcast_message_id=message.message_id,
     )
-    await state.set_state(AnnounceStates.waiting_for_confirmation)
 
-    # Show true preview: copy the message to admin's own chat
-    await message.bot.copy_message(
-        chat_id=message.chat.id,
-        from_chat_id=message.chat.id,
-        message_id=message.message_id,
-    )
+    # Show preview: try copy_message, fall back to reply-quote
+    try:
+        await message.bot.copy_message(
+            chat_id=message.chat.id,
+            from_chat_id=message.chat.id,
+            message_id=message.message_id,
+        )
+    except TelegramBadRequest:
+        logger.debug(
+            "announce.copy_preview_failed",
+            admin_user_id=admin_user_id,
+            message_id=message.message_id,
+        )
+        # Not all message types can be copied; reply-quote is fine
 
     # Send confirmation text with buttons
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[
@@ -211,10 +222,14 @@ async def announce_message_received(
         ),
     ]])
 
-    await message.answer(
+    await message.reply(
         get_text("announce.confirm", lang, count=len(target_ids)),
         reply_markup=keyboard,
     )
+
+    # Set state AFTER buttons are sent — if anything above fails,
+    # the user stays in waiting_for_message and can retry
+    await state.set_state(AnnounceStates.waiting_for_confirmation)
 
     logger.info(
         "announce.message_received",
