@@ -149,6 +149,16 @@ class BalanceMiddleware(BaseMiddleware):
             )
             return await handler(event, data)
 
+        # Privileged users bypass balance check (admin FSM flows, etc.)
+        from telegram.handlers.admin import \
+            is_privileged  # pylint: disable=import-outside-toplevel
+        if is_privileged(message.from_user.id):
+            logger.debug(
+                "balance_middleware.privileged_bypass",
+                user_id=message.from_user.id,
+            )
+            return await handler(event, data)
+
         # All other messages and callbacks require balance check (paid requests)
         # This includes:
         # - Regular messages without "/" prefix

@@ -93,7 +93,7 @@ class UserRepository(BaseRepository[User]):
         """
         logger.debug("user_repository.get_by_username",
                      target_username=username)
-        stmt = select(User).where(User.username == username)
+        stmt = select(User).where(func.lower(User.username) == username.lower())
         result = await self.session.execute(stmt)
         user = result.scalar_one_or_none()
         logger.debug("user_repository.get_by_username.result",

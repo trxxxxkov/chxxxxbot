@@ -7,10 +7,11 @@ Flow:
 1. Admin sends /announce (all) or /announce @user1 123456 (specific)
 2. Bot enters FSM state waiting_for_message
 3. Admin sends any message to broadcast
-4. Bot replies with confirmation buttons (the reply quotes the message as preview)
-5. Admin confirms → broadcast via copy_message + delivery report
+4. Bot shows preview via copy_message + confirmation buttons
+5. Admin confirms → rate-limited broadcast with flood control + delivery report
 """
 
+import asyncio
 from datetime import datetime
 from datetime import timezone
 
@@ -18,6 +19,7 @@ from aiogram import F
 from aiogram import Router
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.exceptions import TelegramForbiddenError
+from aiogram.exceptions import TelegramRetryAfter
 from aiogram.filters import Command
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
@@ -163,8 +165,8 @@ async def announce_message_received(
 ) -> None:
     """Receive the message to broadcast and show confirmation.
 
-    Replies to the admin's message with confirmation buttons.
-    The reply itself acts as preview (quotes the original message).
+    Shows a true preview via copy_message to the admin's chat,
+    then sends confirmation text with Send/Cancel buttons.
 
     Args:
         message: Any message type from the admin.
@@ -190,7 +192,14 @@ async def announce_message_received(
     )
     await state.set_state(AnnounceStates.waiting_for_confirmation)
 
-    # Show confirmation: reply to the message (acts as preview)
+    # Show true preview: copy the message to admin's own chat
+    await message.bot.copy_message(
+        chat_id=message.chat.id,
+        from_chat_id=message.chat.id,
+        message_id=message.message_id,
+    )
+
+    # Send confirmation text with buttons
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(
             text=get_text("announce.confirm_button", lang),
@@ -202,7 +211,7 @@ async def announce_message_received(
         ),
     ]])
 
-    await message.reply(
+    await message.answer(
         get_text("announce.confirm", lang, count=len(target_ids)),
         reply_markup=keyboard,
     )
@@ -226,7 +235,7 @@ async def announce_confirm_callback(
 ) -> None:
     """Handle broadcast confirmation.
 
-    Broadcasts via copy_message and sends delivery report.
+    Broadcasts via copy_message with rate limiting and sends delivery report.
 
     Args:
         callback: Callback query from confirm button.
@@ -272,80 +281,16 @@ async def announce_confirm_callback(
     progress_msg = await callback.message.answer(
         get_text("announce.sending", lang, sent=0, total=len(target_ids)))
 
-    # Broadcast
-    delivered = []
-    failed = []
-    last_progress_update = 0
-
-    for i, target_id in enumerate(target_ids):
-        try:
-            await callback.bot.copy_message(
-                chat_id=target_id,
-                from_chat_id=broadcast_chat_id,
-                message_id=broadcast_message_id,
-            )
-            delivered.append(target_id)
-            logger.debug(
-                "announce.copy_ok",
-                target_id=target_id,
-                target_username=usernames.get(target_id),
-            )
-        except TelegramForbiddenError as e:
-            error_msg = "Bot blocked by user"
-            failed.append((target_id, error_msg))
-            logger.warning(
-                "announce.copy_failed",
-                target_id=target_id,
-                target_username=usernames.get(target_id),
-                error=error_msg,
-                error_detail=str(e),
-            )
-        except TelegramBadRequest as e:
-            # Try forward_message as fallback
-            error_str = str(e)
-            try:
-                await callback.bot.forward_message(
-                    chat_id=target_id,
-                    from_chat_id=broadcast_chat_id,
-                    message_id=broadcast_message_id,
-                )
-                delivered.append(target_id)
-                logger.info(
-                    "announce.forward_fallback_ok",
-                    target_id=target_id,
-                    target_username=usernames.get(target_id),
-                    copy_error=error_str,
-                )
-            except Exception as e2:
-                failed.append((target_id, error_str))
-                logger.warning(
-                    "announce.copy_and_forward_failed",
-                    target_id=target_id,
-                    target_username=usernames.get(target_id),
-                    copy_error=error_str,
-                    forward_error=str(e2),
-                )
-        except Exception as e:
-            failed.append((target_id, str(e)))
-            logger.warning(
-                "announce.copy_failed",
-                target_id=target_id,
-                target_username=usernames.get(target_id),
-                error=str(e),
-            )
-
-        # Update progress every 10 messages
-        sent = i + 1
-        if sent - last_progress_update >= 10 or sent == len(target_ids):
-            try:
-                await progress_msg.edit_text(
-                    get_text("announce.sending",
-                             lang,
-                             sent=sent,
-                             total=len(target_ids)))
-                last_progress_update = sent
-            except Exception:
-                pass
+    # Broadcast with rate limiting
+    delivered, failed = await _broadcast_message(
+        bot=callback.bot,
+        target_ids=target_ids,
+        usernames=usernames,
+        broadcast_chat_id=broadcast_chat_id,
+        broadcast_message_id=broadcast_message_id,
+        progress_msg=progress_msg,
+        lang=lang,
+    )
 
     # Final summary
     try:
@@ -377,6 +322,136 @@ async def announce_confirm_callback(
             report_file,
             caption=get_text("announce.report_caption", lang),
         )
+
+
+async def _broadcast_message(
+    bot,
+    target_ids: list[int],
+    usernames: dict[int, str],
+    broadcast_chat_id: int,
+    broadcast_message_id: int,
+    progress_msg,
+    lang: str,
+    max_retries: int = 3,
+) -> tuple[list[int], list[tuple[int, str]]]:
+    """Broadcast message to targets with rate limiting and flood control.
+
+    Args:
+        bot: Bot instance.
+        target_ids: List of target user IDs.
+        usernames: Mapping of user_id to username.
+        broadcast_chat_id: Source chat ID.
+        broadcast_message_id: Source message ID.
+        progress_msg: Message to update with progress.
+        lang: Language code for i18n.
+        max_retries: Max retries per target on TelegramRetryAfter.
+
+    Returns:
+        Tuple of (delivered_ids, failed_list).
+    """
+    delivered: list[int] = []
+    failed: list[tuple[int, str]] = []
+    last_progress_update = 0
+
+    for i, target_id in enumerate(target_ids):
+        success = False
+        last_error = ""
+
+        for attempt in range(max_retries):
+            try:
+                await bot.copy_message(
+                    chat_id=target_id,
+                    from_chat_id=broadcast_chat_id,
+                    message_id=broadcast_message_id,
+                )
+                success = True
+                logger.debug(
+                    "announce.copy_ok",
+                    target_id=target_id,
+                    target_username=usernames.get(target_id),
+                )
+                break
+            except TelegramRetryAfter as e:
+                logger.warning(
+                    "announce.flood_control",
+                    target_id=target_id,
+                    retry_after=e.retry_after,
+                    attempt=attempt + 1,
+                )
+                await asyncio.sleep(e.retry_after)
+                last_error = f"Flood control: retry_after={e.retry_after}"
+            except TelegramForbiddenError as e:
+                last_error = "Bot blocked by user"
+                logger.warning(
+                    "announce.copy_failed",
+                    target_id=target_id,
+                    target_username=usernames.get(target_id),
+                    error=last_error,
+                    error_detail=str(e),
+                )
+                break
+            except TelegramBadRequest as e:
+                # Try forward_message as fallback
+                error_str = str(e)
+                try:
+                    await bot.forward_message(
+                        chat_id=target_id,
+                        from_chat_id=broadcast_chat_id,
+                        message_id=broadcast_message_id,
+                    )
+                    success = True
+                    logger.info(
+                        "announce.forward_fallback_ok",
+                        target_id=target_id,
+                        target_username=usernames.get(target_id),
+                        copy_error=error_str,
+                    )
+                except Exception as e2:
+                    last_error = error_str
+                    logger.warning(
+                        "announce.copy_and_forward_failed",
+                        target_id=target_id,
+                        target_username=usernames.get(target_id),
+                        copy_error=error_str,
+                        forward_error=str(e2),
+                    )
+                break
+            except Exception as e:
+                last_error = str(e)
+                logger.warning(
+                    "announce.copy_failed",
+                    target_id=target_id,
+                    target_username=usernames.get(target_id),
+                    error=last_error,
+                )
+                break
+
+        if success:
+            delivered.append(target_id)
+        else:
+            failed.append((target_id, last_error))
+
+        # Update progress every 5 messages
+        sent = i + 1
+        if sent - last_progress_update >= 5 or sent == len(target_ids):
+            pct = round(sent * 100 / len(target_ids))
+            try:
+                await progress_msg.edit_text(
+                    get_text("announce.sending_progress",
+                             lang,
+                             sent=sent,
+                             total=len(target_ids),
+                             pct=pct,
+                             delivered=len(delivered),
+                             failed=len(failed)))
+                last_progress_update = sent
+            except Exception:
+                pass
+
+        # Rate limiting: 25 msg/s
+        await asyncio.sleep(0.04)
+
+    return delivered, failed
 
 
 @router.callback_query(

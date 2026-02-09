@@ -3,9 +3,13 @@
 Tests cover:
 - Privilege checking (unauthorized users rejected)
 - Target parsing (usernames, IDs, mixed)
+- Case-insensitive username lookup
 - All-users mode (no targets)
 - FSM state transitions
-- Broadcast via copy_message
+- Preview via copy_message
+- Rate-limited broadcast with flood control
+- TelegramRetryAfter handling
+- Progress updates
 - Delivery report generation
 - Confirmation and cancellation flows
 """
@@ -23,6 +27,7 @@ from db.models.user import User
 from db.repositories.user_repository import UserRepository
 import pytest
 from telegram.handlers import announce
+from telegram.handlers.announce import _broadcast_message
 from telegram.handlers.announce import _generate_report
 from telegram.handlers.announce import announce_cancel_callback
 from telegram.handlers.announce import announce_confirm_callback
@@ -184,6 +189,21 @@ class TestAnnounceTargetParsing:
             call_kwargs = state.update_data.call_args[1]
             assert sample_user.id in call_kwargs["target_ids"]
 
+    async def test_parse_username_case_insensitive(self, test_session,
+                                                   sample_user):
+        """Parse @Username with different case still finds user."""
+        with privileged_context(ADMIN_USER_ID):
+            # sample_user.username is 'test_user', query with upper case
+            upper_username = sample_user.username.upper()
+            msg = make_message(ADMIN_USER_ID, f"/announce @{upper_username}")
+            state = make_state()
+
+            await cmd_announce(msg, test_session, state)
+
+            state.set_state.assert_called_once()
+            call_kwargs = state.update_data.call_args[1]
+            assert sample_user.id in call_kwargs["target_ids"]
+
     async def test_not_found_targets(self, test_session):
         """Unknown targets reported as not found."""
         with privileged_context(ADMIN_USER_ID):
@@ -250,7 +270,7 @@ class TestAnnounceAllUsers:
 
 
 # =============================================================================
-# Tests: FSM - Message Received
+# Tests: FSM - Message Received (Preview)
 # =============================================================================
 
 
@@ -258,8 +278,8 @@ class TestAnnounceAllUsers:
 class TestAnnounceMessageReceived:
     """Test message received in waiting_for_message state."""
 
-    async def test_message_received_shows_confirmation(self):
-        """Admin message shows confirmation with buttons via reply."""
+    async def test_message_received_shows_preview_and_confirmation(self):
+        """Admin message shows copy_message preview + confirmation buttons."""
         msg = make_message(ADMIN_USER_ID, "Hello everyone!")
         state = make_state({
             "admin_user_id": ADMIN_USER_ID,
@@ -279,10 +299,17 @@ class TestAnnounceMessageReceived:
         state.set_state.assert_called_once_with(
             AnnounceStates.waiting_for_confirmation)
 
-        # Should reply with confirmation + inline buttons
-        msg.reply.assert_called_once()
-        reply_kwargs = msg.reply.call_args[1]
-        assert reply_kwargs["reply_markup"] is not None
+        # Should copy message as preview to admin's chat
+        msg.bot.copy_message.assert_called_once_with(
+            chat_id=msg.chat.id,
+            from_chat_id=msg.chat.id,
+            message_id=msg.message_id,
+        )
+
+        # Should send confirmation text with inline buttons
+        msg.answer.assert_called_once()
+        answer_kwargs = msg.answer.call_args[1]
+        assert answer_kwargs["reply_markup"] is not None
 
     async def test_wrong_user_ignored(self):
         """Non-admin user message is ignored."""
@@ -294,7 +321,8 @@ class TestAnnounceMessageReceived:
 
         await announce_message_received(msg, state)
 
-        msg.reply.assert_not_called()
+        msg.bot.copy_message.assert_not_called()
+        msg.answer.assert_not_called()
         state.set_state.assert_not_called()
 
 
@@ -308,7 +336,7 @@ class TestAnnounceConfirmation:
     """Test broadcast confirmation and cancellation."""
 
     async def test_confirm_broadcasts(self):
-        """Confirm button triggers copy_message broadcast."""
+        """Confirm button triggers copy_message broadcast with rate limiting."""
         cb = make_callback(ADMIN_USER_ID, "announce:confirm")
         state = make_state({
             "admin_user_id": ADMIN_USER_ID,
@@ -317,7 +345,9 @@ class TestAnnounceConfirmation:
             "broadcast_message_id": 42,
         })
 
-        await announce_confirm_callback(cb, state)
+        with patch("telegram.handlers.announce.asyncio.sleep",
+                   new_callable=AsyncMock):
+            await announce_confirm_callback(cb, state)
 
         # Should clear state
         state.clear.assert_called_once()
@@ -333,7 +363,7 @@ class TestAnnounceConfirmation:
         from aiogram.exceptions import TelegramForbiddenError
 
         cb = make_callback(ADMIN_USER_ID, "announce:confirm")
-        # First succeeds, second throws blocked error
+        # First succeeds, second throws blocked error, third succeeds
         cb.bot.copy_message = AsyncMock(side_effect=[
             None,
             TelegramForbiddenError(method=MagicMock(),
@@ -347,7 +377,9 @@ class TestAnnounceConfirmation:
             "broadcast_message_id": 42,
         })
 
-        await announce_confirm_callback(cb, state)
+        with patch("telegram.handlers.announce.asyncio.sleep",
+                   new_callable=AsyncMock):
+            await announce_confirm_callback(cb, state)
 
         assert cb.bot.copy_message.call_count == 3
         # Report should still be generated
@@ -381,6 +413,118 @@ class TestAnnounceConfirmation:
         # Should not broadcast
         state.clear.assert_not_called()
         cb.bot.copy_message.assert_not_called()
+
+
+# =============================================================================
+# Tests: Broadcast Helper (_broadcast_message)
+# =============================================================================
+
+
+@pytest.mark.asyncio
+class TestBroadcastMessage:
+    """Test _broadcast_message helper with rate limiting and flood control."""
+
+    async def test_rate_limiting_sleeps_between_sends(self):
+        """Should sleep 0.04s between each send."""
+        bot = Mock()
+        bot.copy_message = AsyncMock()
+        progress_msg = Mock(edit_text=AsyncMock())
+
+        with patch("telegram.handlers.announce.asyncio.sleep",
+                   new_callable=AsyncMock) as mock_sleep:
+            await _broadcast_message(
+                bot=bot,
+                target_ids=[1, 2, 3],
+                usernames={},
+                broadcast_chat_id=100,
+                broadcast_message_id=42,
+                progress_msg=progress_msg,
+                lang="en",
+            )
+
+        # Should sleep 0.04 for each target
+        sleep_calls = [c[0][0] for c in mock_sleep.call_args_list]
+        assert sleep_calls.count(0.04) == 3
+
+    async def test_retry_after_retries_and_succeeds(self):
+        """TelegramRetryAfter triggers retry after sleeping."""
+        from aiogram.exceptions import TelegramRetryAfter
+
+        bot = Mock()
+        # First call: retry_after, second call: success
+        bot.copy_message = AsyncMock(side_effect=[
+            TelegramRetryAfter(retry_after=1, method="copy", message="Flood"),
+            None,
+        ])
+        progress_msg = Mock(edit_text=AsyncMock())
+
+        with patch("telegram.handlers.announce.asyncio.sleep",
+                   new_callable=AsyncMock) as mock_sleep:
+            delivered, failed = await _broadcast_message(
+                bot=bot,
+                target_ids=[1001],
+                usernames={},
+                broadcast_chat_id=100,
+                broadcast_message_id=42,
+                progress_msg=progress_msg,
+                lang="en",
+            )
+
+        assert delivered == [1001]
+        assert failed == []
+        # Should have slept for retry_after (1s) + rate limit (0.04s)
+        sleep_values = [c[0][0] for c in mock_sleep.call_args_list]
+        assert 1 in sleep_values
+
+    async def test_retry_after_exhaustion(self):
+        """TelegramRetryAfter exhausts max_retries → fails."""
+        from aiogram.exceptions import TelegramRetryAfter
+
+        bot = Mock()
+        bot.copy_message = AsyncMock(side_effect=TelegramRetryAfter(
+            retry_after=0.01, method="copy", message="Flood"))
+        progress_msg = Mock(edit_text=AsyncMock())
+
+        with patch("telegram.handlers.announce.asyncio.sleep",
+                   new_callable=AsyncMock):
+            delivered, failed = await _broadcast_message(
+                bot=bot,
+                target_ids=[1001],
+                usernames={},
+                broadcast_chat_id=100,
+                broadcast_message_id=42,
+                progress_msg=progress_msg,
+                lang="en",
+                max_retries=2,
+            )
+
+        assert delivered == []
+        assert len(failed) == 1
+        assert failed[0][0] == 1001
+        assert "Flood control" in failed[0][1]
+        # Should have been called max_retries times
+        assert bot.copy_message.call_count == 2
+
+    async def test_progress_updates_every_5(self):
+        """Progress message updated every 5 sends."""
+        bot = Mock()
+        bot.copy_message = AsyncMock()
+        progress_msg = Mock(edit_text=AsyncMock())
+
+        with patch("telegram.handlers.announce.asyncio.sleep",
+                   new_callable=AsyncMock):
+            await _broadcast_message(
+                bot=bot,
+                target_ids=list(range(12)),
+                usernames={},
+                broadcast_chat_id=100,
+                broadcast_message_id=42,
+                progress_msg=progress_msg,
+                lang="en",
+            )
+
+        # Updates at: 5, 10, 12 (final)
+        assert progress_msg.edit_text.call_count == 3
 
 
 # =============================================================================

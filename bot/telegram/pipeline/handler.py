@@ -17,6 +17,7 @@ import time
 from aiogram import F
 from aiogram import Router
 from aiogram import types
+from aiogram.filters import StateFilter
 from sqlalchemy.ext.asyncio import AsyncSession
 from telegram.generation_tracker import generation_tracker
 from telegram.pipeline.models import ProcessedMessage
@@ -69,8 +70,9 @@ def get_queue() -> ProcessedMessageQueue:
     return _queue
 
 
-@router.message(F.text | F.caption | F.photo | F.document | F.voice | F.audio |
-                F.video | F.video_note)
+@router.message(
+    StateFilter(None), F.text | F.caption | F.photo | F.document | F.voice |
+    F.audio | F.video | F.video_note)
 async def handle_message(message: types.Message, session: AsyncSession) -> None:
     """Unified handler for all message types.
 
@@ -355,7 +357,7 @@ async def _charge_transcription(
         # Don't fail the request - user already got the transcription
 
 
-@router.message()
+@router.message(StateFilter(None))
 async def handle_unsupported_message(message: types.Message) -> None:
     """Catch-all handler for unsupported message types.
 

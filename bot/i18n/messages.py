@@ -739,6 +739,12 @@ MESSAGES: MessageDict = {
         "en": "📢 Broadcasting... {sent}/{total}",
         "ru": "📢 Рассылка... {sent}/{total}",
     },
+    "announce.sending_progress": {
+        "en": ("📢 Broadcasting... {sent}/{total} ({pct}%)\n"
+               "✅ {delivered}  ❌ {failed}"),
+        "ru": ("📢 Рассылка... {sent}/{total} ({pct}%)\n"
+               "✅ {delivered}  ❌ {failed}"),
+    },
     "announce.complete": {
         "en": ("📢 <b>Broadcast complete</b>\n\n"
                "✅ Delivered: {delivered}\n"
