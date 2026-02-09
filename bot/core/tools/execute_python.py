@@ -580,7 +580,7 @@ async def execute_python(code: str,
 
 
 # Tool definition for Claude API (anthropic tools format)
-# Tools are cached via system prompt breakpoint (no cache_control needed here)
+# Tools are implicitly cached as part of the prompt prefix (before system prompt breakpoint)
 EXECUTE_PYTHON_TOOL = {
     "name":
         "execute_python",
@@ -668,8 +668,8 @@ Cost: ~$0.05/hour. Typical <1s = <$0.0001.""",
         },
         "required": ["code"]
     },
-    # NOTE: cache_control removed - it must be on the LAST tool (web_fetch)
-    # See registry.py WEB_FETCH_CONFIG for cache_control placement
+    # No cache_control needed — tools are implicitly part of the cached prefix
+    # (Anthropic caches: tools → system → messages, breakpoint is on system)
 }
 
 

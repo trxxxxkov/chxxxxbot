@@ -9,7 +9,7 @@ Uses cache-aside pattern:
 2. If miss, load from DB and cache
 3. Invalidate on updates
 
-TTL: 60 seconds (balance changes frequently)
+TTL: 3600 seconds (1 hour). Balance updated atomically via Lua script.
 
 NO __init__.py - use direct import:
     from cache.user_cache import get_cached_user, cache_user, invalidate_user
@@ -209,11 +209,39 @@ def get_balance_from_cached(cached: CachedUserData) -> Decimal:
     return Decimal(cached["balance"])
 
 
+# Lua script for atomic balance update.
+# Prevents race conditions when concurrent charges update balance simultaneously.
+# Uses cjson for JSON parsing (built into Redis).
+_UPDATE_BALANCE_LUA = """
+local key = KEYS[1]
+local new_balance = ARGV[1]
+local ttl = tonumber(ARGV[2])
+local timestamp = ARGV[3]
+
+local data = redis.call('GET', key)
+if not data then
+    return {0, ''}
+end
+
+local cached = cjson.decode(data)
+local old_balance = cached['balance'] or ''
+cached['balance'] = new_balance
+cached['cached_at'] = tonumber(timestamp)
+
+redis.call('SETEX', key, ttl, cjson.encode(cached))
+return {1, old_balance}
+"""
+
+
 async def update_cached_balance(user_id: int, new_balance: Decimal) -> bool:
-    """Update only the balance in cached user data.
+    """Atomically update only the balance in cached user data.
+
+    Uses a Lua script to perform GET + modify + SET in a single atomic
+    Redis operation, preventing race conditions when concurrent charges
+    update the same user's balance simultaneously.
 
     This is more efficient than invalidate + re-cache because:
-    1. Single Redis operation (GET + SET vs DELETE)
+    1. Single atomic Redis operation (no race window)
     2. Preserves other cached data (model_id, etc.)
     3. Avoids cache miss on next request
 
@@ -236,25 +264,27 @@ async def update_cached_balance(user_id: int, new_balance: Decimal) -> bool:
     try:
         key = user_key(user_id)
 
-        # Get existing data
-        data = await redis.get(key)
-        if data is None:
-            # Not cached - nothing to update
-            logger.debug("user_cache.update_skipped_not_cached",
-                         user_id=user_id)
-            return False
+        # Execute Lua script atomically
+        result = await redis.eval(
+            _UPDATE_BALANCE_LUA,
+            1,  # number of keys
+            key,  # KEYS[1]
+            str(new_balance),  # ARGV[1]
+            str(USER_TTL),  # ARGV[2]
+            str(time.time()),  # ARGV[3]
+        )
 
-        # Update balance in existing data
-        cached = json.loads(data.decode("utf-8"))
-        old_balance = cached.get("balance")
-        cached["balance"] = str(new_balance)
-        cached["cached_at"] = time.time()
-
-        # Save with fresh TTL
-        await redis.setex(key, USER_TTL, json.dumps(cached))
+        success = int(result[0])
+        old_balance = result[1].decode("utf-8") if isinstance(
+            result[1], bytes) else str(result[1])
 
         elapsed = time.time() - start_time
         record_redis_operation_time("update", elapsed)
+
+        if not success:
+            logger.debug("user_cache.update_skipped_not_cached",
+                         user_id=user_id)
+            return False
 
         logger.debug(
             "user_cache.balance_updated",

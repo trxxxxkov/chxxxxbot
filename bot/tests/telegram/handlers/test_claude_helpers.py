@@ -92,23 +92,23 @@ class TestComposeSystemPromptBlocks:
         assert result[0]["cache_control"]["type"] == "ephemeral"
 
     def test_custom_prompt_large_cached(self):
-        """Test large custom prompt is cached."""
-        # 1024 tokens ≈ 4096 chars, so need ~5000 chars to be safe
+        """Test large custom prompt is cached (≥256 tokens)."""
+        # 256 tokens ≈ 1024 chars, so need ~1200 chars to be safe
         result = compose_system_prompt_blocks(
             global_prompt="Global " * 500,
-            custom_prompt="Custom " * 1000,  # ~7000 chars ≈ 1750 tokens
+            custom_prompt="Custom " * 200,  # ~1400 chars ≈ 350 tokens
             files_context=None,
         )
 
         assert len(result) == 2
         assert "cache_control" in result[0]  # Global cached
-        assert "cache_control" in result[1]  # Custom cached (large)
+        assert "cache_control" in result[1]  # Custom cached (≥256 tokens)
 
     def test_custom_prompt_small_not_cached(self):
-        """Test small custom prompt is NOT cached."""
+        """Test small custom prompt is NOT cached (<256 tokens)."""
         result = compose_system_prompt_blocks(
             global_prompt="Global " * 500,
-            custom_prompt="Small custom",  # Less than 1024 tokens
+            custom_prompt="Small custom",  # ~3 tokens, well under 256
             files_context=None,
         )
 

@@ -70,8 +70,9 @@ WEB_FETCH_CONFIG = ToolConfig(
             "enabled": True
         },
         "max_content_tokens": 100000,  # Protect against huge pages
-        # NOTE: No cache_control here - tools are cached via system prompt breakpoint
-        # Order: tools → system → messages. Breakpoint on system caches tools + system.
+        # Tools are part of the cached prefix: Anthropic caches everything
+        # from prompt start up to the cache_control breakpoint (on system prompt).
+        # Order: tools → system → messages. So tools are implicitly cached.
     },
     executor=None,
     emoji="🌐",

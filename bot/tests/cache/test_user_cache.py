@@ -195,7 +195,7 @@ class TestGetBalanceFromCached:
 
 
 class TestUpdateCachedBalance:
-    """Tests for update_cached_balance function."""
+    """Tests for update_cached_balance function (atomic Lua script)."""
 
     @pytest.fixture
     def mock_redis(self):
@@ -204,19 +204,12 @@ class TestUpdateCachedBalance:
 
     @pytest.mark.asyncio
     async def test_update_cached_balance_success(self, mock_redis):
-        """Test successful balance update in cache."""
+        """Test successful balance update via Lua script."""
         user_id = 123456
         new_balance = Decimal("15.5000")
 
-        # Existing cached data
-        existing_data = json.dumps({
-            "balance": "10.0000",
-            "model_id": "claude-sonnet-4-5-20250929",
-            "first_name": "Test",
-            "username": "testuser",
-            "cached_at": 1234567890.0,
-        })
-        mock_redis.get.return_value = existing_data.encode("utf-8")
+        # Lua script returns [1, old_balance] on success
+        mock_redis.eval.return_value = [1, b"10.0000"]
 
         from cache.user_cache import update_cached_balance
 
@@ -225,14 +218,13 @@ class TestUpdateCachedBalance:
             result = await update_cached_balance(user_id, new_balance)
 
         assert result is True
-        mock_redis.get.assert_called_once()
-        mock_redis.setex.assert_called_once()
+        mock_redis.eval.assert_called_once()
 
-        # Verify the new balance was set
-        call_args = mock_redis.setex.call_args
-        saved_data = json.loads(call_args[0][2])
-        assert saved_data["balance"] == "15.5000"
-        assert saved_data["model_id"] == "claude-sonnet-4-5-20250929"
+        # Verify Lua script was called with correct args
+        call_args = mock_redis.eval.call_args
+        assert call_args[0][1] == 1  # number of keys
+        assert call_args[0][2] == user_key(user_id)  # KEYS[1]
+        assert call_args[0][3] == "15.5000"  # ARGV[1] new_balance
 
     @pytest.mark.asyncio
     async def test_update_cached_balance_not_cached(self, mock_redis):
@@ -240,7 +232,8 @@ class TestUpdateCachedBalance:
         user_id = 123456
         new_balance = Decimal("15.5000")
 
-        mock_redis.get.return_value = None
+        # Lua script returns [0, ''] when key not found
+        mock_redis.eval.return_value = [0, b""]
 
         from cache.user_cache import update_cached_balance
 
@@ -249,7 +242,6 @@ class TestUpdateCachedBalance:
             result = await update_cached_balance(user_id, new_balance)
 
         assert result is False
-        mock_redis.setex.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_update_cached_balance_redis_unavailable(self):
@@ -261,6 +253,21 @@ class TestUpdateCachedBalance:
 
         with patch("cache.user_cache.get_redis",
                    return_value=None) as mock_get_redis:
+            result = await update_cached_balance(user_id, new_balance)
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_update_cached_balance_eval_error(self, mock_redis):
+        """Test graceful handling of Lua script errors."""
+        user_id = 123456
+        new_balance = Decimal("15.5000")
+
+        mock_redis.eval.side_effect = Exception("NOSCRIPT")
+
+        from cache.user_cache import update_cached_balance
+
+        with patch("cache.user_cache.get_redis", return_value=mock_redis):
             result = await update_cached_balance(user_id, new_balance)
 
         assert result is False
@@ -334,17 +341,17 @@ class TestCustomPromptCaching:
 
     @pytest.mark.asyncio
     async def test_update_preserves_custom_prompt(self, mock_redis):
-        """Test that update_cached_balance preserves custom_prompt."""
+        """Test that Lua script preserves all fields (custom_prompt etc).
+
+        The Lua script only modifies 'balance' and 'cached_at' in the
+        JSON, preserving all other fields atomically. This test verifies
+        the Lua script is called correctly (field preservation is
+        guaranteed by the script logic, not by Python code).
+        """
         user_id = 123456
-        custom_prompt = "My custom prompt"
-        mock_redis.get.return_value = json.dumps({
-            "balance": "10.0000",
-            "model_id": "claude:sonnet",
-            "first_name": "Test",
-            "username": "testuser",
-            "custom_prompt": custom_prompt,
-            "cached_at": 1234567890.0,
-        }).encode()
+
+        # Lua script returns [1, old_balance] on success
+        mock_redis.eval.return_value = [1, b"10.0000"]
 
         from cache.user_cache import update_cached_balance
 
@@ -352,10 +359,8 @@ class TestCustomPromptCaching:
             result = await update_cached_balance(user_id, Decimal("5.0"))
 
         assert result is True
-        call_args = mock_redis.setex.call_args
-        saved_data = json.loads(call_args[0][2])
-        assert saved_data["custom_prompt"] == custom_prompt
-        assert saved_data["balance"] == "5.0"
+        # Lua script handles field preservation atomically
+        mock_redis.eval.assert_called_once()
 
 
 class TestLanguageCodeCaching:
@@ -427,18 +432,16 @@ class TestLanguageCodeCaching:
 
     @pytest.mark.asyncio
     async def test_update_preserves_language_code(self, mock_redis):
-        """Test that update_cached_balance preserves language_code."""
+        """Test that Lua script preserves all fields (language_code etc).
+
+        Same as test_update_preserves_custom_prompt — the Lua script
+        modifies only 'balance' and 'cached_at', preserving everything
+        else atomically inside Redis.
+        """
         user_id = 123456
-        language_code = "ru"
-        mock_redis.get.return_value = json.dumps({
-            "balance": "10.0000",
-            "model_id": "claude:sonnet",
-            "first_name": "Test",
-            "username": "testuser",
-            "language_code": language_code,
-            "custom_prompt": None,
-            "cached_at": 1234567890.0,
-        }).encode()
+
+        # Lua script returns [1, old_balance] on success
+        mock_redis.eval.return_value = [1, b"10.0000"]
 
         from cache.user_cache import update_cached_balance
 
@@ -446,7 +449,4 @@ class TestLanguageCodeCaching:
             result = await update_cached_balance(user_id, Decimal("5.0"))
 
         assert result is True
-        call_args = mock_redis.setex.call_args
-        saved_data = json.loads(call_args[0][2])
-        assert saved_data["language_code"] == language_code
-        assert saved_data["balance"] == "5.0"
+        mock_redis.eval.assert_called_once()

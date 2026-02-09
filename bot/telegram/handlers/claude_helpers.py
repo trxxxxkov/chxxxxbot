@@ -123,10 +123,12 @@ def compose_system_prompt_blocks(
         }
     })
 
-    # Block 2: User custom prompt - cached if ≥1024 tokens
+    # Block 2: User custom prompt - cached if ≥256 tokens
+    # Custom prompts are static per-user, so caching pays off even for
+    # smaller prompts. 256 tokens ≈ 1024 chars.
     if custom_prompt:
         estimated_tokens = len(custom_prompt) // 4
-        if estimated_tokens >= 1024:
+        if estimated_tokens >= 256:
             blocks.append({
                 "type": "text",
                 "text": custom_prompt,

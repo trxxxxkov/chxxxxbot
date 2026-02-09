@@ -362,3 +362,149 @@ return {
 ### Тесты
 
 - 288 тестов прошло (streaming + cost_estimator)
+
+---
+
+# PLAN: Аудит кэширования (2026-02-09)
+
+## Контекст
+
+Полный аудит двух уровней кэширования:
+1. **Anthropic Prompt Cache** — серверное кэширование prefix (tools + system prompt)
+2. **Redis Cache** — локальное кэширование данных (user, messages, files, write-behind)
+
+---
+
+## P1. Race condition в `update_cached_balance()` [HIGH]
+
+**Файл:** `bot/cache/user_cache.py:212-275`
+
+**Проблема:** GET → modify → SET не атомарный. Два параллельных списания могут потерять обновление:
+```
+Thread A: GET balance=10.00
+Thread B: GET balance=10.00
+Thread A: SET balance=9.50  (charged $0.50)
+Thread B: SET balance=8.00  (charged $2.00, overwrites A's -$0.50)
+# Реальный баланс должен быть $7.50, а в кэше $8.00
+```
+
+**Решение:** Lua-скрипт для atomic read-modify-write (аналогично `append_message_atomic` в `thread_cache.py`):
+```lua
+-- KEYS[1] = user key
+-- ARGV[1] = new_balance
+-- ARGV[2] = USER_TTL
+-- ARGV[3] = current timestamp
+local data = redis.call('GET', KEYS[1])
+if not data then return 0 end
+local cached = cjson.decode(data)
+cached['balance'] = ARGV[1]
+cached['cached_at'] = tonumber(ARGV[3])
+redis.call('SETEX', KEYS[1], tonumber(ARGV[2]), cjson.encode(cached))
+return 1
+```
+
+**Изменения:**
+- `bot/cache/user_cache.py` — заменить GET+SET на EVALSHA с Lua-скриптом
+- Тесты: `bot/tests/cache/test_user_cache.py` — добавить тест на concurrent updates
+
+---
+
+## P2. Комментарий в `user_cache.py` — TTL mismatch [LOW]
+
+**Файл:** `bot/cache/user_cache.py:12`
+
+**Проблема:** Комментарий говорит `TTL: 60 seconds`, но реальный TTL = `USER_TTL = 3600` (1 час) из `keys.py:95`.
+
+**Решение:** Исправить комментарий на `TTL: 3600 seconds (1 hour)`.
+
+---
+
+## P3. Write-behind DLQ никогда не разгребается [MEDIUM]
+
+**Файл:** `bot/cache/write_behind.py:34-35, 154-183`
+
+**Проблема:** `move_to_dlq()` и `get_dlq_depth()` существуют, но нет механизма replay. Items в `write:dlq` копятся вечно без TTL.
+
+**Решение:**
+1. Добавить admin-команду `/dlq` для привилегированных пользователей
+2. Команда показывает: `DLQ depth`, `типы items`, `возраст самого старого`
+3. Кнопки: "Replay all" (re-queue в write:queue), "Purge" (очистить)
+4. Добавить Prometheus gauge `write_behind_dlq_depth` в `collect_metrics_task`
+
+**Изменения:**
+- `bot/cache/write_behind.py` — добавить `replay_dlq()`, `purge_dlq()`
+- `bot/telegram/handlers/admin.py` — добавить `/dlq` команду
+- `bot/main.py` — добавить DLQ depth в метрики (каждые 60s)
+
+---
+
+## P4. Неточная оценка токенов для custom prompt cache threshold [LOW]
+
+**Файл:** `bot/telegram/handlers/claude_helpers.py:128`
+
+**Проблема:** `len(custom_prompt) // 4` — грубая оценка. Для custom prompt на границе 1024 токенов может ошибиться в обе стороны.
+
+**Решение:** Снизить порог с 1024 до 256 токенов (1024 символов). Кастомные промпты статичны per-user, поэтому кэш-выигрыш оправдан даже для маленьких промптов.
+
+**Изменения:**
+- `bot/telegram/handlers/claude_helpers.py:128` — `>= 1024` → `>= 256`
+- `bot/tests/telegram/handlers/test_claude_helpers.py` — обновить тесты на новый порог
+
+---
+
+## ~~P5. Compaction сбрасывает кэш контекста~~ [НЕ ПРОБЛЕМА]
+
+Compaction заменяет прошлые сообщения, но они и так НЕ кэшируются (cache_control только
+на system prompt prefix). Cache hit rate не страдает. Полезно только как observability —
+добавить Prometheus counter `compaction_triggered_total` для наблюдения.
+
+---
+
+## P6. Misleading комментарий про кэширование tools [LOW]
+
+**Файлы:**
+- `bot/core/tools/registry.py:73-74`
+- `bot/core/tools/execute_python.py:583, 671-672`
+
+**Проблема:** Комментарии технически корректны (tools действительно кэшируются через system prompt prefix), но формулировка сбивает с толку — звучит как будто cache_control на system каскадно применяется к tools, что неточно. Механизм: Anthropic кэширует prefix в порядке tools→system→messages, и breakpoint на system включает все tools в prefix.
+
+**Решение:** Уточнить комментарии:
+```python
+# Tools are part of the cached prefix: Anthropic caches everything
+# from prompt start up to the cache_control breakpoint (on system prompt).
+# Order: tools → system → messages. So tools are implicitly cached.
+```
+
+---
+
+## P7. Exec файлы до 100MB могут забить Redis [LOW]
+
+**Файл:** `bot/cache/keys.py:104`
+
+**Проблема:** `EXEC_FILE_MAX_SIZE = 100 * 1024 * 1024`. Data science workload может создать несколько 100MB файлов, забив Redis (лимит 512mb в compose.yaml). `allkeys-lru` спасает, но при вытеснении могут пострадать user/message кэши.
+
+**Решение:** Снизить лимит до 20MB (как file_bytes) или 50MB. Файлы >лимита сохранять на диск (tmpfs) вместо Redis.
+
+**Решение принять после анализа реального использования.**
+
+---
+
+## P8. `batch.py` — non-transactional pipeline [LOW]
+
+**Файл:** `bot/cache/batch.py`
+
+**Проблема:** `pipeline(transaction=False)` — чтения не атомарны. Между fetch user и fetch messages данные могут измениться.
+
+**Решение:** На практике не критично — кэш best-effort, и данные всё равно могут устареть за время обработки. Оставить как есть, документировать.
+
+---
+
+## Порядок реализации
+
+1. **[P1]** Fix race condition в `update_cached_balance()` — Lua-скрипт
+2. **[P2]** Fix комментарий TTL в `user_cache.py`
+3. **[P4]** Снизить порог кэширования custom prompt 1024→256
+4. **[P6]** Уточнить комментарии про кэширование tools
+5. **[P3]** DLQ replay механизм + admin команда
+6. **[P7]** Анализ exec file sizes в проде, потом решение по лимиту
+7. **[P8]** Документировать non-transactional batch — не фиксить
