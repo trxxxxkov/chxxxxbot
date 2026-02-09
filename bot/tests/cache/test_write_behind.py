@@ -11,11 +11,15 @@ from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
+from cache.write_behind import _auto_replay_dlq
+from cache.write_behind import DLQ_MAX_AGE
 from cache.write_behind import flush_writes
 from cache.write_behind import flush_writes_batch
 from cache.write_behind import get_queue_depth
 from cache.write_behind import queue_write
 from cache.write_behind import write_behind_task
+from cache.write_behind import WRITE_DLQ_KEY
+from cache.write_behind import WRITE_QUEUE_KEY
 from cache.write_behind import WriteType
 import pytest
 
@@ -222,6 +226,87 @@ class TestFlushWrites:
         assert result == 1
         mock_session.execute.assert_called_once()
         mock_session.commit.assert_called_once()
+
+
+class TestAutoReplayDlq:
+    """Tests for _auto_replay_dlq function."""
+
+    @pytest.mark.asyncio
+    async def test_replays_fresh_items(self):
+        """Test fresh DLQ items are replayed to main queue."""
+        import time
+
+        mock_redis = AsyncMock()
+        mock_redis.llen = AsyncMock(return_value=1)
+        item = json.dumps({
+            "type": "message",
+            "data": {
+                "chat_id": 1
+            },
+            "queued_at": time.time() - 60,
+            "retry_count": 3,
+            "retry_after": 0,
+        })
+        mock_redis.lpop = AsyncMock(side_effect=[item.encode(), None])
+        mock_redis.rpush = AsyncMock()
+
+        mock_log = MagicMock()
+
+        with patch("cache.write_behind.get_redis", return_value=mock_redis):
+            await _auto_replay_dlq(mock_log)
+
+        mock_redis.rpush.assert_called_once()
+        # Verify retry_count was stripped
+        replayed = json.loads(mock_redis.rpush.call_args[0][1])
+        assert "retry_count" not in replayed
+        assert "retry_after" not in replayed
+
+    @pytest.mark.asyncio
+    async def test_discards_expired_items(self):
+        """Test items older than DLQ_MAX_AGE are discarded."""
+        import time
+
+        mock_redis = AsyncMock()
+        mock_redis.llen = AsyncMock(return_value=1)
+        old_item = json.dumps({
+            "type": "message",
+            "data": {
+                "chat_id": 1
+            },
+            "queued_at": time.time() - DLQ_MAX_AGE - 3600,
+        })
+        mock_redis.lpop = AsyncMock(side_effect=[old_item.encode(), None])
+        mock_redis.rpush = AsyncMock()
+
+        mock_log = MagicMock()
+
+        with patch("cache.write_behind.get_redis", return_value=mock_redis):
+            await _auto_replay_dlq(mock_log)
+
+        mock_redis.rpush.assert_not_called()
+        mock_log.warning.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_empty_dlq_noop(self):
+        """Test does nothing when DLQ is empty."""
+        mock_redis = AsyncMock()
+        mock_redis.llen = AsyncMock(return_value=0)
+        mock_log = MagicMock()
+
+        with patch("cache.write_behind.get_redis", return_value=mock_redis):
+            await _auto_replay_dlq(mock_log)
+
+        mock_redis.lpop.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_redis_unavailable(self):
+        """Test graceful handling when Redis is unavailable."""
+        mock_log = MagicMock()
+
+        with patch("cache.write_behind.get_redis", return_value=None):
+            await _auto_replay_dlq(mock_log)
+
+        # Should not raise
 
 
 class TestWriteTypes:

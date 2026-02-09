@@ -38,6 +38,10 @@ WRITE_DLQ_KEY = "write:dlq"
 FLUSH_INTERVAL = 5  # seconds between flushes
 BATCH_SIZE = 100  # default max writes per flush (can be adaptive)
 
+# DLQ auto-replay configuration
+DLQ_REPLAY_INTERVAL = 12  # replay every 12 flushes (60s at 5s interval)
+DLQ_MAX_AGE = 86400  # discard items older than 24 hours
+
 # Adaptive batch size thresholds (queue_depth, batch_size)
 # Higher queue depth = larger batch size for faster drain
 ADAPTIVE_BATCH_THRESHOLDS = [
@@ -701,6 +705,60 @@ async def flush_writes(session) -> int:
     return total
 
 
+async def _auto_replay_dlq(log) -> None:
+    """Replay DLQ items back to main queue, discard stale ones.
+
+    Moves all DLQ items back to write:queue for retry. Items older
+    than DLQ_MAX_AGE (24h) are discarded with a warning log.
+    """
+    redis = await get_redis()
+    if redis is None:
+        return
+
+    try:
+        depth = await redis.llen(WRITE_DLQ_KEY)
+        if depth == 0:
+            return
+
+        replayed = 0
+        discarded = 0
+        now = time.time()
+
+        for _ in range(depth):
+            raw = await redis.lpop(WRITE_DLQ_KEY)
+            if raw is None:
+                break
+
+            item = json.loads(raw)
+            queued_at = item.get("queued_at", now)
+            age = now - queued_at
+
+            if age > DLQ_MAX_AGE:
+                discarded += 1
+                log.warning(
+                    "write_behind.dlq_item_expired",
+                    write_type=item.get("type"),
+                    age_hours=round(age / 3600, 1),
+                )
+                continue
+
+            # Reset retry count and re-queue
+            item.pop("retry_count", None)
+            item.pop("retry_after", None)
+            await redis.rpush(WRITE_QUEUE_KEY, json.dumps(item))
+            replayed += 1
+
+        if replayed or discarded:
+            log.info(
+                "write_behind.dlq_auto_replay",
+                replayed=replayed,
+                discarded=discarded,
+            )
+
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        log.error("write_behind.dlq_replay_error", error=str(e))
+
+
 async def write_behind_task(log) -> None:
     """Background task to flush writes periodically.
 
@@ -716,9 +774,11 @@ async def write_behind_task(log) -> None:
 
     log.debug("write_behind.task_started", interval=FLUSH_INTERVAL)
 
+    iteration = 0
     while True:
         try:
             await asyncio.sleep(FLUSH_INTERVAL)
+            iteration += 1
 
             async with get_session() as session:
                 flushed = await flush_writes(session)
@@ -728,6 +788,10 @@ async def write_behind_task(log) -> None:
                         "write_behind.task_flush_complete",
                         flushed=flushed,
                     )
+
+            # Auto-replay DLQ every 60s (12 iterations × 5s)
+            if iteration % DLQ_REPLAY_INTERVAL == 0:
+                await _auto_replay_dlq(log)
 
         except asyncio.CancelledError:
             # Final flush on shutdown
