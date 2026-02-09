@@ -11,6 +11,7 @@ import asyncio
 from typing import Any, Dict
 
 from anthropic import APIStatusError
+import config
 from core.clients import get_anthropic_client
 from core.pricing import calculate_claude_cost
 from core.pricing import cost_to_float
@@ -63,7 +64,7 @@ async def analyze_pdf(claude_file_id: str,
 
     # Use centralized client factory with Files API beta header
     client = get_anthropic_client(use_files_api=True)
-    model_id = "claude-opus-4-6"
+    model_id = config.VISION_MODEL_ID
 
     # Build question with page range
     if pages != "all":

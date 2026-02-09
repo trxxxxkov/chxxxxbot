@@ -13,6 +13,8 @@ Simple rule: If balance < 0, reject all paid tool calls.
 from decimal import Decimal
 from typing import Any, Optional
 
+from core.pricing import E2B_COST_PER_SECOND
+
 # Tools that have API costs (external or Claude)
 # If user balance < 0, these tools are blocked
 PAID_TOOLS: set[str] = {
@@ -83,7 +85,7 @@ def estimate_tool_cost(
     if tool_name == "execute_python":
         # Use timeout from input, default 3600 seconds (1 hour)
         timeout = tool_input.get("timeout", 3600)
-        return Decimal(str(timeout)) * Decimal("0.000036")
+        return Decimal(str(timeout)) * E2B_COST_PER_SECOND
 
     # analyze_image, analyze_pdf, preview_file (images/PDF):
     # Claude API cost depends on response tokens

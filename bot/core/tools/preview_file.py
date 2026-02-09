@@ -18,6 +18,7 @@ import asyncio
 from typing import Any, Dict, Optional, TYPE_CHECKING
 
 from anthropic import APIStatusError
+import config
 from core.clients import get_anthropic_client
 from core.pricing import calculate_claude_cost
 from core.pricing import cost_to_float
@@ -34,8 +35,8 @@ MAX_RETRIES = 3
 RETRY_DELAY_SECONDS = 2.0
 RETRYABLE_STATUS_CODES = {500, 502, 503, 504, 529}
 
-# Model for vision/PDF analysis
-VISION_MODEL_ID = "claude-sonnet-4-5-20250929"
+# Model for vision/PDF analysis (from config for single source of truth)
+VISION_MODEL_ID = config.VISION_MODEL_ID_LITE
 
 PREVIEW_FILE_TOOL = {
     "name":

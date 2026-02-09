@@ -466,8 +466,18 @@ async def handle_clear_all_confirmation(
     """
     user_id = callback.from_user.id
     lang = get_lang(callback.from_user.language_code)
-    # Extract chat_id from callback data
-    chat_id = int(callback.data.split(":")[1])
+    # Extract chat_id from callback data (safe parsing)
+    try:
+        parts = callback.data.split(":")
+        if len(parts) < 2:
+            raise ValueError("Missing chat_id in callback data")
+        chat_id = int(parts[1])
+    except (ValueError, IndexError) as e:
+        logger.warning("clear.invalid_callback_data",
+                       callback_data=callback.data,
+                       error=str(e))
+        await callback.answer("Invalid request", show_alert=True)
+        return
 
     # Verify user has permission (re-check in case of stale button)
     is_private_chat = callback.message.chat.type == "private"
@@ -477,8 +487,11 @@ async def handle_clear_all_confirmation(
         try:
             member = await callback.bot.get_chat_member(chat_id, user_id)
             is_chat_admin = member.status in ("administrator", "creator")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("clear.admin_check_failed",
+                           chat_id=chat_id,
+                           user_id=user_id,
+                           error=str(e))
 
         if not is_privileged(user_id) and not is_chat_admin:
             await callback.answer(

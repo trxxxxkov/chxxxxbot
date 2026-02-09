@@ -704,6 +704,11 @@ async def _process_batch_with_session(
                                 context_chars += len(block.text)
                 estimated_input_tokens = context_chars // 4
 
+                # Add tool definition token overhead when tools are present
+                # Each tool schema ~200 tokens + ~346 system tokens for tool use
+                if request.tools:
+                    estimated_input_tokens += 346 + len(request.tools) * 200
+
                 # Calculate partial cost with cache assumption
                 # System prompt is likely cached (multi-block), use cache pricing
                 system_prompt_tokens = total_prompt_length // 4
@@ -1008,6 +1013,16 @@ async def _process_batch_with_session(
             await session.commit()
 
             # Phase 2.1: Charge user for API usage
+            # Log cost BEFORE charge_user() so Grafana sees it even if charge fails
+            logger.info(
+                "claude_handler.user_charged",
+                user_id=user_id,
+                model_id=user_model_id,
+                cost_usd=round(cost_usd, 6),
+                thread_id=thread_id,
+                message_id=bot_message.message_id,
+            )
+
             try:
                 # Build description with all cost components
                 desc_parts = [
@@ -1031,13 +1046,10 @@ async def _process_batch_with_session(
                 )
 
                 logger.info(
-                    "claude_handler.user_charged",
+                    "claude_handler.charge_success",
                     user_id=user_id,
-                    model_id=user_model_id,
                     cost_usd=round(cost_usd, 6),
                     balance_after=float(balance_after),
-                    thread_id=thread_id,
-                    message_id=bot_message.message_id,
                 )
 
                 # Update cached balance (Phase 3.3: Cache-First)

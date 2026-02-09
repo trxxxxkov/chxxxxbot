@@ -218,6 +218,13 @@ class TopicNamingService:
             )
             record_cost(service="topic_naming", amount_usd=float(cost_usd))
 
+            # Log cost BEFORE charge so Grafana sees it even if charge fails
+            logger.info(
+                "topic_naming.user_charged",
+                user_id=user_id,
+                cost_usd=float(cost_usd),
+            )
+
             # Charge user
             try:
                 services = ServiceFactory(session)
@@ -234,7 +241,7 @@ class TopicNamingService:
                 await update_cached_balance(user_id, balance_after)
 
                 logger.info(
-                    "topic_naming.user_charged",
+                    "topic_naming.charge_success",
                     user_id=user_id,
                     cost_usd=float(cost_usd),
                     balance_after=float(balance_after),

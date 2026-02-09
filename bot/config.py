@@ -65,6 +65,10 @@ TOPIC_NAMING_ENABLED = True
 TOPIC_NAMING_MODEL = "claude-haiku-4-5-20251001"  # Haiku is cheap (~$0.0003/title)
 TOPIC_NAMING_MAX_TOKENS = 30  # Title is short (2-6 words)
 
+# Vision model IDs for tool API calls (analyze_image, analyze_pdf, preview_file)
+VISION_MODEL_ID = "claude-opus-4-6"  # Full analysis (image, PDF)
+VISION_MODEL_ID_LITE = "claude-sonnet-4-5-20250929"  # Lighter preview analysis
+
 
 @dataclass
 class ModelConfig:  # pylint: disable=too-many-instance-attributes

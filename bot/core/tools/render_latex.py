@@ -32,6 +32,35 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
+_DANGEROUS_COMMANDS = (
+    r'\input',
+    r'\include',
+    r'\write',
+    r'\openout',
+    r'\openin',
+    r'\read',
+    r'\immediate',
+    r'\catcode',
+    r'\csname',
+    r'\verbatiminput',
+    r'\write18',
+)
+
+
+def _check_dangerous_commands(latex: str) -> Optional[str]:
+    """Check for dangerous LaTeX commands that could access filesystem or run code.
+
+    Args:
+        latex: LaTeX input to check.
+
+    Returns:
+        Name of first dangerous command found, or None if safe.
+    """
+    for cmd in _DANGEROUS_COMMANDS:
+        if cmd in latex:
+            return cmd
+    return None
+
 
 def _sanitize_latex(latex: str) -> str:
     """Sanitize LaTeX input by removing delimiters and extracting from documents.
@@ -44,8 +73,17 @@ def _sanitize_latex(latex: str) -> str:
 
     Returns:
         Cleaned LaTeX content without delimiters.
+
+    Raises:
+        ValueError: If dangerous commands are detected.
     """
     result = latex.strip()
+
+    # Check for dangerous commands before processing
+    dangerous = _check_dangerous_commands(result)
+    if dangerous:
+        raise ValueError(f"Forbidden LaTeX command: {dangerous}. "
+                         "File I/O and shell commands are not allowed.")
 
     # Extract content from full documents (Claude sometimes passes these)
     # This ensures we get cropped formulas instead of full pages
@@ -201,11 +239,12 @@ def _render_pdflatex(latex: str, dpi: int = 200) -> bytes:
 
         tex_file.write_text(latex, encoding='utf-8')
 
-        # Run pdflatex with timeout
+        # Run pdflatex with timeout and shell-escape disabled
         try:
             result = subprocess.run(
                 [
                     'pdflatex',
+                    '-no-shell-escape',
                     '-interaction=nonstopmode',
                     '-halt-on-error',
                     '-output-directory',
@@ -213,11 +252,11 @@ def _render_pdflatex(latex: str, dpi: int = 200) -> bytes:
                     str(tex_file),
                 ],
                 capture_output=True,
-                timeout=30,
+                timeout=10,
                 check=False,
             )
         except subprocess.TimeoutExpired as e:
-            raise ValueError("LaTeX compilation timed out (30s limit)") from e
+            raise ValueError("LaTeX compilation timed out (10s limit)") from e
 
         if not pdf_file.exists():
             # Extract error message from log

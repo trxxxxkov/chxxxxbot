@@ -109,22 +109,21 @@ class TestEstimateToolCost:
         assert cost == Decimal("0.01")
 
     def test_execute_python_default_timeout(self):
-        """execute_python with default timeout (3600s) costs ~$0.13."""
+        """execute_python with default timeout (3600s)."""
+        from core.pricing import E2B_COST_PER_SECOND
         cost = estimate_tool_cost("execute_python", {})
-        expected = Decimal("3600") * Decimal("0.000036")
+        expected = Decimal("3600") * E2B_COST_PER_SECOND
         assert cost == expected
-        assert cost == Decimal("0.1296")
 
     def test_execute_python_custom_timeout(self):
         """execute_python cost based on timeout parameter."""
-        # 60 seconds = $0.00216
+        from core.pricing import E2B_COST_PER_SECOND
         cost = estimate_tool_cost("execute_python", {"timeout": 60})
-        expected = Decimal("60") * Decimal("0.000036")
+        expected = Decimal("60") * E2B_COST_PER_SECOND
         assert cost == expected
 
-        # 300 seconds = $0.0108
         cost = estimate_tool_cost("execute_python", {"timeout": 300})
-        expected = Decimal("300") * Decimal("0.000036")
+        expected = Decimal("300") * E2B_COST_PER_SECOND
         assert cost == expected
 
     def test_free_tools_return_none(self):

@@ -15,6 +15,7 @@ NO __init__.py - use direct import:
 import asyncio
 import base64
 import json
+import re
 from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 
 from cache.exec_cache import store_exec_file
@@ -30,6 +31,57 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = get_logger(__name__)
+
+# Valid pip package name pattern: name with optional version specifier
+_PIP_PACKAGE_PATTERN = re.compile(r'^[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?'
+                                  r'(\[([a-zA-Z0-9._-]+(,[a-zA-Z0-9._-]+)*)\])?'
+                                  r'([<>=!~]+[a-zA-Z0-9.*]+)?$')
+
+
+def _validate_pip_packages(requirements_str: str) -> list[str]:
+    """Validate pip package names to prevent command injection.
+
+    Args:
+        requirements_str: Space-separated package names.
+
+    Returns:
+        List of validated package names.
+
+    Raises:
+        ValueError: If any package name is invalid.
+    """
+    packages = requirements_str.split()
+    invalid: list[str] = []
+    for pkg in packages:
+        if not _PIP_PACKAGE_PATTERN.match(pkg):
+            invalid.append(pkg)
+    if invalid:
+        raise ValueError(f"Invalid pip package name(s): {', '.join(invalid)}. "
+                         "Package names must match pattern: name[>=version]")
+    return packages
+
+
+def _sanitize_filename(filename: str) -> str:
+    """Sanitize filename to prevent path traversal and null bytes.
+
+    Args:
+        filename: Raw filename from user input.
+
+    Returns:
+        Sanitized filename safe for filesystem use.
+    """
+    import os  # pylint: disable=import-outside-toplevel
+
+    # Strip null bytes
+    filename = filename.replace('\x00', '')
+    # Use only basename (no path traversal)
+    filename = os.path.basename(filename)
+    # Remove any remaining unsafe characters
+    filename = re.sub(r'[^a-zA-Z0-9._-]', '_', filename)
+    # Ensure non-empty
+    if not filename:
+        filename = 'unnamed_file'
+    return filename
 
 
 def _run_sandbox_sync(  # pylint: disable=too-many-locals,too-many-statements
@@ -95,6 +147,7 @@ def _run_sandbox_sync(  # pylint: disable=too-many-locals,too-many-statements
             sandbox.commands.run("mkdir -p /tmp/inputs")
 
             for filename, file_content in downloaded_files.items():
+                filename = _sanitize_filename(filename)
                 sandbox_path = f"/tmp/inputs/{filename}"
                 sandbox.files.write(sandbox_path, file_content)
                 logger.info("tools.execute_python.file_uploaded_to_sandbox",
@@ -111,6 +164,11 @@ def _run_sandbox_sync(  # pylint: disable=too-many-locals,too-many-statements
                 requirements_str = ' '.join(requirements)
             else:
                 requirements_str = requirements
+
+            # Validate package names to prevent command injection
+            validated_packages = _validate_pip_packages(requirements_str)
+            requirements_str = ' '.join(validated_packages)
+
             logger.info("tools.execute_python.installing_packages",
                         requirements=requirements,
                         reused_sandbox=reused)
