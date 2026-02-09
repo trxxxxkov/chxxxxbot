@@ -10,6 +10,7 @@ from aiogram import Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from telegram.handlers import admin  # Phase 2.1: Admin commands
+from telegram.handlers import announce  # Broadcast messages
 from telegram.handlers import \
     edited_message  # Telegram features: edit tracking
 from telegram.handlers import model
@@ -80,6 +81,7 @@ def create_dispatcher() -> Dispatcher:
     dispatcher.include_router(personality.router)
     dispatcher.include_router(payment.router)  # Phase 2.1: Payment commands
     dispatcher.include_router(admin.router)  # Phase 2.1: Admin commands
+    dispatcher.include_router(announce.router)  # Broadcast messages
     dispatcher.include_router(
         stop_generation.router)  # Phase 2.5: Stop generation
 
@@ -96,6 +98,7 @@ def create_dispatcher() -> Dispatcher:
             "personality",
             "payment",
             "admin",
+            "announce",
             "stop_generation",
             "edited_message",
             "unified_pipeline",

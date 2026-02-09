@@ -1,0 +1,432 @@
+"""Tests for /announce broadcast command.
+
+Tests cover:
+- Privilege checking (unauthorized users rejected)
+- Target parsing (usernames, IDs, mixed)
+- All-users mode (no targets)
+- FSM state transitions
+- Broadcast via copy_message
+- Delivery report generation
+- Confirmation and cancellation flows
+"""
+
+from contextlib import contextmanager
+from datetime import datetime
+from datetime import timezone
+from unittest.mock import AsyncMock
+from unittest.mock import MagicMock
+from unittest.mock import Mock
+from unittest.mock import patch
+
+import config
+from db.models.user import User
+from db.repositories.user_repository import UserRepository
+import pytest
+from telegram.handlers import announce
+from telegram.handlers.announce import _generate_report
+from telegram.handlers.announce import announce_cancel_callback
+from telegram.handlers.announce import announce_confirm_callback
+from telegram.handlers.announce import announce_message_received
+from telegram.handlers.announce import AnnounceStates
+from telegram.handlers.announce import cmd_announce
+
+# =============================================================================
+# Constants
+# =============================================================================
+
+ADMIN_USER_ID = 111111111
+REGULAR_USER_ID = 222222222
+
+# =============================================================================
+# Helpers
+# =============================================================================
+
+
+@contextmanager
+def privileged_context(user_id: int):
+    """Temporarily set user as privileged."""
+    with patch.object(config, 'PRIVILEGED_USERS', {user_id}):
+        yield
+
+
+@contextmanager
+def no_privileged_users():
+    """Empty privileged users set."""
+    with patch.object(config, 'PRIVILEGED_USERS', set()):
+        yield
+
+
+def make_message(user_id: int, text: str, username: str = "admin") -> Mock:
+    """Create mock message for announce tests."""
+    msg = Mock()
+    msg.from_user = Mock()
+    msg.from_user.id = user_id
+    msg.from_user.username = username
+    msg.from_user.language_code = "en"
+    msg.text = text
+    msg.chat = Mock()
+    msg.chat.id = 100
+    msg.message_id = 42
+    msg.answer = AsyncMock()
+    msg.reply = AsyncMock()
+    msg.bot = Mock()
+    msg.bot.copy_message = AsyncMock()
+    return msg
+
+
+def make_state(data: dict | None = None) -> AsyncMock:
+    """Create mock FSM context."""
+    state = AsyncMock()
+    state.get_data = AsyncMock(return_value=data or {})
+    state.set_state = AsyncMock()
+    state.update_data = AsyncMock()
+    state.clear = AsyncMock()
+    return state
+
+
+def make_callback(user_id: int, data: str) -> Mock:
+    """Create mock callback query."""
+    cb = Mock()
+    cb.from_user = Mock()
+    cb.from_user.id = user_id
+    cb.from_user.language_code = "en"
+    cb.data = data
+    cb.answer = AsyncMock()
+    cb.message = Mock()
+    cb.message.answer = AsyncMock(return_value=Mock(edit_text=AsyncMock()))
+    cb.message.edit_text = AsyncMock()
+    cb.message.edit_reply_markup = AsyncMock()
+    cb.message.answer_document = AsyncMock()
+    cb.bot = Mock()
+    cb.bot.copy_message = AsyncMock()
+    return cb
+
+
+# =============================================================================
+# Tests: Privilege Check
+# =============================================================================
+
+
+@pytest.mark.asyncio
+class TestAnnouncePrivilege:
+    """Test privilege checking for /announce."""
+
+    async def test_unauthorized_user_rejected(self, test_session):
+        """Unprivileged user gets error message."""
+        with no_privileged_users():
+            msg = make_message(REGULAR_USER_ID, "/announce")
+            state = make_state()
+
+            await cmd_announce(msg, test_session, state)
+
+            msg.answer.assert_called_once()
+            call_text = msg.answer.call_args[0][0]
+            assert "❌" in call_text
+            state.set_state.assert_not_called()
+
+    async def test_authorized_user_allowed(self, test_session, sample_user):
+        """Privileged user can use /announce."""
+        with privileged_context(ADMIN_USER_ID):
+            msg = make_message(ADMIN_USER_ID, "/announce")
+            state = make_state()
+
+            await cmd_announce(msg, test_session, state)
+
+            # Should enter waiting_for_message state (all users mode)
+            state.set_state.assert_called_once_with(
+                AnnounceStates.waiting_for_message)
+
+    async def test_no_from_user_returns(self, test_session):
+        """Message with no from_user returns silently."""
+        msg = make_message(ADMIN_USER_ID, "/announce")
+        msg.from_user = None
+        state = make_state()
+
+        await cmd_announce(msg, test_session, state)
+
+        msg.answer.assert_not_called()
+
+
+# =============================================================================
+# Tests: Target Parsing
+# =============================================================================
+
+
+@pytest.mark.asyncio
+class TestAnnounceTargetParsing:
+    """Test target parsing for /announce with specific users."""
+
+    async def test_parse_numeric_id(self, test_session, sample_user):
+        """Parse numeric user ID."""
+        with privileged_context(ADMIN_USER_ID):
+            msg = make_message(ADMIN_USER_ID, f"/announce {sample_user.id}")
+            state = make_state()
+
+            await cmd_announce(msg, test_session, state)
+
+            state.set_state.assert_called_once_with(
+                AnnounceStates.waiting_for_message)
+            # Check target_ids in update_data
+            call_kwargs = state.update_data.call_args[1]
+            assert sample_user.id in call_kwargs["target_ids"]
+            assert call_kwargs["is_all"] is False
+
+    async def test_parse_username(self, test_session, sample_user):
+        """Parse @username target."""
+        with privileged_context(ADMIN_USER_ID):
+            msg = make_message(ADMIN_USER_ID,
+                               f"/announce @{sample_user.username}")
+            state = make_state()
+
+            await cmd_announce(msg, test_session, state)
+
+            state.set_state.assert_called_once()
+            call_kwargs = state.update_data.call_args[1]
+            assert sample_user.id in call_kwargs["target_ids"]
+
+    async def test_not_found_targets(self, test_session):
+        """Unknown targets reported as not found."""
+        with privileged_context(ADMIN_USER_ID):
+            msg = make_message(ADMIN_USER_ID, "/announce @nonexistent 999999")
+            state = make_state()
+
+            await cmd_announce(msg, test_session, state)
+
+            # Should report not found and not enter state
+            calls = msg.answer.call_args_list
+            # First call: warnings, second call: no valid targets
+            assert len(calls) >= 1
+            state.set_state.assert_not_called()
+
+    async def test_deduplicates_targets(self, test_session, sample_user):
+        """Duplicate targets are deduplicated."""
+        with privileged_context(ADMIN_USER_ID):
+            msg = make_message(
+                ADMIN_USER_ID,
+                f"/announce {sample_user.id} {sample_user.id} @{sample_user.username}",
+            )
+            state = make_state()
+
+            await cmd_announce(msg, test_session, state)
+
+            call_kwargs = state.update_data.call_args[1]
+            assert len(call_kwargs["target_ids"]) == 1
+
+
+# =============================================================================
+# Tests: All Users Mode
+# =============================================================================
+
+
+@pytest.mark.asyncio
+class TestAnnounceAllUsers:
+    """Test /announce with no targets (all users mode)."""
+
+    async def test_all_users_mode(self, test_session, sample_user):
+        """No targets → broadcast to all users."""
+        with privileged_context(ADMIN_USER_ID):
+            msg = make_message(ADMIN_USER_ID, "/announce")
+            state = make_state()
+
+            await cmd_announce(msg, test_session, state)
+
+            state.set_state.assert_called_once_with(
+                AnnounceStates.waiting_for_message)
+            call_kwargs = state.update_data.call_args[1]
+            assert call_kwargs["is_all"] is True
+            assert sample_user.id in call_kwargs["target_ids"]
+
+    async def test_all_users_empty_db(self, test_session):
+        """No users in DB → error message."""
+        with privileged_context(ADMIN_USER_ID):
+            msg = make_message(ADMIN_USER_ID, "/announce")
+            state = make_state()
+
+            await cmd_announce(msg, test_session, state)
+
+            # Should get no valid targets message
+            msg.answer.assert_called()
+            state.set_state.assert_not_called()
+
+
+# =============================================================================
+# Tests: FSM - Message Received
+# =============================================================================
+
+
+@pytest.mark.asyncio
+class TestAnnounceMessageReceived:
+    """Test message received in waiting_for_message state."""
+
+    async def test_message_received_shows_confirmation(self):
+        """Admin message shows preview and confirmation with buttons."""
+        msg = make_message(ADMIN_USER_ID, "Hello everyone!")
+        state = make_state({
+            "admin_user_id": ADMIN_USER_ID,
+            "target_ids": [1, 2, 3],
+            "is_all": False,
+        })
+
+        await announce_message_received(msg, state)
+
+        # Should store broadcast message reference
+        state.update_data.assert_called_once()
+        call_kwargs = state.update_data.call_args[1]
+        assert call_kwargs["broadcast_chat_id"] == msg.chat.id
+        assert call_kwargs["broadcast_message_id"] == msg.message_id
+
+        # Should set confirmation state
+        state.set_state.assert_called_once_with(
+            AnnounceStates.waiting_for_confirmation)
+
+        # Should send preview via copy_message
+        msg.bot.copy_message.assert_called_once_with(
+            chat_id=msg.chat.id,
+            from_chat_id=msg.chat.id,
+            message_id=msg.message_id,
+        )
+
+        # Should answer with confirmation + inline buttons
+        msg.answer.assert_called_once()
+        answer_kwargs = msg.answer.call_args[1]
+        assert answer_kwargs["reply_markup"] is not None
+
+    async def test_wrong_user_ignored(self):
+        """Non-admin user message is ignored."""
+        msg = make_message(REGULAR_USER_ID, "Hijack attempt")
+        state = make_state({
+            "admin_user_id": ADMIN_USER_ID,
+            "target_ids": [1, 2, 3],
+        })
+
+        await announce_message_received(msg, state)
+
+        msg.answer.assert_not_called()
+        state.set_state.assert_not_called()
+
+
+# =============================================================================
+# Tests: Confirmation/Cancellation
+# =============================================================================
+
+
+@pytest.mark.asyncio
+class TestAnnounceConfirmation:
+    """Test broadcast confirmation and cancellation."""
+
+    async def test_confirm_broadcasts(self):
+        """Confirm button triggers copy_message broadcast."""
+        cb = make_callback(ADMIN_USER_ID, "announce:confirm")
+        state = make_state({
+            "admin_user_id": ADMIN_USER_ID,
+            "target_ids": [1001, 1002, 1003],
+            "broadcast_chat_id": 100,
+            "broadcast_message_id": 42,
+        })
+
+        await announce_confirm_callback(cb, state)
+
+        # Should clear state
+        state.clear.assert_called_once()
+
+        # Should call copy_message for each target
+        assert cb.bot.copy_message.call_count == 3
+
+        # Should send delivery report
+        cb.message.answer_document.assert_called_once()
+
+    async def test_confirm_handles_errors(self):
+        """Broadcast handles blocked users gracefully."""
+        from aiogram.exceptions import TelegramForbiddenError
+
+        cb = make_callback(ADMIN_USER_ID, "announce:confirm")
+        # First succeeds, second throws blocked error
+        cb.bot.copy_message = AsyncMock(side_effect=[
+            None,
+            TelegramForbiddenError(method=MagicMock(),
+                                   message="Forbidden: bot was blocked"),
+            None,
+        ])
+        state = make_state({
+            "admin_user_id": ADMIN_USER_ID,
+            "target_ids": [1001, 1002, 1003],
+            "broadcast_chat_id": 100,
+            "broadcast_message_id": 42,
+        })
+
+        await announce_confirm_callback(cb, state)
+
+        assert cb.bot.copy_message.call_count == 3
+        # Report should still be generated
+        cb.message.answer_document.assert_called_once()
+
+    async def test_cancel_clears_state(self):
+        """Cancel button clears FSM state."""
+        cb = make_callback(ADMIN_USER_ID, "announce:cancel")
+        state = make_state({
+            "admin_user_id": ADMIN_USER_ID,
+            "target_ids": [1, 2, 3],
+        })
+
+        await announce_cancel_callback(cb, state)
+
+        state.clear.assert_called_once()
+        cb.message.edit_text.assert_called_once()
+
+    async def test_wrong_user_confirm_ignored(self):
+        """Non-admin clicking confirm is ignored."""
+        cb = make_callback(REGULAR_USER_ID, "announce:confirm")
+        state = make_state({
+            "admin_user_id": ADMIN_USER_ID,
+            "target_ids": [1, 2, 3],
+            "broadcast_chat_id": 100,
+            "broadcast_message_id": 42,
+        })
+
+        await announce_confirm_callback(cb, state)
+
+        # Should not broadcast
+        state.clear.assert_not_called()
+        cb.bot.copy_message.assert_not_called()
+
+
+# =============================================================================
+# Tests: Report Generation
+# =============================================================================
+
+
+class TestAnnounceReport:
+    """Test delivery report generation."""
+
+    def test_report_with_delivered_and_failed(self):
+        """Report includes both delivered and failed sections."""
+        report = _generate_report(
+            delivered=[1001, 1002],
+            failed=[(1003, "Bot blocked by user")],
+        )
+
+        assert "Total: 3" in report
+        assert "Delivered: 2" in report
+        assert "Failed: 1" in report
+        assert "1001" in report
+        assert "1002" in report
+        assert "1003: Bot blocked by user" in report
+
+    def test_report_all_delivered(self):
+        """Report with no failures."""
+        report = _generate_report(delivered=[1, 2, 3], failed=[])
+
+        assert "Delivered: 3" in report
+        assert "Failed: 0" in report
+        assert "=== Failed ===" not in report
+
+    def test_report_all_failed(self):
+        """Report with no deliveries."""
+        report = _generate_report(
+            delivered=[],
+            failed=[(1, "error1"), (2, "error2")],
+        )
+
+        assert "Delivered: 0" in report
+        assert "Failed: 2" in report
+        assert "=== Delivered ===" not in report

@@ -320,6 +320,22 @@ class UserRepository(BaseRepository[User]):
         logger.debug("user_repository.get_total_balance", total=float(total))
         return total
 
+    async def get_all_users(self) -> list[User]:
+        """Get all users without limit cap.
+
+        Unlike get_all() which is capped at MAX_QUERY_LIMIT=1000,
+        this method returns all users. Used for broadcast functionality.
+
+        Returns:
+            List of all User objects.
+        """
+        stmt = select(User).order_by(User.id)
+        result = await self.session.execute(stmt)
+        users = list(result.scalars().all())
+
+        logger.debug("user_repository.get_all_users", count=len(users))
+        return users
+
     async def get_top_users(
         self,
         limit: int = 10,

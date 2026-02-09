@@ -205,16 +205,20 @@ async def test_start_handler_logging(mock_message, mock_session):
 
 
 @pytest.mark.asyncio
-async def test_help_handler_basic(mock_message):
+async def test_help_handler_basic(mock_message, mock_session):
     """Test /help handler sends help message.
 
-    Verifies help text content and Markdown formatting.
+    Verifies help text content and HTML formatting.
 
     Args:
         mock_message: Mock Telegram message.
+        mock_session: Mock database session.
     """
-    with patch('telegram.handlers.start.logger'):
-        await help_handler(mock_message)
+    with patch('telegram.handlers.start.logger'), \
+         patch('telegram.handlers.start.config') as mock_config:
+        mock_config.PRIVILEGED_USERS = set()
+
+        await help_handler(mock_message, mock_session)
 
         # Verify help message sent
         mock_message.answer.assert_called_once()
@@ -222,45 +226,53 @@ async def test_help_handler_basic(mock_message):
 
         # Check content
         message_text = call_args[0][0]
-        assert "🤖 *Help*" in message_text
+        assert "Help" in message_text
         assert "/start" in message_text
         assert "/help" in message_text
 
-        # Check Markdown format
-        assert call_args[1]['parse_mode'] == "Markdown"
+        # Check HTML format
+        assert call_args[1]['parse_mode'] == "HTML"
 
 
 @pytest.mark.asyncio
-async def test_help_handler_message_format(mock_message):
+async def test_help_handler_message_format(mock_message, mock_session):
     """Test help message format and structure.
 
     Verifies that help message contains all required sections.
 
     Args:
         mock_message: Mock Telegram message.
+        mock_session: Mock database session.
     """
-    with patch('telegram.handlers.start.logger'):
-        await help_handler(mock_message)
+    with patch('telegram.handlers.start.logger'), \
+         patch('telegram.handlers.start.config') as mock_config:
+        mock_config.PRIVILEGED_USERS = set()
+
+        await help_handler(mock_message, mock_session)
 
         message_text = mock_message.answer.call_args[0][0]
 
         # Required sections
-        assert "*Commands:*" in message_text
-        assert "*Usage:*" in message_text
-        assert "echo" in message_text.lower()
+        assert "/model" in message_text
+        assert "/pay" in message_text
+        assert "/balance" in message_text
 
 
 @pytest.mark.asyncio
-async def test_help_handler_logging(mock_message):
+async def test_help_handler_logging(mock_message, mock_session):
     """Test that help_handler logs request.
 
     Verifies logging of help command usage.
 
     Args:
         mock_message: Mock Telegram message.
+        mock_session: Mock database session.
     """
-    with patch('telegram.handlers.start.logger') as mock_logger:
-        await help_handler(mock_message)
+    with patch('telegram.handlers.start.logger') as mock_logger, \
+         patch('telegram.handlers.start.config') as mock_config:
+        mock_config.PRIVILEGED_USERS = set()
+
+        await help_handler(mock_message, mock_session)
 
         # Verify logging
         mock_logger.info.assert_called_once_with(
@@ -270,7 +282,7 @@ async def test_help_handler_logging(mock_message):
 
 
 @pytest.mark.asyncio
-async def test_help_handler_no_from_user():
+async def test_help_handler_no_from_user(mock_session):
     """Test help_handler when from_user is None.
 
     Verifies graceful handling of anonymous requests.
@@ -279,8 +291,11 @@ async def test_help_handler_no_from_user():
     message.from_user = None
     message.answer = AsyncMock()
 
-    with patch('telegram.handlers.start.logger') as mock_logger:
-        await help_handler(message)
+    with patch('telegram.handlers.start.logger') as mock_logger, \
+         patch('telegram.handlers.start.config') as mock_config:
+        mock_config.PRIVILEGED_USERS = set()
+
+        await help_handler(message, mock_session)
 
         # Should log with user_id=None
         mock_logger.info.assert_called_once_with(

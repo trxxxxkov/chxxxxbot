@@ -597,4 +597,158 @@ MESSAGES: MessageDict = {
         "en": "No topics to delete.",
         "ru": "Нет топиков для удаления.",
     },
+
+    # =========================================================================
+    # /help command (dynamic)
+    # =========================================================================
+    "help.header": {
+        "en": "🤖 <b>Help</b>\n",
+        "ru": "🤖 <b>Справка</b>\n",
+    },
+    "help.section_basic": {
+        "en": "\n📌 <b>Basic</b>\n",
+        "ru": "\n📌 <b>Основные</b>\n",
+    },
+    "help.section_model": {
+        "en": "\n🤖 <b>Model &amp; Settings</b>\n",
+        "ru": "\n🤖 <b>Модель и настройки</b>\n",
+    },
+    "help.section_payment": {
+        "en": "\n💳 <b>Payment</b>\n",
+        "ru": "\n💳 <b>Оплата</b>\n",
+    },
+    "help.section_admin": {
+        "en": "\n🔧 <b>Admin</b>\n",
+        "ru": "\n🔧 <b>Администрирование</b>\n",
+    },
+    "help.cmd_start": {
+        "en": "/start — Start the bot\n",
+        "ru": "/start — Начать работу с ботом\n",
+    },
+    "help.cmd_help": {
+        "en": "/help — Show this help\n",
+        "ru": "/help — Показать эту справку\n",
+    },
+    "help.cmd_stop": {
+        "en": "/stop — Stop current generation\n",
+        "ru": "/stop — Остановить текущую генерацию\n",
+    },
+    "help.cmd_clear": {
+        "en": "/clear — Clear history / delete topics\n",
+        "ru": "/clear — Очистить историю / удалить топики\n",
+    },
+    "help.cmd_model": {
+        "en": "/model — Select AI model (Haiku / Sonnet / Opus)\n",
+        "ru": "/model — Выбрать модель ИИ (Haiku / Sonnet / Opus)\n",
+    },
+    "help.cmd_personality": {
+        "en": "/personality — Set custom AI personality\n",
+        "ru": "/personality — Настроить персональные инструкции для ИИ\n",
+    },
+    "help.cmd_pay": {
+        "en": "/pay — Top up balance (Telegram Stars)\n",
+        "ru": "/pay — Пополнить баланс (Telegram Stars)\n",
+    },
+    "help.cmd_balance": {
+        "en": "/balance — Check balance and history\n",
+        "ru": "/balance — Проверить баланс и историю операций\n",
+    },
+    "help.cmd_refund": {
+        "en": "/refund — Request payment refund\n",
+        "ru": "/refund — Запросить возврат платежа\n",
+    },
+    "help.cmd_topup": {
+        "en":
+            "/topup &lt;user&gt; &lt;amount&gt; — Adjust user balance\n",
+        "ru":
+            "/topup &lt;user&gt; &lt;сумма&gt; — Пополнить/списать баланс пользователя\n",
+    },
+    "help.cmd_set_margin": {
+        "en": "/set_margin &lt;value&gt; — Set owner margin\n",
+        "ru": "/set_margin &lt;значение&gt; — Настроить маржу владельца\n",
+    },
+    "help.cmd_announce": {
+        "en": "/announce [@users] — Broadcast messages to users\n",
+        "ru": "/announce [@users] — Рассылка сообщений пользователям\n",
+    },
+    "help.contact": {
+        "en": "\n💬 Questions? Contact @{username}",
+        "ru": "\n💬 Вопросы? Обращайтесь к @{username}",
+    },
+
+    # =========================================================================
+    # /announce command
+    # =========================================================================
+    "announce.unauthorized": {
+        "en": "❌ This command is only available to privileged users.",
+        "ru": "❌ Эта команда доступна только привилегированным пользователям.",
+    },
+    "announce.usage": {
+        "en": (
+            "ℹ️ <b>Broadcast</b>\n\n"
+            "<b>Usage:</b>\n"
+            "<code>/announce</code> — send to all users\n"
+            "<code>/announce @user1 123456 @user2</code>"
+            " — send to specific users\n\n"
+            "After the command, send any message (text, photo, document, etc.) "
+            "to broadcast."),
+        "ru": (
+            "ℹ️ <b>Рассылка</b>\n\n"
+            "<b>Использование:</b>\n"
+            "<code>/announce</code> — отправить всем\n"
+            "<code>/announce @user1 123456 @user2</code>"
+            " — отправить конкретным пользователям\n\n"
+            "После команды отправьте любое сообщение (текст, фото, документ и т.д.) "
+            "для рассылки."),
+    },
+    "announce.waiting_for_message": {
+        "en": "📢 Send a message to broadcast to <b>{count}</b> recipients.",
+        "ru": "📢 Отправьте сообщение для рассылки <b>{count}</b> получателям.",
+    },
+    "announce.waiting_for_message_all": {
+        "en": ("📢 Send a message to broadcast to "
+               "<b>all users ({count})</b>."),
+        "ru": ("📢 Отправьте сообщение для рассылки "
+               "<b>всем пользователям ({count})</b>."),
+    },
+    "announce.user_not_found": {
+        "en": "⚠️ User {target} not found",
+        "ru": "⚠️ Пользователь {target} не найден",
+    },
+    "announce.no_valid_targets": {
+        "en": "❌ None of the specified recipients were found.",
+        "ru": "❌ Ни один из указанных получателей не найден.",
+    },
+    "announce.confirm": {
+        "en": "Send this message to <b>{count}</b> users?",
+        "ru": "Отправить это сообщение <b>{count}</b> пользователям?",
+    },
+    "announce.confirm_button": {
+        "en": "Send ✓",
+        "ru": "Отправить ✓",
+    },
+    "announce.cancel_button": {
+        "en": "Cancel ✗",
+        "ru": "Отмена ✗",
+    },
+    "announce.cancelled": {
+        "en": "📢 Broadcast cancelled.",
+        "ru": "📢 Рассылка отменена.",
+    },
+    "announce.sending": {
+        "en": "📢 Broadcasting... {sent}/{total}",
+        "ru": "📢 Рассылка... {sent}/{total}",
+    },
+    "announce.complete": {
+        "en": ("📢 <b>Broadcast complete</b>\n\n"
+               "✅ Delivered: {delivered}\n"
+               "❌ Failed: {failed}"),
+        "ru": ("📢 <b>Рассылка завершена</b>\n\n"
+               "✅ Доставлено: {delivered}\n"
+               "❌ Ошибок: {failed}"),
+    },
+    "announce.report_caption": {
+        "en": "📊 Broadcast delivery report",
+        "ru": "📊 Отчёт о рассылке",
+    },
 }

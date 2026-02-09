@@ -7,10 +7,12 @@ information about bot functionality and available commands.
 from aiogram import Router
 from aiogram import types
 from aiogram.filters import Command
+import config
 from db.repositories.user_repository import UserRepository
 from i18n import get_lang
 from i18n import get_text
 from sqlalchemy.ext.asyncio import AsyncSession
+from telegram.handlers.admin import is_privileged
 from utils.bot_response import log_bot_response
 from utils.structured_logging import get_logger
 
@@ -75,28 +77,87 @@ async def start_handler(message: types.Message, session: AsyncSession) -> None:
 
 
 @router.message(Command("help"))
-async def help_handler(message: types.Message) -> None:
+async def help_handler(
+    message: types.Message,
+    session: AsyncSession,
+) -> None:
     """Handles /help command.
 
-    Sends detailed help information about bot usage, available commands,
-    and features to the user.
+    Builds dynamic help text based on user's privilege level.
+    Regular users see basic, model, and payment commands.
+    Privileged users also see admin commands.
 
     Args:
         message: Incoming Telegram message with /help command.
+        session: Database session from middleware.
     """
-    logger.info(
-        "help_command",
-        user_id=message.from_user.id if message.from_user else None,
-    )
+    user_id = message.from_user.id if message.from_user else None
+    logger.info("help_command", user_id=user_id)
 
     lang = get_lang(
         message.from_user.language_code if message.from_user else None)
-    response_text = get_text("help.message", lang)
-    await message.answer(response_text, parse_mode="Markdown")
+
+    show_admin = user_id is not None and is_privileged(user_id)
+
+    # Build help text
+    parts = [get_text("help.header", lang)]
+
+    # Basic commands
+    parts.append(get_text("help.section_basic", lang))
+    parts.append(get_text("help.cmd_start", lang))
+    parts.append(get_text("help.cmd_help", lang))
+    parts.append(get_text("help.cmd_stop", lang))
+    parts.append(get_text("help.cmd_clear", lang))
+
+    # Model & Settings
+    parts.append(get_text("help.section_model", lang))
+    parts.append(get_text("help.cmd_model", lang))
+    parts.append(get_text("help.cmd_personality", lang))
+
+    # Payment
+    parts.append(get_text("help.section_payment", lang))
+    parts.append(get_text("help.cmd_pay", lang))
+    parts.append(get_text("help.cmd_balance", lang))
+    parts.append(get_text("help.cmd_refund", lang))
+
+    # Admin (only for privileged users)
+    if show_admin:
+        parts.append(get_text("help.section_admin", lang))
+        parts.append(get_text("help.cmd_topup", lang))
+        parts.append(get_text("help.cmd_set_margin", lang))
+        parts.append(get_text("help.cmd_announce", lang))
+
+    # Contact — first privileged user's username
+    contact_username = await _get_contact_username(session)
+    if contact_username:
+        parts.append(get_text("help.contact", lang, username=contact_username))
+
+    response_text = "".join(parts)
+    await message.answer(response_text, parse_mode="HTML")
 
     log_bot_response(
         "bot.help_response",
         chat_id=message.chat.id,
-        user_id=message.from_user.id if message.from_user else None,
+        user_id=user_id,
         message_length=len(response_text),
     )
+
+
+async def _get_contact_username(session: AsyncSession) -> str | None:
+    """Get username of the first privileged user for contact info.
+
+    Args:
+        session: Database session.
+
+    Returns:
+        Username string or None if not available.
+    """
+    if not config.PRIVILEGED_USERS:
+        return None
+
+    first_id = min(config.PRIVILEGED_USERS)
+    user_repo = UserRepository(session)
+    user = await user_repo.get_by_telegram_id(first_id)
+    if user and user.username:
+        return user.username
+    return None

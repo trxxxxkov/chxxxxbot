@@ -88,6 +88,7 @@ class BalanceMiddleware(BaseMiddleware):
         "/topup",
         "/set_margin",
         "/model",
+        "/announce",
     }
 
     async def __call__(  # pylint: disable=too-many-return-statements
