@@ -259,7 +259,7 @@ class TestAnnounceMessageReceived:
     """Test message received in waiting_for_message state."""
 
     async def test_message_received_shows_confirmation(self):
-        """Admin message shows preview and confirmation with buttons."""
+        """Admin message shows confirmation with buttons via reply."""
         msg = make_message(ADMIN_USER_ID, "Hello everyone!")
         state = make_state({
             "admin_user_id": ADMIN_USER_ID,
@@ -279,17 +279,10 @@ class TestAnnounceMessageReceived:
         state.set_state.assert_called_once_with(
             AnnounceStates.waiting_for_confirmation)
 
-        # Should send preview via copy_message
-        msg.bot.copy_message.assert_called_once_with(
-            chat_id=msg.chat.id,
-            from_chat_id=msg.chat.id,
-            message_id=msg.message_id,
-        )
-
-        # Should answer with confirmation + inline buttons
-        msg.answer.assert_called_once()
-        answer_kwargs = msg.answer.call_args[1]
-        assert answer_kwargs["reply_markup"] is not None
+        # Should reply with confirmation + inline buttons
+        msg.reply.assert_called_once()
+        reply_kwargs = msg.reply.call_args[1]
+        assert reply_kwargs["reply_markup"] is not None
 
     async def test_wrong_user_ignored(self):
         """Non-admin user message is ignored."""
@@ -301,7 +294,7 @@ class TestAnnounceMessageReceived:
 
         await announce_message_received(msg, state)
 
-        msg.answer.assert_not_called()
+        msg.reply.assert_not_called()
         state.set_state.assert_not_called()
 
 
@@ -430,3 +423,16 @@ class TestAnnounceReport:
         assert "Delivered: 0" in report
         assert "Failed: 2" in report
         assert "=== Delivered ===" not in report
+
+    def test_report_includes_usernames(self):
+        """Report shows usernames next to IDs when available."""
+        usernames = {1001: "alice", 1003: "charlie"}
+        report = _generate_report(
+            delivered=[1001, 1002],
+            failed=[(1003, "Bot blocked by user")],
+            usernames=usernames,
+        )
+
+        assert '1001 "@alice"' in report
+        assert "1002" in report  # No username, just ID
+        assert '1003 "@charlie": Bot blocked by user' in report

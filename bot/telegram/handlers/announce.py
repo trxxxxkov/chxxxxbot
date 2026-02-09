@@ -7,13 +7,12 @@ Flow:
 1. Admin sends /announce (all) or /announce @user1 123456 (specific)
 2. Bot enters FSM state waiting_for_message
 3. Admin sends any message to broadcast
-4. Bot shows confirmation with inline buttons
+4. Bot replies with confirmation buttons (the reply quotes the message as preview)
 5. Admin confirms → broadcast via copy_message + delivery report
 """
 
 from datetime import datetime
 from datetime import timezone
-import io
 
 from aiogram import F
 from aiogram import Router
@@ -29,7 +28,6 @@ from aiogram.types import CallbackQuery
 from aiogram.types import InlineKeyboardButton
 from aiogram.types import InlineKeyboardMarkup
 from aiogram.types import Message
-import config
 from db.repositories.user_repository import UserRepository
 from i18n import get_lang
 from i18n import get_text
@@ -86,29 +84,8 @@ async def cmd_announce(
 
     if args:
         # Specific targets mode
-        target_ids: list[int] = []
-        not_found: list[str] = []
-
-        for target in args:
-            if target.startswith("@"):
-                # Username lookup
-                username = target[1:]
-                user = await user_repo.get_by_username(username)
-                if user:
-                    target_ids.append(user.id)
-                else:
-                    not_found.append(target)
-            else:
-                # Try as numeric ID
-                try:
-                    tid = int(target)
-                    user = await user_repo.get_by_telegram_id(tid)
-                    if user:
-                        target_ids.append(user.id)
-                    else:
-                        not_found.append(target)
-                except ValueError:
-                    not_found.append(target)
+        target_ids, usernames, not_found = await _resolve_targets(
+            args, user_repo)
 
         # Report not-found targets
         if not_found:
@@ -133,6 +110,7 @@ async def cmd_announce(
         await state.set_state(AnnounceStates.waiting_for_message)
         await state.update_data(
             target_ids=target_ids,
+            usernames=usernames,
             is_all=False,
             admin_user_id=user_id,
         )
@@ -152,6 +130,7 @@ async def cmd_announce(
         # All users mode
         all_users = await user_repo.get_all_users()
         all_ids = [u.id for u in all_users]
+        usernames = {u.id: u.username for u in all_users if u.username}
 
         if not all_ids:
             await message.answer(get_text("announce.no_valid_targets", lang))
@@ -160,6 +139,7 @@ async def cmd_announce(
         await state.set_state(AnnounceStates.waiting_for_message)
         await state.update_data(
             target_ids=all_ids,
+            usernames=usernames,
             is_all=True,
             admin_user_id=user_id,
         )
@@ -182,6 +162,9 @@ async def announce_message_received(
     state: FSMContext,
 ) -> None:
     """Receive the message to broadcast and show confirmation.
+
+    Replies to the admin's message with confirmation buttons.
+    The reply itself acts as preview (quotes the original message).
 
     Args:
         message: Any message type from the admin.
@@ -207,18 +190,7 @@ async def announce_message_received(
     )
     await state.set_state(AnnounceStates.waiting_for_confirmation)
 
-    # Send preview: copy the message back to admin so they see
-    # exactly how recipients will see it
-    try:
-        await message.bot.copy_message(
-            chat_id=message.chat.id,
-            from_chat_id=message.chat.id,
-            message_id=message.message_id,
-        )
-    except Exception as e:
-        logger.warning("announce.preview_copy_failed", error=str(e))
-
-    # Show confirmation with inline buttons
+    # Show confirmation: reply to the message (acts as preview)
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(
             text=get_text("announce.confirm_button", lang),
@@ -230,9 +202,17 @@ async def announce_message_received(
         ),
     ]])
 
-    await message.answer(
+    await message.reply(
         get_text("announce.confirm", lang, count=len(target_ids)),
         reply_markup=keyboard,
+    )
+
+    logger.info(
+        "announce.message_received",
+        admin_user_id=admin_user_id,
+        broadcast_chat_id=message.chat.id,
+        broadcast_message_id=message.message_id,
+        target_count=len(target_ids),
     )
 
 
@@ -265,8 +245,17 @@ async def announce_confirm_callback(
 
     lang = get_lang(callback.from_user.language_code)
     target_ids = data.get("target_ids", [])
+    usernames = data.get("usernames", {})
     broadcast_chat_id = data.get("broadcast_chat_id")
     broadcast_message_id = data.get("broadcast_message_id")
+
+    logger.info(
+        "announce.broadcast_started",
+        admin_user_id=admin_user_id,
+        target_count=len(target_ids),
+        broadcast_chat_id=broadcast_chat_id,
+        broadcast_message_id=broadcast_message_id,
+    )
 
     # Clear state immediately
     await state.clear()
@@ -296,12 +285,54 @@ async def announce_confirm_callback(
                 message_id=broadcast_message_id,
             )
             delivered.append(target_id)
-        except TelegramForbiddenError:
-            failed.append((target_id, "Bot blocked by user"))
+            logger.debug(
+                "announce.copy_ok",
+                target_id=target_id,
+                target_username=usernames.get(target_id),
+            )
+        except TelegramForbiddenError as e:
+            error_msg = "Bot blocked by user"
+            failed.append((target_id, error_msg))
+            logger.warning(
+                "announce.copy_failed",
+                target_id=target_id,
+                target_username=usernames.get(target_id),
+                error=error_msg,
+                error_detail=str(e),
+            )
         except TelegramBadRequest as e:
-            failed.append((target_id, str(e)))
+            # Try forward_message as fallback
+            error_str = str(e)
+            try:
+                await callback.bot.forward_message(
+                    chat_id=target_id,
+                    from_chat_id=broadcast_chat_id,
+                    message_id=broadcast_message_id,
+                )
+                delivered.append(target_id)
+                logger.info(
+                    "announce.forward_fallback_ok",
+                    target_id=target_id,
+                    target_username=usernames.get(target_id),
+                    copy_error=error_str,
+                )
+            except Exception as e2:
+                failed.append((target_id, error_str))
+                logger.warning(
+                    "announce.copy_and_forward_failed",
+                    target_id=target_id,
+                    target_username=usernames.get(target_id),
+                    copy_error=error_str,
+                    forward_error=str(e2),
+                )
         except Exception as e:
             failed.append((target_id, str(e)))
+            logger.warning(
+                "announce.copy_failed",
+                target_id=target_id,
+                target_username=usernames.get(target_id),
+                error=str(e),
+            )
 
         # Update progress every 10 messages
         sent = i + 1
@@ -336,7 +367,7 @@ async def announce_confirm_callback(
 
     # Generate and send delivery report if there were any sends
     if delivered or failed:
-        report = _generate_report(delivered, failed)
+        report = _generate_report(delivered, failed, usernames)
         report_file = BufferedInputFile(
             report.encode("utf-8"),
             filename=
@@ -386,19 +417,71 @@ async def announce_cancel_callback(
     logger.info("announce.cancelled", admin_user_id=admin_user_id)
 
 
+async def _resolve_targets(
+    args: list[str],
+    user_repo: UserRepository,
+) -> tuple[list[int], dict[int, str], list[str]]:
+    """Resolve target arguments to user IDs.
+
+    Args:
+        args: List of target strings (@username or numeric ID).
+        user_repo: User repository for lookups.
+
+    Returns:
+        Tuple of (target_ids, usernames_map, not_found_targets).
+    """
+    target_ids: list[int] = []
+    usernames: dict[int, str] = {}
+    not_found: list[str] = []
+
+    for target in args:
+        user = await _lookup_target(target, user_repo)
+        if user:
+            target_ids.append(user.id)
+            if user.username:
+                usernames[user.id] = user.username
+        else:
+            not_found.append(target)
+
+    return target_ids, usernames, not_found
+
+
+async def _lookup_target(target: str, user_repo: UserRepository):
+    """Look up a single target by @username or numeric ID.
+
+    Args:
+        target: Target string (@username or numeric ID).
+        user_repo: User repository for lookups.
+
+    Returns:
+        User object or None if not found.
+    """
+    if target.startswith("@"):
+        return await user_repo.get_by_username(target[1:])
+
+    try:
+        tid = int(target)
+        return await user_repo.get_by_telegram_id(tid)
+    except ValueError:
+        return None
+
+
 def _generate_report(
     delivered: list[int],
     failed: list[tuple[int, str]],
+    usernames: dict[int, str] | None = None,
 ) -> str:
     """Generate a text delivery report.
 
     Args:
         delivered: List of user IDs that received the message.
         failed: List of (user_id, error_reason) tuples.
+        usernames: Optional mapping of user_id → username.
 
     Returns:
         Report text as string.
     """
+    usernames = usernames or {}
     now = datetime.now(timezone.utc)
     lines = [
         f"Broadcast Report — {now:%Y-%m-%d %H:%M:%S} UTC",
@@ -411,13 +494,21 @@ def _generate_report(
     if delivered:
         lines.append("=== Delivered ===")
         for uid in delivered:
-            lines.append(str(uid))
+            uname = usernames.get(uid)
+            if uname:
+                lines.append(f'{uid} "@{uname}"')
+            else:
+                lines.append(str(uid))
         lines.append("")
 
     if failed:
         lines.append("=== Failed ===")
         for uid, reason in failed:
-            lines.append(f"{uid}: {reason}")
+            uname = usernames.get(uid)
+            if uname:
+                lines.append(f'{uid} "@{uname}": {reason}')
+            else:
+                lines.append(f"{uid}: {reason}")
         lines.append("")
 
     return "\n".join(lines)
