@@ -30,6 +30,8 @@ from aiogram.types import CallbackQuery
 from aiogram.types import InlineKeyboardButton
 from aiogram.types import InlineKeyboardMarkup
 from aiogram.types import Message
+from db.models.chat import Chat
+from db.repositories.thread_repository import ThreadRepository
 from db.repositories.user_repository import UserRepository
 from i18n import get_lang
 from i18n import get_text
@@ -351,20 +353,23 @@ async def _broadcast_message(
     """
     delivered: list[int] = []
     failed: list[tuple[int, str]] = []
+    sent_message_ids: dict[int, int] = {}
     last_progress_update = 0
 
     for i, target_id in enumerate(target_ids):
         success = False
+        sent_message_id = None
         last_error = ""
 
         for attempt in range(max_retries):
             try:
-                await bot.copy_message(
+                result = await bot.copy_message(
                     chat_id=target_id,
                     from_chat_id=broadcast_chat_id,
                     message_id=broadcast_message_id,
                 )
                 success = True
+                sent_message_id = getattr(result, 'message_id', None)
                 logger.debug(
                     "announce.copy_ok",
                     target_id=target_id,
@@ -394,12 +399,15 @@ async def _broadcast_message(
                 # Try forward_message as fallback
                 error_str = str(e)
                 try:
-                    await bot.forward_message(
+                    fwd_result = await bot.forward_message(
                         chat_id=target_id,
                         from_chat_id=broadcast_chat_id,
                         message_id=broadcast_message_id,
                     )
                     success = True
+                    sent_message_id = (getattr(fwd_result, 'message_thread_id',
+                                               None) or
+                                       getattr(fwd_result, 'message_id', None))
                     logger.info(
                         "announce.forward_fallback_ok",
                         target_id=target_id,
@@ -428,6 +436,8 @@ async def _broadcast_message(
 
         if success:
             delivered.append(target_id)
+            if sent_message_id is not None:
+                sent_message_ids[target_id] = sent_message_id
         else:
             failed.append((target_id, last_error))
 
@@ -450,6 +460,10 @@ async def _broadcast_message(
 
         # Rate limiting: 25 msg/s
         await asyncio.sleep(0.04)
+
+    # Register topics for forum chats (best-effort)
+    if sent_message_ids:
+        await _register_announce_topics(sent_message_ids, usernames)
 
     return delivered, failed
 
@@ -490,6 +504,71 @@ async def announce_cancel_callback(
     await callback.answer()
 
     logger.info("announce.cancelled", admin_user_id=admin_user_id)
+
+
+async def _register_announce_topics(
+    sent_message_ids: dict[int, int],
+    usernames: dict[int, str],
+) -> None:
+    """Register announce-created topics in DB for forum chats.
+
+    When copy_message/forward_message creates a new topic in a forum chat,
+    the Thread table has no record of it. This causes /clear to miss these
+    topics. We register them here so /clear can find and delete them.
+
+    Best-effort: all errors are caught and logged, never breaks broadcast.
+
+    Args:
+        sent_message_ids: Mapping of target_id → sent message_id.
+        usernames: Mapping of target_id → username (for logging).
+    """
+    # Import here to avoid circular imports at module level
+    from db.engine import get_session
+
+    try:
+        async with get_session() as session:
+            # Find which targets are forum chats
+            from sqlalchemy import select
+            result = await session.execute(
+                select(Chat.id).where(
+                    Chat.id.in_(list(sent_message_ids.keys())),
+                    Chat.is_forum.is_(True),
+                ))
+            forum_chat_ids = {row[0] for row in result.all()}
+
+            if not forum_chat_ids:
+                return
+
+            thread_repo = ThreadRepository(session)
+            registered = 0
+            for chat_id in forum_chat_ids:
+                message_id = sent_message_ids[chat_id]
+                try:
+                    await thread_repo.get_or_create_thread(
+                        chat_id=chat_id,
+                        user_id=chat_id,
+                        thread_id=message_id,
+                    )
+                    registered += 1
+                except Exception as e:
+                    logger.warning(
+                        "announce.topic_register_failed",
+                        chat_id=chat_id,
+                        thread_id=message_id,
+                        error=str(e),
+                    )
+
+            if registered:
+                logger.info(
+                    "announce.topics_registered",
+                    registered=registered,
+                    forum_chats=len(forum_chat_ids),
+                )
+    except Exception as e:
+        logger.warning(
+            "announce.topic_registration_error",
+            error=str(e),
+        )
 
 
 async def _resolve_targets(

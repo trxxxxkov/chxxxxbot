@@ -29,6 +29,7 @@ import pytest
 from telegram.handlers import announce
 from telegram.handlers.announce import _broadcast_message
 from telegram.handlers.announce import _generate_report
+from telegram.handlers.announce import _register_announce_topics
 from telegram.handlers.announce import announce_cancel_callback
 from telegram.handlers.announce import announce_confirm_callback
 from telegram.handlers.announce import announce_message_received
@@ -328,6 +329,15 @@ class TestAnnounceMessageReceived:
 class TestAnnounceConfirmation:
     """Test broadcast confirmation and cancellation."""
 
+    @pytest.fixture(autouse=True)
+    def _patch_topic_registration(self):
+        """Patch out topic registration to avoid DB calls."""
+        with patch(
+                "telegram.handlers.announce._register_announce_topics",
+                new_callable=AsyncMock,
+        ):
+            yield
+
     async def test_confirm_broadcasts(self):
         """Confirm button triggers copy_message broadcast with rate limiting."""
         cb = make_callback(ADMIN_USER_ID, "announce:confirm")
@@ -416,6 +426,15 @@ class TestAnnounceConfirmation:
 @pytest.mark.asyncio
 class TestBroadcastMessage:
     """Test _broadcast_message helper with rate limiting and flood control."""
+
+    @pytest.fixture(autouse=True)
+    def _patch_topic_registration(self):
+        """Patch out topic registration to avoid DB calls."""
+        with patch(
+                "telegram.handlers.announce._register_announce_topics",
+                new_callable=AsyncMock,
+        ):
+            yield
 
     async def test_rate_limiting_sleeps_between_sends(self):
         """Should sleep 0.04s between each send."""
@@ -573,3 +592,121 @@ class TestAnnounceReport:
         assert '1001 "@alice"' in report
         assert "1002" in report  # No username, just ID
         assert '1003 "@charlie": Bot blocked by user' in report
+
+
+# =============================================================================
+# Tests: Announce Topic Registration
+# =============================================================================
+
+
+@pytest.mark.asyncio
+class TestAnnounceTopicRegistration:
+    """Test _register_announce_topics for forum chat topic tracking."""
+
+    async def test_registers_topics_for_forum_chats(self, test_session):
+        """Topics registered for chats with is_forum=True."""
+        from db.models.chat import Chat
+        from db.models.thread import Thread
+
+        # Create forum chat in DB
+        chat = Chat(id=2001, type="supergroup", is_forum=True)
+        test_session.add(chat)
+        await test_session.flush()
+
+        mock_session_cm = AsyncMock()
+        mock_session_cm.__aenter__ = AsyncMock(return_value=test_session)
+        mock_session_cm.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("db.engine.get_session", return_value=mock_session_cm):
+            await _register_announce_topics(
+                sent_message_ids={2001: 555},
+                usernames={2001: "forum_user"},
+            )
+
+        # Verify thread was created
+        from sqlalchemy import select
+        result = await test_session.execute(
+            select(Thread).where(Thread.chat_id == 2001,
+                                 Thread.thread_id == 555))
+        thread = result.scalar_one_or_none()
+        assert thread is not None
+        assert thread.user_id == 2001
+        assert thread.thread_id == 555
+
+    async def test_skips_non_forum_chats(self, test_session):
+        """Non-forum chats are skipped — no Thread records created."""
+        from db.models.chat import Chat
+        from db.models.thread import Thread
+
+        # Create non-forum chat
+        chat = Chat(id=3001, type="private", is_forum=False)
+        test_session.add(chat)
+        await test_session.flush()
+
+        mock_session_cm = AsyncMock()
+        mock_session_cm.__aenter__ = AsyncMock(return_value=test_session)
+        mock_session_cm.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("db.engine.get_session", return_value=mock_session_cm):
+            await _register_announce_topics(
+                sent_message_ids={3001: 777},
+                usernames={3001: "regular_user"},
+            )
+
+        # No thread should be created
+        from sqlalchemy import select
+        result = await test_session.execute(
+            select(Thread).where(Thread.chat_id == 3001))
+        assert result.scalar_one_or_none() is None
+
+    async def test_handles_db_error_gracefully(self):
+        """DB errors are caught — function does not raise."""
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(
+            side_effect=RuntimeError("DB connection lost"))
+
+        mock_session_cm = AsyncMock()
+        mock_session_cm.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_cm.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("db.engine.get_session", return_value=mock_session_cm):
+            # Should NOT raise
+            await _register_announce_topics(
+                sent_message_ids={4001: 999},
+                usernames={4001: "error_user"},
+            )
+
+    async def test_mixed_forum_and_non_forum(self, test_session):
+        """Only forum chats get Thread records, non-forum are skipped."""
+        from db.models.chat import Chat
+        from db.models.thread import Thread
+
+        # Create one forum and one non-forum chat
+        test_session.add(Chat(id=5001, type="supergroup", is_forum=True))
+        test_session.add(Chat(id=5002, type="private", is_forum=False))
+        await test_session.flush()
+
+        mock_session_cm = AsyncMock()
+        mock_session_cm.__aenter__ = AsyncMock(return_value=test_session)
+        mock_session_cm.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("db.engine.get_session", return_value=mock_session_cm):
+            await _register_announce_topics(
+                sent_message_ids={
+                    5001: 111,
+                    5002: 222
+                },
+                usernames={},
+            )
+
+        from sqlalchemy import select
+
+        # Forum chat should have thread
+        result = await test_session.execute(
+            select(Thread).where(Thread.chat_id == 5001))
+        assert result.scalar_one_or_none() is not None
+
+        # Non-forum should not
+        result = await test_session.execute(
+            select(Thread).where(Thread.chat_id == 5002))
+        assert result.scalar_one_or_none() is None
