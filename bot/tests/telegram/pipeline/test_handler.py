@@ -35,6 +35,7 @@ def mock_message() -> MagicMock:
     message.from_user.is_bot = False
     message.from_user.language_code = "en"
     message.from_user.added_to_attachment_menu = False
+    message.from_user.allows_users_to_create_topics = False
 
     message.date = datetime(2025, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
     message.message_thread_id = None

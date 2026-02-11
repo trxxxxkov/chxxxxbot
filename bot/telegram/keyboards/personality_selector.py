@@ -7,6 +7,7 @@ NO __init__.py - use direct import:
     from telegram.keyboards.personality_selector import get_personality_keyboard
 """
 
+from aiogram.enums import ButtonStyle
 from aiogram.types import InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from i18n import get_text
@@ -52,12 +53,14 @@ def get_personality_keyboard(has_custom_prompt: bool,
     if has_custom_prompt:
         builder.row(
             InlineKeyboardButton(text=get_text("personality.btn_clear", lang),
-                                 callback_data="personality:clear"))
+                                 callback_data="personality:clear",
+                                 style=ButtonStyle.DANGER))
 
     # Cancel (always)
     builder.row(
         InlineKeyboardButton(text=get_text("personality.btn_cancel", lang),
-                             callback_data="personality:cancel"))
+                             callback_data="personality:cancel",
+                             style=ButtonStyle.DANGER))
 
     return builder
 

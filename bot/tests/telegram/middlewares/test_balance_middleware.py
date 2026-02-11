@@ -332,6 +332,7 @@ class TestBalanceMiddlewareEdgeCases:
         mock_message.from_user.language_code = "en"
         mock_message.from_user.is_premium = False
         mock_message.from_user.added_to_attachment_menu = False
+        mock_message.from_user.allows_users_to_create_topics = False
         mock_message.text = "Hello"
         mock_message.caption = None
         mock_message.answer = AsyncMock()

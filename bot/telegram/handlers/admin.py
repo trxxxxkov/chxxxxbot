@@ -15,6 +15,7 @@ from decimal import Decimal
 
 from aiogram import F
 from aiogram import Router
+from aiogram.enums import ButtonStyle
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery
 from aiogram.types import InlineKeyboardButton
@@ -364,6 +365,7 @@ async def cmd_clear(
             InlineKeyboardButton(
                 text=get_text("clear.confirm_button", lang, count=topic_count),
                 callback_data=f"clear_all:{chat_id}",
+                style=ButtonStyle.DANGER,
             )
         ]])
 

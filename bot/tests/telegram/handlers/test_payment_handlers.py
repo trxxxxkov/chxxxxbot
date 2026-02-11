@@ -51,6 +51,7 @@ def mock_user():
     user.language_code = "en"
     user.is_premium = False
     user.added_to_attachment_menu = False
+    user.allows_users_to_create_topics = False
     return user
 
 

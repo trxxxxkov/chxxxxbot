@@ -113,6 +113,15 @@ class User(Base, TimestampMixin):
         doc="Bot added to attachment menu",
     )
 
+    allows_users_to_create_topics: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+        doc="Whether bot allows users to create topics in private chat "
+        "(Bot API 9.4)",
+    )
+
     # Bot-specific settings (per user, not per thread!)
     model_id: Mapped[str] = mapped_column(
         String(100),  # Fits "provider:alias" format (e.g., "claude:sonnet")

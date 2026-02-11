@@ -246,8 +246,10 @@ class BalanceMiddleware(BaseMiddleware):
                     username=from_user.username,
                     language_code=from_user.language_code,
                     is_premium=from_user.is_premium or False,
-                    added_to_attachment_menu=from_user.added_to_attachment_menu
-                    or False,
+                    added_to_attachment_menu=(from_user.added_to_attachment_menu
+                                              or False),
+                    allows_users_to_create_topics=(
+                        from_user.allows_users_to_create_topics or False),
                 )
 
                 logger.info(

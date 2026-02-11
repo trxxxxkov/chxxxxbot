@@ -136,6 +136,8 @@ class CommandMiddleware(BaseMiddleware):
                     is_premium=event.from_user.is_premium or False,
                     added_to_attachment_menu=(
                         event.from_user.added_to_attachment_menu or False),
+                    allows_users_to_create_topics=(
+                        event.from_user.allows_users_to_create_topics or False),
                 )
                 logger.debug(
                     "command.user_created",

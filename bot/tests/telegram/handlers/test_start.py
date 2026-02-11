@@ -33,6 +33,7 @@ def mock_message():
     message.from_user.language_code = "en"
     message.from_user.is_premium = False
     message.from_user.added_to_attachment_menu = False
+    message.from_user.allows_users_to_create_topics = False
     message.answer = AsyncMock()
     return message
 

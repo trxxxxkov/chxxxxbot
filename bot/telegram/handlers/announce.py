@@ -17,6 +17,7 @@ from datetime import timezone
 
 from aiogram import F
 from aiogram import Router
+from aiogram.enums import ButtonStyle
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.exceptions import TelegramForbiddenError
 from aiogram.exceptions import TelegramRetryAfter
@@ -202,10 +203,12 @@ async def announce_message_received(
         InlineKeyboardButton(
             text=get_text("announce.confirm_button", lang),
             callback_data="announce:confirm",
+            style=ButtonStyle.SUCCESS,
         ),
         InlineKeyboardButton(
             text=get_text("announce.cancel_button", lang),
             callback_data="announce:cancel",
+            style=ButtonStyle.DANGER,
         ),
     ]])
 

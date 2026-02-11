@@ -27,6 +27,7 @@ def mock_message():
     message.from_user.language_code = "en"
     message.from_user.is_premium = False
     message.from_user.added_to_attachment_menu = False
+    message.from_user.allows_users_to_create_topics = False
     message.chat = MagicMock()
     message.chat.id = 123456789
     message.message_thread_id = None
@@ -48,6 +49,7 @@ def mock_message_with_topic():
     message.from_user.language_code = "en"
     message.from_user.is_premium = False
     message.from_user.added_to_attachment_menu = False
+    message.from_user.allows_users_to_create_topics = False
     message.chat = MagicMock()
     message.chat.id = 123456789
     message.message_thread_id = 12345  # Topic ID
@@ -183,6 +185,7 @@ class TestCommandMiddleware:
         mock_message.from_user.language_code = "en"
         mock_message.from_user.is_premium = False
         mock_message.from_user.added_to_attachment_menu = False
+        mock_message.from_user.allows_users_to_create_topics = False
 
         with patch("telegram.middlewares.command_middleware.UserRepository"
                   ) as MockUserRepo:

@@ -60,6 +60,8 @@ async def get_or_create_thread(message: types.Message,
         is_premium=message.from_user.is_premium or False,
         added_to_attachment_menu=(message.from_user.added_to_attachment_menu or
                                   False),
+        allows_users_to_create_topics=(
+            message.from_user.allows_users_to_create_topics or False),
     )
 
     # Get or create chat

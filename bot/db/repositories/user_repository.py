@@ -111,6 +111,7 @@ class UserRepository(BaseRepository[User]):
         language_code: Optional[str] = None,
         is_premium: bool = False,
         added_to_attachment_menu: bool = False,
+        allows_users_to_create_topics: bool = False,
     ) -> tuple[User, bool]:
         """Get existing user or create new one.
 
@@ -126,6 +127,9 @@ class UserRepository(BaseRepository[User]):
             language_code: IETF language tag. Defaults to None.
             is_premium: Telegram Premium status. Defaults to False.
             added_to_attachment_menu: Bot in attachment menu.
+                Defaults to False.
+            allows_users_to_create_topics: Whether bot allows users to
+                create topics in private chat (Bot API 9.4).
                 Defaults to False.
 
         Returns:
@@ -151,6 +155,7 @@ class UserRepository(BaseRepository[User]):
             user.language_code = language_code
             user.is_premium = is_premium
             user.added_to_attachment_menu = added_to_attachment_menu
+            user.allows_users_to_create_topics = allows_users_to_create_topics
             user.last_seen_at = datetime.now(timezone.utc)
             await self.session.flush()
 
@@ -174,6 +179,7 @@ class UserRepository(BaseRepository[User]):
             language_code=language_code,
             is_premium=is_premium,
             added_to_attachment_menu=added_to_attachment_menu,
+            allows_users_to_create_topics=allows_users_to_create_topics,
             first_seen_at=now,
             last_seen_at=now,
         )
