@@ -564,6 +564,38 @@ MESSAGES: MessageDict = {
     },
 
     # =========================================================================
+    # Admin - /set_cache_subsidy command
+    # =========================================================================
+    "admin.cache_subsidy_usage": {
+        "en": ("📦 <b>Cache Write Subsidy</b>\n\n"
+               "<b>Status:</b> {status}\n\n"
+               "Usage: /set_cache_subsidy [on|off]\n"
+               "• <b>on</b> — Owner absorbs cache write costs\n"
+               "• <b>off</b> — Users pay full cost (default)"),
+        "ru": (
+            "📦 <b>Субсидия записи кэша</b>\n\n"
+            "<b>Статус:</b> {status}\n\n"
+            "Использование: /set_cache_subsidy [on|off]\n"
+            "• <b>on</b> — Владелец покрывает стоимость записи кэша\n"
+            "• <b>off</b> — Пользователи платят полную стоимость (по умолчанию)"
+        ),
+    },
+    "admin.cache_subsidy_invalid_value": {
+        "en":
+            "❌ Invalid value. Use: /set_cache_subsidy [on|off]",
+        "ru":
+            "❌ Некорректное значение. Используйте: /set_cache_subsidy [on|off]",
+    },
+    "admin.cache_subsidy_updated": {
+        "en": ("✅ <b>Cache write subsidy updated</b>\n\n"
+               "<b>Old:</b> {old}\n"
+               "<b>New:</b> {new}"),
+        "ru": ("✅ <b>Субсидия записи кэша обновлена</b>\n\n"
+               "<b>Было:</b> {old}\n"
+               "<b>Стало:</b> {new}"),
+    },
+
+    # =========================================================================
     # Admin - /clear command
     # =========================================================================
     "clear.no_topics": {
@@ -670,6 +702,10 @@ MESSAGES: MessageDict = {
     "help.cmd_announce": {
         "en": "/announce [@users] — Broadcast messages to users\n",
         "ru": "/announce [@users] — Рассылка сообщений пользователям\n",
+    },
+    "help.cmd_set_cache_subsidy": {
+        "en": "/set_cache_subsidy [on|off] — Toggle cache write cost subsidy\n",
+        "ru": "/set_cache_subsidy [on|off] — Субсидия стоимости записи кэша\n",
     },
     "help.contact": {
         "en": "\n💬 Questions? Contact @{username}",

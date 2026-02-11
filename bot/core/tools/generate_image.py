@@ -51,15 +51,15 @@ GENERATE_IMAGE_TOOL = {
         """Create/edit images using Gemini 3 Pro Image.
 
 <modes>
-- Generation: prompt only → new image
-- Editing: prompt + source_file_ids → modify existing images
+- Generation: prompt only → new image (default)
+- Editing: prompt + source_file_ids → modify an existing user image
 - Grounded: use_google_search=true → real-time web data (weather, stocks, news)
 </modes>
 
 <parameters>
 - aspect_ratio: 1:1 (avatar), 3:4 (portrait), 4:3 (landscape), 9:16/16:9 (widescreen)
 - image_size: 1K (preview), 2K (default), 4K (high quality, print, wallpaper)
-- source_file_ids: up to 14 images for editing/composition (file_xxx or exec_xxx)
+- source_file_ids: existing image file_id(s) to edit. Only use when user explicitly provides or references their image.
 </parameters>
 
 <output>
@@ -74,6 +74,7 @@ English only, max 480 tokens.
 
 Use for: photos, artwork, illustrations, logos, memes.
 NOT for: charts, graphs, data viz → use execute_python.
+Do NOT ask user for source images unless they explicitly want to edit an existing photo.
 Cost: $0.134 (1K/2K), $0.24 (4K).""",
     "input_schema": {
         "type": "object",
@@ -101,8 +102,9 @@ Cost: $0.134 (1K/2K), $0.24 (4K).""",
                     "type": "string"
                 },
                 "description":
-                    "File IDs of images to edit or use as references. "
-                    "From Available Files or Pending Files. Leave empty for generation."
+                    "File IDs of existing user images to edit. "
+                    "Only provide when the user explicitly asks to edit/modify "
+                    "their photo. Leave empty for new image generation."
             },
             "use_google_search": {
                 "type": "boolean",

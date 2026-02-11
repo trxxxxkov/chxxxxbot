@@ -153,7 +153,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "(sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=~\"claude_handler.user_charged|claude_handler.cancelled_user_charged|topic_naming.user_charged\" | unwrap cost_usd [$__interval])) or vector(0)) + (sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=~\"analyze_image|analyze_pdf|preview_file|extended_thinking\" | unwrap cost_usd [$__interval])) or vector(0)) + (sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"self_critique.cost_charged\" | unwrap total_cost [$__interval])) or vector(0))",
+          "expr": "(sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=~\"claude_handler.user_charged|claude_handler.cancelled_user_charged|topic_naming.user_charged\" | unwrap cost_usd [$__interval])) or vector(0)) + (sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.user_charged\" | unwrap cache_write_cost [$__interval])) or vector(0)) + (sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=~\"analyze_image|analyze_pdf|preview_file|extended_thinking\" | unwrap cost_usd [$__interval])) or vector(0)) + (sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"self_critique.cost_charged\" | unwrap total_cost [$__interval])) or vector(0))",
           "refId": "A"
         }
       ],
@@ -739,6 +739,15 @@
           "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"topic_naming.user_charged\" | unwrap cost_usd [$__interval])) or vector(0)",
           "legendFormat": "topic_naming",
           "refId": "K"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.user_charged\" | unwrap cache_write_cost [$__interval])) or vector(0)",
+          "legendFormat": "cache_write",
+          "refId": "L"
         }
       ],
       "title": "Costs",

@@ -278,6 +278,79 @@ async def cmd_set_margin(message: Message):
     )
 
 
+@router.message(Command("set_cache_subsidy"))
+async def cmd_set_cache_subsidy(message: Message):
+    """Handler for /set_cache_subsidy command - toggle cache write cost subsidy.
+
+    Privileged users only.
+    Usage: /set_cache_subsidy [on|off]
+
+    When ON, the bot owner absorbs cache write costs (users don't pay for
+    cache_creation_input_tokens). When OFF, users pay full cost (default).
+
+    Examples:
+        /set_cache_subsidy        (show current status)
+        /set_cache_subsidy on     (owner absorbs cache write costs)
+        /set_cache_subsidy off    (users pay full cost)
+    """
+    user_id = message.from_user.id
+    lang = get_lang(message.from_user.language_code)
+
+    # Check privileges
+    if not is_privileged(user_id):
+        logger.warning(
+            "admin.set_cache_subsidy_unauthorized",
+            user_id=user_id,
+            username=message.from_user.username,
+            msg="Unauthorized set_cache_subsidy attempt",
+        )
+        await message.answer(get_text("admin.unauthorized", lang))
+        return
+
+    # Parse argument
+    args = message.text.split()
+    if len(args) < 2:
+        # Show current status
+        subsidy_active = not config.CHARGE_USERS_FOR_CACHE_WRITE
+        await message.answer(
+            get_text("admin.cache_subsidy_usage",
+                     lang,
+                     status="ON" if subsidy_active else "OFF"))
+        return
+
+    value = args[1].lower()
+    if value == "on":
+        new_value = False  # CHARGE_USERS = False means subsidy ON
+    elif value == "off":
+        new_value = True  # CHARGE_USERS = True means subsidy OFF
+    else:
+        await message.answer(get_text("admin.cache_subsidy_invalid_value",
+                                      lang))
+        return
+
+    old_value = config.CHARGE_USERS_FOR_CACHE_WRITE
+    config.CHARGE_USERS_FOR_CACHE_WRITE = new_value
+
+    old_status = "OFF" if old_value else "ON"
+    new_status = "ON" if not new_value else "OFF"
+
+    logger.info(
+        "admin.set_cache_subsidy_success",
+        admin_user_id=user_id,
+        admin_username=message.from_user.username,
+        old_status=old_status,
+        new_status=new_status,
+        charge_users=new_value,
+        msg="Cache write subsidy updated",
+    )
+
+    await message.answer(
+        get_text("admin.cache_subsidy_updated",
+                 lang,
+                 old=old_status,
+                 new=new_status))
+
+
 @router.message(Command("clear"))
 async def cmd_clear(
     message: Message,

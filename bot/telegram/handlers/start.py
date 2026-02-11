@@ -127,6 +127,7 @@ async def help_handler(
         parts.append(get_text("help.section_admin", lang))
         parts.append(get_text("help.cmd_topup", lang))
         parts.append(get_text("help.cmd_set_margin", lang))
+        parts.append(get_text("help.cmd_set_cache_subsidy", lang))
         parts.append(get_text("help.cmd_announce", lang))
 
     # Contact — first privileged user's username

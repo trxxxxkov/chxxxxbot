@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from unittest.mock import patch
 
+from core.pricing import calculate_cache_write_cost
 from core.pricing import calculate_claude_cost
 from core.pricing import calculate_e2b_cost
 from core.pricing import calculate_gemini_image_cost
@@ -445,6 +446,128 @@ class TestCalculateClaudeCost:
             # Output: 0.000001 * $5 = $0.000005
             expected = Decimal("0.000001") + Decimal("0.000005")
             assert result == expected
+
+
+# =============================================================================
+# Cache Write Cost Tests
+# =============================================================================
+
+
+class TestCalculateCacheWriteCost:
+    """Tests for calculate_cache_write_cost function."""
+
+    def test_cache_write_cost_1h(self, mock_model_registry):
+        """Should calculate cache write cost with 1h TTL."""
+        with patch.dict("config.MODEL_REGISTRY",
+                        mock_model_registry,
+                        clear=True):
+            # Haiku: $2.00/1M cache write for 1h TTL
+            result = calculate_cache_write_cost(
+                model_id="claude-haiku-test",
+                cache_creation_tokens=1_000_000,
+                cache_ttl="1h",
+            )
+            assert result == Decimal("2.0")
+
+    def test_cache_write_cost_5m(self, mock_model_registry):
+        """Should calculate cache write cost with 5m TTL."""
+        with patch.dict("config.MODEL_REGISTRY",
+                        mock_model_registry,
+                        clear=True):
+            # Haiku: $1.25/1M cache write for 5m TTL
+            result = calculate_cache_write_cost(
+                model_id="claude-haiku-test",
+                cache_creation_tokens=1_000_000,
+                cache_ttl="5m",
+            )
+            assert result == Decimal("1.25")
+
+    def test_cache_write_cost_zero_tokens(self, mock_model_registry):
+        """Should return 0 for zero tokens."""
+        with patch.dict("config.MODEL_REGISTRY",
+                        mock_model_registry,
+                        clear=True):
+            result = calculate_cache_write_cost(
+                model_id="claude-haiku-test",
+                cache_creation_tokens=0,
+            )
+            assert result == Decimal("0")
+
+    def test_cache_write_cost_unknown_model(self, mock_model_registry):
+        """Should return 0 for unknown model."""
+        with patch.dict("config.MODEL_REGISTRY",
+                        mock_model_registry,
+                        clear=True):
+            result = calculate_cache_write_cost(
+                model_id="unknown-model",
+                cache_creation_tokens=1_000_000,
+            )
+            assert result == Decimal("0")
+
+    def test_cache_write_cost_no_cache_support(self, mock_model_registry):
+        """Should return 0 for model without cache pricing."""
+        with patch.dict("config.MODEL_REGISTRY",
+                        mock_model_registry,
+                        clear=True):
+            result = calculate_cache_write_cost(
+                model_id="claude-no-cache",
+                cache_creation_tokens=1_000_000,
+            )
+            assert result == Decimal("0")
+
+    def test_cache_write_cost_consistency(self, mock_model_registry):
+        """Cache write cost should equal difference of total cost with/without cache."""
+        with patch.dict("config.MODEL_REGISTRY",
+                        mock_model_registry,
+                        clear=True):
+            tokens = 500_000
+            # Cost with cache creation
+            cost_with = calculate_claude_cost(
+                model_id="claude-sonnet-test",
+                input_tokens=0,
+                output_tokens=0,
+                cache_creation_tokens=tokens,
+                cache_ttl="1h",
+            )
+            # Cost without cache creation
+            cost_without = calculate_claude_cost(
+                model_id="claude-sonnet-test",
+                input_tokens=0,
+                output_tokens=0,
+                cache_creation_tokens=0,
+                cache_ttl="1h",
+            )
+            # Standalone cache write cost
+            cache_write = calculate_cache_write_cost(
+                model_id="claude-sonnet-test",
+                cache_creation_tokens=tokens,
+                cache_ttl="1h",
+            )
+            assert cost_with - cost_without == cache_write
+
+    def test_cache_write_cost_returns_decimal(self, mock_model_registry):
+        """Should return Decimal type."""
+        with patch.dict("config.MODEL_REGISTRY",
+                        mock_model_registry,
+                        clear=True):
+            result = calculate_cache_write_cost(
+                model_id="claude-haiku-test",
+                cache_creation_tokens=1000,
+            )
+            assert isinstance(result, Decimal)
+
+    def test_cache_write_cost_opus(self, mock_model_registry):
+        """Should calculate Opus cache write cost correctly."""
+        with patch.dict("config.MODEL_REGISTRY",
+                        mock_model_registry,
+                        clear=True):
+            # Opus: $30.00/1M cache write for 1h TTL
+            result = calculate_cache_write_cost(
+                model_id="claude-opus-test",
+                cache_creation_tokens=100_000,  # 0.1M * $30 = $3.00
+                cache_ttl="1h",
+            )
+            assert result == Decimal("3.0")
 
 
 # =============================================================================

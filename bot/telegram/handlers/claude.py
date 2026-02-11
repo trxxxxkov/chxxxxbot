@@ -60,6 +60,7 @@ from core.exceptions import RateLimitError
 from core.exceptions import ToolValidationError
 from core.models import LLMRequest
 from core.models import Message
+from core.pricing import calculate_cache_write_cost
 from core.pricing import calculate_claude_cost
 from core.tools.helpers import extract_tool_uses
 from core.tools.helpers import format_tool_results
@@ -821,10 +822,38 @@ async def _process_batch_with_session(
                     (usage.cache_creation_tokens / 1_000_000) *
                     model_config.pricing_cache_write_1h)
 
+            # Always record cache write cost as separate metric
+            if cache_creation_cost > 0:
+                record_cost(service="cache_write",
+                            amount_usd=cache_creation_cost)
+
+            # Determine user charge (with or without cache write subsidy)
+            cache_write_subsidized = False
+            if not config.CHARGE_USERS_FOR_CACHE_WRITE and cache_creation_cost > 0:
+                cache_write_cost_precise = float(
+                    calculate_cache_write_cost(
+                        model_id=model_config.model_id,
+                        cache_creation_tokens=(usage.cache_creation_tokens or
+                                               0),
+                        cache_ttl="1h",
+                    ))
+                user_charge_usd = cost_usd - cache_write_cost_precise
+                cache_write_subsidized = True
+                logger.info(
+                    "claude_handler.cache_write_subsidized",
+                    user_id=user_id,
+                    cache_write_cost=round(cache_write_cost_precise, 6),
+                    total_cost=round(cost_usd, 6),
+                    user_charge=round(user_charge_usd, 6),
+                )
+            else:
+                user_charge_usd = cost_usd
+
             # Calculate web_search cost ($0.01 per search request)
             web_search_cost = usage.web_search_requests * 0.01
             if web_search_cost > 0:
                 cost_usd += web_search_cost
+                user_charge_usd += web_search_cost
                 logger.info(
                     "tools.web_search.user_charged",
                     user_id=user_id,
@@ -871,7 +900,8 @@ async def _process_batch_with_session(
                 cache_read_tokens=usage.cache_read_tokens,
                 cache_write_tokens=usage.cache_creation_tokens,
             )
-            record_cost(service="claude", amount_usd=cost_usd)
+            record_cost(service="claude",
+                        amount_usd=cost_usd - cache_creation_cost)
             record_message_sent(chat_type=first_message.chat.type)
 
             # Record response time for Prometheus
@@ -942,23 +972,43 @@ async def _process_batch_with_session(
                 total_tokens += usage.thinking_tokens
 
             message_data = {
-                "chat_id": thread.chat_id,
-                "message_id": bot_message.message_id,
-                "thread_id": thread_id,
-                "from_user_id": None,  # Bot message
-                "date": bot_message.date.isoformat(),
-                "role": MessageRole.ASSISTANT.value,
-                "text_content": response_text,
-                "thinking_blocks": thinking_blocks_json,
-                "compaction_summary": compaction_summary,
+                "chat_id":
+                    thread.chat_id,
+                "message_id":
+                    bot_message.message_id,
+                "thread_id":
+                    thread_id,
+                "from_user_id":
+                    None,  # Bot message
+                "date":
+                    bot_message.date.isoformat(),
+                "role":
+                    MessageRole.ASSISTANT.value,
+                "text_content":
+                    response_text,
+                "thinking_blocks":
+                    thinking_blocks_json,
+                "compaction_summary":
+                    compaction_summary,
                 # Token usage included in message data
-                "input_tokens": usage.input_tokens,
-                "output_tokens": usage.output_tokens,
-                "cache_read_tokens": usage.cache_read_tokens,
-                "cache_write_tokens": usage.cache_creation_tokens,
-                "thinking_tokens": usage.thinking_tokens,
-                "cost_usd": float(cost_usd),
-                "model_id": user_model_id,
+                "input_tokens":
+                    usage.input_tokens,
+                "output_tokens":
+                    usage.output_tokens,
+                "cache_read_tokens":
+                    usage.cache_read_tokens,
+                "cache_write_tokens":
+                    usage.cache_creation_tokens,
+                "thinking_tokens":
+                    usage.thinking_tokens,
+                "cost_usd":
+                    float(cost_usd),
+                "model_id":
+                    user_model_id,
+                "cache_write_subsidized":
+                    cache_write_subsidized,
+                "cache_write_cost_usd": (float(cache_creation_cost)
+                                         if cache_creation_cost > 0 else None),
             }
 
             queued = await queue_write(WriteType.MESSAGE, message_data)
@@ -1022,11 +1072,15 @@ async def _process_batch_with_session(
 
             # Phase 2.1: Charge user for API usage
             # Log cost BEFORE charge_user() so Grafana sees it even if charge fails
+            # cost_usd excludes cache_write (tracked separately as cache_write_cost)
             logger.info(
                 "claude_handler.user_charged",
                 user_id=user_id,
                 model_id=user_model_id,
-                cost_usd=round(cost_usd, 6),
+                cost_usd=round(cost_usd - cache_creation_cost, 6),
+                cache_write_cost=round(cache_creation_cost, 6),
+                user_charge_usd=round(user_charge_usd, 6),
+                cache_write_subsidized=cache_write_subsidized,
                 thread_id=thread_id,
                 message_id=bot_message.message_id,
             )
@@ -1044,19 +1098,28 @@ async def _process_batch_with_session(
                 if usage.cache_read_tokens:
                     desc_parts.append(f"{usage.cache_read_tokens} cache_r")
                 desc_parts.append(f"({model_config.alias})")
+                if cache_write_subsidized:
+                    desc_parts.append("[cache subsidy]")
 
-                # Charge user for actual cost
-                balance_after = await services.balance.charge_user(
-                    user_id=user_id,
-                    amount=cost_usd,
-                    description=" + ".join(desc_parts),
-                    related_message_id=bot_message.message_id,
-                )
+                # Charge user (subsidized or full cost)
+                if user_charge_usd > 0:
+                    balance_after = await services.balance.charge_user(
+                        user_id=user_id,
+                        amount=user_charge_usd,
+                        description=" + ".join(desc_parts),
+                        related_message_id=bot_message.message_id,
+                    )
+                else:
+                    # Fully subsidized — no charge needed
+                    balance_after = await services.balance.get_balance(
+                        user_id=user_id)
 
                 logger.info(
                     "claude_handler.charge_success",
                     user_id=user_id,
                     cost_usd=round(cost_usd, 6),
+                    user_charge_usd=round(user_charge_usd, 6),
+                    cache_write_subsidized=cache_write_subsidized,
                     balance_after=float(balance_after),
                 )
 

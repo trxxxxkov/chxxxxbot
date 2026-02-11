@@ -347,32 +347,58 @@ async def _batch_insert_messages(
                             thinking_tokens) or None  # None if all are 0
 
             values_list.append({
-                "chat_id": data["chat_id"],
-                "message_id": data["message_id"],
-                "thread_id": data["thread_id"],
-                "from_user_id": data.get("from_user_id"),
-                "date": date_value,
-                "role": MessageRole(data["role"]),
-                "text_content": data.get("text_content"),
-                "input_tokens": input_tokens,
-                "output_tokens": output_tokens,
+                "chat_id":
+                    data["chat_id"],
+                "message_id":
+                    data["message_id"],
+                "thread_id":
+                    data["thread_id"],
+                "from_user_id":
+                    data.get("from_user_id"),
+                "date":
+                    date_value,
+                "role":
+                    MessageRole(data["role"]),
+                "text_content":
+                    data.get("text_content"),
+                "input_tokens":
+                    input_tokens,
+                "output_tokens":
+                    output_tokens,
                 # Field mapping: queue uses cache_read/write_tokens,
                 # Message model uses cache_read/creation_input_tokens
-                "cache_read_input_tokens": cache_read_tokens,
-                "cache_creation_input_tokens": cache_write_tokens,
-                "thinking_tokens": thinking_tokens,
-                "thinking_blocks": data.get("thinking_blocks"),
-                "model_id": data.get("model_id"),
-                "created_at": date_value,
-                "total_tokens": total_tokens,
+                "cache_read_input_tokens":
+                    cache_read_tokens,
+                "cache_creation_input_tokens":
+                    cache_write_tokens,
+                "thinking_tokens":
+                    thinking_tokens,
+                "thinking_blocks":
+                    data.get("thinking_blocks"),
+                "cache_write_subsidized":
+                    data.get("cache_write_subsidized", False),
+                "cache_write_cost_usd":
+                    data.get("cache_write_cost_usd"),
+                "model_id":
+                    data.get("model_id"),
+                "created_at":
+                    date_value,
+                "total_tokens":
+                    total_tokens,
                 # Set defaults for boolean/count fields
-                "has_photos": False,
-                "has_documents": False,
-                "has_voice": False,
-                "has_video": False,
-                "attachment_count": 0,
+                "has_photos":
+                    False,
+                "has_documents":
+                    False,
+                "has_voice":
+                    False,
+                "has_video":
+                    False,
+                "attachment_count":
+                    0,
                 "attachments": [],
-                "edit_count": 0,
+                "edit_count":
+                    0,
             })
         except Exception as e:  # pylint: disable=broad-exception-caught
             logger.error(

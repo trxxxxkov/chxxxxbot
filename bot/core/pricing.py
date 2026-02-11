@@ -164,6 +164,49 @@ def calculate_claude_cost(
     return total
 
 
+def calculate_cache_write_cost(
+    model_id: str,
+    cache_creation_tokens: int,
+    cache_ttl: Literal["5m", "1h"] = "1h",
+) -> Decimal:
+    """Calculate only the cache write (creation) portion of Claude API cost.
+
+    Args:
+        model_id: Model identifier (e.g., 'claude-sonnet-4-5-20250929').
+        cache_creation_tokens: Number of cache creation tokens.
+        cache_ttl: Cache TTL used ("5m" = 1.25x, "1h" = 2x input price).
+
+    Returns:
+        Cache write cost in USD as Decimal.
+    """
+    if cache_creation_tokens <= 0:
+        return Decimal("0")
+
+    # Import here to avoid circular dependency
+    from config import \
+        MODEL_REGISTRY  # pylint: disable=import-outside-toplevel
+
+    # Find model by model_id
+    model_config = None
+    for model in MODEL_REGISTRY.values():
+        if model.model_id == model_id:
+            model_config = model
+            break
+
+    if not model_config:
+        return Decimal("0")
+
+    # Calculate cache write cost based on TTL
+    if cache_ttl == "1h" and model_config.pricing_cache_write_1h:
+        return (Decimal(str(cache_creation_tokens)) / Decimal("1000000") *
+                Decimal(str(model_config.pricing_cache_write_1h)))
+    elif model_config.pricing_cache_write_5m:
+        return (Decimal(str(cache_creation_tokens)) / Decimal("1000000") *
+                Decimal(str(model_config.pricing_cache_write_5m)))
+
+    return Decimal("0")
+
+
 # =============================================================================
 # Web Search Pricing
 # =============================================================================

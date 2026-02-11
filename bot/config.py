@@ -445,6 +445,11 @@ TELEGRAM_WITHDRAWAL_FEE: float = 0.35  # k1: 35% Telegram withdrawal commission
 TELEGRAM_TOPICS_FEE: float = 0.15  # k2: 15% Topics in private chats commission
 DEFAULT_OWNER_MARGIN: float = 0.0  # k3: 0% Default owner margin (configurable)
 
+# Cache write cost subsidy
+# When True, users pay for cache writes (default behavior)
+# When False, owner absorbs cache write costs (subsidy mode)
+CHARGE_USERS_FOR_CACHE_WRITE: bool = True
+
 # Balance settings
 STARTER_BALANCE_USD: float = 0.10  # New users get $0.10 starter balance
 MINIMUM_BALANCE_FOR_REQUEST: float = 0.0  # Allow requests while balance > 0

@@ -15,6 +15,7 @@ from db.models.base import Base
 from sqlalchemy import BigInteger
 from sqlalchemy import Boolean
 from sqlalchemy import Enum
+from sqlalchemy import Float
 from sqlalchemy import ForeignKey
 from sqlalchemy import Index
 from sqlalchemy import Integer
@@ -294,6 +295,21 @@ class Message(Base):
         nullable=True,
         doc="Server-side compaction summary (Opus 4.6). "
         "When present, API ignores all messages before this one.",
+    )
+
+    # Cache write subsidy tracking
+    cache_write_subsidized: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+        doc="Whether cache write cost was absorbed by owner (subsidy)",
+    )
+
+    cache_write_cost_usd: Mapped[Optional[float]] = mapped_column(
+        Float,
+        nullable=True,
+        doc="Cache write cost in USD (set when cache_creation_tokens > 0)",
     )
 
     # Model tracking for cost attribution

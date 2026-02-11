@@ -452,6 +452,130 @@ class TestSetMarginCommand:
 
 
 @pytest.mark.asyncio
+class TestSetCacheSubsidyCommand:
+    """Test /set_cache_subsidy admin command."""
+
+    async def test_set_cache_subsidy_on(self, admin_user_id):
+        """Test enabling cache write subsidy.
+
+        Args:
+            admin_user_id: Admin user ID fixture.
+        """
+        with privileged_context(admin_user_id):
+            original = config.CHARGE_USERS_FOR_CACHE_WRITE
+            mock_message = create_admin_message(
+                admin_user_id,
+                "/set_cache_subsidy on",
+            )
+
+            await admin.cmd_set_cache_subsidy(mock_message)
+
+            # subsidy ON means CHARGE_USERS = False
+            assert config.CHARGE_USERS_FOR_CACHE_WRITE is False
+
+            mock_message.answer.assert_called_once()
+            response = mock_message.answer.call_args[0][0]
+            assert "updated" in response.lower()
+            assert "ON" in response
+
+            # Restore
+            config.CHARGE_USERS_FOR_CACHE_WRITE = original
+
+    async def test_set_cache_subsidy_off(self, admin_user_id):
+        """Test disabling cache write subsidy.
+
+        Args:
+            admin_user_id: Admin user ID fixture.
+        """
+        with privileged_context(admin_user_id):
+            original = config.CHARGE_USERS_FOR_CACHE_WRITE
+            # First enable subsidy
+            config.CHARGE_USERS_FOR_CACHE_WRITE = False
+
+            mock_message = create_admin_message(
+                admin_user_id,
+                "/set_cache_subsidy off",
+            )
+
+            await admin.cmd_set_cache_subsidy(mock_message)
+
+            # subsidy OFF means CHARGE_USERS = True
+            assert config.CHARGE_USERS_FOR_CACHE_WRITE is True
+
+            mock_message.answer.assert_called_once()
+            response = mock_message.answer.call_args[0][0]
+            assert "updated" in response.lower()
+            assert "OFF" in response
+
+            # Restore
+            config.CHARGE_USERS_FOR_CACHE_WRITE = original
+
+    async def test_set_cache_subsidy_no_arguments(self, admin_user_id):
+        """Test /set_cache_subsidy with no arguments shows usage.
+
+        Args:
+            admin_user_id: Admin user ID fixture.
+        """
+        with privileged_context(admin_user_id):
+            mock_message = create_admin_message(
+                admin_user_id,
+                "/set_cache_subsidy",
+            )
+
+            await admin.cmd_set_cache_subsidy(mock_message)
+
+            mock_message.answer.assert_called_once()
+            response = mock_message.answer.call_args[0][0]
+            assert "Usage" in response or "Status" in response or "Subsidy" in response
+            assert "on" in response.lower()
+            assert "off" in response.lower()
+
+    async def test_set_cache_subsidy_invalid_value(self, admin_user_id):
+        """Test /set_cache_subsidy with invalid value.
+
+        Args:
+            admin_user_id: Admin user ID fixture.
+        """
+        with privileged_context(admin_user_id):
+            original = config.CHARGE_USERS_FOR_CACHE_WRITE
+            mock_message = create_admin_message(
+                admin_user_id,
+                "/set_cache_subsidy maybe",
+            )
+
+            await admin.cmd_set_cache_subsidy(mock_message)
+
+            # Value unchanged
+            assert config.CHARGE_USERS_FOR_CACHE_WRITE == original
+
+            mock_message.answer.assert_called_once()
+            response = mock_message.answer.call_args[0][0]
+            assert "Invalid" in response
+
+    async def test_set_cache_subsidy_unauthorized(self, regular_user_id):
+        """Test that non-privileged user cannot set cache subsidy.
+
+        Args:
+            regular_user_id: Regular user ID fixture.
+        """
+        with no_privileged_users():
+            original = config.CHARGE_USERS_FOR_CACHE_WRITE
+            mock_message = create_admin_message(
+                regular_user_id,
+                "/set_cache_subsidy on",
+            )
+
+            await admin.cmd_set_cache_subsidy(mock_message)
+
+            # Value unchanged
+            assert config.CHARGE_USERS_FOR_CACHE_WRITE == original
+
+            mock_message.answer.assert_called_once()
+            response = mock_message.answer.call_args[0][0]
+            assert "privileged users" in response.lower()
+
+
+@pytest.mark.asyncio
 class TestPrivilegeChecking:
     """Test privilege checking mechanism."""
 
