@@ -93,6 +93,18 @@ class APITimeoutError(LLMError):
     pass  # pylint: disable=unnecessary-pass
 
 
+class OverloadedError(LLMError):
+    """API server is overloaded (HTTP 529).
+
+    Raised when the API returns an overloaded error after retry attempts
+    are exhausted. This is a transient condition — the user should retry later.
+    """
+
+    recoverable = True
+    user_message = "⏳ Claude is currently overloaded. Please try again in a minute."
+    log_level = "warning"
+
+
 class ContextWindowExceededError(LLMError):
     """Context exceeds model's context window.
 

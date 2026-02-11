@@ -55,6 +55,7 @@ from core.exceptions import APIConnectionError
 from core.exceptions import APITimeoutError
 from core.exceptions import ContextWindowExceededError
 from core.exceptions import LLMError
+from core.exceptions import OverloadedError
 from core.exceptions import RateLimitError
 from core.exceptions import ToolValidationError
 from core.models import LLMRequest
@@ -667,6 +668,13 @@ async def _process_batch_with_session(
                             first_message,
                             "⚠️ Claude returned an empty response. "
                             "Please try rephrasing your message.")
+
+            except OverloadedError as e:
+                logger.warning("claude_handler.overloaded",
+                               thread_id=thread_id,
+                               error=str(e))
+                bot_message = await first_message.answer(e.user_message)
+                return
 
             except Exception as e:  # pylint: disable=broad-exception-caught
                 logger.error("claude_handler.streaming_failed",

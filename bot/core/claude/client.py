@@ -7,6 +7,7 @@ and comprehensive logging.
 NO __init__.py - use direct import: from core.claude.client import ClaudeProvider
 """
 
+import asyncio
 import json
 import time
 from typing import AsyncIterator, Optional
@@ -17,6 +18,7 @@ from core.base import LLMProvider
 from core.exceptions import APIConnectionError
 from core.exceptions import APITimeoutError
 from core.exceptions import InvalidModelError
+from core.exceptions import OverloadedError
 from core.exceptions import RateLimitError
 from core.models import LLMRequest
 from core.models import StreamEvent
@@ -965,155 +967,191 @@ class ClaudeProvider(LLMProvider):
         self.last_thinking = None
         self.last_compaction = None
 
-        try:
-            async with self.client.messages.stream(**api_params) as stream:
-                async for event in stream:
-                    # Content block start - detect block type
-                    if event.type == "content_block_start":
-                        block = event.content_block
-                        current_block_type = block.type
+        max_retries = 3
+        retry_delays = [2, 5, 10]  # seconds
 
-                        # Regular tool_use (client-side tools)
-                        if block.type == "tool_use":
-                            current_tool_name = block.name
-                            current_tool_id = block.id
-                            accumulated_json = ""
-                            yield StreamEvent(type="tool_use",
-                                              tool_name=block.name,
-                                              tool_id=block.id)
+        for attempt in range(max_retries + 1):
+            try:
+                async with self.client.messages.stream(**api_params) as stream:
+                    async for event in stream:
+                        # Content block start - detect block type
+                        if event.type == "content_block_start":
+                            block = event.content_block
+                            current_block_type = block.type
 
-                        # Server-side tools (web_search, web_fetch)
-                        # These are executed by API automatically - no client execution
-                        elif block.type == "server_tool_use":
-                            current_tool_name = block.name
-                            current_tool_id = block.id
-                            accumulated_json = ""
-                            yield StreamEvent(type="tool_use",
-                                              tool_name=block.name,
-                                              tool_id=block.id,
-                                              is_server_tool=True)
+                            # Regular tool_use (client-side tools)
+                            if block.type == "tool_use":
+                                current_tool_name = block.name
+                                current_tool_id = block.id
+                                accumulated_json = ""
+                                yield StreamEvent(type="tool_use",
+                                                  tool_name=block.name,
+                                                  tool_id=block.id)
 
-                        # Server-side compaction (Opus 4.6)
-                        elif block.type == "compaction":
-                            current_block_type = "compaction"
+                            # Server-side tools (web_search, web_fetch)
+                            # These are executed by API automatically
+                            elif block.type == "server_tool_use":
+                                current_tool_name = block.name
+                                current_tool_id = block.id
+                                accumulated_json = ""
+                                yield StreamEvent(type="tool_use",
+                                                  tool_name=block.name,
+                                                  tool_id=block.id,
+                                                  is_server_tool=True)
 
-                    # Content block delta - yield appropriate event
-                    elif event.type == "content_block_delta":
-                        delta = event.delta
+                            # Server-side compaction (Opus 4.6)
+                            elif block.type == "compaction":
+                                current_block_type = "compaction"
 
-                        if hasattr(delta, "thinking") and delta.thinking:
-                            thinking_text += delta.thinking
-                            yield StreamEvent(type="thinking_delta",
-                                              content=delta.thinking)
+                        # Content block delta - yield appropriate event
+                        elif event.type == "content_block_delta":
+                            delta = event.delta
 
-                        elif hasattr(delta, "text") and delta.text:
-                            response_text += delta.text
-                            yield StreamEvent(type="text_delta",
-                                              content=delta.text)
+                            if hasattr(delta, "thinking") and delta.thinking:
+                                thinking_text += delta.thinking
+                                yield StreamEvent(type="thinking_delta",
+                                                  content=delta.thinking)
 
-                        elif hasattr(delta,
-                                     "partial_json") and delta.partial_json:
-                            accumulated_json += delta.partial_json
-                            yield StreamEvent(type="input_json_delta",
-                                              content=delta.partial_json)
+                            elif hasattr(delta, "text") and delta.text:
+                                response_text += delta.text
+                                yield StreamEvent(type="text_delta",
+                                                  content=delta.text)
 
-                        elif (hasattr(delta, "type") and
-                              delta.type == "compaction_delta"):
-                            compaction_content += getattr(delta, "content", "")
+                            elif (hasattr(delta, "partial_json") and
+                                  delta.partial_json):
+                                accumulated_json += delta.partial_json
+                                yield StreamEvent(type="input_json_delta",
+                                                  content=delta.partial_json)
 
-                    # Content block stop
-                    elif event.type == "content_block_stop":
-                        # If this was a tool_use block (client-side), parse JSON
-                        if current_block_type == "tool_use" and accumulated_json:
-                            try:
-                                tool_input = json.loads(accumulated_json)
-                            except json.JSONDecodeError:
-                                tool_input = {"raw": accumulated_json}
+                            elif (hasattr(delta, "type") and
+                                  delta.type == "compaction_delta"):
+                                compaction_content += getattr(
+                                    delta, "content", "")
 
-                            yield StreamEvent(type="block_end",
-                                              tool_name=current_tool_name,
-                                              tool_id=current_tool_id,
-                                              tool_input=tool_input)
-                        elif current_block_type == "server_tool_use":
-                            # Server-side tool - already executed, just mark end
-                            yield StreamEvent(type="block_end",
-                                              tool_name=current_tool_name,
-                                              tool_id=current_tool_id,
-                                              is_server_tool=True)
-                        else:
-                            yield StreamEvent(type="block_end")
+                        # Content block stop
+                        elif event.type == "content_block_stop":
+                            if (current_block_type == "tool_use" and
+                                    accumulated_json):
+                                try:
+                                    tool_input = json.loads(accumulated_json)
+                                except json.JSONDecodeError:
+                                    tool_input = {"raw": accumulated_json}
 
-                        current_block_type = None
+                                yield StreamEvent(type="block_end",
+                                                  tool_name=current_tool_name,
+                                                  tool_id=current_tool_id,
+                                                  tool_input=tool_input)
+                            elif current_block_type == "server_tool_use":
+                                yield StreamEvent(type="block_end",
+                                                  tool_name=current_tool_name,
+                                                  tool_id=current_tool_id,
+                                                  is_server_tool=True)
+                            else:
+                                yield StreamEvent(type="block_end")
 
-                    # Message delta - contains stop_reason
-                    elif event.type == "message_delta":
-                        stop_reason = event.delta.stop_reason or ""
-                        yield StreamEvent(type="message_end",
-                                          stop_reason=stop_reason)
+                            current_block_type = None
 
-                # Get final message for usage stats
-                final_message = await stream.get_final_message()
+                        # Message delta - contains stop_reason
+                        elif event.type == "message_delta":
+                            stop_reason = event.delta.stop_reason or ""
+                            yield StreamEvent(type="message_end",
+                                              stop_reason=stop_reason)
 
-            # Store usage and message
-            usage = final_message.usage
-            server_tool_use = getattr(usage, 'server_tool_use', None)
-            web_search_requests = 0
-            if server_tool_use:
-                web_search_requests = getattr(server_tool_use,
-                                              'web_search_requests', 0) or 0
+                    # Get final message for usage stats
+                    final_message = await stream.get_final_message()
 
-            self.last_usage = TokenUsage(
-                input_tokens=usage.input_tokens,
-                output_tokens=usage.output_tokens,
-                cache_read_tokens=getattr(usage, 'cache_read_input_tokens', 0),
-                cache_creation_tokens=getattr(usage,
-                                              'cache_creation_input_tokens', 0),
-                thinking_tokens=getattr(usage, 'thinking_tokens', 0),
-                web_search_requests=web_search_requests)
+                # Store usage and message
+                usage = final_message.usage
+                server_tool_use = getattr(usage, 'server_tool_use', None)
+                web_search_requests = 0
+                if server_tool_use:
+                    web_search_requests = getattr(server_tool_use,
+                                                  'web_search_requests', 0) or 0
 
-            self.last_message = final_message
-            self.last_thinking = thinking_text if thinking_text else None
-            self.last_compaction = compaction_content if compaction_content else None
+                self.last_usage = TokenUsage(
+                    input_tokens=usage.input_tokens,
+                    output_tokens=usage.output_tokens,
+                    cache_read_tokens=getattr(usage, 'cache_read_input_tokens',
+                                              0),
+                    cache_creation_tokens=getattr(
+                        usage, 'cache_creation_input_tokens', 0),
+                    thinking_tokens=getattr(usage, 'thinking_tokens', 0),
+                    web_search_requests=web_search_requests)
 
-            if compaction_content:
-                logger.info("claude.compaction.triggered",
-                            summary_length=len(compaction_content))
+                self.last_message = final_message
+                self.last_thinking = thinking_text if thinking_text else None
+                self.last_compaction = (compaction_content
+                                        if compaction_content else None)
 
-            # Yield stream_complete event with all data to avoid race condition
-            # Consumer MUST capture this before another request resets state
-            yield StreamEvent(
-                type="stream_complete",
-                final_message=final_message,
-                usage=self.last_usage,
-                thinking=self.last_thinking,
-            )
+                if compaction_content:
+                    logger.info("claude.compaction.triggered",
+                                summary_length=len(compaction_content))
 
-            duration_ms = (time.time() - start_time) * 1000
-            logger.info("claude.stream_events.complete",
-                        model_full_id=request.model,
-                        input_tokens=self.last_usage.input_tokens,
-                        output_tokens=self.last_usage.output_tokens,
-                        thinking_tokens=self.last_usage.thinking_tokens,
-                        cache_read=self.last_usage.cache_read_tokens,
-                        stop_reason=final_message.stop_reason,
-                        duration_ms=round(duration_ms, 2))
+                # Yield stream_complete event with all data
+                yield StreamEvent(
+                    type="stream_complete",
+                    final_message=final_message,
+                    usage=self.last_usage,
+                    thinking=self.last_thinking,
+                )
 
-        except anthropic.RateLimitError as e:
-            logger.info("claude.stream_events.rate_limit", error=str(e))
-            raise RateLimitError("Rate limit exceeded. Please try again later.",
-                                 retry_after=None) from e
+                duration_ms = (time.time() - start_time) * 1000
+                logger.info("claude.stream_events.complete",
+                            model_full_id=request.model,
+                            input_tokens=self.last_usage.input_tokens,
+                            output_tokens=self.last_usage.output_tokens,
+                            thinking_tokens=self.last_usage.thinking_tokens,
+                            cache_read=self.last_usage.cache_read_tokens,
+                            stop_reason=final_message.stop_reason,
+                            duration_ms=round(duration_ms, 2))
 
-        except anthropic.APIConnectionError as e:
-            logger.info("claude.stream_events.connection_error", error=str(e))
-            raise APIConnectionError("Failed to connect to Claude API.") from e
+                # Success — exit retry loop
+                return
 
-        except anthropic.APITimeoutError as e:
-            logger.info("claude.stream_events.timeout", error=str(e))
-            raise APITimeoutError("Request to Claude API timed out.") from e
+            except anthropic.APIStatusError as e:
+                if e.status_code == 529:
+                    # Overloaded — retry with backoff
+                    if attempt < max_retries:
+                        delay = retry_delays[attempt]
+                        logger.warning("claude.stream_events.overloaded_retry",
+                                       attempt=attempt + 1,
+                                       max_retries=max_retries,
+                                       delay_seconds=delay)
+                        await asyncio.sleep(delay)
+                        # Reset state for retry
+                        self.last_message = None
+                        self.last_usage = None
+                        self.last_thinking = None
+                        self.last_compaction = None
+                        continue
+                    # All retries exhausted
+                    logger.error("claude.stream_events.overloaded_exhausted",
+                                 attempts=max_retries + 1,
+                                 error=str(e))
+                    raise OverloadedError("Claude API is overloaded after "
+                                          f"{max_retries + 1} attempts") from e
+                # Non-overloaded APIStatusError — re-raise as-is
+                raise
 
-        except Exception as e:
-            logger.error("claude.stream_events.unexpected_error",
-                         error=str(e),
-                         error_type=type(e).__name__,
-                         exc_info=True)
-            raise
+            except anthropic.RateLimitError as e:
+                logger.info("claude.stream_events.rate_limit", error=str(e))
+                raise RateLimitError(
+                    "Rate limit exceeded. Please try again later.",
+                    retry_after=None) from e
+
+            except anthropic.APIConnectionError as e:
+                logger.info("claude.stream_events.connection_error",
+                            error=str(e))
+                raise APIConnectionError(
+                    "Failed to connect to Claude API.") from e
+
+            except anthropic.APITimeoutError as e:
+                logger.info("claude.stream_events.timeout", error=str(e))
+                raise APITimeoutError("Request to Claude API timed out.") from e
+
+            except Exception as e:
+                logger.error("claude.stream_events.unexpected_error",
+                             error=str(e),
+                             error_type=type(e).__name__,
+                             exc_info=True)
+                raise
