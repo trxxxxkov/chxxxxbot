@@ -77,10 +77,8 @@ class ClaudeProvider(LLMProvider):
         # - context-management: Context editing (thinking block clearing)
         # - compact: Server-side compaction (Opus 4.6)
         # - files-api: Files API for multimodal content
-        # - web-search: Server-side web search tool
         # - web-fetch: Server-side web page/PDF fetching tool
-        # - extended-cache-ttl: 1-hour prompt caching TTL
-        # Note: effort is now GA via output_config, no beta header needed
+        # Note: effort, web-search, extended-cache-ttl are now GA
         self.client = anthropic.AsyncAnthropic(
             api_key=api_key,
             default_headers={
@@ -88,9 +86,7 @@ class ClaudeProvider(LLMProvider):
                                    "context-management-2025-06-27,"
                                    "compact-2026-01-12,"
                                    "files-api-2025-04-14,"
-                                   "web-search-2025-03-05,"
-                                   "web-fetch-2025-09-10,"
-                                   "extended-cache-ttl-2025-04-11")
+                                   "web-fetch-2025-09-10")
             })
         self.last_usage: Optional[TokenUsage] = None
         self.last_message: Optional[
@@ -102,7 +98,7 @@ class ClaudeProvider(LLMProvider):
         logger.debug("claude_provider.initialized",
                      beta_features=[
                          "interleaved-thinking", "context-management",
-                         "compact", "files-api", "web-search", "web-fetch"
+                         "compact", "files-api", "web-fetch"
                      ])
 
     # pylint: disable=too-many-locals,too-many-branches,too-many-statements

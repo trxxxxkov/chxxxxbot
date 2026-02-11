@@ -584,17 +584,22 @@ async def execute_self_critique(  # pylint: disable=too-many-return-statements
                      message_count=len(messages))
 
         # Call Claude API with extended thinking
+        # Opus 4.6: adaptive thinking + effort; others: manual budget
+        thinking_params: dict = {"type": "adaptive"} \
+            if model_config.has_capability("adaptive_thinking") \
+            else {"type": "enabled", "budget_tokens": THINKING_BUDGET_TOKENS}
+        extra_params: dict = {}
+        if model_config.has_capability("adaptive_thinking"):
+            extra_params["output_config"] = {"effort": "high"}
         try:
             response = await client.messages.create(
                 model=model_config.model_id,
                 max_tokens=16000,
-                thinking={
-                    "type": "enabled",
-                    "budget_tokens": THINKING_BUDGET_TOKENS
-                },
+                thinking=thinking_params,
                 system=CRITICAL_REVIEWER_SYSTEM_PROMPT,
                 tools=SUBAGENT_TOOLS + [WEB_SEARCH_TOOL, WEB_FETCH_TOOL],
-                messages=messages)
+                messages=messages,
+                **extra_params)
         except Exception as api_error:
             logger.error("self_critique.api_error",
                          user_id=user_id,
@@ -802,16 +807,21 @@ async def execute_self_critique(  # pylint: disable=too-many-return-statements
 
     try:
         # Final API call without tools - forces model to return verdict
+        # Opus 4.6: adaptive thinking; others: minimal manual budget
+        final_thinking: dict = {"type": "adaptive"} \
+            if model_config.has_capability("adaptive_thinking") \
+            else {"type": "enabled", "budget_tokens": 2000}
+        final_extra: dict = {}
+        if model_config.has_capability("adaptive_thinking"):
+            final_extra["output_config"] = {"effort": "low"}
         final_response = await client.messages.create(
             model=model_config.model_id,
             max_tokens=4000,  # Smaller - just need JSON verdict
-            thinking={
-                "type": "enabled",
-                "budget_tokens": 2000  # Minimal thinking for final summary
-            },
+            thinking=final_thinking,
             system=CRITICAL_REVIEWER_SYSTEM_PROMPT,
             tools=[],  # No tools - must return text
-            messages=messages)
+            messages=messages,
+            **final_extra)
 
         # Track final API usage
         thinking_tokens = 0
