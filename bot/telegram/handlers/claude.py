@@ -156,6 +156,39 @@ async def _send_with_retry(
                              message="Max retries")
 
 
+async def _send_to_thread(
+    bot,
+    first_message: types.Message,
+    thread,
+    text: str,
+    parse_mode: str | None = None,
+) -> types.Message:
+    """Send message to correct thread — handles topic routing override.
+
+    When topic routing redirects a message to a different topic, error
+    messages should go to the new topic, not the original one.
+
+    Args:
+        bot: Telegram Bot instance.
+        first_message: Original Telegram message.
+        thread: Database thread (has .thread_id).
+        text: Message text.
+        parse_mode: Optional parse mode.
+
+    Returns:
+        Sent message.
+    """
+    if (thread.thread_id is not None and
+            thread.thread_id != first_message.message_thread_id):
+        return await bot.send_message(
+            chat_id=first_message.chat.id,
+            text=text,
+            message_thread_id=thread.thread_id,
+            parse_mode=parse_mode,
+        )
+    return await first_message.answer(text, parse_mode=parse_mode)
+
+
 # pylint: disable=too-many-locals,too-many-branches,too-many-statements
 # pylint: disable=too-many-return-statements
 async def _process_message_batch(thread_id: int,
@@ -416,7 +449,8 @@ async def _process_batch_with_session(
             # Handle user not found
             if user_model_id is None:
                 logger.error("claude_handler.user_not_found", user_id=user_id)
-                await first_message.answer(
+                await _send_to_thread(
+                    first_message.bot, first_message, thread,
                     "User not found. Please contact administrator.")
                 return
 
@@ -674,7 +708,9 @@ async def _process_batch_with_session(
                 logger.warning("claude_handler.overloaded",
                                thread_id=thread_id,
                                error=str(e))
-                bot_message = await first_message.answer(e.user_message)
+                bot_message = await _send_to_thread(first_message.bot,
+                                                    first_message, thread,
+                                                    e.user_message)
                 return
 
             except Exception as e:  # pylint: disable=broad-exception-caught
@@ -682,7 +718,8 @@ async def _process_batch_with_session(
                              thread_id=thread_id,
                              error=str(e),
                              exc_info=True)
-                bot_message = await first_message.answer(
+                bot_message = await _send_to_thread(
+                    first_message.bot, first_message, thread,
                     "⚠️ An error occurred. Please try again.")
                 return
 
@@ -690,7 +727,8 @@ async def _process_batch_with_session(
             if not bot_message:
                 logger.error("claude_handler.no_bot_message",
                              thread_id=thread_id)
-                await first_message.answer("Failed to send response.")
+                await _send_to_thread(first_message.bot, first_message, thread,
+                                      "Failed to send response.")
                 return
 
             # Phase 2.5.2: Partial payment for cancelled requests
@@ -1190,7 +1228,8 @@ async def _process_batch_with_session(
                     tokens_limit=e.tokens_limit)
         record_error(error_type="context_exceeded", handler="claude")
 
-        await first_message.answer(
+        await _send_to_thread(
+            first_message.bot, first_message, thread,
             f"⚠️ Context window exceeded.\n\n"
             f"Your conversation is too long ({e.tokens_used:,} tokens). "
             f"Please start a new thread or reduce message history.")
@@ -1208,7 +1247,8 @@ async def _process_batch_with_session(
         if e.retry_after:
             retry_msg = f"\n\nPlease try again in {e.retry_after} seconds."
 
-        await first_message.answer(
+        await _send_to_thread(
+            first_message.bot, first_message, thread,
             f"⚠️ Rate limit exceeded.{retry_msg}\n\n"
             f"Too many requests. Please wait a moment and try again.")
 
@@ -1220,8 +1260,8 @@ async def _process_batch_with_session(
         record_error(error_type="connection_error", handler="claude")
         record_claude_request(model="unknown", success=False)
 
-        await first_message.answer(
-            "⚠️ Connection error.\n\n"
+        await _send_to_thread(
+            first_message.bot, first_message, thread, "⚠️ Connection error.\n\n"
             "Failed to connect to Claude API. Please check your internet "
             "connection and try again.")
 
@@ -1231,7 +1271,8 @@ async def _process_batch_with_session(
         record_error(error_type="timeout", handler="claude")
         record_claude_request(model="unknown", success=False)
 
-        await first_message.answer(
+        await _send_to_thread(
+            first_message.bot, first_message, thread,
             "⚠️ Request timed out.\n\n"
             "The request took too long. Please try again with a shorter "
             "message or simpler question.")
@@ -1245,8 +1286,8 @@ async def _process_batch_with_session(
         record_error(error_type="llm_error", handler="claude")
         record_claude_request(model="unknown", success=False)
 
-        await first_message.answer(
-            f"⚠️ Error: {str(e)}\n\n"
+        await _send_to_thread(
+            first_message.bot, first_message, thread, f"⚠️ Error: {str(e)}\n\n"
             f"Please try again or contact administrator if the problem "
             f"persists.")
 

@@ -25,8 +25,14 @@ from utils.structured_logging import get_logger
 logger = get_logger(__name__)
 
 
-async def get_or_create_thread(message: types.Message,
-                               session: AsyncSession) -> Thread:
+async def get_or_create_thread(
+    message: types.Message,
+    session: AsyncSession,
+    override_thread_id: int | None = None,
+    override_title: str | None = None,
+    override_needs_naming: bool | None = None,
+    pre_resolved_thread: 'Thread | None' = None,
+) -> Thread:
     """Get or create thread for message.
 
     Used by the unified pipeline to resolve database threads.
@@ -35,6 +41,11 @@ async def get_or_create_thread(message: types.Message,
     Args:
         message: Telegram message.
         session: Database session.
+        override_thread_id: Override Telegram thread_id (topic routing).
+        override_title: Override thread title (topic routing).
+        override_needs_naming: Override needs_topic_naming (topic routing).
+        pre_resolved_thread: Pre-resolved thread from topic routing
+            (avoids duplicate DB lookup on passthrough).
 
     Returns:
         Thread for this message.
@@ -79,34 +90,54 @@ async def get_or_create_thread(message: types.Message,
     # Get or create thread
     thread_repo = ThreadRepository(session)
 
+    # Topic routing: use override_thread_id if provided
+    effective_thread_id = (override_thread_id if override_thread_id is not None
+                           else message.message_thread_id)
+
     # Generate thread title from chat/user info
     thread_title = (
         message.chat.title  # Groups/supergroups
         or message.chat.first_name  # Private chats
         or message.from_user.first_name if message.from_user else None)
 
-    thread, was_created = await thread_repo.get_or_create_thread(
-        chat_id=chat_id,
-        user_id=user_id,
-        thread_id=message.message_thread_id,
-        title=thread_title,
-    )
+    # Use pre-resolved thread if available (avoids duplicate DB lookup)
+    if pre_resolved_thread is not None and override_thread_id is None:
+        thread = pre_resolved_thread
+        was_created = False
+        # Update title if needed (triggers updated_at via onupdate)
+        thread.title = override_title or thread_title
+        logger.debug(
+            "thread_resolver.using_pre_resolved",
+            thread_id=thread.id,
+            user_id=user_id,
+        )
+    else:
+        thread, was_created = await thread_repo.get_or_create_thread(
+            chat_id=chat_id,
+            user_id=user_id,
+            thread_id=effective_thread_id,
+            title=override_title or thread_title,
+        )
 
     # Dashboard tracking events
     if was_created:
         logger.info("claude_handler.thread_created",
                     thread_id=thread.id,
                     user_id=user_id,
-                    telegram_thread_id=message.message_thread_id)
+                    telegram_thread_id=effective_thread_id)
 
         # Bot API 9.3: Set needs_topic_naming for new topics
         # Topics exist in: private chats with topics enabled, or forum supergroups
-        if message.message_thread_id is not None:
-            thread.needs_topic_naming = True
+        if effective_thread_id is not None:
+            if override_needs_naming is not None:
+                thread.needs_topic_naming = override_needs_naming
+            else:
+                thread.needs_topic_naming = True
             logger.debug(
                 "thread_resolver.topic_needs_naming",
                 thread_id=thread.id,
-                telegram_thread_id=message.message_thread_id,
+                telegram_thread_id=effective_thread_id,
+                needs_naming=thread.needs_topic_naming,
             )
 
         # Phase 4.1: Cache warming for new threads
@@ -118,7 +149,7 @@ async def get_or_create_thread(message: types.Message,
                 chat_id=chat_id,
                 user_id=user_id,
                 message_id=message.message_id,
-                message_thread_id=message.message_thread_id,
+                message_thread_id=effective_thread_id,
                 is_topic_message=message.is_topic_message,
                 text_length=len(message.text or message.caption or ""),
                 is_new_thread="true" if was_created else "false")
@@ -127,7 +158,7 @@ async def get_or_create_thread(message: types.Message,
                  user_id=user_id,
                  chat_id=chat_id,
                  thread_id=thread.id,
-                 telegram_thread_id=message.message_thread_id)
+                 telegram_thread_id=effective_thread_id)
 
     return thread
 

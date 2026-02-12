@@ -228,6 +228,41 @@ class ThreadRepository(BaseRepository[Thread]):
         result = await self.session.execute(stmt)
         return result.scalar() or 0
 
+    async def get_recent_active_topics(
+        self,
+        chat_id: int,
+        user_id: int,
+        exclude_thread_id: int | None = None,
+        limit: int = 5,
+    ) -> list[Thread]:
+        """Get recent active topics for topic routing.
+
+        Returns threads with thread_id IS NOT NULL (actual topics),
+        ordered by updated_at DESC, excluding cleared topics.
+
+        Args:
+            chat_id: Telegram chat ID.
+            user_id: Telegram user ID.
+            exclude_thread_id: Telegram thread_id to exclude (current topic).
+            limit: Max topics to return.
+
+        Returns:
+            List of Thread instances ordered by updated_at DESC.
+        """
+        conditions = [
+            Thread.chat_id == chat_id,
+            Thread.user_id == user_id,
+            Thread.thread_id.isnot(None),
+            Thread.is_cleared == False,  # noqa: E712 pylint: disable=singleton-comparison
+        ]
+        if exclude_thread_id is not None:
+            conditions.append(Thread.thread_id != exclude_thread_id)
+
+        stmt = (select(Thread).where(*conditions).order_by(
+            Thread.updated_at.desc()).limit(limit))
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
     async def get_unique_topic_ids(self, chat_id: int) -> list[int]:
         """Get unique Telegram topic IDs for a chat.
 

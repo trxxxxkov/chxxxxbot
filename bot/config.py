@@ -65,6 +65,16 @@ TOPIC_NAMING_ENABLED = True
 TOPIC_NAMING_MODEL = "claude-haiku-4-5-20251001"  # Haiku is cheap (~$0.0003/title)
 TOPIC_NAMING_MAX_TOKENS = 30  # Title is short (2-6 words)
 
+# Topic routing (Bot API 9.4: auto-topic management)
+TOPIC_ROUTING_ENABLED = True
+TOPIC_SWITCH_MIN_GAP_MINUTES = 5  # Min gap before checking relevance in existing topic
+TOPIC_SWITCH_RECENT_TOPICS = 5  # Number of recent topics to check
+TOPIC_SWITCH_RECENT_MESSAGES = 5  # User messages per topic for context
+TOPIC_SWITCH_MSG_TRUNCATE = 200  # Max chars per message in prompt
+TOPIC_ROUTING_MODEL = TOPIC_NAMING_MODEL  # Haiku
+TOPIC_ROUTING_MAX_TOKENS = 60  # JSON response with optional title
+TOPIC_TEMP_NAME_MAX_LENGTH = 30  # Max chars for temp name from General
+
 # Vision model IDs for tool API calls (analyze_image, analyze_pdf, preview_file)
 VISION_MODEL_ID = "claude-opus-4-6"  # Full analysis (image, PDF)
 VISION_MODEL_ID_LITE = "claude-sonnet-4-5-20250929"  # Lighter preview analysis

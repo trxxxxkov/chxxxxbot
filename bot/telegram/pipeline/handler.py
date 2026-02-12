@@ -12,6 +12,7 @@ NO __init__.py - use direct import:
     from telegram.pipeline.handler import router
 """
 
+import asyncio
 import time
 
 from aiogram import F
@@ -164,21 +165,60 @@ async def handle_message(message: types.Message, session: AsyncSession) -> None:
             normalize_ms=round(normalize_ms, 2),
         )
 
-        # 2. Charge for transcription if applicable
-        if processed.transcript and not processed.transcription_charged:
-            await _charge_transcription(
+        # 2. Charge transcription + topic routing (parallel when both needed)
+        override_thread_id = None
+        route_title = None
+        route_needs_naming = None  # None = use default logic
+
+        needs_transcription_charge = (processed.transcript and
+                                      not processed.transcription_charged)
+
+        routing_text = (
+            processed.text or
+            (processed.transcript.text if processed.transcript else None))
+
+        if needs_transcription_charge:
+            # Run transcription charge and topic routing in parallel
+            charge_coro = _charge_transcription(
                 session=session,
                 user_id=user_id,
                 message_id=message.message_id,
                 transcript=processed.transcript,
                 content_type=content_type,
             )
-            # Mark as charged to avoid double charging
+            route_coro = _try_topic_routing(message, routing_text, session,
+                                            user_id)
+            _, route = await asyncio.gather(charge_coro, route_coro)
             object.__setattr__(processed, 'transcription_charged', True)
+        else:
+            route = await _try_topic_routing(message, routing_text, session,
+                                             user_id)
 
-        # 3. Get or create thread
+        pre_resolved_thread = None
+        if route is not None and route.action != "passthrough":
+            override_thread_id = route.override_thread_id
+            route_title = route.title
+            route_needs_naming = route.needs_topic_naming
+            logger.info(
+                "unified_handler.topic_routed",
+                user_id=user_id,
+                action=route.action,
+                override_thread_id=override_thread_id,
+            )
+        elif route is not None and route.resolved_thread is not None:
+            # Passthrough with pre-resolved thread (avoids duplicate DB lookup)
+            pre_resolved_thread = route.resolved_thread
+
+        # 3. Get or create thread (with possible topic override)
         thread_start = time.perf_counter()
-        thread = await get_or_create_thread(message, session)
+        thread = await get_or_create_thread(
+            message,
+            session,
+            override_thread_id=override_thread_id,
+            override_title=route_title,
+            override_needs_naming=route_needs_naming,
+            pre_resolved_thread=pre_resolved_thread,
+        )
         await session.commit()
         thread_resolve_ms = (time.perf_counter() - thread_start) * 1000
 
@@ -242,6 +282,42 @@ async def handle_message(message: types.Message, session: AsyncSession) -> None:
         # (in case of error before step 4)
         if not normalization_finished:
             await tracker.finish(chat_id, message.message_id)
+
+
+async def _try_topic_routing(
+    message: types.Message,
+    processed_text: str | None,
+    session,
+    user_id: int,
+):
+    """Attempt topic routing, returning result or None on failure.
+
+    Args:
+        message: Telegram message.
+        processed_text: Extracted text content.
+        session: Database session.
+        user_id: User ID for logging.
+
+    Returns:
+        TopicRouteResult or None.
+    """
+    try:
+        from services.topic_routing import \
+            get_topic_routing_service  # pylint: disable=import-outside-toplevel
+
+        routing = get_topic_routing_service()
+        return await routing.maybe_route(
+            message=message,
+            processed_text=processed_text,
+            session=session,
+        )
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        logger.info(
+            "unified_handler.topic_routing_failed",
+            user_id=user_id,
+            error=str(e),
+        )
+        return None
 
 
 def _get_content_type(message: types.Message) -> str:  # pylint: disable=too-many-return-statements
