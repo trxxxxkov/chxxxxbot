@@ -228,13 +228,31 @@ class ClaudeProvider(LLMProvider):
             if server_tool_use:
                 web_search_requests = getattr(server_tool_use,
                                               'web_search_requests', 0) or 0
+            # Parse cache creation breakdown (1h explicit vs 5m auto-cached)
+            cache_creation_total = getattr(response.usage,
+                                           'cache_creation_input_tokens', 0)
+            cache_breakdown = getattr(response.usage, 'cache_creation', None)
+            cache_1h = 0
+            cache_5m = 0
+            if cache_breakdown is not None:
+                cache_1h = getattr(cache_breakdown, 'ephemeral_1h_input_tokens',
+                                   0) or 0
+                cache_5m = getattr(cache_breakdown, 'ephemeral_5m_input_tokens',
+                                   0) or 0
+                # Ensure int (guard against mock objects in tests)
+                if not isinstance(cache_1h, int):
+                    cache_1h = 0
+                if not isinstance(cache_5m, int):
+                    cache_5m = 0
+
             self.last_usage = TokenUsage(
                 input_tokens=response.usage.input_tokens,
                 output_tokens=response.usage.output_tokens,
                 cache_read_tokens=getattr(response.usage,
                                           'cache_read_input_tokens', 0),
-                cache_creation_tokens=getattr(response.usage,
-                                              'cache_creation_input_tokens', 0),
+                cache_creation_tokens=cache_creation_total,
+                cache_creation_1h_tokens=cache_1h,
+                cache_creation_5m_tokens=cache_5m,
                 thinking_tokens=thinking_tokens,
                 web_search_requests=web_search_requests)
             self.last_message = response
@@ -243,8 +261,7 @@ class ClaudeProvider(LLMProvider):
 
             # Phase 1.5 Stage 6: Log cache metrics for monitoring
             cache_read = getattr(response.usage, 'cache_read_input_tokens', 0)
-            cache_creation = getattr(response.usage,
-                                     'cache_creation_input_tokens', 0)
+            cache_creation = cache_creation_total
 
             # Phase 1.5 Stage 4: Log server-side tool usage (web_search, web_fetch)
             log_params = {
@@ -519,12 +536,21 @@ class ClaudeProvider(LLMProvider):
             if server_tool_use:
                 web_search_requests = getattr(server_tool_use,
                                               'web_search_requests', 0) or 0
+            # Parse cache creation breakdown (1h explicit vs 5m auto-cached)
+            cache_creation_total = getattr(usage, 'cache_creation_input_tokens',
+                                           0)
+            cache_breakdown = getattr(usage, 'cache_creation', None)
+            cache_1h = (cache_breakdown.ephemeral_1h_input_tokens
+                        if cache_breakdown else 0)
+            cache_5m = (cache_breakdown.ephemeral_5m_input_tokens
+                        if cache_breakdown else 0)
             self.last_usage = TokenUsage(
                 input_tokens=usage.input_tokens,
                 output_tokens=usage.output_tokens,
                 cache_read_tokens=getattr(usage, 'cache_read_input_tokens', 0),
-                cache_creation_tokens=getattr(usage,
-                                              'cache_creation_input_tokens', 0),
+                cache_creation_tokens=cache_creation_total,
+                cache_creation_1h_tokens=cache_1h,
+                cache_creation_5m_tokens=cache_5m,
                 thinking_tokens=getattr(usage, 'thinking_tokens', 0),
                 web_search_requests=web_search_requests)
 
@@ -1063,14 +1089,30 @@ class ClaudeProvider(LLMProvider):
                 if server_tool_use:
                     web_search_requests = getattr(server_tool_use,
                                                   'web_search_requests', 0) or 0
+                # Parse cache creation breakdown (1h vs 5m)
+                cache_creation_total = getattr(usage,
+                                               'cache_creation_input_tokens', 0)
+                cache_breakdown = getattr(usage, 'cache_creation', None)
+                cache_1h = 0
+                cache_5m = 0
+                if cache_breakdown is not None:
+                    cache_1h = getattr(cache_breakdown,
+                                       'ephemeral_1h_input_tokens', 0) or 0
+                    cache_5m = getattr(cache_breakdown,
+                                       'ephemeral_5m_input_tokens', 0) or 0
+                    if not isinstance(cache_1h, int):
+                        cache_1h = 0
+                    if not isinstance(cache_5m, int):
+                        cache_5m = 0
 
                 self.last_usage = TokenUsage(
                     input_tokens=usage.input_tokens,
                     output_tokens=usage.output_tokens,
                     cache_read_tokens=getattr(usage, 'cache_read_input_tokens',
                                               0),
-                    cache_creation_tokens=getattr(
-                        usage, 'cache_creation_input_tokens', 0),
+                    cache_creation_tokens=cache_creation_total,
+                    cache_creation_1h_tokens=cache_1h,
+                    cache_creation_5m_tokens=cache_5m,
                     thinking_tokens=getattr(usage, 'thinking_tokens', 0),
                     web_search_requests=web_search_requests)
 

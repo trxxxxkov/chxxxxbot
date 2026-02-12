@@ -127,6 +127,8 @@ class TokenUsage(BaseModel):
         output_tokens: Output tokens (LLM response text only).
         cache_read_tokens: Tokens read from cache (Phase 1.4.2).
         cache_creation_tokens: Tokens written to cache (Phase 1.4.2).
+        cache_creation_1h_tokens: 1h TTL cache creation (explicit breakpoints).
+        cache_creation_5m_tokens: 5m TTL cache creation (auto-cached thinking).
         thinking_tokens: Tokens used for extended thinking (Phase 1.4.3).
         web_search_requests: Number of web search requests (Phase 1.5).
     """
@@ -137,6 +139,10 @@ class TokenUsage(BaseModel):
         default=0, ge=0, description="Cache read tokens (Phase 1.4.2)")
     cache_creation_tokens: int = Field(
         default=0, ge=0, description="Cache creation tokens (Phase 1.4.2)")
+    cache_creation_1h_tokens: int = Field(
+        default=0, ge=0, description="1h TTL cache creation tokens")
+    cache_creation_5m_tokens: int = Field(
+        default=0, ge=0, description="5m TTL cache creation tokens")
     thinking_tokens: int = Field(
         default=0, ge=0, description="Extended thinking tokens (Phase 1.4.3)")
     web_search_requests: int = Field(

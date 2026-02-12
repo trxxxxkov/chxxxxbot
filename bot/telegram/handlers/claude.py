@@ -40,7 +40,6 @@ from cache.thread_cache import invalidate_messages
 from cache.thread_cache import update_cached_messages
 from cache.user_cache import cache_user
 from cache.user_cache import get_cached_user
-from cache.user_cache import update_cached_balance
 from cache.write_behind import queue_write
 from cache.write_behind import WriteType
 import config
@@ -314,6 +313,7 @@ async def _process_batch_with_session(
 
             # 2. Save all messages to database
             msg_repo = MessageRepository(session)
+            user_cache_msgs = []
             for processed in messages:
                 message = processed.original_message
 
@@ -335,6 +335,14 @@ async def _process_batch_with_session(
                 else:
                     # Regular text message
                     text_content = processed.text or ""
+
+                # Collect for cache append (before DB save to reuse text_content)
+                user_cache_msgs.append({
+                    "role": MessageRole.USER.value,
+                    "text_content": text_content,
+                    "message_id": message.message_id,
+                    "date": int(message.date.timestamp()),
+                })
 
                 # Extract context from Telegram message (replies, quotes, forwards)
                 msg_context = extract_message_context(message)
@@ -360,9 +368,14 @@ async def _process_batch_with_session(
 
             await session.commit()
 
-            # Invalidate message cache after saving user messages
-            # This ensures next read gets fresh data including new messages
-            await invalidate_messages(thread_id)
+            # Append user messages to cache atomically (no invalidation needed)
+            # This avoids the costly invalidate → miss → DB reload → SET cycle
+            for msg_data in user_cache_msgs:
+                if not await update_cached_messages(thread_id, msg_data):
+                    # Cache miss (first message in thread or expired) —
+                    # invalidate so the fallback reload below populates it
+                    await invalidate_messages(thread_id)
+                    break
 
             logger.debug("claude_handler.batch_messages_saved",
                          thread_id=thread_id,
@@ -808,9 +821,6 @@ async def _process_batch_with_session(
                             balance_after=float(balance_after),
                         )
 
-                        # Update cached balance (Phase 3.3: Cache-First)
-                        await update_cached_balance(user_id, balance_after)
-
                     except Exception as e:  # pylint: disable=broad-exception-caught
                         logger.error(
                             "claude_handler.cancelled_charge_error",
@@ -836,8 +846,7 @@ async def _process_batch_with_session(
             # loop above (stream_events resets last_compaction each call)
 
             # Calculate Claude API cost using centralized pricing
-            # See: https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching#pricing
-            # Uses 1h cache TTL since GLOBAL_SYSTEM_PROMPT uses ttl="1h"
+            # Uses TTL breakdown for accurate pricing (1h explicit vs 5m auto)
             cost_usd = float(
                 calculate_claude_cost(
                     model_id=model_config.model_id,
@@ -846,7 +855,8 @@ async def _process_batch_with_session(
                     cache_read_tokens=usage.cache_read_tokens or 0,
                     cache_creation_tokens=usage.cache_creation_tokens or 0,
                     thinking_tokens=usage.thinking_tokens,
-                    cache_ttl="1h",
+                    cache_creation_1h_tokens=usage.cache_creation_1h_tokens,
+                    cache_creation_5m_tokens=usage.cache_creation_5m_tokens,
                 ))
 
             # Calculate cache costs separately for logging
@@ -855,10 +865,15 @@ async def _process_batch_with_session(
             if usage.cache_read_tokens and model_config.pricing_cache_read:
                 cache_read_cost = ((usage.cache_read_tokens / 1_000_000) *
                                    model_config.pricing_cache_read)
-            if usage.cache_creation_tokens and model_config.pricing_cache_write_1h:
-                cache_creation_cost = (
-                    (usage.cache_creation_tokens / 1_000_000) *
+            # Use TTL breakdown for accurate cache creation cost
+            if usage.cache_creation_1h_tokens > 0 and model_config.pricing_cache_write_1h:
+                cache_creation_cost += (
+                    (usage.cache_creation_1h_tokens / 1_000_000) *
                     model_config.pricing_cache_write_1h)
+            if usage.cache_creation_5m_tokens > 0 and model_config.pricing_cache_write_5m:
+                cache_creation_cost += (
+                    (usage.cache_creation_5m_tokens / 1_000_000) *
+                    model_config.pricing_cache_write_5m)
 
             # Always record cache write cost as separate metric
             if cache_creation_cost > 0:
@@ -873,7 +888,8 @@ async def _process_batch_with_session(
                         model_id=model_config.model_id,
                         cache_creation_tokens=(usage.cache_creation_tokens or
                                                0),
-                        cache_ttl="1h",
+                        cache_creation_1h_tokens=usage.cache_creation_1h_tokens,
+                        cache_creation_5m_tokens=usage.cache_creation_5m_tokens,
                     ))
                 user_charge_usd = cost_usd - cache_write_cost_precise
                 cache_write_subsidized = True
@@ -921,6 +937,8 @@ async def _process_batch_with_session(
                         thinking_tokens=usage.thinking_tokens,
                         cache_read_tokens=usage.cache_read_tokens,
                         cache_creation_tokens=usage.cache_creation_tokens,
+                        cache_creation_1h=usage.cache_creation_1h_tokens,
+                        cache_creation_5m=usage.cache_creation_5m_tokens,
                         cache_read_cost=round(cache_read_cost, 6),
                         cache_creation_cost=round(cache_creation_cost, 6),
                         cost_usd=round(cost_usd, 6),
@@ -949,7 +967,9 @@ async def _process_batch_with_session(
             # Record cache metrics (Phase 3.1: Prometheus)
             if usage.cache_read_tokens and usage.cache_read_tokens > 0:
                 record_cache_hit(tokens_saved=usage.cache_read_tokens)
-            if usage.cache_creation_tokens and usage.cache_creation_tokens > 0:
+            # Only count 1h cache creation as "miss" (system prompt re-cache).
+            # 5m auto-caching of thinking blocks is expected API behavior.
+            if usage.cache_creation_1h_tokens > 0:
                 record_cache_miss()
 
             # Phase 1.4.4: Handle special stop reasons
@@ -1160,9 +1180,6 @@ async def _process_batch_with_session(
                     cache_write_subsidized=cache_write_subsidized,
                     balance_after=float(balance_after),
                 )
-
-                # Update cached balance (Phase 3.3: Cache-First)
-                await update_cached_balance(user_id, balance_after)
 
             except Exception as e:  # pylint: disable=broad-exception-caught
                 logger.error(

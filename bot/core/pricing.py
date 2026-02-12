@@ -96,6 +96,8 @@ def calculate_claude_cost(
     cache_creation_tokens: int = 0,
     thinking_tokens: int = 0,
     cache_ttl: Literal["5m", "1h"] = "1h",
+    cache_creation_1h_tokens: int = 0,
+    cache_creation_5m_tokens: int = 0,
 ) -> Decimal:
     """Calculate Claude API cost.
 
@@ -104,10 +106,11 @@ def calculate_claude_cost(
         input_tokens: Number of input tokens.
         output_tokens: Number of output tokens.
         cache_read_tokens: Number of cache read tokens.
-        cache_creation_tokens: Number of cache creation tokens.
+        cache_creation_tokens: Number of cache creation tokens (total).
         thinking_tokens: Number of thinking tokens (billed as output).
-        cache_ttl: Cache TTL used ("5m" = 1.25x, "1h" = 2x input price).
-            Default is "1h" since the bot uses 1-hour cache everywhere.
+        cache_ttl: Fallback cache TTL when breakdown is not available.
+        cache_creation_1h_tokens: 1h TTL cache creation (explicit breakpoints).
+        cache_creation_5m_tokens: 5m TTL cache creation (auto-cached thinking).
 
     Returns:
         Cost in USD as Decimal.
@@ -147,8 +150,18 @@ def calculate_claude_cost(
                            Decimal("1000000") *
                            Decimal(str(model_config.pricing_cache_read)))
 
-    if cache_creation_tokens > 0:
-        # Use correct pricing based on cache TTL
+    # Use TTL breakdown if available for accurate pricing
+    if cache_creation_1h_tokens > 0 or cache_creation_5m_tokens > 0:
+        if cache_creation_1h_tokens > 0 and model_config.pricing_cache_write_1h:
+            cache_creation_cost += (
+                Decimal(str(cache_creation_1h_tokens)) / Decimal("1000000") *
+                Decimal(str(model_config.pricing_cache_write_1h)))
+        if cache_creation_5m_tokens > 0 and model_config.pricing_cache_write_5m:
+            cache_creation_cost += (
+                Decimal(str(cache_creation_5m_tokens)) / Decimal("1000000") *
+                Decimal(str(model_config.pricing_cache_write_5m)))
+    elif cache_creation_tokens > 0:
+        # Fallback: no breakdown available, use cache_ttl param
         if cache_ttl == "1h" and model_config.pricing_cache_write_1h:
             cache_creation_cost = (
                 Decimal(str(cache_creation_tokens)) / Decimal("1000000") *
@@ -168,18 +181,23 @@ def calculate_cache_write_cost(
     model_id: str,
     cache_creation_tokens: int,
     cache_ttl: Literal["5m", "1h"] = "1h",
+    cache_creation_1h_tokens: int = 0,
+    cache_creation_5m_tokens: int = 0,
 ) -> Decimal:
     """Calculate only the cache write (creation) portion of Claude API cost.
 
     Args:
         model_id: Model identifier (e.g., 'claude-sonnet-4-5-20250929').
-        cache_creation_tokens: Number of cache creation tokens.
-        cache_ttl: Cache TTL used ("5m" = 1.25x, "1h" = 2x input price).
+        cache_creation_tokens: Number of cache creation tokens (total).
+        cache_ttl: Fallback TTL when breakdown is not available.
+        cache_creation_1h_tokens: 1h TTL cache creation tokens.
+        cache_creation_5m_tokens: 5m TTL cache creation tokens.
 
     Returns:
         Cache write cost in USD as Decimal.
     """
-    if cache_creation_tokens <= 0:
+    if (cache_creation_tokens <= 0 and cache_creation_1h_tokens <= 0 and
+            cache_creation_5m_tokens <= 0):
         return Decimal("0")
 
     # Import here to avoid circular dependency
@@ -196,7 +214,20 @@ def calculate_cache_write_cost(
     if not model_config:
         return Decimal("0")
 
-    # Calculate cache write cost based on TTL
+    # Use TTL breakdown if available
+    if cache_creation_1h_tokens > 0 or cache_creation_5m_tokens > 0:
+        cost = Decimal("0")
+        if cache_creation_1h_tokens > 0 and model_config.pricing_cache_write_1h:
+            cost += (Decimal(str(cache_creation_1h_tokens)) /
+                     Decimal("1000000") *
+                     Decimal(str(model_config.pricing_cache_write_1h)))
+        if cache_creation_5m_tokens > 0 and model_config.pricing_cache_write_5m:
+            cost += (Decimal(str(cache_creation_5m_tokens)) /
+                     Decimal("1000000") *
+                     Decimal(str(model_config.pricing_cache_write_5m)))
+        return cost
+
+    # Fallback: no breakdown, use cache_ttl param
     if cache_ttl == "1h" and model_config.pricing_cache_write_1h:
         return (Decimal(str(cache_creation_tokens)) / Decimal("1000000") *
                 Decimal(str(model_config.pricing_cache_write_1h)))
