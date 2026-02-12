@@ -135,13 +135,17 @@ class TestPassthrough:
         assert result.action == "passthrough"
 
     @pytest.mark.asyncio
-    async def test_passthrough_for_non_forum_private_chat(
+    async def test_passthrough_for_non_topics_private_chat(
             self, service, mock_session):
-        """Should passthrough for private chats without forum/topics."""
+        """Should passthrough for private chats without bot-managed topics."""
         msg = MagicMock()
         msg.chat.type = "private"
-        msg.chat.is_forum = False
         msg.from_user.id = 456
+        msg.bot = AsyncMock()
+        msg.bot.me = AsyncMock(return_value=MagicMock(
+            has_topics_enabled=False,
+            allows_users_to_create_topics=True,
+        ))
 
         with patch("config.TOPIC_ROUTING_ENABLED", True):
             result = await service.maybe_route(
@@ -157,8 +161,12 @@ class TestPassthrough:
         """Should passthrough when message has no from_user."""
         msg = MagicMock()
         msg.chat.type = "private"
-        msg.chat.is_forum = True
         msg.from_user = None
+        msg.bot = AsyncMock()
+        msg.bot.me = AsyncMock(return_value=MagicMock(
+            has_topics_enabled=True,
+            allows_users_to_create_topics=False,
+        ))
 
         with patch("config.TOPIC_ROUTING_ENABLED", True):
             result = await service.maybe_route(
@@ -428,10 +436,14 @@ class TestHelpers:
 
     @pytest.mark.asyncio
     async def test_is_topics_enabled_private_chat(self, service):
-        """Should return True for private forum chats."""
+        """Should return True for private chat with bot-managed topics."""
         msg = MagicMock()
         msg.chat.type = "private"
-        msg.chat.is_forum = True
+        msg.bot = AsyncMock()
+        msg.bot.me = AsyncMock(return_value=MagicMock(
+            has_topics_enabled=True,
+            allows_users_to_create_topics=False,
+        ))
 
         result = await service._is_topics_enabled_private_chat(msg)
         assert result is True
@@ -446,11 +458,29 @@ class TestHelpers:
         assert result is False
 
     @pytest.mark.asyncio
-    async def test_is_topics_enabled_not_forum(self, service):
-        """Should return False for non-forum private chats."""
+    async def test_is_topics_enabled_no_topics(self, service):
+        """Should return False when bot has topics disabled."""
         msg = MagicMock()
         msg.chat.type = "private"
-        msg.chat.is_forum = False
+        msg.bot = AsyncMock()
+        msg.bot.me = AsyncMock(return_value=MagicMock(
+            has_topics_enabled=False,
+            allows_users_to_create_topics=False,
+        ))
+
+        result = await service._is_topics_enabled_private_chat(msg)
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_is_topics_enabled_users_can_create(self, service):
+        """Should return False when users can create topics themselves."""
+        msg = MagicMock()
+        msg.chat.type = "private"
+        msg.bot = AsyncMock()
+        msg.bot.me = AsyncMock(return_value=MagicMock(
+            has_topics_enabled=True,
+            allows_users_to_create_topics=True,
+        ))
 
         result = await service._is_topics_enabled_private_chat(msg)
         assert result is False

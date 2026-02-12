@@ -409,6 +409,10 @@ class TopicRoutingService:
     ) -> bool:
         """Check if this is a private chat with bot-managed topics.
 
+        Bot API 9.4: Private chats don't have is_forum=True.
+        Instead, check bot's has_topics_enabled + allows_users_to_create_topics
+        from getMe (cached by aiogram).
+
         Args:
             message: Telegram message.
 
@@ -418,8 +422,13 @@ class TopicRoutingService:
         if message.chat.type != "private":
             return False
 
-        # Private chat with topics: is_forum=True indicates topics are enabled
-        if not getattr(message.chat, 'is_forum', False):
+        # Bot API 9.4: Check bot properties (cached by aiogram)
+        bot_me = await message.bot.me()
+        if not getattr(bot_me, 'has_topics_enabled', False):
+            return False
+
+        # If users can create topics themselves, Telegram handles routing
+        if getattr(bot_me, 'allows_users_to_create_topics', True):
             return False
 
         return True
