@@ -163,7 +163,7 @@ class TopicRoutingService:
                 user_id=user_id,
             )
             thread_id = await self._create_topic(message.bot, chat_id,
-                                                 "New chat")
+                                                 "New chat", user_id)
             if thread_id is None:
                 return _PASSTHROUGH
             return TopicRouteResult(
@@ -182,7 +182,7 @@ class TopicRoutingService:
                 temp_name=temp_name,
             )
             thread_id = await self._create_topic(message.bot, chat_id,
-                                                 temp_name)
+                                                 temp_name, user_id)
             if thread_id is None:
                 return _PASSTHROUGH
             return TopicRouteResult(
@@ -225,7 +225,8 @@ class TopicRoutingService:
             user_id=user_id,
             title=title,
         )
-        thread_id = await self._create_topic(message.bot, chat_id, title)
+        thread_id = await self._create_topic(message.bot, chat_id, title,
+                                             user_id)
         if thread_id is None:
             return _PASSTHROUGH
         return TopicRouteResult(
@@ -354,7 +355,7 @@ class TopicRoutingService:
                                      TOPIC_TEMP_NAME_MAX_LENGTH] or "New chat"
 
         # Create topic and send redirect in parallel
-        create_coro = self._create_topic(message.bot, chat_id, title)
+        create_coro = self._create_topic(message.bot, chat_id, title, user_id)
         redirect_coro = self._send_redirect(message.bot, chat_id,
                                             current_thread_id, title)
         new_thread_id, _ = await asyncio.gather(create_coro, redirect_coro)
@@ -438,13 +439,18 @@ class TopicRoutingService:
         bot: Bot,
         chat_id: int,
         name: str,
+        user_id: int | None = None,
     ) -> int | None:
         """Create a new forum topic.
+
+        Invalidates the recent topics cache after creation so the next
+        message sees the new topic.
 
         Args:
             bot: Telegram Bot instance.
             chat_id: Chat ID.
             name: Topic name (max 128 chars).
+            user_id: User ID for cache invalidation.
 
         Returns:
             New topic's message_thread_id, or None on failure.
@@ -458,6 +464,11 @@ class TopicRoutingService:
                 thread_id=topic.message_thread_id,
                 name=name[:128],
             )
+
+            # Invalidate recent topics cache so next message sees new topic
+            if user_id is not None:
+                await self._invalidate_topics_cache(chat_id, user_id)
+
             return topic.message_thread_id
         except Exception as e:
             logger.error(
@@ -468,6 +479,29 @@ class TopicRoutingService:
                 error_type=type(e).__name__,
             )
             return None
+
+    @staticmethod
+    async def _invalidate_topics_cache(chat_id: int, user_id: int) -> None:
+        """Invalidate recent topics cache after topic creation.
+
+        Args:
+            chat_id: Chat ID.
+            user_id: User ID.
+        """
+        try:
+            from cache.client import \
+                get_redis  # pylint: disable=import-outside-toplevel
+            redis = await get_redis()
+            if redis:
+                cache_key = f"cache:recent_topics:{chat_id}:{user_id}"
+                await redis.delete(cache_key)
+                logger.debug(
+                    "topic_routing.cache_invalidated",
+                    chat_id=chat_id,
+                    user_id=user_id,
+                )
+        except Exception:
+            pass  # Best-effort
 
     async def _send_redirect(
         self,
