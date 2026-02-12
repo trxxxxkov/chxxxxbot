@@ -66,7 +66,7 @@ TOPIC_NAMING_MODEL = "claude-haiku-4-5-20251001"  # Haiku is cheap (~$0.0003/tit
 TOPIC_NAMING_MAX_TOKENS = 30  # Title is short (2-6 words)
 
 # Topic routing (Bot API 9.4: auto-topic management)
-TOPIC_ROUTING_ENABLED = True
+TOPIC_ROUTING_ENABLED = False  # Paused: Telegram client doesn't render bot-created topics (see plan_bot_api_9_4_topic.md)
 TOPIC_SWITCH_MIN_GAP_MINUTES = 5  # Min gap before checking relevance in existing topic
 TOPIC_SWITCH_RECENT_TOPICS = 5  # Number of recent topics to check
 TOPIC_SWITCH_RECENT_MESSAGES = 5  # User messages per topic for context
