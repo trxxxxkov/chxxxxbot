@@ -26,6 +26,7 @@ import time
 from typing import Optional, TYPE_CHECKING
 
 from aiogram import types
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.exceptions import TelegramRetryAfter
 
 if TYPE_CHECKING:
@@ -77,6 +78,7 @@ from db.repositories.message_repository import MessageRepository
 from db.repositories.thread_repository import ThreadRepository
 from db.repositories.user_file_repository import UserFileRepository
 from services.factory import ServiceFactory
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from telegram.concurrency_limiter import concurrency_context
 from telegram.concurrency_limiter import ConcurrencyLimitExceeded
@@ -161,11 +163,13 @@ async def _send_to_thread(
     thread,
     text: str,
     parse_mode: str | None = None,
-) -> types.Message:
+) -> types.Message | None:
     """Send message to correct thread — handles topic routing override.
 
     When topic routing redirects a message to a different topic, error
     messages should go to the new topic, not the original one.
+
+    Returns None if the thread no longer exists in Telegram (deleted topic).
 
     Args:
         bot: Telegram Bot instance.
@@ -175,17 +179,25 @@ async def _send_to_thread(
         parse_mode: Optional parse mode.
 
     Returns:
-        Sent message.
+        Sent message or None if thread not found.
     """
-    if (thread.thread_id is not None and
-            thread.thread_id != first_message.message_thread_id):
-        return await bot.send_message(
-            chat_id=first_message.chat.id,
-            text=text,
-            message_thread_id=thread.thread_id,
-            parse_mode=parse_mode,
-        )
-    return await first_message.answer(text, parse_mode=parse_mode)
+    try:
+        if (thread.thread_id is not None and
+                thread.thread_id != first_message.message_thread_id):
+            return await bot.send_message(
+                chat_id=first_message.chat.id,
+                text=text,
+                message_thread_id=thread.thread_id,
+                parse_mode=parse_mode,
+            )
+        return await first_message.answer(text, parse_mode=parse_mode)
+    except TelegramBadRequest as e:
+        if "thread not found" in str(e):
+            logger.warning("send_to_thread.thread_not_found",
+                           thread_id=thread.thread_id,
+                           chat_id=first_message.chat.id)
+            return None
+        raise
 
 
 # pylint: disable=too-many-locals,too-many-branches,too-many-statements
@@ -272,11 +284,15 @@ async def _process_message_batch(thread_id: int,
         )
         record_error(error_type="concurrency_limit", handler="claude")
 
-        await first_message.answer(
-            f"⚠️ Too many requests.\n\n"
-            f"You have too many pending messages. "
-            f"Please wait for current generations to complete.\n\n"
-            f"Queue position: {e.queue_position}, waited: {e.wait_time:.0f}s")
+        try:
+            await first_message.answer(
+                f"⚠️ Too many requests.\n\n"
+                f"You have too many pending messages. "
+                f"Please wait for current generations to complete.\n\n"
+                f"Queue position: {e.queue_position}, "
+                f"waited: {e.wait_time:.0f}s")
+        except TelegramBadRequest:
+            pass  # Thread deleted — nothing to notify
 
 
 async def _process_batch_with_session(
@@ -307,8 +323,11 @@ async def _process_batch_with_session(
             if not thread:
                 logger.error("claude_handler.thread_not_found",
                              thread_id=thread_id)
-                await first_message.answer(
-                    "Thread not found. Please contact administrator.")
+                try:
+                    await first_message.answer(
+                        "Thread not found. Please contact administrator.")
+                except TelegramBadRequest:
+                    pass  # Thread deleted — nothing to notify
                 return
 
             # 2. Save all messages to database
@@ -346,6 +365,16 @@ async def _process_batch_with_session(
 
                 # Extract context from Telegram message (replies, quotes, forwards)
                 msg_context = extract_message_context(message)
+
+                # Check if message already exists (retry scenario)
+                existing = await msg_repo.get_message(thread.chat_id,
+                                                      message.message_id)
+                if existing:
+                    logger.debug("claude_handler.message_already_exists",
+                                 chat_id=thread.chat_id,
+                                 message_id=message.message_id,
+                                 thread_id=thread_id)
+                    continue
 
                 await msg_repo.create_message(
                     chat_id=thread.chat_id,
@@ -1316,5 +1345,14 @@ async def _process_batch_with_session(
                      exc_info=True)
         record_error(error_type="unexpected", handler="claude")
 
-        await first_message.answer("⚠️ Unexpected error occurred.\n\n"
-                                   "Please try again or contact administrator.")
+        try:
+            await first_message.answer(
+                "⚠️ Unexpected error occurred.\n\n"
+                "Please try again or contact administrator.")
+        except TelegramBadRequest as send_err:
+            if "thread not found" in str(send_err):
+                logger.warning("claude_handler.error_reply_thread_not_found",
+                               thread_id=thread_id,
+                               chat_id=first_message.chat.id)
+            else:
+                raise
