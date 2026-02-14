@@ -785,13 +785,21 @@ def fix_truncated_md2(text: str) -> str:
     # First handle underline (__)
     underline_count = _count_outside_code(result, "__")
     if underline_count % 2 == 1:
+        # Prevent creating ambiguous ___ sequence (underline + stray _)
+        if result.endswith("_"):
+            result += "\u200b"
         result += "__"
 
     # Then count remaining single _ (not part of __)
     # This is tricky - approximate by counting _ and subtracting 2*underline
+    # Re-count after potential underline addition
+    underline_count_now = _count_outside_code(result, "__")
     total_underscore = _count_outside_code(result, "_")
-    single_underscore = total_underscore - 2 * underline_count
+    single_underscore = total_underscore - 2 * underline_count_now
     if single_underscore % 2 == 1:
+        # Prevent creating __ (underline) from adjacent _ + _
+        if result.endswith("_"):
+            result += "\u200b"
         result += "_"
 
     # Count strikethrough (~)

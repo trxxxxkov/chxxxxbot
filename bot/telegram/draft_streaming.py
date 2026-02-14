@@ -372,9 +372,10 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
             self._pending_text = None
 
         # Truncate if too long (Telegram limit)
-        # Use Unicode ellipsis (not "..." which has unescaped dots in MarkdownV2)
+        # Must use _truncate_for_telegram to properly close broken MarkdownV2
+        # entities — raw slicing can cut mid-escape or mid-entity marker
         if len(text_to_send) > TELEGRAM_MESSAGE_LIMIT:
-            text_to_send = text_to_send[:TELEGRAM_MESSAGE_LIMIT - 1] + "…"
+            text_to_send = _truncate_for_telegram(text_to_send, parse_mode)
 
         try:
             await self.bot(

@@ -230,6 +230,12 @@ def _run_sandbox_sync(  # pylint: disable=too-many-locals,too-many-statements
                 if entry.name in ("inputs", ".ICE-unix", ".X11-unix"):
                     continue
 
+                # Skip hidden dirs and known system directories that
+                # sandbox.files.read() can't read (raises "is a directory")
+                if entry.name.startswith(".") or entry.name.startswith(
+                        "systemd-private-"):
+                    continue
+
                 logger.info("tools.execute_python.downloading_output_file",
                             path=file_path,
                             name=entry.name)
