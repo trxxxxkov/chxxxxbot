@@ -442,6 +442,7 @@ async def main() -> None:
         # Start polling
         logger.debug("starting_polling")
         try:
+            await bot.delete_webhook(drop_pending_updates=False)
             await dispatcher.start_polling(bot)
         finally:
             # Cancel background tasks on shutdown
