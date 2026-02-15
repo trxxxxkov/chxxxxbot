@@ -76,8 +76,7 @@ class TestHelpCommand:
             msg.answer.assert_called_once()
             text = msg.answer.call_args[0][0]
 
-            # Should include basic commands
-            assert "/start" in text
+            # Should include basic commands (/start hidden from menu/help)
             assert "/help" in text
             assert "/stop" in text
             assert "/clear" in text

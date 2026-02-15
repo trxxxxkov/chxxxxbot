@@ -107,7 +107,7 @@ class TestCommandRegistry:
 
     def test_expected_user_commands_present(self):
         names = {cmd.name for cmd in COMMANDS if not cmd.admin}
-        expected = {"start", "help", "stop", "clear", "model",
+        expected = {"help", "stop", "clear", "model",
                     "personality", "pay", "balance", "refund"}
         assert expected.issubset(names), (
             f"Missing user commands: {expected - names}"
@@ -156,13 +156,13 @@ class TestBuildHelpText:
 
     def test_russian_descriptions(self):
         text = build_help_text("ru")
-        assert "Начать работу с ботом" in text
         assert "Показать эту справку" in text
+        assert "Остановить текущую генерацию" in text
 
     def test_english_descriptions(self):
         text = build_help_text("en")
-        assert "Start the bot" in text
         assert "Show this help" in text
+        assert "Stop current generation" in text
 
     def test_section_headers_present(self):
         text = build_help_text("en", show_admin=True)

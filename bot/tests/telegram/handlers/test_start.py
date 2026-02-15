@@ -228,7 +228,6 @@ async def test_help_handler_basic(mock_message, mock_session):
         # Check content
         message_text = call_args[0][0]
         assert "Help" in message_text
-        assert "/start" in message_text
         assert "/help" in message_text
 
         # Check HTML format

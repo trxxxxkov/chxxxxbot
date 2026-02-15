@@ -75,8 +75,6 @@ class BotCmd:
 
 COMMANDS: tuple[BotCmd, ...] = (
     # --- Basic ---
-    BotCmd("start", "Start the bot",
-           "Начать работу с ботом", Section.BASIC),
     BotCmd("help", "Show this help",
            "Показать эту справку", Section.BASIC),
     BotCmd("stop", "Stop current generation",
