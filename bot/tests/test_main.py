@@ -238,6 +238,7 @@ class TestMainStartup:
         mock_bot = MagicMock()
         mock_bot.get_me = AsyncMock(
             return_value=MagicMock(id=123456789, username="test_bot"))
+        mock_bot.delete_webhook = AsyncMock()
         mock_dispatcher = MagicMock()
         mock_dispatcher.start_polling = AsyncMock()
 
@@ -248,6 +249,7 @@ class TestMainStartup:
              patch('main.init_claude_provider'), \
              patch('main.init_redis', new_callable=AsyncMock), \
              patch('main.warm_user_cache', new_callable=AsyncMock), \
+             patch('main.setup_bot_commands', new_callable=AsyncMock), \
              patch('main.init_db'), \
              patch('main.dispose_db', new_callable=AsyncMock):
 
@@ -306,6 +308,7 @@ class TestMainStartup:
         mock_bot = MagicMock()
         mock_bot.get_me = AsyncMock(
             return_value=MagicMock(id=123, username="test"))
+        mock_bot.delete_webhook = AsyncMock()
         mock_dispatcher = MagicMock()
         mock_dispatcher.start_polling = AsyncMock()
 
@@ -317,6 +320,7 @@ class TestMainStartup:
              patch('main.init_db'), \
              patch('main.init_redis', new_callable=AsyncMock), \
              patch('main.warm_user_cache', new_callable=AsyncMock), \
+             patch('main.setup_bot_commands', new_callable=AsyncMock), \
              patch('main.dispose_db', new_callable=AsyncMock):
 
             await main()
@@ -328,6 +332,7 @@ class TestMainStartup:
         mock_bot = MagicMock()
         mock_bot.get_me = AsyncMock(
             return_value=MagicMock(id=123, username="test"))
+        mock_bot.delete_webhook = AsyncMock()
         mock_dispatcher = MagicMock()
         mock_dispatcher.start_polling = AsyncMock()
 
@@ -338,6 +343,7 @@ class TestMainStartup:
              patch('main.init_claude_provider'), \
              patch('main.init_db'), \
              patch('main.init_redis', side_effect=Exception("Redis down")), \
+             patch('main.setup_bot_commands', new_callable=AsyncMock), \
              patch('main.dispose_db', new_callable=AsyncMock):
 
             # Should not raise - Redis failure is non-fatal
@@ -363,6 +369,7 @@ class TestMainLogging:
         mock_bot = MagicMock()
         mock_bot.get_me = AsyncMock(
             return_value=MagicMock(id=123, username="test"))
+        mock_bot.delete_webhook = AsyncMock()
         mock_dispatcher = MagicMock()
         mock_dispatcher.start_polling = AsyncMock()
 
@@ -374,6 +381,7 @@ class TestMainLogging:
              patch('main.init_db'), \
              patch('main.init_redis', new_callable=AsyncMock), \
              patch('main.warm_user_cache', new_callable=AsyncMock), \
+             patch('main.setup_bot_commands', new_callable=AsyncMock), \
              patch('main.dispose_db', new_callable=AsyncMock):
 
             await main()
@@ -398,6 +406,7 @@ class TestDatabaseInit:
         mock_bot = MagicMock()
         mock_bot.get_me = AsyncMock(
             return_value=MagicMock(id=123, username="test"))
+        mock_bot.delete_webhook = AsyncMock()
         mock_dispatcher = MagicMock()
         mock_dispatcher.start_polling = AsyncMock()
         mock_init_db = MagicMock()
@@ -410,6 +419,7 @@ class TestDatabaseInit:
              patch('main.init_db', mock_init_db), \
              patch('main.init_redis', new_callable=AsyncMock), \
              patch('main.warm_user_cache', new_callable=AsyncMock), \
+             patch('main.setup_bot_commands', new_callable=AsyncMock), \
              patch('main.dispose_db', new_callable=AsyncMock):
 
             await main()

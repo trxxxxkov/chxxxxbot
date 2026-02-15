@@ -68,11 +68,17 @@ def mock_message():
     message.chat.type = "private"
     message.text = None
     message.caption = None
-    message.answer = AsyncMock()
     message.date = MagicMock()
     message.date.timestamp.return_value = 1234567890.0
     message.message_thread_id = None
     message.reply_to_message = None
+
+    # answer() returns a bot_message with proper date for cache update
+    bot_message = MagicMock()
+    bot_message.message_id = 99999
+    bot_message.date = MagicMock()
+    bot_message.date.timestamp.return_value = 1234567891.0
+    message.answer = AsyncMock(return_value=bot_message)
     return message
 
 
@@ -101,6 +107,7 @@ def mock_message_repo():
     """Create mock MessageRepository."""
     repo = AsyncMock()
     repo.create_message = AsyncMock()
+    repo.get_message = AsyncMock(return_value=None)  # message doesn't exist yet
     repo.get_thread_messages = AsyncMock(return_value=[])
     return repo
 
@@ -108,6 +115,8 @@ def mock_message_repo():
 @pytest.fixture
 def mock_claude_provider():
     """Create mock Claude provider."""
+    from core.models import TokenUsage
+
     provider = AsyncMock()
     provider.stream_message = AsyncMock()
 
@@ -117,6 +126,20 @@ def mock_claude_provider():
         yield  # makes this an async generator
 
     provider.stream_events = mock_stream_events
+
+    # Return proper TokenUsage so pricing calculations don't fail
+    provider.get_usage = AsyncMock(return_value=TokenUsage(
+        input_tokens=100,
+        output_tokens=50,
+        cache_read_tokens=0,
+        cache_creation_tokens=0,
+        cache_creation_1h_tokens=0,
+        cache_creation_5m_tokens=0,
+        thinking_tokens=0,
+    ))
+    provider.get_stop_reason.return_value = "end_turn"
+    provider.get_thinking_blocks_json.return_value = None
+    provider.get_last_compaction_summary.return_value = None
     return provider
 
 
@@ -200,7 +223,7 @@ async def test_voice_message_transcript_prefix(
         await _process_message_batch(42, [processed])
 
         mock_message_repo.create_message.assert_called()
-        call_kwargs = mock_message_repo.create_message.call_args[1]
+        call_kwargs = mock_message_repo.create_message.call_args_list[0][1]
 
         # ProcessedMessage.get_text_for_db() uses int(duration)
         expected_prefix = "[VOICE MESSAGE - 12s]: Hello, how are you?"
@@ -263,7 +286,7 @@ async def test_image_with_caption(mock_session, mock_message, sample_metadata,
 
         await _process_message_batch(42, [processed])
 
-        call_kwargs = mock_message_repo.create_message.call_args[1]
+        call_kwargs = mock_message_repo.create_message.call_args_list[0][1]
         assert call_kwargs['text_content'] == "Look at this photo!"
 
 
@@ -318,7 +341,7 @@ async def test_image_without_caption(mock_session, mock_message,
 
         await _process_message_batch(42, [processed])
 
-        call_kwargs = mock_message_repo.create_message.call_args[1]
+        call_kwargs = mock_message_repo.create_message.call_args_list[0][1]
         text = call_kwargs['text_content']
 
         assert "📎 User uploaded image: photo.jpg" in text
@@ -368,5 +391,5 @@ async def test_regular_text_message(mock_session, mock_message, sample_metadata,
 
         await _process_message_batch(42, [processed])
 
-        call_kwargs = mock_message_repo.create_message.call_args[1]
+        call_kwargs = mock_message_repo.create_message.call_args_list[0][1]
         assert call_kwargs['text_content'] == "Just a regular text message"
