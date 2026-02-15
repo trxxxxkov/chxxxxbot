@@ -33,13 +33,26 @@ Grafana comes with a pre-built dashboard for user activity analysis and log expl
 
 ```bash
 # Export database (full backup)
-docker compose exec -T postgres pg_dump -U postgres postgres > backup.sql
+docker compose exec -T postgres pg_dump -U postgres --clean postgres > backup.sql
 
-# Import database (restore from backup)
+# Import database (restore from backup on a new instance)
+# 1. Stop the bot (so migrations don't interfere)
+docker compose stop bot
+
+# 2. Drop and recreate the database
+docker compose exec -T postgres dropdb -U postgres postgres
+docker compose exec -T postgres createdb -U postgres postgres
+
+# 3. Restore from backup
 cat backup.sql | docker compose exec -T postgres psql -U postgres
+
+# 4. Start the bot (will apply any newer migrations automatically)
+docker compose start bot
 ```
 
-After importing an old backup, migrations auto-apply on next bot start.
+**Important:** The `--clean` flag in `pg_dump` adds DROP statements before CREATE,
+which allows restoring into a non-empty database without errors. If your backup was
+made without `--clean`, you must drop/recreate the database before restoring (steps 1-2).
 
 ---
 
