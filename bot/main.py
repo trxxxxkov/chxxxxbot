@@ -15,6 +15,7 @@ from db.engine import dispose_db
 from db.engine import get_pool_stats
 from db.engine import get_session
 from db.engine import init_db
+from telegram.commands import setup_bot_commands
 from telegram.handlers.claude import init_claude_provider
 from telegram.loader import create_bot
 from telegram.loader import create_dispatcher
@@ -418,6 +419,10 @@ async def main() -> None:
         logger.debug("bot_info_loaded",
                      bot_id=bot_info.id,
                      bot_username=bot_info.username)
+
+        # Register bot commands for "/" menu (per language + admin scope)
+        await setup_bot_commands(bot, bot_config.PRIVILEGED_USERS)
+        logger.debug("bot_commands_registered")
 
         # Start metrics server (Phase 3.1: Prometheus integration)
         await start_metrics_server(host='0.0.0.0', port=8080)

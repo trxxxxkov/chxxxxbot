@@ -653,60 +653,6 @@ MESSAGES: MessageDict = {
         "en": "\n🔧 <b>Admin</b>\n",
         "ru": "\n🔧 <b>Администрирование</b>\n",
     },
-    "help.cmd_start": {
-        "en": "/start — Start the bot\n",
-        "ru": "/start — Начать работу с ботом\n",
-    },
-    "help.cmd_help": {
-        "en": "/help — Show this help\n",
-        "ru": "/help — Показать эту справку\n",
-    },
-    "help.cmd_stop": {
-        "en": "/stop — Stop current generation\n",
-        "ru": "/stop — Остановить текущую генерацию\n",
-    },
-    "help.cmd_clear": {
-        "en": "/clear — Clear history / delete topics\n",
-        "ru": "/clear — Очистить историю / удалить топики\n",
-    },
-    "help.cmd_model": {
-        "en": "/model — Select AI model (Haiku / Sonnet / Opus)\n",
-        "ru": "/model — Выбрать модель ИИ (Haiku / Sonnet / Opus)\n",
-    },
-    "help.cmd_personality": {
-        "en": "/personality — Set custom AI personality\n",
-        "ru": "/personality — Настроить персональные инструкции для ИИ\n",
-    },
-    "help.cmd_pay": {
-        "en": "/pay — Top up balance (Telegram Stars)\n",
-        "ru": "/pay — Пополнить баланс (Telegram Stars)\n",
-    },
-    "help.cmd_balance": {
-        "en": "/balance — Check balance and history\n",
-        "ru": "/balance — Проверить баланс и историю операций\n",
-    },
-    "help.cmd_refund": {
-        "en": "/refund — Request payment refund\n",
-        "ru": "/refund — Запросить возврат платежа\n",
-    },
-    "help.cmd_topup": {
-        "en":
-            "/topup &lt;user&gt; &lt;amount&gt; — Adjust user balance\n",
-        "ru":
-            "/topup &lt;user&gt; &lt;сумма&gt; — Пополнить/списать баланс пользователя\n",
-    },
-    "help.cmd_set_margin": {
-        "en": "/set_margin &lt;value&gt; — Set owner margin\n",
-        "ru": "/set_margin &lt;значение&gt; — Настроить маржу владельца\n",
-    },
-    "help.cmd_announce": {
-        "en": "/announce [@users] — Broadcast messages to users\n",
-        "ru": "/announce [@users] — Рассылка сообщений пользователям\n",
-    },
-    "help.cmd_set_cache_subsidy": {
-        "en": "/set_cache_subsidy [on|off] — Toggle cache write cost subsidy\n",
-        "ru": "/set_cache_subsidy [on|off] — Субсидия стоимости записи кэша\n",
-    },
     "help.contact": {
         "en": "\n💬 Questions? Contact @{username}",
         "ru": "\n💬 Вопросы? Обращайтесь к @{username}",

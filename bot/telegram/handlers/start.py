@@ -12,6 +12,7 @@ from db.repositories.user_repository import UserRepository
 from i18n import get_lang
 from i18n import get_text
 from sqlalchemy.ext.asyncio import AsyncSession
+from telegram.commands import build_help_text
 from telegram.handlers.admin import is_privileged
 from utils.bot_response import log_bot_response
 from utils.structured_logging import get_logger
@@ -101,34 +102,8 @@ async def help_handler(
 
     show_admin = user_id is not None and is_privileged(user_id)
 
-    # Build help text
-    parts = [get_text("help.header", lang)]
-
-    # Basic commands
-    parts.append(get_text("help.section_basic", lang))
-    parts.append(get_text("help.cmd_start", lang))
-    parts.append(get_text("help.cmd_help", lang))
-    parts.append(get_text("help.cmd_stop", lang))
-    parts.append(get_text("help.cmd_clear", lang))
-
-    # Model & Settings
-    parts.append(get_text("help.section_model", lang))
-    parts.append(get_text("help.cmd_model", lang))
-    parts.append(get_text("help.cmd_personality", lang))
-
-    # Payment
-    parts.append(get_text("help.section_payment", lang))
-    parts.append(get_text("help.cmd_pay", lang))
-    parts.append(get_text("help.cmd_balance", lang))
-    parts.append(get_text("help.cmd_refund", lang))
-
-    # Admin (only for privileged users)
-    if show_admin:
-        parts.append(get_text("help.section_admin", lang))
-        parts.append(get_text("help.cmd_topup", lang))
-        parts.append(get_text("help.cmd_set_margin", lang))
-        parts.append(get_text("help.cmd_set_cache_subsidy", lang))
-        parts.append(get_text("help.cmd_announce", lang))
+    # Build help text from command registry
+    parts = [build_help_text(lang, show_admin=show_admin)]
 
     # Contact — first privileged user's username
     contact_username = await _get_contact_username(session)
