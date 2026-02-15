@@ -75,15 +75,13 @@ class BotCmd:
 
 COMMANDS: tuple[BotCmd, ...] = (
     # --- Basic ---
-    BotCmd("help", "Show this help",
-           "Показать эту справку", Section.BASIC),
     BotCmd("stop", "Stop current generation",
            "Остановить текущую генерацию", Section.BASIC),
     BotCmd("clear", "Clear history / delete topics",
            "Очистить историю / удалить топики", Section.BASIC),
     # --- Model & Settings ---
-    BotCmd("model", "Select AI model (Haiku / Sonnet / Opus)",
-           "Выбрать модель ИИ (Haiku / Sonnet / Opus)", Section.MODEL),
+    BotCmd("model", "Select AI model",
+           "Выбрать модель ИИ", Section.MODEL),
     BotCmd("personality", "Set custom AI personality",
            "Настроить персональные инструкции для ИИ", Section.MODEL),
     # --- Payment ---
@@ -93,6 +91,8 @@ COMMANDS: tuple[BotCmd, ...] = (
            "Проверить баланс и историю операций", Section.PAYMENT),
     BotCmd("refund", "Request payment refund",
            "Запросить возврат платежа", Section.PAYMENT),
+    BotCmd("help", "Show all commands",
+           "Показать все команды", Section.PAYMENT),
     # --- Admin ---
     BotCmd("topup", "Adjust user balance",
            "Пополнить/списать баланс пользователя",

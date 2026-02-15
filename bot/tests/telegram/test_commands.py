@@ -156,12 +156,12 @@ class TestBuildHelpText:
 
     def test_russian_descriptions(self):
         text = build_help_text("ru")
-        assert "Показать эту справку" in text
+        assert "Показать все команды" in text
         assert "Остановить текущую генерацию" in text
 
     def test_english_descriptions(self):
         text = build_help_text("en")
-        assert "Show this help" in text
+        assert "Show all commands" in text
         assert "Stop current generation" in text
 
     def test_section_headers_present(self):
