@@ -231,7 +231,7 @@ class ToolExecutor:
 
                 # Charge user for tool cost
                 # Skip if tool already charged internally (e.g., self_critique)
-                if "cost_usd" in clean_result and not clean_result.get(
+                if "cost_usd" in clean_result and not raw_result.get(
                         "_already_charged"):
                     cost_usd = Decimal(str(clean_result["cost_usd"]))
                     await charge_for_tool(
