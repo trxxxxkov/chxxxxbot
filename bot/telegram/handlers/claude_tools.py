@@ -82,7 +82,6 @@ async def charge_for_tool(
             description=f"Tool: {tool_name}, cost ${result['cost_usd']}",
             related_message_id=message_id,
         )
-        await session.commit()
 
         logger.info("tools.loop.user_charged_for_tool",
                     user_id=user_id,
@@ -90,6 +89,9 @@ async def charge_for_tool(
                     cost_usd=float(tool_cost_usd))
 
     except Exception as e:  # pylint: disable=broad-exception-caught
+        # Rollback session to clear PendingRollbackError state,
+        # so the caller can continue using this session
+        await session.rollback()
         logger.error("stream.tool_charge_failed",
                      user_id=user_id,
                      tool_name=tool_name,

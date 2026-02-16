@@ -5,6 +5,7 @@ Phase 2.1: Payment system tests for BalanceService balance management.
 
 from decimal import Decimal
 import random
+from unittest.mock import AsyncMock, patch
 
 from db.models.balance_operation import BalanceOperation
 from db.models.balance_operation import OperationType
@@ -18,6 +19,7 @@ from db.repositories.user_repository import UserRepository
 import pytest
 from services.balance_service import BalanceService
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 
 class TestBalanceService:
@@ -428,3 +430,78 @@ class TestBalanceService:
         # All operations should be consistent
         for operation in history:
             assert operation.verify_balance_consistency() is True
+
+
+class TestChargeUserIntegrityRetry:
+    """Test charge_user retry on IntegrityError (sequence desync)."""
+
+    @pytest.mark.asyncio
+    async def test_charge_retries_on_integrity_error(self):
+        """Test charge_user retries once on IntegrityError.
+
+        Regression test: UniqueViolationError on balance_operations_pkey
+        (sequence desync after backup/restore) should be retried.
+        """
+        session = AsyncMock()
+        user_repo = AsyncMock()
+        balance_op_repo = AsyncMock()
+
+        # Mock user with balance
+        mock_user = AsyncMock()
+        mock_user.id = 123
+        mock_user.balance = Decimal("5.0000")
+        user_repo.get_by_id_for_update.return_value = mock_user
+
+        # First commit fails with IntegrityError, second succeeds
+        session.commit = AsyncMock(side_effect=[
+            IntegrityError(
+                statement="INSERT",
+                params={},
+                orig=Exception("duplicate key"),
+            ),
+            None,  # Retry succeeds
+        ])
+
+        service = BalanceService(session, user_repo, balance_op_repo)
+
+        with patch("services.balance_service.update_cached_balance"):
+            balance = await service.charge_user(
+                user_id=123,
+                amount=Decimal("0.05"),
+                description="Test charge",
+            )
+
+        # Should have been called twice (initial + retry)
+        assert session.commit.await_count == 2
+        # Should rollback once (after first failure)
+        session.rollback.assert_awaited_once()
+        # Balance should still be correctly calculated
+        assert balance == Decimal("4.9500")
+
+    @pytest.mark.asyncio
+    async def test_charge_raises_on_second_integrity_error(self):
+        """Test charge_user raises if retry also fails with IntegrityError."""
+        session = AsyncMock()
+        user_repo = AsyncMock()
+        balance_op_repo = AsyncMock()
+
+        mock_user = AsyncMock()
+        mock_user.id = 123
+        mock_user.balance = Decimal("5.0000")
+        user_repo.get_by_id_for_update.return_value = mock_user
+
+        # Both attempts fail
+        session.commit = AsyncMock(side_effect=IntegrityError(
+            statement="INSERT",
+            params={},
+            orig=Exception("duplicate key"),
+        ))
+
+        service = BalanceService(session, user_repo, balance_op_repo)
+
+        with pytest.raises(IntegrityError):
+            await service.charge_user(
+                user_id=123,
+                amount=Decimal("0.05"),
+                description="Test charge",
+            )

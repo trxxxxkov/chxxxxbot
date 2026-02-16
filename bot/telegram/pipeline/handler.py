@@ -402,8 +402,6 @@ async def _charge_transcription(
             related_message_id=message_id,
         )
 
-        await session.commit()
-
         logger.info(
             "unified_handler.transcription_charged",
             user_id=user_id,
@@ -422,6 +420,8 @@ async def _charge_transcription(
         )
 
     except Exception as charge_error:  # pylint: disable=broad-exception-caught
+        # Rollback session to clear PendingRollbackError state
+        await session.rollback()
         logger.error(
             "unified_handler.charge_failed",
             user_id=user_id,

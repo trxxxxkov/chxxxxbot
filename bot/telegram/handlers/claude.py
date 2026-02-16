@@ -851,6 +851,7 @@ async def _process_batch_with_session(
                         )
 
                     except Exception as e:  # pylint: disable=broad-exception-caught
+                        await session.rollback()
                         logger.error(
                             "claude_handler.cancelled_charge_error",
                             user_id=user_id,
@@ -1211,6 +1212,9 @@ async def _process_batch_with_session(
                 )
 
             except Exception as e:  # pylint: disable=broad-exception-caught
+                # Rollback session to clear PendingRollbackError state,
+                # so subsequent operations (topic naming, final commit) work
+                await session.rollback()
                 logger.error(
                     "claude_handler.charge_user_error",
                     user_id=user_id,

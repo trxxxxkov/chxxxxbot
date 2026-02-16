@@ -20,6 +20,7 @@ from db.models.balance_operation import OperationType
 from db.repositories.balance_operation_repository import \
     BalanceOperationRepository
 from db.repositories.user_repository import UserRepository
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from utils.structured_logging import get_logger
 
@@ -190,19 +191,37 @@ class BalanceService:
                                              rounding=ROUND_HALF_UP)
 
         # Create balance operation record (CRITICAL for audit)
-        operation = BalanceOperation(
-            user_id=user_id,
-            operation_type=OperationType.USAGE,
-            amount=-amount,  # Negative = deduction
-            balance_before=balance_before,
-            balance_after=balance_after,
-            related_message_id=related_message_id,
-            description=description,
-        )
-        self.session.add(operation)
+        # Retry once on IntegrityError (sequence desync after backup/restore)
+        for attempt in range(2):
+            operation = BalanceOperation(
+                user_id=user_id,
+                operation_type=OperationType.USAGE,
+                amount=-amount,  # Negative = deduction
+                balance_before=balance_before,
+                balance_after=balance_after,
+                related_message_id=related_message_id,
+                description=description,
+            )
+            self.session.add(operation)
 
-        # Commit transaction
-        await self.session.commit()
+            try:
+                await self.session.commit()
+                break
+            except IntegrityError as e:
+                await self.session.rollback()
+                if attempt == 0:
+                    logger.warning(
+                        "balance.charge_integrity_retry",
+                        user_id=user_id,
+                        error=str(e),
+                        msg="Sequence desync detected, retrying",
+                    )
+                    # Re-fetch user after rollback (detached from session)
+                    user = await self.user_repo.get_by_id_for_update(user_id)
+                    user.balance = balance_after.quantize(
+                        Decimal("0.0001"), rounding=ROUND_HALF_UP)
+                    continue
+                raise
 
         logger.info(
             "balance.user_charged",
@@ -313,19 +332,37 @@ class BalanceService:
             description = (f"Admin balance adjustment: ${abs(amount)} {action} "
                            f"by admin {admin_user_id}")
 
-        operation = BalanceOperation(
-            user_id=user.id,
-            operation_type=OperationType.ADMIN_TOPUP,
-            amount=amount,
-            balance_before=balance_before,
-            balance_after=balance_after,
-            admin_user_id=admin_user_id,
-            description=description,
-        )
-        self.session.add(operation)
+        # Retry once on IntegrityError (sequence desync after backup/restore)
+        for attempt in range(2):
+            operation = BalanceOperation(
+                user_id=user.id,
+                operation_type=OperationType.ADMIN_TOPUP,
+                amount=amount,
+                balance_before=balance_before,
+                balance_after=balance_after,
+                admin_user_id=admin_user_id,
+                description=description,
+            )
+            self.session.add(operation)
 
-        # Commit transaction
-        await self.session.commit()
+            try:
+                await self.session.commit()
+                break
+            except IntegrityError as e:
+                await self.session.rollback()
+                if attempt == 0:
+                    logger.warning(
+                        "balance.admin_topup_integrity_retry",
+                        user_id=user.id,
+                        error=str(e),
+                        msg="Sequence desync detected, retrying",
+                    )
+                    # Re-fetch user after rollback (detached from session)
+                    user = await self.user_repo.get_by_id(user.id)
+                    user.balance = balance_after.quantize(
+                        Decimal("0.0001"), rounding=ROUND_HALF_UP)
+                    continue
+                raise
 
         logger.info(
             "balance.admin_topup_completed",
