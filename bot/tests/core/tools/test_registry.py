@@ -80,7 +80,7 @@ class TestWebSearchTool:
 
     def test_web_search_structure(self):
         """Test that WEB_SEARCH_TOOL has correct structure."""
-        assert WEB_SEARCH_TOOL["type"] == "web_search_20250305"
+        assert WEB_SEARCH_TOOL["type"] == "web_search_20260209"
         assert WEB_SEARCH_TOOL["name"] == "web_search"
 
     def test_web_search_in_definitions(self):
@@ -98,7 +98,7 @@ class TestWebFetchTool:
 
     def test_web_fetch_structure(self):
         """Test that WEB_FETCH_TOOL has correct structure."""
-        assert WEB_FETCH_TOOL["type"] == "web_fetch_20250910"
+        assert WEB_FETCH_TOOL["type"] == "web_fetch_20260209"
         assert WEB_FETCH_TOOL["name"] == "web_fetch"
 
     def test_web_fetch_in_definitions(self):

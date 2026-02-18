@@ -28,6 +28,20 @@ from utils.structured_logging import get_logger
 logger = get_logger(__name__)
 
 
+def _is_overloaded_body(e: anthropic.APIStatusError) -> bool:
+    """Check if an APIStatusError contains an overloaded_error in its body.
+
+    Mid-stream SSE errors arrive with HTTP 200 (stream already established),
+    so status_code is not 529. The error type is only in the JSON body.
+    """
+    body = getattr(e, 'body', None)
+    if isinstance(body, dict):
+        error_info = body.get('error')
+        if isinstance(error_info, dict):
+            return error_info.get('type') == 'overloaded_error'
+    return False
+
+
 def _filter_empty_messages(messages: list) -> list:
     """Filter out messages with empty content.
 
@@ -77,7 +91,7 @@ class ClaudeProvider(LLMProvider):
         # - context-management: Context editing (thinking block clearing)
         # - compact: Server-side compaction (Opus 4.6)
         # - files-api: Files API for multimodal content
-        # - web-fetch: Server-side web page/PDF fetching tool
+        # - code-execution-web-tools: Dynamic filtering for web search/fetch
         # Note: effort, web-search, extended-cache-ttl are now GA
         self.client = anthropic.AsyncAnthropic(
             api_key=api_key,
@@ -86,7 +100,7 @@ class ClaudeProvider(LLMProvider):
                                    "context-management-2025-06-27,"
                                    "compact-2026-01-12,"
                                    "files-api-2025-04-14,"
-                                   "web-fetch-2025-09-10")
+                                   "code-execution-web-tools-2026-02-09")
             })
         self.last_usage: Optional[TokenUsage] = None
         self.last_message: Optional[
@@ -98,7 +112,7 @@ class ClaudeProvider(LLMProvider):
         logger.debug("claude_provider.initialized",
                      beta_features=[
                          "interleaved-thinking", "context-management",
-                         "compact", "files-api", "web-fetch"
+                         "compact", "files-api", "code-execution-web-tools"
                      ])
 
     # pylint: disable=too-many-locals,too-many-branches,too-many-statements
@@ -365,7 +379,7 @@ class ClaudeProvider(LLMProvider):
         # Prepare request parameters (use exact model_id for API)
         api_params = {
             "model":
-                model_config.model_id,  # e.g., "claude-sonnet-4-5-20250929"
+                model_config.model_id,  # e.g., "claude-sonnet-4-6"
             "max_tokens": request.max_tokens,
             "temperature": request.temperature,
             "messages": api_messages,
@@ -772,11 +786,11 @@ class ClaudeProvider(LLMProvider):
         }
         logger.debug("claude.compaction.enabled", trigger_tokens=100_000)
 
-    def _sanitize_block_for_api(self, block_dict: dict) -> dict:
+    @staticmethod
+    def _sanitize_block_for_api(block_dict: dict) -> dict:
         """Remove fields that API returns but doesn't accept on input.
 
-        Server-side tool results (web_search, web_fetch) include 'citations'
-        and 'text' fields that must be stripped before sending back to API.
+        Delegates to shared serialize_content_block utility (DRY).
 
         Args:
             block_dict: Serialized content block.
@@ -784,30 +798,8 @@ class ClaudeProvider(LLMProvider):
         Returns:
             Sanitized block dict safe to send to API.
         """
-        block_type = block_dict.get("type", "")
-
-        # Remove fields API doesn't accept from server tool result blocks
-        if block_type in ("server_tool_result", "web_search_tool_result",
-                          "web_fetch_tool_result"):
-            block_dict = block_dict.copy()
-            block_dict.pop("citations", None)
-            block_dict.pop("text", None)  # web_fetch_tool_result has 'text'
-
-        # Also check nested content for server tool results
-        if "content" in block_dict and isinstance(block_dict["content"], list):
-            cleaned_content = []
-            for item in block_dict["content"]:
-                if isinstance(item, dict):
-                    item_copy = item.copy()
-                    item_copy.pop("citations", None)
-                    item_copy.pop("text", None)
-                    cleaned_content.append(item_copy)
-                else:
-                    cleaned_content.append(item)
-            block_dict = block_dict.copy()
-            block_dict["content"] = cleaned_content
-
-        return block_dict
+        from utils.serialization import serialize_content_block
+        return serialize_content_block(block_dict)
 
     def get_thinking_blocks_json(self) -> Optional[str]:
         """Get full assistant content blocks as JSON for context preservation.
@@ -991,11 +983,13 @@ class ClaudeProvider(LLMProvider):
 
         max_retries = 3
         retry_delays = [2, 5, 10]  # seconds
+        has_yielded = False  # Track if events were yielded to caller
 
         for attempt in range(max_retries + 1):
             try:
                 async with self.client.messages.stream(**api_params) as stream:
                     async for event in stream:
+                        has_yielded = True
                         # Content block start - detect block type
                         if event.type == "content_block_start":
                             block = event.content_block
@@ -1147,8 +1141,21 @@ class ClaudeProvider(LLMProvider):
                 return
 
             except anthropic.APIStatusError as e:
-                if e.status_code == 529:
-                    # Overloaded — retry with backoff
+                # Detect overloaded: HTTP 529 (pre-stream) or mid-stream
+                # SSE error with overloaded_error type (HTTP status is 200)
+                is_overloaded = (e.status_code == 529 or
+                                 _is_overloaded_body(e))
+                if is_overloaded:
+                    if has_yielded:
+                        # Mid-stream error after yielding events to caller —
+                        # cannot retry because partial data was already sent
+                        logger.warning(
+                            "claude.stream_events.overloaded_midstream",
+                            attempt=attempt + 1,
+                            error=str(e))
+                        raise OverloadedError(
+                            "Claude API overloaded mid-stream") from e
+                    # Pre-stream error — safe to retry
                     if attempt < max_retries:
                         delay = retry_delays[attempt]
                         logger.warning("claude.stream_events.overloaded_retry",

@@ -189,7 +189,7 @@ async def warm_user_cache(logger) -> int:
                 success = await cache_user(
                     user_id=user.id,
                     balance=user.balance,
-                    model_id=user.model_id or "claude-sonnet-4-5-20250929",
+                    model_id=user.model_id or "claude-sonnet-4-6",
                     first_name=user.first_name or "",
                     username=user.username,
                     language_code=user.language_code,

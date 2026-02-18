@@ -18,10 +18,13 @@ API_OUTPUT_ONLY_FIELDS = frozenset({
 })
 
 # Block types that have additional output-only fields
+# Includes dynamic filtering result blocks from web_search/web_fetch v2
 SERVER_TOOL_BLOCK_TYPES = frozenset({
     "server_tool_result",
     "web_search_tool_result",
     "web_fetch_tool_result",
+    "bash_code_execution_tool_result",
+    "text_editor_code_execution_tool_result",
 })
 
 

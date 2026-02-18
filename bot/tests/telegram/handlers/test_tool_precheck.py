@@ -62,7 +62,7 @@ class TestGetUserBalance:
         """Returns balance from Redis cache when available."""
         cached_data = {
             "balance": "1.50",
-            "model_id": "claude-sonnet-4-5-20250929",
+            "model_id": "claude-sonnet-4-6",
             "first_name": "Test",
             "username": None,
             "cached_at": 1234567890.0,

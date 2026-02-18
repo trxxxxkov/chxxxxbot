@@ -51,7 +51,7 @@ logger = get_logger(__name__)
 WEB_SEARCH_CONFIG = ToolConfig(
     name="web_search",
     definition={
-        "type": "web_search_20250305",
+        "type": "web_search_20260209",
         "name": "web_search",
         "max_uses": 100,  # Max searches per request
     },
@@ -63,7 +63,7 @@ WEB_SEARCH_CONFIG = ToolConfig(
 WEB_FETCH_CONFIG = ToolConfig(
     name="web_fetch",
     definition={
-        "type": "web_fetch_20250910",
+        "type": "web_fetch_20260209",
         "name": "web_fetch",
         "max_uses": 100,  # Max fetches per request
         "citations": {

@@ -102,7 +102,7 @@ def calculate_claude_cost(
     """Calculate Claude API cost.
 
     Args:
-        model_id: Model identifier (e.g., 'claude-sonnet-4-5-20250929').
+        model_id: Model identifier (e.g., 'claude-sonnet-4-6').
         input_tokens: Number of input tokens.
         output_tokens: Number of output tokens.
         cache_read_tokens: Number of cache read tokens.
@@ -187,7 +187,7 @@ def calculate_cache_write_cost(
     """Calculate only the cache write (creation) portion of Claude API cost.
 
     Args:
-        model_id: Model identifier (e.g., 'claude-sonnet-4-5-20250929').
+        model_id: Model identifier (e.g., 'claude-sonnet-4-6').
         cache_creation_tokens: Number of cache creation tokens (total).
         cache_ttl: Fallback TTL when breakdown is not available.
         cache_creation_1h_tokens: 1h TTL cache creation tokens.

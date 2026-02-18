@@ -597,7 +597,7 @@ def mock_claude_message():
     message.type = "message"
     message.role = "assistant"
     message.content = [MagicMock(type="text", text="Hello! How can I help?")]
-    message.model = "claude-sonnet-4-5-20250929"
+    message.model = "claude-sonnet-4-6"
     message.stop_reason = "end_turn"
     message.usage = MagicMock(input_tokens=100, output_tokens=50)
 
@@ -616,7 +616,7 @@ def mock_claude_stream_events():
     events = [
         MagicMock(type="message_start",
                   message=MagicMock(id="msg_123",
-                                    model="claude-sonnet-4-5-20250929")),
+                                    model="claude-sonnet-4-6")),
         MagicMock(type="content_block_start",
                   index=0,
                   content_block=MagicMock(type="text", text="")),
@@ -648,7 +648,7 @@ def mock_claude_tool_use_events():
     events = [
         MagicMock(type="message_start",
                   message=MagicMock(id="msg_123",
-                                    model="claude-sonnet-4-5-20250929")),
+                                    model="claude-sonnet-4-6")),
         MagicMock(type="content_block_start",
                   index=0,
                   content_block=MagicMock(type="tool_use",

@@ -81,6 +81,85 @@ class TestExceptionClasses:
 
         assert "Request timed out" in str(error)
 
+    def test_overloaded_error(self):
+        """Test OverloadedError attributes."""
+        from core.exceptions import OverloadedError
+
+        error = OverloadedError(message="API overloaded")
+
+        assert error.recoverable is True
+        assert "overloaded" in error.user_message.lower()
+        assert error.log_level == "warning"
+        assert "API overloaded" in str(error)
+
+
+# ============================================================================
+# Tests for _is_overloaded_body helper
+# ============================================================================
+
+
+class TestIsOverloadedBody:
+    """Tests for mid-stream overloaded error detection."""
+
+    def test_overloaded_body_detected(self):
+        """Test detection of overloaded_error in APIStatusError body."""
+        from core.claude.client import _is_overloaded_body
+
+        error = MagicMock(spec=["body"])
+        error.body = {
+            "type": "error",
+            "error": {
+                "type": "overloaded_error",
+                "message": "Overloaded",
+            },
+        }
+        assert _is_overloaded_body(error) is True
+
+    def test_non_overloaded_body(self):
+        """Test non-overloaded error body returns False."""
+        from core.claude.client import _is_overloaded_body
+
+        error = MagicMock(spec=["body"])
+        error.body = {
+            "type": "error",
+            "error": {
+                "type": "invalid_request_error",
+                "message": "Bad request",
+            },
+        }
+        assert _is_overloaded_body(error) is False
+
+    def test_no_body_attribute(self):
+        """Test error without body attribute returns False."""
+        from core.claude.client import _is_overloaded_body
+
+        error = MagicMock(spec=[])
+        assert _is_overloaded_body(error) is False
+
+    def test_non_dict_body(self):
+        """Test error with non-dict body returns False."""
+        from core.claude.client import _is_overloaded_body
+
+        error = MagicMock(spec=["body"])
+        error.body = "string error"
+        assert _is_overloaded_body(error) is False
+
+    def test_body_without_error_key(self):
+        """Test body dict without 'error' key returns False."""
+        from core.claude.client import _is_overloaded_body
+
+        error = MagicMock(spec=["body"])
+        error.body = {"type": "error"}
+        assert _is_overloaded_body(error) is False
+
+    def test_error_is_not_dict(self):
+        """Test body with non-dict 'error' value returns False."""
+        from core.claude.client import _is_overloaded_body
+
+        error = MagicMock(spec=["body"])
+        error.body = {"error": "string"}
+        assert _is_overloaded_body(error) is False
+
 
 # ============================================================================
 # Tests for StreamResult

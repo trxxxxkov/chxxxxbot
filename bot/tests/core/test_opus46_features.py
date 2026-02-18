@@ -56,12 +56,12 @@ def _opus_config() -> ModelConfig:
 
 
 def _sonnet_config() -> ModelConfig:
-    """Create Sonnet 4.5 model config (no adaptive/compaction)."""
+    """Create Sonnet 4.6 model config (adaptive thinking + effort, no compaction)."""
     return ModelConfig(
         provider="claude",
-        model_id="claude-sonnet-4-5-20250929",
+        model_id="claude-sonnet-4-6",
         alias="sonnet",
-        display_name="Claude Sonnet 4.5",
+        display_name="Claude Sonnet 4.6",
         context_window=200_000,
         max_output=64_000,
         pricing_input=3.0,
@@ -73,7 +73,34 @@ def _sonnet_config() -> ModelConfig:
         capabilities={
             "extended_thinking": True,
             "interleaved_thinking": True,
-            "effort": False,
+            "adaptive_thinking": True,
+            "effort": True,
+            "context_awareness": True,
+            "vision": True,
+            "streaming": True,
+            "prompt_caching": True,
+        },
+    )
+
+
+def _haiku_config() -> ModelConfig:
+    """Create Haiku 4.5 model config (no adaptive/effort/compaction)."""
+    return ModelConfig(
+        provider="claude",
+        model_id="claude-haiku-4-5-20251001",
+        alias="haiku",
+        display_name="Claude Haiku 4.5",
+        context_window=200_000,
+        max_output=64_000,
+        pricing_input=1.0,
+        pricing_output=5.0,
+        pricing_cache_write_5m=1.25,
+        pricing_cache_write_1h=2.0,
+        pricing_cache_read=0.10,
+        latency_tier="fastest",
+        capabilities={
+            "extended_thinking": True,
+            "interleaved_thinking": True,
             "context_awareness": True,
             "vision": True,
             "streaming": True,
@@ -134,45 +161,8 @@ class TestAdaptiveThinking:
         assert call_args["thinking"] == {"type": "adaptive"}
 
     @pytest.mark.asyncio
-    async def test_get_message_uses_manual_for_sonnet(self):
-        """Sonnet should use manual thinking only with explicit budget."""
-        from core.claude.client import ClaudeProvider
-
-        provider = ClaudeProvider.__new__(ClaudeProvider)
-        provider.client = AsyncMock()
-        provider.last_usage = None
-        provider.last_message = None
-        provider.last_thinking = None
-        provider.last_compaction = None
-
-        mock_response = Mock()
-        mock_response.content = [Mock(type="text", text="Hello")]
-        mock_response.usage = Mock(
-            input_tokens=100,
-            output_tokens=50,
-            cache_read_input_tokens=0,
-            cache_creation_input_tokens=0,
-            thinking_tokens=0,
-            server_tool_use=None,
-        )
-        mock_response.stop_reason = "end_turn"
-        provider.client.messages.create = AsyncMock(return_value=mock_response)
-
-        with patch("core.claude.client.get_model",
-                   return_value=_sonnet_config()):
-            request = _make_request(model="claude:sonnet",
-                                    thinking_budget=16000)
-            await provider.get_message(request)
-
-        call_args = provider.client.messages.create.call_args[1]
-        assert call_args["thinking"] == {
-            "type": "enabled",
-            "budget_tokens": 16000
-        }
-
-    @pytest.mark.asyncio
-    async def test_get_message_no_thinking_for_sonnet_without_budget(self):
-        """Sonnet without budget should not have thinking params."""
+    async def test_get_message_uses_adaptive_for_sonnet(self):
+        """Sonnet 4.6 should also use adaptive thinking (same as Opus)."""
         from core.claude.client import ClaudeProvider
 
         provider = ClaudeProvider.__new__(ClaudeProvider)
@@ -198,6 +188,76 @@ class TestAdaptiveThinking:
         with patch("core.claude.client.get_model",
                    return_value=_sonnet_config()):
             request = _make_request(model="claude:sonnet")
+            await provider.get_message(request)
+
+        call_args = provider.client.messages.create.call_args[1]
+        assert call_args["thinking"] == {"type": "adaptive"}
+
+    @pytest.mark.asyncio
+    async def test_get_message_uses_manual_for_haiku(self):
+        """Haiku should use manual thinking only with explicit budget."""
+        from core.claude.client import ClaudeProvider
+
+        provider = ClaudeProvider.__new__(ClaudeProvider)
+        provider.client = AsyncMock()
+        provider.last_usage = None
+        provider.last_message = None
+        provider.last_thinking = None
+        provider.last_compaction = None
+
+        mock_response = Mock()
+        mock_response.content = [Mock(type="text", text="Hello")]
+        mock_response.usage = Mock(
+            input_tokens=100,
+            output_tokens=50,
+            cache_read_input_tokens=0,
+            cache_creation_input_tokens=0,
+            thinking_tokens=0,
+            server_tool_use=None,
+        )
+        mock_response.stop_reason = "end_turn"
+        provider.client.messages.create = AsyncMock(return_value=mock_response)
+
+        with patch("core.claude.client.get_model",
+                   return_value=_haiku_config()):
+            request = _make_request(model="claude:haiku",
+                                    thinking_budget=16000)
+            await provider.get_message(request)
+
+        call_args = provider.client.messages.create.call_args[1]
+        assert call_args["thinking"] == {
+            "type": "enabled",
+            "budget_tokens": 16000
+        }
+
+    @pytest.mark.asyncio
+    async def test_get_message_no_thinking_for_haiku_without_budget(self):
+        """Haiku without budget should not have thinking params."""
+        from core.claude.client import ClaudeProvider
+
+        provider = ClaudeProvider.__new__(ClaudeProvider)
+        provider.client = AsyncMock()
+        provider.last_usage = None
+        provider.last_message = None
+        provider.last_thinking = None
+        provider.last_compaction = None
+
+        mock_response = Mock()
+        mock_response.content = [Mock(type="text", text="Hello")]
+        mock_response.usage = Mock(
+            input_tokens=100,
+            output_tokens=50,
+            cache_read_input_tokens=0,
+            cache_creation_input_tokens=0,
+            thinking_tokens=0,
+            server_tool_use=None,
+        )
+        mock_response.stop_reason = "end_turn"
+        provider.client.messages.create = AsyncMock(return_value=mock_response)
+
+        with patch("core.claude.client.get_model",
+                   return_value=_haiku_config()):
+            request = _make_request(model="claude:haiku")
             await provider.get_message(request)
 
         call_args = provider.client.messages.create.call_args[1]
@@ -247,8 +307,8 @@ class TestEffortOutputConfig:
             "effort") is None  # No top-level effort
 
     @pytest.mark.asyncio
-    async def test_sonnet_no_effort(self):
-        """Sonnet should not have effort param (effort capability is False)."""
+    async def test_sonnet_uses_effort(self):
+        """Sonnet 4.6 should have effort param (effort capability is True)."""
         from core.claude.client import ClaudeProvider
 
         provider = ClaudeProvider.__new__(ClaudeProvider)
@@ -274,6 +334,39 @@ class TestEffortOutputConfig:
         with patch("core.claude.client.get_model",
                    return_value=_sonnet_config()):
             request = _make_request(model="claude:sonnet")
+            await provider.get_message(request)
+
+        call_args = provider.client.messages.create.call_args[1]
+        assert call_args["output_config"] == {"effort": "high"}
+
+    @pytest.mark.asyncio
+    async def test_haiku_no_effort(self):
+        """Haiku should not have effort param (effort capability is False)."""
+        from core.claude.client import ClaudeProvider
+
+        provider = ClaudeProvider.__new__(ClaudeProvider)
+        provider.client = AsyncMock()
+        provider.last_usage = None
+        provider.last_message = None
+        provider.last_thinking = None
+        provider.last_compaction = None
+
+        mock_response = Mock()
+        mock_response.content = [Mock(type="text", text="Hello")]
+        mock_response.usage = Mock(
+            input_tokens=100,
+            output_tokens=50,
+            cache_read_input_tokens=0,
+            cache_creation_input_tokens=0,
+            thinking_tokens=0,
+            server_tool_use=None,
+        )
+        mock_response.stop_reason = "end_turn"
+        provider.client.messages.create = AsyncMock(return_value=mock_response)
+
+        with patch("core.claude.client.get_model",
+                   return_value=_haiku_config()):
+            request = _make_request(model="claude:haiku")
             await provider.get_message(request)
 
         call_args = provider.client.messages.create.call_args[1]
@@ -497,11 +590,10 @@ class TestExtendedThinkingAdaptive:
         assert call_args["output_config"] == {"effort": "max"}
 
     @pytest.mark.asyncio
-    async def test_manual_thinking_for_sonnet(self):
-        """Extended thinking should use manual budget for Sonnet."""
+    async def test_adaptive_thinking_for_sonnet(self):
+        """Extended thinking should use adaptive for Sonnet 4.6."""
         from core.tools.extended_thinking import \
             execute_extended_thinking_stream
-        from core.tools.extended_thinking import THINKING_BUDGET_TOKENS
 
         mock_client = AsyncMock()
 
@@ -531,11 +623,8 @@ class TestExtendedThinkingAdaptive:
                 events.append(event)
 
         call_args = mock_client.messages.stream.call_args[1]
-        assert call_args["thinking"] == {
-            "type": "enabled",
-            "budget_tokens": THINKING_BUDGET_TOKENS,
-        }
-        assert "output_config" not in call_args
+        assert call_args["thinking"] == {"type": "adaptive"}
+        assert call_args["output_config"] == {"effort": "max"}
 
 
 # =============================================================================
@@ -666,11 +755,11 @@ class TestModelRegistryOpus46:
         model = get_model("claude:opus")
         assert model.has_capability("effort_max")
 
-    def test_sonnet_no_adaptive(self):
-        """Sonnet should NOT support adaptive thinking."""
+    def test_sonnet_has_adaptive(self):
+        """Sonnet 4.6 should support adaptive thinking."""
         from config import get_model
         model = get_model("claude:sonnet")
-        assert not model.has_capability("adaptive_thinking")
+        assert model.has_capability("adaptive_thinking")
 
     def test_sonnet_no_compaction(self):
         """Sonnet should NOT support compaction."""

@@ -77,7 +77,7 @@ TOPIC_TEMP_NAME_MAX_LENGTH = 30  # Max chars for temp name from General
 
 # Vision model IDs for tool API calls (analyze_image, analyze_pdf, preview_file)
 VISION_MODEL_ID = "claude-opus-4-6"  # Full analysis (image, PDF)
-VISION_MODEL_ID_LITE = "claude-sonnet-4-5-20250929"  # Lighter preview analysis
+VISION_MODEL_ID_LITE = "claude-sonnet-4-6"  # Lighter preview analysis
 
 
 @dataclass
@@ -194,9 +194,9 @@ MODEL_REGISTRY: dict[str, ModelConfig] = {
     "claude:sonnet":
         ModelConfig(
             provider="claude",
-            model_id="claude-sonnet-4-5-20250929",
+            model_id="claude-sonnet-4-6",
             alias="sonnet",
-            display_name="Claude Sonnet 4.5",
+            display_name="Claude Sonnet 4.6",
             context_window=200_000,  # 200K (1M with beta, but we use 200K)
             max_output=64_000,
             pricing_input=3.0,
@@ -208,7 +208,8 @@ MODEL_REGISTRY: dict[str, ModelConfig] = {
             capabilities={
                 "extended_thinking": True,
                 "interleaved_thinking": True,
-                "effort": False,
+                "adaptive_thinking": True,
+                "effort": True,
                 "context_awareness": True,
                 "vision": True,
                 "streaming": True,
@@ -287,7 +288,7 @@ MODEL_REGISTRY: dict[str, ModelConfig] = {
     # ),
 }
 
-# Default model (Claude Sonnet 4.5 - best balance of intelligence, speed, cost)
+# Default model (Claude Sonnet 4.6 - best balance of intelligence, speed, cost)
 DEFAULT_MODEL_ID = "claude:sonnet"
 
 # ============================================================================
@@ -335,7 +336,7 @@ def get_model(full_id: str) -> ModelConfig:
     Examples:
         >>> model = get_model("claude:sonnet")
         >>> model.display_name
-        'Claude Sonnet 4.5'
+        'Claude Sonnet 4.6'
     """
     if full_id not in MODEL_REGISTRY:
         available = list(MODEL_REGISTRY.keys())
@@ -351,7 +352,7 @@ def get_model_by_provider_id(provider: str, model_id: str) -> ModelConfig:
 
     Args:
         provider: Provider name ("claude", "openai", "google").
-        model_id: Exact model ID (e.g., "claude-sonnet-4-5-20250929").
+        model_id: Exact model ID (e.g., "claude-sonnet-4-6").
 
     Returns:
         ModelConfig for requested model.
@@ -361,7 +362,7 @@ def get_model_by_provider_id(provider: str, model_id: str) -> ModelConfig:
 
     Examples:
         >>> model = get_model_by_provider_id("claude",
-        ...                                  "claude-sonnet-4-5-20250929")
+        ...                                  "claude-sonnet-4-6")
         >>> model.alias
         'sonnet'
     """
@@ -396,7 +397,7 @@ def get_models_by_provider(provider: str) -> list[ModelConfig]:
 
 
 def get_default_model() -> ModelConfig:
-    """Get default model (Claude Sonnet 4.5).
+    """Get default model (Claude Sonnet 4.6).
 
     Returns:
         Default ModelConfig.
@@ -415,7 +416,7 @@ def list_all_models() -> list[tuple[str, str]]:
         >>> models
         [('claude:haiku', 'Claude Haiku 4.5'),
          ('claude:opus', 'Claude Opus 4.6'),
-         ('claude:sonnet', 'Claude Sonnet 4.5')]
+         ('claude:sonnet', 'Claude Sonnet 4.6')]
     """
     items = [(full_id, model.display_name)
              for full_id, model in MODEL_REGISTRY.items()]

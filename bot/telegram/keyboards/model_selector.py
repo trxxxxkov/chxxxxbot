@@ -95,7 +95,7 @@ def format_model_info(model: ModelConfig, lang: str = "en") -> str:
     Examples:
         >>> model = get_model("claude:sonnet")
         >>> format_model_info(model)
-        'Claude Sonnet 4.5\n\nProvider: claude\nContext: 200,000 tokens...'
+        'Claude Sonnet 4.6\n\nProvider: claude\nContext: 200,000 tokens...'
     """
     info = f"{model.display_name}\n\n"
     info += get_text("model.info_provider", lang, provider=model.provider)

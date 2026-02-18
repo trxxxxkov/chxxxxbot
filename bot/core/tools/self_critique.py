@@ -134,13 +134,13 @@ PASS: Works correctly"""
 
 # Server-side tools (Anthropic handles execution)
 WEB_SEARCH_TOOL = {
-    "type": "web_search_20250305",
+    "type": "web_search_20260209",
     "name": "web_search",
     "max_uses": 10,
 }
 
 WEB_FETCH_TOOL = {
-    "type": "web_fetch_20250910",
+    "type": "web_fetch_20260209",
     "name": "web_fetch",
     "max_uses": 10,
     "citations": {
