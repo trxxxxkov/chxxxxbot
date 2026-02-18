@@ -28,18 +28,31 @@ from utils.structured_logging import get_logger
 logger = get_logger(__name__)
 
 
-def _is_overloaded_body(e: anthropic.APIStatusError) -> bool:
-    """Check if an APIStatusError contains an overloaded_error in its body.
+def _get_error_type(e: anthropic.APIStatusError) -> Optional[str]:
+    """Extract error type from APIStatusError body.
 
     Mid-stream SSE errors arrive with HTTP 200 (stream already established),
-    so status_code is not 529. The error type is only in the JSON body.
+    so status_code is not reliable. The error type is in the JSON body.
     """
     body = getattr(e, 'body', None)
     if isinstance(body, dict):
         error_info = body.get('error')
         if isinstance(error_info, dict):
-            return error_info.get('type') == 'overloaded_error'
-    return False
+            return error_info.get('type')
+    return None
+
+
+def _is_retriable_server_error(e: anthropic.APIStatusError) -> bool:
+    """Check if an APIStatusError is a retriable server-side error.
+
+    Retriable errors:
+    - HTTP 529 or body type 'overloaded_error' (API overloaded)
+    - HTTP 500 or body type 'api_error' (internal server error)
+    """
+    if e.status_code in (500, 529):
+        return True
+    error_type = _get_error_type(e)
+    return error_type in ('overloaded_error', 'api_error')
 
 
 def _filter_empty_messages(messages: list) -> list:
@@ -1141,27 +1154,31 @@ class ClaudeProvider(LLMProvider):
                 return
 
             except anthropic.APIStatusError as e:
-                # Detect overloaded: HTTP 529 (pre-stream) or mid-stream
-                # SSE error with overloaded_error type (HTTP status is 200)
-                is_overloaded = (e.status_code == 529 or
-                                 _is_overloaded_body(e))
-                if is_overloaded:
+                # Detect retriable server errors:
+                # - HTTP 529 / overloaded_error (API overloaded)
+                # - HTTP 500 / api_error (internal server error)
+                if _is_retriable_server_error(e):
+                    error_type = _get_error_type(e) or f"http_{e.status_code}"
                     if has_yielded:
                         # Mid-stream error after yielding events to caller —
                         # cannot retry because partial data was already sent
                         logger.warning(
-                            "claude.stream_events.overloaded_midstream",
+                            "claude.stream_events.server_error_midstream",
                             attempt=attempt + 1,
+                            error_type=error_type,
                             error=str(e))
                         raise OverloadedError(
-                            "Claude API overloaded mid-stream") from e
+                            "Claude API server error mid-stream") from e
                     # Pre-stream error — safe to retry
                     if attempt < max_retries:
                         delay = retry_delays[attempt]
-                        logger.warning("claude.stream_events.overloaded_retry",
-                                       attempt=attempt + 1,
-                                       max_retries=max_retries,
-                                       delay_seconds=delay)
+                        logger.warning(
+                            "claude.stream_events.server_error_retry",
+                            attempt=attempt + 1,
+                            max_retries=max_retries,
+                            delay_seconds=delay,
+                            error_type=error_type,
+                            status_code=e.status_code)
                         await asyncio.sleep(delay)
                         # Reset state for retry
                         self.last_message = None
@@ -1170,12 +1187,15 @@ class ClaudeProvider(LLMProvider):
                         self.last_compaction = None
                         continue
                     # All retries exhausted
-                    logger.error("claude.stream_events.overloaded_exhausted",
-                                 attempts=max_retries + 1,
-                                 error=str(e))
-                    raise OverloadedError("Claude API is overloaded after "
-                                          f"{max_retries + 1} attempts") from e
-                # Non-overloaded APIStatusError — re-raise as-is
+                    logger.error(
+                        "claude.stream_events.server_error_exhausted",
+                        attempts=max_retries + 1,
+                        error_type=error_type,
+                        error=str(e))
+                    raise OverloadedError(
+                        "Claude API server error after "
+                        f"{max_retries + 1} attempts") from e
+                # Non-retriable APIStatusError — re-raise as-is
                 raise
 
             except anthropic.RateLimitError as e:

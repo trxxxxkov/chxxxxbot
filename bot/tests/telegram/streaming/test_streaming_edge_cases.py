@@ -94,16 +94,16 @@ class TestExceptionClasses:
 
 
 # ============================================================================
-# Tests for _is_overloaded_body helper
+# Tests for _get_error_type and _is_retriable_server_error helpers
 # ============================================================================
 
 
-class TestIsOverloadedBody:
-    """Tests for mid-stream overloaded error detection."""
+class TestGetErrorType:
+    """Tests for error type extraction from APIStatusError body."""
 
-    def test_overloaded_body_detected(self):
-        """Test detection of overloaded_error in APIStatusError body."""
-        from core.claude.client import _is_overloaded_body
+    def test_overloaded_error_type(self):
+        """Test extraction of overloaded_error type."""
+        from core.claude.client import _get_error_type
 
         error = MagicMock(spec=["body"])
         error.body = {
@@ -113,11 +113,25 @@ class TestIsOverloadedBody:
                 "message": "Overloaded",
             },
         }
-        assert _is_overloaded_body(error) is True
+        assert _get_error_type(error) == "overloaded_error"
 
-    def test_non_overloaded_body(self):
-        """Test non-overloaded error body returns False."""
-        from core.claude.client import _is_overloaded_body
+    def test_api_error_type(self):
+        """Test extraction of api_error type."""
+        from core.claude.client import _get_error_type
+
+        error = MagicMock(spec=["body"])
+        error.body = {
+            "type": "error",
+            "error": {
+                "type": "api_error",
+                "message": "Internal server error",
+            },
+        }
+        assert _get_error_type(error) == "api_error"
+
+    def test_invalid_request_error_type(self):
+        """Test extraction of invalid_request_error type."""
+        from core.claude.client import _get_error_type
 
         error = MagicMock(spec=["body"])
         error.body = {
@@ -127,38 +141,117 @@ class TestIsOverloadedBody:
                 "message": "Bad request",
             },
         }
-        assert _is_overloaded_body(error) is False
+        assert _get_error_type(error) == "invalid_request_error"
 
     def test_no_body_attribute(self):
-        """Test error without body attribute returns False."""
-        from core.claude.client import _is_overloaded_body
+        """Test error without body attribute returns None."""
+        from core.claude.client import _get_error_type
 
         error = MagicMock(spec=[])
-        assert _is_overloaded_body(error) is False
+        assert _get_error_type(error) is None
 
     def test_non_dict_body(self):
-        """Test error with non-dict body returns False."""
-        from core.claude.client import _is_overloaded_body
+        """Test error with non-dict body returns None."""
+        from core.claude.client import _get_error_type
 
         error = MagicMock(spec=["body"])
         error.body = "string error"
-        assert _is_overloaded_body(error) is False
+        assert _get_error_type(error) is None
 
     def test_body_without_error_key(self):
-        """Test body dict without 'error' key returns False."""
-        from core.claude.client import _is_overloaded_body
+        """Test body dict without 'error' key returns None."""
+        from core.claude.client import _get_error_type
 
         error = MagicMock(spec=["body"])
         error.body = {"type": "error"}
-        assert _is_overloaded_body(error) is False
+        assert _get_error_type(error) is None
 
     def test_error_is_not_dict(self):
-        """Test body with non-dict 'error' value returns False."""
-        from core.claude.client import _is_overloaded_body
+        """Test body with non-dict 'error' value returns None."""
+        from core.claude.client import _get_error_type
 
         error = MagicMock(spec=["body"])
         error.body = {"error": "string"}
-        assert _is_overloaded_body(error) is False
+        assert _get_error_type(error) is None
+
+
+class TestIsRetriableServerError:
+    """Tests for retriable server error detection."""
+
+    def test_http_529_is_retriable(self):
+        """Test HTTP 529 (overloaded) is retriable."""
+        from core.claude.client import _is_retriable_server_error
+
+        error = MagicMock(spec=["status_code", "body"])
+        error.status_code = 529
+        error.body = {}
+        assert _is_retriable_server_error(error) is True
+
+    def test_http_500_is_retriable(self):
+        """Test HTTP 500 (internal server error) is retriable."""
+        from core.claude.client import _is_retriable_server_error
+
+        error = MagicMock(spec=["status_code", "body"])
+        error.status_code = 500
+        error.body = {}
+        assert _is_retriable_server_error(error) is True
+
+    def test_overloaded_body_is_retriable(self):
+        """Test overloaded_error in body is retriable (mid-stream)."""
+        from core.claude.client import _is_retriable_server_error
+
+        error = MagicMock(spec=["status_code", "body"])
+        error.status_code = 200  # mid-stream SSE
+        error.body = {
+            "type": "error",
+            "error": {"type": "overloaded_error", "message": "Overloaded"},
+        }
+        assert _is_retriable_server_error(error) is True
+
+    def test_api_error_body_is_retriable(self):
+        """Test api_error in body is retriable (mid-stream 500)."""
+        from core.claude.client import _is_retriable_server_error
+
+        error = MagicMock(spec=["status_code", "body"])
+        error.status_code = 200  # mid-stream SSE
+        error.body = {
+            "type": "error",
+            "error": {
+                "type": "api_error",
+                "message": "Internal server error"
+            },
+        }
+        assert _is_retriable_server_error(error) is True
+
+    def test_http_400_not_retriable(self):
+        """Test HTTP 400 (bad request) is not retriable."""
+        from core.claude.client import _is_retriable_server_error
+
+        error = MagicMock(spec=["status_code", "body"])
+        error.status_code = 400
+        error.body = {
+            "type": "error",
+            "error": {
+                "type": "invalid_request_error",
+                "message": "Bad request"
+            },
+        }
+        assert _is_retriable_server_error(error) is False
+
+    def test_http_401_not_retriable(self):
+        """Test HTTP 401 (unauthorized) is not retriable."""
+        from core.claude.client import _is_retriable_server_error
+
+        error = MagicMock(spec=["status_code", "body"])
+        error.status_code = 401
+        error.body = {
+            "type": "error",
+            "error": {
+                "type": "authentication_error",
+                "message": "Invalid API key"
+            },
+        }
+        assert _is_retriable_server_error(error) is False
 
 
 # ============================================================================
