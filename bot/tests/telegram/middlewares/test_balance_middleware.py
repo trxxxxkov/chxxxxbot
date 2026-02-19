@@ -343,7 +343,7 @@ class TestBalanceMiddlewareEdgeCases:
         result = await middleware(mock_handler, mock_message, data)
 
         # User should be auto-registered and request allowed
-        # (new users get starter balance $0.10)
+        # (new users get starter balance $0.50)
         mock_handler.assert_called_once()
         assert result == "allowed"
 
@@ -421,7 +421,7 @@ class TestBalanceMiddlewareEdgeCases:
         result = await middleware(mock_handler, mock_message, data)
 
         # Empty message treated as paid request - check balance
-        # With sample_user starter balance ($0.10), should be allowed
+        # With sample_user starter balance ($0.50), should be allowed
         mock_handler.assert_called_once()
         assert result == "ok"
 

@@ -462,7 +462,7 @@ DEFAULT_OWNER_MARGIN: float = 0.0  # k3: 0% Default owner margin (configurable)
 CHARGE_USERS_FOR_CACHE_WRITE: bool = True
 
 # Balance settings
-STARTER_BALANCE_USD: float = 0.10  # New users get $0.10 starter balance
+STARTER_BALANCE_USD: float = 0.50  # New users get $0.50 starter balance
 MINIMUM_BALANCE_FOR_REQUEST: float = 0.0  # Allow requests while balance > 0
 
 # Refund settings

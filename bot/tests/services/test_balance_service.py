@@ -37,7 +37,7 @@ class TestBalanceService:
         """Test retrieving user balance."""
         balance = await balance_service.get_balance(pg_sample_user.id)
 
-        assert balance == Decimal("0.1000")  # Default starter balance
+        assert balance == Decimal("0.5000")  # Default starter balance
 
     @pytest.mark.asyncio
     async def test_get_balance_user_not_found(self, balance_service):

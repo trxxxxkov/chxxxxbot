@@ -45,7 +45,7 @@ class User(Base, TimestampMixin):
         added_to_attachment_menu: Whether bot added to attachment menu.
         model_id: Selected LLM model (e.g., "claude:sonnet", "openai:gpt4").
         custom_prompt: Personal instructions (personality, tone, style).
-        balance: User balance in USD (default $0.10 starter balance).
+        balance: User balance in USD (default $0.50 starter balance).
         message_count: Total messages sent by user.
         total_tokens_used: Total tokens consumed (input + output).
         first_seen_at: When user first interacted with bot.
@@ -143,9 +143,9 @@ class User(Base, TimestampMixin):
     balance: Mapped[Decimal] = mapped_column(
         Numeric(precision=10, scale=4),
         nullable=False,
-        default=Decimal("0.1000"),
-        server_default="0.1000",
-        doc="User balance in USD. Default: $0.10 starter balance. "
+        default=Decimal("0.5000"),
+        server_default="0.5000",
+        doc="User balance in USD. Default: $0.50 starter balance. "
         "Allows requests while balance > 0 (can go negative after one request).",
     )
 
