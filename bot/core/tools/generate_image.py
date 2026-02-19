@@ -67,10 +67,12 @@ Saved to cache with temp_id. Base64 preview included for verification.
 Use deliver_file(temp_id) to send. 4K auto-delivers as document.
 </output>
 
-<prompt_tips>
-Describe scene: subject, style (photorealistic/artistic), lighting, colors, mood.
-English only, max 480 tokens.
-</prompt_tips>
+<prompt_writing>
+Faithfully translate the user's request into English. Include only what the user asked for
+or what's clearly implied by conversation context. A precise short prompt outperforms an
+embellished one — do not invent details the user didn't mention.
+Max 480 tokens, English only.
+</prompt_writing>
 
 Use for: photos, artwork, illustrations, logos, memes.
 NOT for: charts, graphs, data viz → use execute_python.
@@ -82,9 +84,10 @@ Cost: $0.134 (1K/2K), $0.24 (4K).""",
             "prompt": {
                 "type": "string",
                 "description":
-                    "Detailed image description in English. Describe the scene "
-                    "including subject, style, composition, lighting, colors, "
-                    "and mood. For editing, describe the desired changes."
+                    "Image description in English. Faithfully reflect what "
+                    "the user requested — add style or composition details "
+                    "only if the user specified them or context implies them. "
+                    "For editing, describe the desired changes."
             },
             "aspect_ratio": {
                 "type": "string",
