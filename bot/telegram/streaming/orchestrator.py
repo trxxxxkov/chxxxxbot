@@ -102,6 +102,7 @@ def is_empty_content(content) -> bool:
         # Check if there's at least one valid content block
         valid_block_types = ("image", "document", "tool_result", "tool_use",
                              "server_tool_use", "server_tool_result",
+                             "code_execution_tool_result",
                              "bash_code_execution_tool_result",
                              "text_editor_code_execution_tool_result")
         for block in content:

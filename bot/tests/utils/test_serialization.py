@@ -144,6 +144,23 @@ class TestSerializeContentBlock:
         assert "text" not in result
         assert result["type"] == "web_search_tool_result"
 
+    def test_code_execution_tool_result(self):
+        """Should handle code_execution_tool_result blocks."""
+        block = {
+            "type": "code_execution_tool_result",
+            "tool_use_id": "exec_123",
+            "content": [{
+                "type": "text",
+                "text": "Output"
+            }],
+            "text": "Code execution results..."
+        }
+
+        result = serialize_content_block(block)
+
+        assert "text" not in result
+        assert result["type"] == "code_execution_tool_result"
+
     def test_web_fetch_tool_result(self):
         """Should handle web_fetch_tool_result blocks."""
         block = {

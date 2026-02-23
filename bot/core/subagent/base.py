@@ -22,6 +22,7 @@ from typing import Any, Awaitable, Callable, Optional, TYPE_CHECKING
 from core.cost_tracker import CostTracker
 from core.pricing import calculate_claude_cost
 from core.pricing import calculate_e2b_cost
+from utils.serialization import serialize_content_block
 from utils.structured_logging import get_logger
 
 if TYPE_CHECKING:
@@ -389,10 +390,12 @@ class BaseSubagent(ABC):  # pylint: disable=too-many-instance-attributes
     async def _handle_tool_use(self, response: Any,
                                messages: list[dict[str, Any]]) -> None:
         """Handle tool_use response - execute tools and add results."""
-        # Add assistant message
+        # Add assistant message (serialize to strip API output-only fields)
         messages.append({
             "role": "assistant",
-            "content": [block.model_dump() for block in response.content]
+            "content": [
+                serialize_content_block(block) for block in response.content
+            ]
         })
 
         # Execute all tools in parallel
