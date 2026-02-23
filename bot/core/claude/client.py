@@ -56,10 +56,14 @@ def _is_retriable_server_error(e: anthropic.APIStatusError) -> bool:
 
 
 def _filter_empty_messages(messages: list) -> list:
-    """Filter out messages with empty content.
+    """Filter out messages with empty content and sanitize blocks.
 
     Claude API requires all messages to have non-empty content
     (except for optional final assistant message).
+
+    Also sanitizes list-based content as a safety net: strips API
+    output-only fields (text, citations, parsed_output) from server
+    tool result blocks that the API returns but rejects on input.
 
     Args:
         messages: List of Message objects.
@@ -67,6 +71,8 @@ def _filter_empty_messages(messages: list) -> list:
     Returns:
         List of dicts with role/content, empty messages filtered out.
     """
+    from utils.serialization import serialize_content_block
+
     result = []
     for msg in messages:
         content = msg.content
@@ -77,6 +83,13 @@ def _filter_empty_messages(messages: list) -> list:
             continue
         if isinstance(content, list) and not content:
             continue
+        # Safety net: sanitize list content blocks before sending to API
+        # Primary sanitization happens in orchestrator, this catches edge cases
+        if isinstance(content, list):
+            content = [
+                serialize_content_block(block) if isinstance(block, dict)
+                or hasattr(block, 'model_dump') else block for block in content
+            ]
         result.append({"role": msg.role, "content": content})
     return result
 

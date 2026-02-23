@@ -31,7 +31,13 @@ DEFAULT_PARSE_MODE: ParseMode = "MarkdownV2"
 
 # Minimum interval between draft updates (seconds)
 # sendMessageDraft still has rate limits, just more relaxed than edit_message
-MIN_UPDATE_INTERVAL = 0.7
+MIN_UPDATE_INTERVAL = 1.0
+
+# After flood control, temporarily increase update interval (seconds)
+FLOOD_BACKOFF_INTERVAL = 2.0
+
+# How many updates after flood before resetting to normal interval
+FLOOD_BACKOFF_UPDATES = 10
 
 # Default keepalive interval (seconds)
 DEFAULT_KEEPALIVE_INTERVAL = 6.0
@@ -229,6 +235,7 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
         self._keepalive_interval: float = 6.0  # Default keepalive interval
         self._last_parse_mode: Optional[str] = DEFAULT_PARSE_MODE  # Track mode
         self._keepalive_failure_logged = False  # Prevent repeated warnings
+        self._flood_backoff_remaining = 0  # Updates left with increased interval
 
         logger.debug("draft_streamer.initialized",
                      chat_id=chat_id,
@@ -354,10 +361,14 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
             return True
 
         # Throttle updates (unless forced)
+        # Use increased interval after flood control hit
         current_time = time.time()
         time_since_last = current_time - self._last_update_time
+        effective_interval = (FLOOD_BACKOFF_INTERVAL
+                              if self._flood_backoff_remaining > 0
+                              else MIN_UPDATE_INTERVAL)
 
-        if not force and time_since_last < MIN_UPDATE_INTERVAL:
+        if not force and time_since_last < effective_interval:
             # Store pending text, will be sent on next allowed update
             self._pending_text = text
             return True
@@ -391,6 +402,8 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
             self._last_parse_mode = parse_mode  # Track successful parse_mode
             self._update_count += 1
             self._last_update_time = time.time()
+            if self._flood_backoff_remaining > 0:
+                self._flood_backoff_remaining -= 1
 
             if self._update_count % 50 == 0:  # Log every 50 updates
                 logger.debug("draft_streamer.update_milestone",
@@ -405,6 +418,8 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
             logger.warning("draft_streamer.flood_control",
                            chat_id=self.chat_id,
                            retry_after=e.retry_after)
+            # Activate adaptive back-off to prevent repeated flood control
+            self._flood_backoff_remaining = FLOOD_BACKOFF_UPDATES
             await asyncio.sleep(e.retry_after)
             try:
                 await self.bot(

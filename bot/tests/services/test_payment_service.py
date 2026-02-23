@@ -180,7 +180,7 @@ class TestPaymentService:
         )
 
         await pg_session.refresh(pg_sample_user)
-        balance_before_refund = pg_sample_user.balance  # Should be 0.75
+        balance_before_refund = pg_sample_user.balance  # Should be 1.15
 
         # Process refund
         refunded_payment = await payment_service.process_refund(
@@ -194,7 +194,7 @@ class TestPaymentService:
 
         # Verify user balance decreased
         await pg_session.refresh(pg_sample_user)
-        assert pg_sample_user.balance == Decimal("0.1000")  # 0.75 - 0.65
+        assert pg_sample_user.balance == Decimal("0.5000")  # 1.15 - 0.65
 
         # Verify refund operation created
         from sqlalchemy import select

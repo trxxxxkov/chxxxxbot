@@ -288,8 +288,8 @@ MODEL_REGISTRY: dict[str, ModelConfig] = {
     # ),
 }
 
-# Default model (Claude Sonnet 4.6 - best balance of intelligence, speed, cost)
-DEFAULT_MODEL_ID = "claude:sonnet"
+# Default model (Claude Haiku 4.5 - cheapest, good for new users)
+DEFAULT_MODEL_ID = "claude:haiku"
 
 # ============================================================================
 # System Prompt Architecture

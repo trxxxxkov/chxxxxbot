@@ -126,7 +126,7 @@ class User(Base, TimestampMixin):
     model_id: Mapped[str] = mapped_column(
         String(100),  # Fits "provider:alias" format (e.g., "claude:sonnet")
         nullable=False,
-        default="claude:sonnet",  # Default: Claude Sonnet 4.6
+        default="claude:haiku",  # Default: Claude Haiku 4.5 (cheapest)
         doc="Model identifier in format 'provider:alias' "
         "(e.g., 'claude:sonnet', 'openai:gpt4')",
     )
