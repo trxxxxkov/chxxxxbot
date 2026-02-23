@@ -100,18 +100,26 @@ class TestCircuitBreaker:
 
     @pytest.mark.asyncio
     async def test_get_redis_records_failure_on_connection_error(self):
-        """Test get_redis records failure when connection fails."""
+        """Test get_redis records failure when connection fails.
+
+        Simulates a scenario where a previous failure was recorded and
+        the recovery ping also fails, incrementing the failure count.
+        """
         reset_circuit_breaker()
+
+        # Record a prior failure so get_redis triggers a health-check ping
+        _record_failure()
 
         mock_client = AsyncMock()
         mock_client.ping.side_effect = Exception("Connection refused")
 
-        with patch("cache.client._redis_client", mock_client):
+        with patch("cache.client._redis_client", mock_client), \
+             patch("cache.client._connection_pool", None):
             result = await get_redis()
 
         assert result is None
         state = get_circuit_breaker_state()
-        assert state["failure_count"] == 1
+        assert state["failure_count"] >= 2  # prior failure + reconnect failure
 
     @pytest.mark.asyncio
     async def test_get_redis_records_success_on_ping(self):
@@ -174,8 +182,15 @@ class TestReconnection:
 
     @pytest.mark.asyncio
     async def test_reconnects_on_connection_error(self):
-        """Test get_redis reconnects when ping fails then succeeds."""
+        """Test get_redis reconnects when ping fails then succeeds.
+
+        A prior failure is recorded so get_redis triggers a health-check
+        ping which then enters the reconnect path.
+        """
         import redis.asyncio as aioredis  # type: ignore[import-untyped]
+
+        # Record a prior failure to trigger health-check ping in get_redis
+        _record_failure()
 
         mock_client = AsyncMock()
         # First ping fails with ConnectionError, second (reconnect) succeeds
@@ -204,6 +219,9 @@ class TestReconnection:
         """Test failure recorded when both ping and reconnect fail."""
         import redis.asyncio as aioredis  # type: ignore[import-untyped]
 
+        # Record a prior failure to trigger health-check ping in get_redis
+        _record_failure()
+
         mock_client = AsyncMock()
         mock_client.ping.side_effect = aioredis.ConnectionError("Down")
 
@@ -215,11 +233,14 @@ class TestReconnection:
 
         assert result is None
         state = get_circuit_breaker_state()
-        assert state["failure_count"] == 1
+        assert state["failure_count"] >= 2  # prior failure + reconnect failure
 
     @pytest.mark.asyncio
     async def test_reconnects_on_generic_exception(self):
         """Test reconnection attempted on non-ConnectionError too."""
+        # Record a prior failure to trigger health-check ping in get_redis
+        _record_failure()
+
         mock_client = AsyncMock()
         # First ping fails with generic error, reconnect succeeds
         mock_client.ping.side_effect = [

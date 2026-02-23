@@ -14,6 +14,7 @@ NO __init__.py - use direct import:
     from cache.client import get_redis, close_redis
 """
 
+import asyncio
 import os
 import time
 from typing import Optional
@@ -34,11 +35,14 @@ _connection_pool: Optional[ConnectionPool] = None
 # Circuit breaker state
 # After CIRCUIT_FAILURE_THRESHOLD consecutive failures, circuit opens
 # Circuit stays open for CIRCUIT_RESET_TIMEOUT seconds before trying again
-CIRCUIT_FAILURE_THRESHOLD = 3
+CIRCUIT_FAILURE_THRESHOLD = 5
 CIRCUIT_RESET_TIMEOUT = 5.0  # seconds (short timeout for local Redis)
 
 _circuit_failure_count: int = 0
 _circuit_open_until: float = 0.0  # timestamp when circuit should close
+_reconnect_lock: asyncio.Lock = asyncio.Lock()
+_last_successful_ping: float = 0.0
+_PING_INTERVAL: float = 30.0  # seconds between health-check pings
 
 
 def _read_redis_password() -> Optional[str]:
@@ -131,6 +135,7 @@ async def init_redis() -> redis.Redis:
     try:
         await _redis_client.ping()
         logger.debug("redis.connected", url=safe_url)
+        _record_success()  # Initialize last_successful_ping timestamp
     except redis.ConnectionError as e:
         logger.error("redis.connection_failed", url=safe_url, error=str(e))
         raise
@@ -160,6 +165,8 @@ def _record_success() -> None:
     """Record successful Redis operation, close circuit if needed."""
     global _circuit_failure_count  # pylint: disable=global-statement
     global _circuit_open_until  # pylint: disable=global-statement
+    global _last_successful_ping  # pylint: disable=global-statement
+    _last_successful_ping = time.time()
     if _circuit_failure_count > 0 or _circuit_open_until > 0:
         logger.info("redis.circuit_closed",
                     previous_failures=_circuit_failure_count)
@@ -188,22 +195,35 @@ def _record_failure() -> None:
 async def _try_reconnect() -> Optional[redis.Redis]:
     """Try to reconnect by clearing stale pool connections and retrying ping.
 
+    Uses a lock to prevent multiple concurrent reconnection attempts from
+    each counting as separate failures, which would trip the circuit breaker
+    prematurely during brief Redis restarts.
+
     When a connection is lost (e.g. Redis restart), existing connections in the
     pool are dead. Disconnecting the pool forces fresh connections on next use.
 
     Returns:
         Redis client if reconnection succeeds, None otherwise.
     """
-    try:
-        if _connection_pool is not None:
-            await _connection_pool.disconnect()
-        await _redis_client.ping()  # type: ignore[union-attr]
-        logger.info("redis.reconnected")
-        _record_success()
-        return _redis_client
-    except Exception:  # pylint: disable=broad-exception-caught
-        _record_failure()
+    if _reconnect_lock.locked():
+        # Another coroutine is already reconnecting — don't pile on failures
         return None
+
+    async with _reconnect_lock:
+        # Re-check circuit after acquiring lock (may have been opened by
+        # the coroutine that held the lock before us)
+        if _is_circuit_open():
+            return None
+        try:
+            if _connection_pool is not None:
+                await _connection_pool.disconnect()
+            await _redis_client.ping()  # type: ignore[union-attr]
+            logger.info("redis.reconnected")
+            _record_success()
+            return _redis_client
+        except Exception:  # pylint: disable=broad-exception-caught
+            _record_failure()
+            return None
 
 
 async def get_redis() -> Optional[redis.Redis]:
@@ -217,9 +237,10 @@ async def get_redis() -> Optional[redis.Redis]:
     - After timeout, tries once (half-open state)
     - On success, closes circuit and resumes normal operation
 
-    On connection loss, attempts to reconnect by clearing stale pool
-    connections before recording a failure. This handles brief Redis
-    restarts gracefully.
+    Avoids pinging Redis on every call. Instead, returns the cached client
+    directly and only pings periodically or when recovering from failures.
+    Actual connection errors are caught by callers (cache layer methods)
+    which call ``record_redis_failure`` to feed the circuit breaker.
 
     Returns:
         Redis client or None if not available.
@@ -233,17 +254,47 @@ async def get_redis() -> Optional[redis.Redis]:
         _record_failure()
         return None
 
-    # Check if connection is alive
-    try:
-        await _redis_client.ping()
-        _record_success()
-        return _redis_client
-    except redis.ConnectionError:
-        logger.info("redis.connection_lost")
-        return await _try_reconnect()
-    except Exception as e:  # pylint: disable=broad-exception-caught
-        logger.info("redis.ping_failed", error=str(e))
-        return await _try_reconnect()
+    # After circuit was previously tripped, do a health-check ping
+    # to confirm Redis is back before resuming
+    if _circuit_failure_count > 0:
+        try:
+            await _redis_client.ping()
+            _record_success()
+            return _redis_client
+        except Exception:  # pylint: disable=broad-exception-caught
+            logger.info("redis.connection_lost")
+            return await _try_reconnect()
+
+    # Periodic health-check ping (every _PING_INTERVAL seconds)
+    if time.time() - _last_successful_ping >= _PING_INTERVAL:
+        try:
+            await _redis_client.ping()
+            _record_success()
+        except Exception:  # pylint: disable=broad-exception-caught
+            logger.info("redis.connection_lost")
+            return await _try_reconnect()
+
+    return _redis_client
+
+
+async def record_redis_failure() -> None:
+    """Record a Redis operation failure from the cache layer.
+
+    Cache layer methods should call this when a Redis command raises
+    ConnectionError. This feeds the circuit breaker without requiring
+    get_redis() to ping on every call.
+    """
+    logger.info("redis.operation_failed")
+    await _try_reconnect()
+
+
+def record_redis_success() -> None:
+    """Record a successful Redis operation from the cache layer.
+
+    Cache layer methods should call this after successful Redis commands
+    to keep the circuit breaker healthy.
+    """
+    _record_success()
 
 
 def reset_circuit_breaker() -> None:
@@ -253,8 +304,10 @@ def reset_circuit_breaker() -> None:
     """
     global _circuit_failure_count  # pylint: disable=global-statement
     global _circuit_open_until  # pylint: disable=global-statement
+    global _last_successful_ping  # pylint: disable=global-statement
     _circuit_failure_count = 0
     _circuit_open_until = 0.0
+    _last_successful_ping = time.time()
     logger.info("redis.circuit_reset", msg="Circuit breaker manually reset")
 
 
