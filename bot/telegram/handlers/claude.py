@@ -755,6 +755,23 @@ async def _process_batch_with_session(
                                                     e.user_message)
                 return
 
+            except TelegramBadRequest as e:
+                if "thread not found" in str(e):
+                    logger.warning(
+                        "claude_handler.thread_deleted",
+                        thread_id=thread_id,
+                        chat_id=first_message.chat.id,
+                    )
+                    return
+                logger.error("claude_handler.streaming_failed",
+                             thread_id=thread_id,
+                             error=str(e),
+                             exc_info=True)
+                bot_message = await _send_to_thread(
+                    first_message.bot, first_message, thread,
+                    "⚠️ An error occurred. Please try again.")
+                return
+
             except Exception as e:  # pylint: disable=broad-exception-caught
                 logger.error("claude_handler.streaming_failed",
                              thread_id=thread_id,
