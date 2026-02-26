@@ -54,6 +54,7 @@ WEB_SEARCH_CONFIG = ToolConfig(
         "type": "web_search_20260209",
         "name": "web_search",
         "max_uses": 100,  # Max searches per request
+        "allowed_callers": ["direct"],  # Haiku only supports 'direct'
     },
     executor=None,
     emoji="🔍",
@@ -66,6 +67,7 @@ WEB_FETCH_CONFIG = ToolConfig(
         "type": "web_fetch_20260209",
         "name": "web_fetch",
         "max_uses": 100,  # Max fetches per request
+        "allowed_callers": ["direct"],  # Haiku only supports 'direct'
         "citations": {
             "enabled": True
         },
