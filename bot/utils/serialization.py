@@ -60,6 +60,15 @@ def serialize_content_block(block: Any) -> dict:
     if block_type in SERVER_TOOL_BLOCK_TYPES:
         block_dict.pop("text", None)
 
+    # Handle compaction blocks: non-beta SDK misparses them as TextBlock,
+    # adding spurious "text" field via model_dump(). Only keep known fields.
+    if block_type == "compaction":
+        return {
+            k: v
+            for k, v in block_dict.items()
+            if k in ("type", "content", "cache_control")
+        }
+
     # Recursively clean nested content
     if "content" in block_dict and isinstance(block_dict["content"], list):
         block_dict["content"] = [
