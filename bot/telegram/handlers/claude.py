@@ -628,6 +628,10 @@ async def _process_batch_with_session(
                         tool_count=len(request.tools) if request.tools else 0)
 
             try:
+                # Reset cache accumulator so we track creation across
+                # all tool loop turns for this user message
+                claude_provider.reset_cache_accumulator()
+
                 # Phase 3.4: Continuation loop for sequential file delivery
                 # Max 5 continuations to prevent infinite loops
                 max_continuations = 5

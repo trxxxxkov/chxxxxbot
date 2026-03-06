@@ -94,6 +94,46 @@ def _filter_empty_messages(messages: list) -> list:
     return result
 
 
+def _apply_message_caching(api_messages: list) -> list:
+    """Add rolling cache breakpoint to conversation history.
+
+    Places cache_control with 5-minute TTL on the second-to-last
+    message (typically the last assistant response before the new
+    user message). This creates a rolling cache that advances with
+    each turn, so previous conversation history is read from cache
+    at 0.1x input price.
+
+    Safe to call even when history is short — if content is below
+    Anthropic's minimum cacheable size, the marker is silently ignored.
+
+    Args:
+        api_messages: List of message dicts from _filter_empty_messages.
+
+    Returns:
+        The same list with cache_control added to second-to-last message.
+    """
+    if len(api_messages) < 3:
+        return api_messages
+
+    target = api_messages[-2]
+    content = target["content"]
+
+    if isinstance(content, str):
+        target["content"] = [{
+            "type": "text",
+            "text": content,
+            "cache_control": {
+                "type": "ephemeral"
+            }
+        }]
+    elif isinstance(content, list) and content:
+        last_block = dict(content[-1])
+        last_block["cache_control"] = {"type": "ephemeral"}
+        content[-1] = last_block
+
+    return api_messages
+
+
 class ClaudeProvider(LLMProvider):
     """Claude API client implementing LLMProvider interface.
 
@@ -135,11 +175,23 @@ class ClaudeProvider(LLMProvider):
             str] = None  # Phase 1.4.3: Extended Thinking
         self.last_compaction: Optional[str] = None  # Opus 4.6: compaction
 
+        # Accumulated cache creation across tool loop turns.
+        # Reset via reset_cache_accumulator() before each user message.
+        self._acc_cache_creation = 0
+        self._acc_cache_creation_1h = 0
+        self._acc_cache_creation_5m = 0
+
         logger.debug("claude_provider.initialized",
                      beta_features=[
                          "interleaved-thinking", "context-management",
                          "compact", "files-api", "code-execution-web-tools"
                      ])
+
+    def reset_cache_accumulator(self):
+        """Reset accumulated cache creation stats for a new user message."""
+        self._acc_cache_creation = 0
+        self._acc_cache_creation_1h = 0
+        self._acc_cache_creation_5m = 0
 
     # pylint: disable=too-many-locals,too-many-branches,too-many-statements
     async def get_message(self, request: LLMRequest) -> anthropic.types.Message:
@@ -190,6 +242,7 @@ class ClaudeProvider(LLMProvider):
 
         # Convert messages to Anthropic format, filtering empty messages
         api_messages = _filter_empty_messages(request.messages)
+        _apply_message_caching(api_messages)
 
         # Prepare API parameters
         api_params = {
@@ -401,6 +454,7 @@ class ClaudeProvider(LLMProvider):
 
         # Convert messages to Anthropic format, filtering empty messages
         api_messages = _filter_empty_messages(request.messages)
+        _apply_message_caching(api_messages)
 
         # Prepare request parameters (use exact model_id for API)
         api_params = {
@@ -937,6 +991,7 @@ class ClaudeProvider(LLMProvider):
 
         # Convert messages to Anthropic format, filtering empty messages
         api_messages = _filter_empty_messages(request.messages)
+        _apply_message_caching(api_messages)
 
         # Prepare API parameters
         api_params = {
@@ -1125,14 +1180,19 @@ class ClaudeProvider(LLMProvider):
                     if not isinstance(cache_5m, int):
                         cache_5m = 0
 
+                # Accumulate cache creation across tool loop turns
+                self._acc_cache_creation += cache_creation_total or 0
+                self._acc_cache_creation_1h += cache_1h
+                self._acc_cache_creation_5m += cache_5m
+
                 self.last_usage = TokenUsage(
                     input_tokens=usage.input_tokens,
                     output_tokens=usage.output_tokens,
                     cache_read_tokens=getattr(usage, 'cache_read_input_tokens',
                                               0),
-                    cache_creation_tokens=cache_creation_total,
-                    cache_creation_1h_tokens=cache_1h,
-                    cache_creation_5m_tokens=cache_5m,
+                    cache_creation_tokens=self._acc_cache_creation,
+                    cache_creation_1h_tokens=self._acc_cache_creation_1h,
+                    cache_creation_5m_tokens=self._acc_cache_creation_5m,
                     thinking_tokens=getattr(usage, 'thinking_tokens', 0),
                     web_search_requests=web_search_requests)
 

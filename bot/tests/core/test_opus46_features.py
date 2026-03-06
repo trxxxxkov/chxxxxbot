@@ -139,6 +139,9 @@ class TestAdaptiveThinking:
         provider.last_message = None
         provider.last_thinking = None
         provider.last_compaction = None
+        provider._acc_cache_creation = 0
+        provider._acc_cache_creation_1h = 0
+        provider._acc_cache_creation_5m = 0
 
         mock_response = Mock()
         mock_response.content = [Mock(type="text", text="Hello")]
@@ -171,6 +174,9 @@ class TestAdaptiveThinking:
         provider.last_message = None
         provider.last_thinking = None
         provider.last_compaction = None
+        provider._acc_cache_creation = 0
+        provider._acc_cache_creation_1h = 0
+        provider._acc_cache_creation_5m = 0
 
         mock_response = Mock()
         mock_response.content = [Mock(type="text", text="Hello")]
@@ -204,6 +210,9 @@ class TestAdaptiveThinking:
         provider.last_message = None
         provider.last_thinking = None
         provider.last_compaction = None
+        provider._acc_cache_creation = 0
+        provider._acc_cache_creation_1h = 0
+        provider._acc_cache_creation_5m = 0
 
         mock_response = Mock()
         mock_response.content = [Mock(type="text", text="Hello")]
@@ -241,6 +250,9 @@ class TestAdaptiveThinking:
         provider.last_message = None
         provider.last_thinking = None
         provider.last_compaction = None
+        provider._acc_cache_creation = 0
+        provider._acc_cache_creation_1h = 0
+        provider._acc_cache_creation_5m = 0
 
         mock_response = Mock()
         mock_response.content = [Mock(type="text", text="Hello")]
@@ -283,6 +295,9 @@ class TestEffortOutputConfig:
         provider.last_message = None
         provider.last_thinking = None
         provider.last_compaction = None
+        provider._acc_cache_creation = 0
+        provider._acc_cache_creation_1h = 0
+        provider._acc_cache_creation_5m = 0
 
         mock_response = Mock()
         mock_response.content = [Mock(type="text", text="Hello")]
@@ -317,6 +332,9 @@ class TestEffortOutputConfig:
         provider.last_message = None
         provider.last_thinking = None
         provider.last_compaction = None
+        provider._acc_cache_creation = 0
+        provider._acc_cache_creation_1h = 0
+        provider._acc_cache_creation_5m = 0
 
         mock_response = Mock()
         mock_response.content = [Mock(type="text", text="Hello")]
@@ -350,6 +368,9 @@ class TestEffortOutputConfig:
         provider.last_message = None
         provider.last_thinking = None
         provider.last_compaction = None
+        provider._acc_cache_creation = 0
+        provider._acc_cache_creation_1h = 0
+        provider._acc_cache_creation_5m = 0
 
         mock_response = Mock()
         mock_response.content = [Mock(type="text", text="Hello")]
@@ -392,6 +413,9 @@ class TestCompactionParams:
         provider.last_message = None
         provider.last_thinking = None
         provider.last_compaction = None
+        provider._acc_cache_creation = 0
+        provider._acc_cache_creation_1h = 0
+        provider._acc_cache_creation_5m = 0
 
         mock_response = Mock()
         mock_response.content = [Mock(type="text", text="Hello")]
@@ -431,6 +455,9 @@ class TestCompactionParams:
         provider.last_message = None
         provider.last_thinking = None
         provider.last_compaction = None
+        provider._acc_cache_creation = 0
+        provider._acc_cache_creation_1h = 0
+        provider._acc_cache_creation_5m = 0
 
         mock_response = Mock()
         mock_response.content = [Mock(type="text", text="Hello")]
@@ -793,6 +820,9 @@ class TestCompactionEventHandling:
         provider.last_message = None
         provider.last_thinking = None
         provider.last_compaction = None
+        provider._acc_cache_creation = 0
+        provider._acc_cache_creation_1h = 0
+        provider._acc_cache_creation_5m = 0
 
         # Create mock events simulating compaction
         compaction_start = Mock()
@@ -879,6 +909,9 @@ class TestCompactionEventHandling:
         provider.last_message = None
         provider.last_thinking = None
         provider.last_compaction = None
+        provider._acc_cache_creation = 0
+        provider._acc_cache_creation_1h = 0
+        provider._acc_cache_creation_5m = 0
 
         # Simple text-only stream (no compaction)
         text_start = Mock()
