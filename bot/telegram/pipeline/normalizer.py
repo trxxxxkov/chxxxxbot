@@ -39,6 +39,21 @@ from utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
 
+# Register HEIC/HEIF opener for Pillow (must run before any Image.open)
+try:
+    import pillow_heif  # pylint: disable=import-outside-toplevel
+    pillow_heif.register_heif_opener()
+except ImportError:
+    logger.info("normalizer.pillow_heif_not_available")
+
+# Image formats supported by Claude API
+_CLAUDE_SUPPORTED_IMAGE_MIMES = frozenset({
+    'image/jpeg',
+    'image/png',
+    'image/gif',
+    'image/webp',
+})
+
 
 class MessageNormalizer:
     """Normalizes any Telegram message into ProcessedMessage.
@@ -716,6 +731,53 @@ class MessageNormalizer:
             )
         ]
 
+    @staticmethod
+    def _convert_image_to_jpeg(
+        content: bytes,
+        mime_type: str,
+        filename: str,
+    ) -> tuple[bytes, str, str]:
+        """Convert unsupported image format to JPEG for Claude API.
+
+        Claude API supports: JPEG, PNG, GIF, WebP.
+        Other formats (HEIC, HEIF, BMP, TIFF) are converted to JPEG.
+
+        Args:
+            content: Original image bytes.
+            mime_type: Original MIME type.
+            filename: Original filename.
+
+        Returns:
+            Tuple of (converted_bytes, new_mime_type, new_filename).
+
+        Raises:
+            ValueError: If image cannot be opened or converted.
+        """
+        import io  # pylint: disable=import-outside-toplevel
+        from PIL import Image  # pylint: disable=import-outside-toplevel
+
+        img = Image.open(io.BytesIO(content))
+
+        # Convert to RGB for JPEG (handles RGBA, LA, P, etc.)
+        if img.mode != 'RGB':
+            img = img.convert('RGB')
+
+        output = io.BytesIO()
+        img.save(output, format='JPEG', quality=95)
+        converted = output.getvalue()
+
+        new_filename = filename.rsplit('.', 1)[0] + '.jpg'
+
+        logger.info(
+            "normalizer.image_converted",
+            original_mime=mime_type,
+            original_size=len(content),
+            converted_size=len(converted),
+            filename=new_filename,
+        )
+
+        return converted, 'image/jpeg', new_filename
+
     async def _process_document(self,
                                 message: types.Message) -> list[UploadedFile]:
         """Process document by uploading to Files API.
@@ -747,16 +809,30 @@ class MessageNormalizer:
             declared_mime=document.mime_type,
         )
 
+        # Convert unsupported image formats (HEIC, BMP, TIFF) to JPEG
+        if (mime_type.startswith('image/')
+                and mime_type not in _CLAUDE_SUPPORTED_IMAGE_MIMES):
+            doc_bytes = await self._download_file(message,
+                                                  document.file_id,
+                                                  filename=filename)
+            doc_bytes, mime_type, filename = self._convert_image_to_jpeg(
+                doc_bytes, mime_type, filename)
+            claude_file_id = await upload_to_files_api(
+                file_bytes=doc_bytes,
+                filename=filename,
+                mime_type=mime_type,
+            )
+        else:
+            # Standard path: download, cache and upload in parallel
+            doc_bytes, claude_file_id = await self._download_and_upload(
+                message=message,
+                file_id=document.file_id,
+                filename=filename,
+                mime_type=mime_type,
+            )
+
         # Determine file type from MIME (centralized conversion)
         file_type = mime_to_media_type(mime_type)
-
-        # Download, cache and upload in parallel (~100-200ms savings)
-        doc_bytes, claude_file_id = await self._download_and_upload(
-            message=message,
-            file_id=document.file_id,
-            filename=filename,
-            mime_type=mime_type,
-        )
 
         logger.info(
             "normalizer.document_uploaded",

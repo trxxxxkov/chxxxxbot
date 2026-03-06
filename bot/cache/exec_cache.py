@@ -16,7 +16,6 @@ NO __init__.py - use direct import:
     )
 """
 
-import asyncio
 import json
 import time
 from typing import Any, List, Optional
@@ -232,23 +231,17 @@ async def store_exec_file(
         # Store metadata
         meta_key = exec_meta_key(temp_id)
 
-        # Parallel Redis operations for better latency (~10-15ms savings)
-        # File and metadata are independent, can be written concurrently
-        if thread_id is not None:
-            thread_key = exec_thread_index_key(thread_id)
-            # All 4 operations are independent - run in parallel
-            await asyncio.gather(
-                redis.setex(file_key, EXEC_FILE_TTL, file_content),
-                redis.setex(meta_key, EXEC_FILE_TTL, json.dumps(metadata)),
-                redis.sadd(thread_key, temp_id),
-                redis.expire(thread_key, EXEC_FILE_TTL),
-            )
-        else:
-            # No thread index - just 2 parallel operations
-            await asyncio.gather(
-                redis.setex(file_key, EXEC_FILE_TTL, file_content),
-                redis.setex(meta_key, EXEC_FILE_TTL, json.dumps(metadata)),
-            )
+        # Use pipeline to batch all writes in a single connection/round-trip.
+        # This avoids exhausting the connection pool when many files are
+        # cached concurrently (e.g., 13 files × 4 parallel ops = 52 conns).
+        async with redis.pipeline(transaction=False) as pipe:
+            pipe.setex(file_key, EXEC_FILE_TTL, file_content)
+            pipe.setex(meta_key, EXEC_FILE_TTL, json.dumps(metadata))
+            if thread_id is not None:
+                thread_key = exec_thread_index_key(thread_id)
+                pipe.sadd(thread_key, temp_id)
+                pipe.expire(thread_key, EXEC_FILE_TTL)
+            await pipe.execute()
 
         elapsed = time.time() - start_time
         record_redis_operation_time("set", elapsed)

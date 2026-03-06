@@ -5,6 +5,7 @@ Tests temporary file storage for execute_python tool output.
 
 import json
 from unittest.mock import AsyncMock
+from unittest.mock import MagicMock
 from unittest.mock import patch
 
 from cache.exec_cache import _generate_preview
@@ -142,13 +143,25 @@ class TestGeneratePreview:
         assert "MB" in preview
 
 
+def _make_mock_redis_with_pipeline():
+    """Create mock Redis client with pipeline support."""
+    redis_mock = AsyncMock()
+    pipe_mock = MagicMock()
+    pipe_mock.execute = AsyncMock(return_value=[])
+    pipe_mock.__aenter__ = AsyncMock(return_value=pipe_mock)
+    pipe_mock.__aexit__ = AsyncMock(return_value=False)
+    # pipeline() is a sync method on redis.asyncio.Redis
+    redis_mock.pipeline = MagicMock(return_value=pipe_mock)
+    return redis_mock
+
+
 class TestStoreExecFile:
     """Tests for storing execution output files."""
 
     @pytest.fixture
     def mock_redis(self):
-        """Create mock Redis client."""
-        return AsyncMock()
+        """Create mock Redis client with pipeline support."""
+        return _make_mock_redis_with_pipeline()
 
     @pytest.fixture
     def sample_content(self):
@@ -177,8 +190,10 @@ class TestStoreExecFile:
         assert "created_at" in result
         assert "expires_at" in result
 
-        # Verify Redis calls
-        assert mock_redis.setex.call_count == 2  # file + meta
+        # Verify pipeline was used
+        pipe = mock_redis.pipeline.return_value
+        assert pipe.setex.call_count == 2  # file + meta
+        pipe.execute.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_store_exec_file_with_execution_id(self, mock_redis,
@@ -217,8 +232,9 @@ class TestStoreExecFile:
         assert result["filename"] == "sandbox_output.png"
         assert result["size_bytes"] == len(bytearray_content)
 
-        # Verify Redis was called with bytes, not bytearray
-        file_call = mock_redis.setex.call_args_list[0]
+        # Verify pipeline was called with bytes, not bytearray
+        pipe = mock_redis.pipeline.return_value
+        file_call = pipe.setex.call_args_list[0]
         stored_content = file_call[0][2]
         assert isinstance(stored_content,
                           bytes), "Redis should receive bytes, not bytearray"
@@ -279,8 +295,9 @@ class TestStoreExecFile:
                 context="Test file",
             )
 
-        # Check TTL in setex calls
-        for call in mock_redis.setex.call_args_list:
+        # Check TTL in pipeline setex calls
+        pipe = mock_redis.pipeline.return_value
+        for call in pipe.setex.call_args_list:
             assert call[0][1] == EXEC_FILE_TTL
 
 
@@ -470,8 +487,8 @@ class TestStoreExecFileWithThreadId:
 
     @pytest.fixture
     def mock_redis(self):
-        """Create mock Redis client."""
-        return AsyncMock()
+        """Create mock Redis client with pipeline support."""
+        return _make_mock_redis_with_pipeline()
 
     @pytest.fixture
     def sample_content(self):
@@ -676,12 +693,12 @@ class TestGetPendingFilesForThread:
 
 
 class TestAsyncOptimizations:
-    """Tests for async optimization patterns (parallel Redis operations)."""
+    """Tests for pipeline-based Redis operations."""
 
     @pytest.fixture
     def mock_redis(self):
-        """Create mock Redis client."""
-        return AsyncMock()
+        """Create mock Redis client with pipeline support."""
+        return _make_mock_redis_with_pipeline()
 
     @pytest.fixture
     def sample_content(self):
@@ -689,11 +706,11 @@ class TestAsyncOptimizations:
         return b"test output content"
 
     @pytest.mark.asyncio
-    async def test_store_with_thread_id_uses_parallel_ops(
-            self, mock_redis, sample_content):
-        """Test that store with thread_id uses parallel Redis operations.
+    async def test_store_with_thread_id_uses_pipeline(self, mock_redis,
+                                                      sample_content):
+        """Test that store with thread_id uses single pipeline.
 
-        When thread_id is provided, 4 Redis operations should run in parallel:
+        When thread_id is provided, 4 operations are batched in one pipeline:
         - setex file content
         - setex metadata
         - sadd to thread index
@@ -709,17 +726,19 @@ class TestAsyncOptimizations:
             )
 
         assert result is not None
-        # With thread_id: 2 setex + 1 sadd + 1 expire = 4 operations
-        assert mock_redis.setex.call_count == 2
-        assert mock_redis.sadd.call_count == 1
-        assert mock_redis.expire.call_count == 1
+        pipe = mock_redis.pipeline.return_value
+        # With thread_id: 2 setex + 1 sadd + 1 expire in single pipeline
+        assert pipe.setex.call_count == 2
+        assert pipe.sadd.call_count == 1
+        assert pipe.expire.call_count == 1
+        pipe.execute.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_store_without_thread_id_uses_two_parallel_ops(
+    async def test_store_without_thread_id_uses_pipeline(
             self, mock_redis, sample_content):
-        """Test that store without thread_id uses 2 parallel Redis operations.
+        """Test that store without thread_id uses pipeline with 2 operations.
 
-        Without thread_id, only 2 Redis operations run in parallel:
+        Without thread_id, only 2 setex operations are batched:
         - setex file content
         - setex metadata
         """
@@ -732,10 +751,12 @@ class TestAsyncOptimizations:
             )
 
         assert result is not None
+        pipe = mock_redis.pipeline.return_value
         # Without thread_id: only 2 setex operations
-        assert mock_redis.setex.call_count == 2
-        assert mock_redis.sadd.call_count == 0
-        assert mock_redis.expire.call_count == 0
+        assert pipe.setex.call_count == 2
+        assert pipe.sadd.call_count == 0
+        assert pipe.expire.call_count == 0
+        pipe.execute.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_get_pending_uses_mget_batch(self, mock_redis):
