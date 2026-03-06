@@ -366,6 +366,7 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
                         serialized_content = [
                             serialize_content_block(block)
                             for block in captured_msg.content
+                            if getattr(block, 'type', None) != 'thinking'
                         ]
                         conversation.append({
                             "role": "assistant",
@@ -561,11 +562,17 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
         results = [r.result for r in batch_result.results]
         tool_results = format_tool_results(tool_uses, results)
 
-        # Add to conversation
+        # Add to conversation (strip thinking blocks so prefix matches DB)
+        # DB saves only final text, not thinking. Keeping thinking in tool
+        # loop conversation would cause prefix mismatch on the next user
+        # message, invalidating the cache. Stripping is safe: API accepts
+        # all-or-nothing for thinking, and the model re-reasons each turn.
         captured_msg = stream.captured_message
         if captured_msg and captured_msg.content:
             serialized_content = [
-                serialize_content_block(block) for block in captured_msg.content
+                serialize_content_block(block)
+                for block in captured_msg.content
+                if getattr(block, 'type', None) != 'thinking'
             ]
             conversation.append({
                 "role": "assistant",
