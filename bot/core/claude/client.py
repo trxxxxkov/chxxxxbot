@@ -1162,12 +1162,15 @@ class ClaudeProvider(LLMProvider):
 
                         # Content block stop
                         elif event.type == "content_block_stop":
-                            if (current_block_type == "tool_use" and
-                                    accumulated_json):
-                                try:
-                                    tool_input = json.loads(accumulated_json)
-                                except json.JSONDecodeError:
-                                    tool_input = {"raw": accumulated_json}
+                            if current_block_type == "tool_use":
+                                if accumulated_json:
+                                    try:
+                                        tool_input = json.loads(
+                                            accumulated_json)
+                                    except json.JSONDecodeError:
+                                        tool_input = {"raw": accumulated_json}
+                                else:
+                                    tool_input = {}
 
                                 yield StreamEvent(type="block_end",
                                                   tool_name=current_tool_name,

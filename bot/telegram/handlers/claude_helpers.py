@@ -104,21 +104,19 @@ def compose_system_prompt_blocks(
     """
     blocks = []
 
-    # Block 1: GLOBAL_SYSTEM_PROMPT - always cached with 1h TTL
-    # 1h TTL costs 2x base input (vs 1.25x for 5m), but shared across ALL users
-    # with same model. Since system prompt rarely changes, 1h is more efficient.
+    # Block 1: GLOBAL_SYSTEM_PROMPT - cached with default 5m TTL
+    # System prompt + tools form the stable prefix that gets cached
+    # automatically. 5m TTL (1.25x write cost) is cheaper than 1h (2x)
+    # and sufficient since active users message within 5 minutes.
     blocks.append({
         "type": "text",
         "text": global_prompt,
         "cache_control": {
-            "type": "ephemeral",
-            "ttl": "1h"
+            "type": "ephemeral"
         }
     })
 
-    # Block 2: User custom prompt - cached if ≥256 tokens
-    # Custom prompts are static per-user, so caching pays off even for
-    # smaller prompts. 256 tokens ≈ 1024 chars.
+    # Block 2: User custom prompt - cached if ≥256 tokens (~1024 chars)
     if custom_prompt:
         estimated_tokens = len(custom_prompt) // 4
         if estimated_tokens >= 256:
@@ -126,8 +124,7 @@ def compose_system_prompt_blocks(
                 "type": "text",
                 "text": custom_prompt,
                 "cache_control": {
-                    "type": "ephemeral",
-                    "ttl": "1h"
+                    "type": "ephemeral"
                 }
             })
         else:
