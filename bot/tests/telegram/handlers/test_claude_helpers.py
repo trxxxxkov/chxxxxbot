@@ -45,7 +45,6 @@ class TestComposeSystemPrompt:
         result = compose_system_prompt(
             global_prompt="Global instructions",
             custom_prompt=None,
-            files_context=None,
         )
 
         assert result == "Global instructions"
@@ -55,24 +54,11 @@ class TestComposeSystemPrompt:
         result = compose_system_prompt(
             global_prompt="Global",
             custom_prompt="Custom user preferences",
-            files_context=None,
         )
 
         assert "Global" in result
         assert "Custom user preferences" in result
         assert "\n\n" in result
-
-    def test_with_files_context(self):
-        """Test with all three levels."""
-        result = compose_system_prompt(
-            global_prompt="Global",
-            custom_prompt="Custom",
-            files_context="=== FILES ===\nfile.txt",
-        )
-
-        assert "Global" in result
-        assert "Custom" in result
-        assert "=== FILES ===" in result
 
 
 class TestComposeSystemPromptBlocks:
@@ -81,9 +67,8 @@ class TestComposeSystemPromptBlocks:
     def test_global_only_cached(self):
         """Test global prompt is cached."""
         result = compose_system_prompt_blocks(
-            global_prompt="Global instructions " * 500,  # Make it ≥1024 tokens
+            global_prompt="Global instructions " * 500,
             custom_prompt=None,
-            files_context=None,
         )
 
         assert len(result) == 1
@@ -92,64 +77,45 @@ class TestComposeSystemPromptBlocks:
         assert result[0]["cache_control"]["type"] == "ephemeral"
 
     def test_custom_prompt_large_cached(self):
-        """Test large custom prompt is cached (≥256 tokens)."""
-        # 256 tokens ≈ 1024 chars, so need ~1200 chars to be safe
+        """Test large custom prompt is cached (>=256 tokens)."""
         result = compose_system_prompt_blocks(
             global_prompt="Global " * 500,
-            custom_prompt="Custom " * 200,  # ~1400 chars ≈ 350 tokens
-            files_context=None,
+            custom_prompt="Custom " * 200,  # ~1400 chars = 350 tokens
         )
 
         assert len(result) == 2
         assert "cache_control" in result[0]  # Global cached
-        assert "cache_control" in result[1]  # Custom cached (≥256 tokens)
+        assert "cache_control" in result[1]  # Custom cached (>=256 tokens)
 
     def test_custom_prompt_small_not_cached(self):
         """Test small custom prompt is NOT cached (<256 tokens)."""
         result = compose_system_prompt_blocks(
             global_prompt="Global " * 500,
-            custom_prompt="Small custom",  # ~3 tokens, well under 256
-            files_context=None,
+            custom_prompt="Small custom",
         )
 
         assert len(result) == 2
         assert "cache_control" in result[0]  # Global cached
         assert "cache_control" not in result[1]  # Custom NOT cached (small)
 
-    def test_files_context_never_cached(self):
-        """Test files context is NEVER cached (dynamic)."""
+    def test_two_level_composition(self):
+        """Test both levels with proper caching."""
         result = compose_system_prompt_blocks(
             global_prompt="Global " * 500,
-            custom_prompt=None,
-            files_context="=== FILES ===\n" + "file.txt\n" * 500,  # Large
+            custom_prompt="Custom preferences",
         )
 
         assert len(result) == 2
         assert "cache_control" in result[0]  # Global cached
-        assert "cache_control" not in result[1]  # Files NEVER cached
-
-    def test_three_level_composition(self):
-        """Test all three levels with proper caching."""
-        result = compose_system_prompt_blocks(
-            global_prompt="Global " * 500,
-            custom_prompt="Custom preferences",
-            files_context="=== FILES ===",
-        )
-
-        assert len(result) == 3
-        assert "cache_control" in result[0]  # Global cached
         assert "cache_control" not in result[1]  # Custom small, not cached
-        assert "cache_control" not in result[2]  # Files never cached
 
     def test_block_content_preserved(self):
         """Test text content is preserved in blocks."""
         result = compose_system_prompt_blocks(
             global_prompt="GLOBAL_TEXT",
             custom_prompt="CUSTOM_TEXT",
-            files_context="FILES_TEXT",
         )
 
         texts = [block["text"] for block in result]
         assert "GLOBAL_TEXT" in texts
         assert "CUSTOM_TEXT" in texts
-        assert "FILES_TEXT" in texts

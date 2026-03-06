@@ -60,16 +60,15 @@ def split_text_smart(text: str,
     return chunks
 
 
-def compose_system_prompt(global_prompt: str, custom_prompt: str | None,
-                          files_context: str | None) -> str:
-    """Compose system prompt from 3 levels (legacy single-string version).
+def compose_system_prompt(global_prompt: str,
+                          custom_prompt: str | None) -> str:
+    """Compose system prompt from 2 levels (legacy single-string version).
 
     DEPRECATED: Use compose_system_prompt_blocks() for optimal caching.
 
     Args:
         global_prompt: Base system prompt (same for all users).
         custom_prompt: User's personal instructions (or None).
-        files_context: List of files in thread (or None).
 
     Returns:
         Composed system prompt with all parts joined by double newlines.
@@ -79,31 +78,25 @@ def compose_system_prompt(global_prompt: str, custom_prompt: str | None,
     if custom_prompt:
         parts.append(custom_prompt)
 
-    if files_context:
-        parts.append(files_context)
-
     return "\n\n".join(parts)
 
 
 def compose_system_prompt_blocks(
     global_prompt: str,
     custom_prompt: str | None,
-    files_context: str | None,
 ) -> list[dict]:
     """Compose system prompt as separate blocks for optimal caching.
 
-    Multi-block caching strategy:
-    - GLOBAL_SYSTEM_PROMPT: cached (same for all users, ~8K tokens)
-    - User.custom_prompt: cached (rarely changes per user)
-    - Thread.files_context: NOT cached (changes per request)
+    All blocks are static and cached:
+    - GLOBAL_SYSTEM_PROMPT: cached 1h (same for all users, ~8K tokens)
+    - User.custom_prompt: cached 1h (rarely changes per user)
 
-    This allows Anthropic to cache static parts while dynamic parts
-    (files list) can change without invalidating the cache.
+    File context is no longer included here — it moved to the list_files
+    tool to keep the system prompt fully static and cache-friendly.
 
     Args:
         global_prompt: Base system prompt (same for all users).
         custom_prompt: User's personal instructions (or None).
-        files_context: List of files in thread (or None).
 
     Returns:
         List of system prompt blocks for Anthropic API.
@@ -139,9 +132,5 @@ def compose_system_prompt_blocks(
             })
         else:
             blocks.append({"type": "text", "text": custom_prompt})
-
-    # Block 3: Files context - NEVER cached (dynamic per request)
-    if files_context:
-        blocks.append({"type": "text", "text": files_context})
 
     return blocks

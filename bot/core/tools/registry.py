@@ -38,6 +38,7 @@ from core.tools.deliver_file import TOOL_CONFIG as DELIVER_FILE_CONFIG
 from core.tools.execute_python import TOOL_CONFIG as EXECUTE_PYTHON_CONFIG
 from core.tools.extended_thinking import TOOL_CONFIG as EXTENDED_THINK_CONFIG
 from core.tools.generate_image import TOOL_CONFIG as GENERATE_IMAGE_CONFIG
+from core.tools.list_files import TOOL_CONFIG as LIST_FILES_CONFIG
 from core.tools.preview_file import TOOL_CONFIG as PREVIEW_FILE_CONFIG
 from core.tools.render_latex import TOOL_CONFIG as RENDER_LATEX_CONFIG
 from core.tools.self_critique import TOOL_CONFIG as SELF_CRITIQUE_CONFIG
@@ -100,6 +101,7 @@ TOOLS: Dict[str, ToolConfig] = {
     "execute_python": EXECUTE_PYTHON_CONFIG,
     "preview_file": PREVIEW_FILE_CONFIG,
     "deliver_file": DELIVER_FILE_CONFIG,
+    "list_files": LIST_FILES_CONFIG,
     "extended_thinking": EXTENDED_THINK_CONFIG,
     "self_critique": SELF_CRITIQUE_CONFIG,
     "web_search": WEB_SEARCH_CONFIG,

@@ -42,7 +42,7 @@ async def transcribe_audio(
     optional detailed segments with timestamps.
 
     Args:
-        file_id: Claude file_id (from Available files list in conversation).
+        file_id: Claude file_id (call list_files to get correct IDs).
         bot: Telegram Bot instance for downloading files.
         session: Database session for querying file metadata.
         thread_id: Thread ID (unused, for interface consistency).
@@ -172,7 +172,7 @@ Formats: MP3, FLAC, OGG, WAV, M4A, MP4, MOV, AVI, MKV, WebM.
 Returns: transcript, language, duration, cost_usd.
 
 Note: Voice messages are auto-transcribed on receipt. Use this only for audio files
-from "Available files" or when detailed analysis needed.
+when detailed analysis is needed. Call list_files first to get the correct file_id.
 
 Cost: $0.006/min (~$0.0015 for 15s, ~$0.36 for 1hr).
 Max size: 25MB. For larger files, split with execute_python first.""",
@@ -183,9 +183,8 @@ Max size: 25MB. For larger files, split with execute_python first.""",
                 "type":
                     "string",
                 "description":
-                    ("Claude file_id from 'Available files' section in "
-                     "conversation context. This is the unique identifier "
-                     "for the file you want to transcribe.")
+                    ("Claude file_id for the audio/video file. "
+                     "Call list_files first to get the correct file_id.")
             },
             "language": {
                 "type":

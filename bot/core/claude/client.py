@@ -94,39 +94,71 @@ def _filter_empty_messages(messages: list) -> list:
     return result
 
 
-def _apply_message_caching(api_messages: list) -> list:
+def _normalize_str_to_blocks(api_messages: list) -> list:
+    """Normalize all string content to list-of-blocks format.
+
+    Anthropic's prompt caching is prefix-based: the serialized bytes of
+    all messages before the cache breakpoint must be identical across
+    requests. If a message is {"content": "hello"} in one request and
+    {"content": [{"type":"text","text":"hello"}]} in the next, the prefix
+    changes and the cache misses.
+
+    By normalizing ALL messages to list format once, the prefix stays
+    stable regardless of where the rolling cache breakpoint is placed.
+
+    Args:
+        api_messages: List of message dicts from _filter_empty_messages.
+
+    Returns:
+        The same list with all string content converted to block format.
+    """
+    for msg in api_messages:
+        content = msg["content"]
+        if isinstance(content, str):
+            msg["content"] = [{"type": "text", "text": content}]
+    return api_messages
+
+
+def _apply_message_caching(api_messages: list,
+                           breakpoint_index: int | None = None) -> list:
     """Add rolling cache breakpoint to conversation history.
 
-    Places cache_control with 5-minute TTL on the second-to-last
-    message (typically the last assistant response before the new
-    user message). This creates a rolling cache that advances with
-    each turn, so previous conversation history is read from cache
-    at 0.1x input price.
+    Places cache_control with 5-minute TTL on either a specific message
+    (when breakpoint_index is set) or the second-to-last message.
+
+    When breakpoint_index is set (tool loop), the breakpoint anchors to
+    the last "clean" message from DB. This keeps the cached prefix stable
+    across tool loop iterations AND the next user message (which loads
+    the same clean messages from DB).
+
+    MUST be called after _normalize_str_to_blocks() so that all
+    messages are already in list-of-blocks format.
 
     Safe to call even when history is short — if content is below
     Anthropic's minimum cacheable size, the marker is silently ignored.
 
     Args:
         api_messages: List of message dicts from _filter_empty_messages.
+        breakpoint_index: Optional index to place the breakpoint at.
+            When None, defaults to messages[-2].
 
     Returns:
-        The same list with cache_control added to second-to-last message.
+        The same list with cache_control added to the target message.
     """
     if len(api_messages) < 3:
         return api_messages
 
-    target = api_messages[-2]
+    if breakpoint_index is not None:
+        target_idx = breakpoint_index
+        if target_idx < 0 or target_idx >= len(api_messages):
+            target_idx = len(api_messages) - 2
+    else:
+        target_idx = len(api_messages) - 2
+
+    target = api_messages[target_idx]
     content = target["content"]
 
-    if isinstance(content, str):
-        target["content"] = [{
-            "type": "text",
-            "text": content,
-            "cache_control": {
-                "type": "ephemeral"
-            }
-        }]
-    elif isinstance(content, list) and content:
+    if isinstance(content, list) and content:
         last_block = dict(content[-1])
         last_block["cache_control"] = {"type": "ephemeral"}
         content[-1] = last_block
@@ -242,7 +274,8 @@ class ClaudeProvider(LLMProvider):
 
         # Convert messages to Anthropic format, filtering empty messages
         api_messages = _filter_empty_messages(request.messages)
-        _apply_message_caching(api_messages)
+        _normalize_str_to_blocks(api_messages)
+        _apply_message_caching(api_messages, request.cache_breakpoint_index)
 
         # Prepare API parameters
         api_params = {
@@ -454,7 +487,8 @@ class ClaudeProvider(LLMProvider):
 
         # Convert messages to Anthropic format, filtering empty messages
         api_messages = _filter_empty_messages(request.messages)
-        _apply_message_caching(api_messages)
+        _normalize_str_to_blocks(api_messages)
+        _apply_message_caching(api_messages, request.cache_breakpoint_index)
 
         # Prepare request parameters (use exact model_id for API)
         api_params = {
@@ -991,7 +1025,8 @@ class ClaudeProvider(LLMProvider):
 
         # Convert messages to Anthropic format, filtering empty messages
         api_messages = _filter_empty_messages(request.messages)
-        _apply_message_caching(api_messages)
+        _normalize_str_to_blocks(api_messages)
+        _apply_message_caching(api_messages, request.cache_breakpoint_index)
 
         # Prepare API parameters
         api_params = {

@@ -405,8 +405,8 @@ async def execute_python(code: str,
                 "results": "[]",
                 "error": (
                     "Code references '/tmp/inputs/' but no file_inputs provided. "
-                    "You must pass file_inputs parameter with file_id and name "
-                    "from 'Available files' section to upload files to sandbox. "
+                    "You must pass file_inputs parameter with file_id and name. "
+                    "Call list_files first to get correct file IDs. "
                     "Example: file_inputs=[{\"file_id\": \"file_abc...\", "
                     "\"name\": \"data.csv\"}]"),
                 "success": "false",
@@ -635,14 +635,14 @@ Cost: ~$0.05/hour. Typical <1s = <$0.0001.""",
                             "type":
                                 "string",
                             "description": (
-                                "claude_file_id from 'Available files' section "
-                                "in system prompt (e.g., 'file_abc123...').")
+                                "claude_file_id from list_files tool "
+                                "(e.g., 'file_abc123...').")
                         },
                         "name": {
                             "type":
                                 "string",
                             "description": (
-                                "Original filename from 'Available files' "
+                                "Original filename from list_files "
                                 "(e.g., 'document.pdf'). File will be available "
                                 "at /tmp/inputs/{name} in sandbox.")
                         }
@@ -651,7 +651,7 @@ Cost: ~$0.05/hour. Typical <1s = <$0.0001.""",
                 },
                 "description":
                     ("List of input files to upload to sandbox. "
-                     "Use file_id and name from 'Available files' section. "
+                     "Call list_files first to get file_id and name. "
                      "Files uploaded to /tmp/inputs/ before code execution. "
                      "Optional - omit if no file inputs needed.")
             },

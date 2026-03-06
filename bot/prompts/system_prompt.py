@@ -37,6 +37,7 @@ Standard markdown auto-converts: **bold**, *italic*, ~~strike~~, `code`, ```bloc
 </telegram_formatting>
 
 <behavioral_guidelines>
+- When user references files, attachments, or generated content — call list_files first to see what's available
 - Investigate files before answering — use analyze_image/analyze_pdf/preview_file first
 - Reflect after tool results before next action
 - Implement changes rather than only suggesting when user intent is clear

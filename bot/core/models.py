@@ -113,6 +113,12 @@ class LLMRequest(BaseModel):
         default=None,
         description=
         "Extended Thinking budget in tokens. None = thinking disabled.")
+    cache_breakpoint_index: Optional[int] = Field(
+        default=None,
+        description=
+        "Index of the message to place the rolling cache breakpoint on. "
+        "When set, anchors the cache to this message instead of messages[-2]. "
+        "Used to keep cache stable across tool loop iterations.")
 
 
 class TokenUsage(BaseModel):

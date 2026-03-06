@@ -64,8 +64,6 @@ from core.pricing import calculate_cache_write_cost
 from core.pricing import calculate_claude_cost
 from core.tools.helpers import extract_tool_uses
 from core.tools.helpers import format_tool_results
-from core.tools.helpers import format_unified_files_section
-from core.tools.helpers import get_available_files
 from core.tools.registry import execute_tool
 from core.tools.registry import get_tool_definitions
 from core.tools.registry import get_tool_system_message
@@ -541,18 +539,12 @@ async def _process_batch_with_session(
                          model_id=user_model_id,
                          model_name=model_config.display_name)
 
-            # Unified file architecture: Generate files section for system prompt
-            # Includes both delivered files (from DB) and pending files (from cache)
-            files_section = format_unified_files_section(
-                available_files, pending_files) if (available_files or
-                                                    pending_files) else None
-
-            # Compose 3-level system prompt with multi-block caching
-            # GLOBAL (cached) + user custom (cached if large) + files (NOT cached)
+            # Compose system prompt: fully static blocks for optimal caching
+            # GLOBAL (cached 1h) + user custom (cached 1h)
+            # Files context moved to list_files tool to avoid cache invalidation
             system_prompt_blocks = compose_system_prompt_blocks(
                 global_prompt=GLOBAL_SYSTEM_PROMPT,
-                custom_prompt=user_custom_prompt,
-                files_context=files_section)
+                custom_prompt=user_custom_prompt)
 
             # Calculate total length for logging
             total_prompt_length = sum(
@@ -562,9 +554,6 @@ async def _process_batch_with_session(
                         thread_id=thread_id,
                         telegram_thread_id=thread.thread_id,
                         has_custom_prompt=user_custom_prompt is not None,
-                        has_files_context=files_section is not None,
-                        delivered_files=len(available_files),
-                        pending_files=len(pending_files),
                         block_count=len(system_prompt_blocks),
                         total_length=total_prompt_length)
 

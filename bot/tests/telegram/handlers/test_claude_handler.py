@@ -496,11 +496,6 @@ class TestProcessBatchWithSession:
                     "telegram.handlers.claude.UserFileRepository",
                     return_value=AsyncMock(),
                 ),
-            "get_available_files":
-                patch(
-                    "telegram.handlers.claude.get_available_files",
-                    AsyncMock(return_value=[]),
-                ),
             "get_pending_files":
                 patch(
                     "telegram.handlers.claude.get_pending_files_for_thread",
@@ -512,8 +507,7 @@ class TestProcessBatchWithSession:
                 "msg_repo"]:
             with patches["services"], patches["cache"], patches["invalidate"]:
                 with patches["logger"], patches["user_file_repo"]:
-                    with patches["get_available_files"], patches[
-                            "get_pending_files"]:
+                    with patches["get_pending_files"]:
                         from telegram.handlers.claude import \
                             _process_batch_with_session
 
@@ -614,11 +608,6 @@ class TestErrorHandling:
                     "telegram.handlers.claude.cache_messages",
                     AsyncMock(),
                 ),
-            "files":
-                patch(
-                    "telegram.handlers.claude.get_available_files",
-                    AsyncMock(return_value=[]),
-                ),
             "pending":
                 patch(
                     "telegram.handlers.claude.get_pending_files_for_thread",
@@ -678,7 +667,7 @@ class TestErrorHandling:
                     "cache_user"]:
                 with patches["cache_set"], patches["invalidate"], patches[
                         "cache_msgs"]:
-                    with patches["files"], patches["pending"], patches[
+                    with patches["pending"], patches[
                             "context"]:
                         with patches["formatter"], patches[
                                 "record_error"], patches["logger"]:
@@ -730,7 +719,7 @@ class TestErrorHandling:
                     "cache_user"]:
                 with patches["cache_set"], patches["invalidate"], patches[
                         "cache_msgs"]:
-                    with patches["files"], patches["pending"], patches[
+                    with patches["pending"], patches[
                             "context"]:
                         with patches["formatter"], patches[
                                 "record_error"], patches["record_request"]:
@@ -780,7 +769,7 @@ class TestErrorHandling:
                     "cache_user"]:
                 with patches["cache_set"], patches["invalidate"], patches[
                         "cache_msgs"]:
-                    with patches["files"], patches["pending"], patches[
+                    with patches["pending"], patches[
                             "context"]:
                         with patches["formatter"], patches[
                                 "record_error"], patches["record_request"]:
@@ -829,7 +818,7 @@ class TestErrorHandling:
                     "cache_user"]:
                 with patches["cache_set"], patches["invalidate"], patches[
                         "cache_msgs"]:
-                    with patches["files"], patches["pending"], patches[
+                    with patches["pending"], patches[
                             "context"]:
                         with patches["formatter"], patches[
                                 "record_error"], patches["record_request"]:
@@ -876,7 +865,7 @@ class TestErrorHandling:
                     "cache_user"]:
                 with patches["cache_set"], patches["invalidate"], patches[
                         "cache_msgs"]:
-                    with patches["files"], patches["pending"], patches[
+                    with patches["pending"], patches[
                             "context"]:
                         with patches["formatter"], patches[
                                 "record_error"], patches["logger"]:

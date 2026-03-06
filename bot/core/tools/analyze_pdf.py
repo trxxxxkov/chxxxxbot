@@ -187,7 +187,7 @@ ANALYZE_PDF_TOOL = {
         """Analyze PDF using Claude's text extraction and vision.
 
 Extracts text and analyzes visual elements (charts, tables, diagrams).
-Pass claude_file_id from "Available files" (mime_type "application/pdf") and specific question.
+Call list_files first to get the correct claude_file_id (mime_type "application/pdf"), then pass it with a specific question.
 Use pages parameter to limit scope: "1-5", "1,3,5", or "all".
 
 Prompt caching makes repeated analysis 90% cheaper.
@@ -199,8 +199,8 @@ Cost: ~3,000-5,000 tokens per page.""",
                 "type":
                     "string",
                 "description": ("File ID where mime_type is 'application/pdf'. "
-                                "Check 'Available files' for each file's "
-                                "mime_type before selecting.")
+                                "Call list_files first to get correct "
+                                "file IDs and mime types.")
             },
             "question": {
                 "type":

@@ -159,7 +159,10 @@ ANALYZE_IMAGE_TOOL = {
         """Analyze image using Claude Vision.
 
 Supports: OCR, object detection, scene understanding, chart analysis, visual Q&A.
-Pass claude_file_id from "Available files" (mime_type starts with "image/") and specific question.
+
+IMPORTANT: If the user sent an image directly in this conversation, you can already see it — just answer without calling this tool.
+Use this tool ONLY for previously delivered/generated files you cannot see inline.
+Call list_files first to get the correct claude_file_id (mime_type starts with "image/").
 
 For non-image files, use execute_python to parse content.
 Cost: ~1600 tokens per 1092x1092px image.""",
@@ -170,8 +173,8 @@ Cost: ~1600 tokens per 1092x1092px image.""",
                 "type":
                     "string",
                 "description": ("File ID where mime_type starts with 'image/'. "
-                                "Check 'Available files' for each file's "
-                                "mime_type before selecting.")
+                                "Call list_files first to get correct "
+                                "file IDs and mime types.")
             },
             "question": {
                 "type":

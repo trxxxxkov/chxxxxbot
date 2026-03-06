@@ -262,6 +262,10 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
         ):
             stream = StreamingSession(dm, self._thread_id)
             total_output_chars = 0
+            # Anchor cache breakpoint to last clean message before
+            # tool blocks. Stays stable across tool loop iterations,
+            # and matches what DB will return for the next message.
+            clean_breakpoint_idx = max(len(conversation) - 2, 0)
 
             for iteration in range(TOOL_LOOP_MAX_ITERATIONS):
                 logger.info(
@@ -284,6 +288,7 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
                     max_tokens=self._request.max_tokens,
                     temperature=self._request.temperature,
                     tools=self._request.tools,
+                    cache_breakpoint_index=clean_breakpoint_idx,
                 )
 
                 # Stream with typing indicator
