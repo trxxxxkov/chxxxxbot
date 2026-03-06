@@ -58,9 +58,11 @@ def calculate_e2b_cost(duration_seconds: float) -> Decimal:
 # Google Gemini Image Generation Pricing
 # =============================================================================
 
-# Nano Banana Pro pricing per image
-GEMINI_IMAGE_COST_STANDARD = Decimal("0.134")  # 1K/2K resolution
-GEMINI_IMAGE_COST_4K = Decimal("0.240")  # 4K resolution
+# Nano Banana 2 (Gemini 3.1 Flash Image) pricing per image
+# Based on $60/MTok output: 747 tokens (512px), 1120 tokens (1K/2K), 2000 tokens (4K)
+GEMINI_IMAGE_COST_512PX = Decimal("0.04482")  # 512px resolution
+GEMINI_IMAGE_COST_STANDARD = Decimal("0.0672")  # 1K/2K resolution
+GEMINI_IMAGE_COST_4K = Decimal("0.12")  # 4K resolution
 
 # Google Search grounding cost (approximate per query)
 GOOGLE_SEARCH_GROUNDING_COST = Decimal("0.02")
@@ -70,13 +72,15 @@ def calculate_gemini_image_cost(resolution: str = "2048x2048") -> Decimal:
     """Calculate Gemini image generation cost.
 
     Args:
-        resolution: Image resolution string (e.g., "2048x2048", "4096x4096").
+        resolution: Image resolution string (e.g., "512x512", "2048x2048", "4096x4096").
 
     Returns:
         Cost in USD as Decimal.
     """
     if "4096" in resolution:
         return GEMINI_IMAGE_COST_4K
+    if "512" in resolution:
+        return GEMINI_IMAGE_COST_512PX
     return GEMINI_IMAGE_COST_STANDARD
 
 

@@ -18,7 +18,7 @@ from core.pricing import E2B_COST_PER_SECOND
 # Tools that have API costs (external or Claude)
 # If user balance < 0, these tools are blocked
 PAID_TOOLS: set[str] = {
-    "generate_image",  # Google Gemini: $0.134-0.240/image
+    "generate_image",  # Google Gemini: $0.045-0.120/image
     "transcribe_audio",  # OpenAI Whisper: $0.006/minute
     "web_search",  # Anthropic: $0.01/request
     "execute_python",  # E2B sandbox: $0.000036/second
@@ -70,8 +70,12 @@ def estimate_tool_cost(
         return None
 
     if tool_name == "generate_image":
-        resolution = tool_input.get("resolution", "2k")
-        return Decimal("0.240") if resolution == "4k" else Decimal("0.134")
+        image_size = tool_input.get("image_size", "2K")
+        if image_size == "4K":
+            return Decimal("0.12")
+        if image_size == "512px":
+            return Decimal("0.04482")
+        return Decimal("0.0672")
 
     if tool_name == "transcribe_audio":
         # Estimate 5 minutes if duration unknown

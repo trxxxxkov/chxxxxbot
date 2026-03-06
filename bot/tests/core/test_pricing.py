@@ -20,6 +20,7 @@ from core.pricing import cost_to_float
 from core.pricing import E2B_COST_PER_SECOND
 from core.pricing import format_cost
 from core.pricing import GEMINI_IMAGE_COST_4K
+from core.pricing import GEMINI_IMAGE_COST_512PX
 from core.pricing import GEMINI_IMAGE_COST_STANDARD
 from core.pricing import WEB_SEARCH_COST_PER_REQUEST
 from core.pricing import WHISPER_COST_PER_MINUTE
@@ -185,6 +186,8 @@ class TestCalculateGeminiImageCost:
     @pytest.mark.parametrize(
         "resolution,expected",
         [
+            ("512x512", GEMINI_IMAGE_COST_512PX),
+            ("256x512", GEMINI_IMAGE_COST_512PX),  # Contains 512
             ("1024x1024", GEMINI_IMAGE_COST_STANDARD),
             ("2048x2048", GEMINI_IMAGE_COST_STANDARD),
             ("4096x4096", GEMINI_IMAGE_COST_4K),
@@ -666,7 +669,7 @@ class TestPricingIntegration:
         e2b_cost = calculate_e2b_cost(30)  # $0.0015
 
         # Image generation
-        image_cost = calculate_gemini_image_cost("2048x2048")  # $0.134
+        image_cost = calculate_gemini_image_cost("2048x2048")  # $0.0672
 
         with patch.dict("config.MODEL_REGISTRY",
                         mock_model_registry,

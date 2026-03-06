@@ -151,7 +151,7 @@ class TestExecuteSingleToolSafePrecheck:
                 "telegram.handlers.claude_tools.execute_tool",
                 return_value={
                     "result": "success",
-                    "cost_usd": 0.134
+                    "cost_usd": 0.067
                 },
         ):
             result = await execute_single_tool_safe(

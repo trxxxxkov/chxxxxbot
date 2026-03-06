@@ -1,8 +1,8 @@
-"""Image generation and editing tool using Google Gemini 3 Pro Image API.
+"""Image generation and editing tool using Google Gemini 3.1 Flash Image API.
 
 This module implements the generate_image tool for high-quality image
-generation, editing, and composition using Google's Nano Banana Pro model
-(gemini-3-pro-image-preview).
+generation, editing, and composition using Google's Nano Banana 2 model
+(gemini-3.1-flash-image-preview).
 
 Capabilities:
 - Text-to-image generation (up to 4K resolution)
@@ -48,7 +48,7 @@ GENERATE_IMAGE_TOOL = {
     "name":
         "generate_image",
     "description":
-        """Create/edit images using Gemini 3 Pro Image.
+        """Create/edit images using Gemini 3.1 Flash Image.
 
 <modes>
 - Generation: prompt only → new image (default)
@@ -57,8 +57,8 @@ GENERATE_IMAGE_TOOL = {
 </modes>
 
 <parameters>
-- aspect_ratio: 1:1 (avatar), 3:4 (portrait), 4:3 (landscape), 9:16/16:9 (widescreen)
-- image_size: 1K (preview), 2K (default), 4K (high quality, print, wallpaper)
+- aspect_ratio: 1:1 (square), 3:4/4:3 (portrait/landscape), 9:16/16:9 (stories/widescreen), 2:3/3:2 (photo), 4:5/5:4 (social), 1:4/4:1/1:8/8:1 (banner/panorama), 21:9 (ultrawide)
+- image_size: 512px (thumbnail/icon), 1K (preview), 2K (default), 4K (high quality, print, wallpaper)
 - source_file_ids: existing image file_id(s) to edit. Only use when user explicitly provides or references their image.
 </parameters>
 
@@ -77,7 +77,7 @@ Max 480 tokens, English only.
 Use for: photos, artwork, illustrations, logos, memes.
 NOT for: charts, graphs, data viz → use execute_python.
 Do NOT ask user for source images unless they explicitly want to edit an existing photo.
-Cost: $0.134 (1K/2K), $0.24 (4K).""",
+Cost: $0.045 (512px), $0.067 (1K/2K), $0.12 (4K).""",
     "input_schema": {
         "type": "object",
         "properties": {
@@ -91,12 +91,12 @@ Cost: $0.134 (1K/2K), $0.24 (4K).""",
             },
             "aspect_ratio": {
                 "type": "string",
-                "enum": ["1:1", "3:4", "4:3", "9:16", "16:9"],
+                "enum": ["1:1", "1:4", "1:8", "2:3", "3:2", "3:4", "4:1", "4:3", "4:5", "5:4", "8:1", "9:16", "16:9", "21:9"],
                 "description": "Image dimensions. Default 1:1 square."
             },
             "image_size": {
                 "type": "string",
-                "enum": ["1K", "2K", "4K"],
+                "enum": ["512px", "1K", "2K", "4K"],
                 "description": "Output resolution. Default 2K."
             },
             "source_file_ids": {
@@ -173,7 +173,7 @@ async def generate_image(  # pylint: disable=too-many-locals,too-many-branches,t
     source_file_ids: List[str] | None = None,
     use_google_search: bool = False,
 ) -> Dict[str, Any]:
-    """Generate, edit, or compose images using Google Gemini 3 Pro Image API.
+    """Generate, edit, or compose images using Google Gemini 3.1 Flash Image API.
 
     This function supports three modes:
     1. Generation: Create new image from text prompt (source_file_ids empty)
@@ -266,7 +266,7 @@ async def generate_image(  # pylint: disable=too-many-locals,too-many-branches,t
 
         def _sync_generate() -> Any:
             return client.models.generate_content(
-                model="gemini-3-pro-image-preview",
+                model="gemini-3.1-flash-image-preview",
                 contents=contents,
                 config=genai_types.GenerateContentConfig(
                     response_modalities=['TEXT', 'IMAGE'],
@@ -367,7 +367,12 @@ async def generate_image(  # pylint: disable=too-many-locals,too-many-branches,t
                     size_bytes=len(image_bytes))
 
         # Step 6: Calculate cost
-        resolution = "4096x4096" if image_size == "4K" else "2048x2048"
+        if image_size == "4K":
+            resolution = "4096x4096"
+        elif image_size == "512px":
+            resolution = "512x512"
+        else:
+            resolution = "2048x2048"
         cost_usd = calculate_gemini_image_cost(resolution)
 
         # Add grounding cost if used

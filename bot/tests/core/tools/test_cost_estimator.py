@@ -58,24 +58,29 @@ class TestEstimateToolCost:
     """Tests for estimate_tool_cost() function."""
 
     def test_generate_image_default_resolution(self):
-        """generate_image with default resolution costs $0.134."""
+        """generate_image with default resolution costs $0.0672."""
         cost = estimate_tool_cost("generate_image", {})
-        assert cost == Decimal("0.134")
+        assert cost == Decimal("0.0672")
+
+    def test_generate_image_512px_resolution(self):
+        """generate_image with 512px resolution costs $0.04482."""
+        cost = estimate_tool_cost("generate_image", {"image_size": "512px"})
+        assert cost == Decimal("0.04482")
 
     def test_generate_image_1k_resolution(self):
-        """generate_image with 1k resolution costs $0.134."""
-        cost = estimate_tool_cost("generate_image", {"resolution": "1k"})
-        assert cost == Decimal("0.134")
+        """generate_image with 1K resolution costs $0.0672."""
+        cost = estimate_tool_cost("generate_image", {"image_size": "1K"})
+        assert cost == Decimal("0.0672")
 
     def test_generate_image_2k_resolution(self):
-        """generate_image with 2k resolution costs $0.134."""
-        cost = estimate_tool_cost("generate_image", {"resolution": "2k"})
-        assert cost == Decimal("0.134")
+        """generate_image with 2K resolution costs $0.0672."""
+        cost = estimate_tool_cost("generate_image", {"image_size": "2K"})
+        assert cost == Decimal("0.0672")
 
     def test_generate_image_4k_resolution(self):
-        """generate_image with 4k resolution costs $0.240."""
-        cost = estimate_tool_cost("generate_image", {"resolution": "4k"})
-        assert cost == Decimal("0.240")
+        """generate_image with 4K resolution costs $0.12."""
+        cost = estimate_tool_cost("generate_image", {"image_size": "4K"})
+        assert cost == Decimal("0.12")
 
     def test_transcribe_audio_with_duration(self):
         """transcribe_audio cost based on duration."""

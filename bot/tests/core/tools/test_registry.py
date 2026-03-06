@@ -415,7 +415,7 @@ class TestGetToolSystemMessage:
             {"prompt": "A cat"},
             {
                 "success": "true",
-                "cost": "$0.134"
+                "cost": "$0.067"
             },
         )
         # Should contain emoji and resolution info

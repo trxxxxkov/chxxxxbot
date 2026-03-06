@@ -446,10 +446,12 @@ WHISPER_COST_PER_MINUTE: float = 0.006  # $0.006 per minute
 
 # Google Gemini Image Generation pricing
 # Already tracked in generate_image tool
-# 1K/2K: $0.134 per image, 4K: $0.240 per image
+# Nano Banana 2 (Gemini 3.1 Flash Image): $60/MTok output
+# 512px: $0.045, 1K/2K: $0.067, 4K: $0.120
 # Reference: https://ai.google.dev/pricing
-GEMINI_IMAGE_COST_1K: float = 0.134  # $0.134 per 1K/2K image
-GEMINI_IMAGE_COST_4K: float = 0.240  # $0.240 per 4K image
+GEMINI_IMAGE_COST_512PX: float = 0.045  # $0.045 per 512px image
+GEMINI_IMAGE_COST_1K: float = 0.067  # $0.067 per 1K/2K image
+GEMINI_IMAGE_COST_4K: float = 0.120  # $0.120 per 4K image
 
 # Commission rates for formula: y = x * (1 - k1 - k2 - k3)
 TELEGRAM_WITHDRAWAL_FEE: float = 0.35  # k1: 35% Telegram withdrawal commission

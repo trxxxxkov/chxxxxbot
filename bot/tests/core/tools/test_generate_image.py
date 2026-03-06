@@ -1,6 +1,6 @@
 """Tests for generate_image tool (Phase 1.7+).
 
-Tests Google Gemini 3 Pro Image API integration:
+Tests Google Gemini 3.1 Flash Image API integration:
 - Success flow (image generation) with exec_cache storage
 - Parameter handling (aspect_ratio, image_size)
 - Error handling (API errors, content policy violations)
@@ -85,12 +85,13 @@ def test_tool_definition_structure():
     # Check aspect_ratio enum
     assert "enum" in properties["aspect_ratio"]
     assert set(properties["aspect_ratio"]["enum"]) == {
-        "1:1", "3:4", "4:3", "9:16", "16:9"
+        "1:1", "1:4", "1:8", "2:3", "3:2", "3:4", "4:1", "4:3", "4:5",
+        "5:4", "8:1", "9:16", "16:9", "21:9"
     }
 
     # Check image_size enum
     assert "enum" in properties["image_size"]
-    assert set(properties["image_size"]["enum"]) == {"1K", "2K", "4K"}
+    assert set(properties["image_size"]["enum"]) == {"512px", "1K", "2K", "4K"}
 
 
 # ============================================================================
@@ -124,7 +125,7 @@ async def test_generate_image_success(mock_exec_cache):
         # Verify result structure (exec_cache pattern)
         assert result["success"] == "true"
         assert "cost_usd" in result
-        assert result["cost_usd"] == "0.134"  # Default 2K cost
+        assert result["cost_usd"] == "0.067"  # Default 2K cost
         assert result["mode"] == "generate"
 
         # Check output_file with temp_id (exec_cache pattern)
@@ -169,7 +170,7 @@ async def test_generate_image_custom_parameters(mock_exec_cache):
 
         # Verify result (4K costs more)
         assert result["success"] == "true"
-        assert result["cost_usd"] == "0.240"  # 4K cost
+        assert result["cost_usd"] == "0.120"  # 4K cost
 
         # Check output_file with temp_id (exec_cache pattern)
         assert "output_file" in result
@@ -338,7 +339,7 @@ async def test_cost_calculation_1k(mock_exec_cache):
         )
 
         assert result["success"] == "true"
-        assert result["cost_usd"] == "0.134"
+        assert result["cost_usd"] == "0.067"
 
 
 @pytest.mark.asyncio
@@ -363,7 +364,7 @@ async def test_cost_calculation_2k(mock_exec_cache):
         )
 
         assert result["success"] == "true"
-        assert result["cost_usd"] == "0.134"
+        assert result["cost_usd"] == "0.067"
 
 
 @pytest.mark.asyncio
@@ -388,4 +389,4 @@ async def test_cost_calculation_4k(mock_exec_cache):
         )
 
         assert result["success"] == "true"
-        assert result["cost_usd"] == "0.240"
+        assert result["cost_usd"] == "0.120"
