@@ -48,8 +48,8 @@ from config import CLAUDE_TOKEN_BUFFER_PERCENT
 from config import FILES_API_TTL_HOURS
 from config import get_model
 from config import GLOBAL_SYSTEM_PROMPT
-from core.claude.client import ClaudeProvider
 from core.claude.context import ContextManager
+from core.provider_factory import get_provider
 from core.claude.files_api import upload_to_files_api
 from core.exceptions import APIConnectionError
 from core.exceptions import APITimeoutError
@@ -62,6 +62,7 @@ from core.models import LLMRequest
 from core.models import Message
 from core.pricing import calculate_cache_write_cost
 from core.pricing import calculate_claude_cost
+from core.pricing import calculate_provider_cost
 from core.tools.helpers import extract_tool_uses
 from core.tools.helpers import format_tool_results
 from core.tools.registry import execute_tool
@@ -83,7 +84,7 @@ from telegram.concurrency_limiter import ConcurrencyLimitExceeded
 from telegram.context.extractors import extract_message_context
 from telegram.context.formatter import ContextFormatter
 from telegram.handlers.claude_files import process_generated_files
-from telegram.handlers.claude_helpers import compose_system_prompt_blocks
+from telegram.handlers.claude_helpers import compose_system_prompt_for_provider
 from telegram.handlers.claude_helpers import split_text_smart
 from telegram.streaming.formatting import escape_html
 from telegram.streaming.formatting import \
@@ -103,20 +104,17 @@ from utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
 
-# Global Claude provider instance (initialized in main.py)
-claude_provider: ClaudeProvider = None
-
-
 def init_claude_provider(api_key: str) -> None:
-    """Initialize global Claude provider.
+    """Initialize Claude provider via provider factory.
 
-    Must be called once during application startup.
+    Kept for backward compatibility with main.py.
+    Delegates to provider_factory.init_providers().
 
     Args:
-        api_key: Claude API key from secrets.
+        api_key: Claude API key from secrets (unused, read from secrets by factory).
     """
-    global claude_provider  # pylint: disable=global-statement
-    claude_provider = ClaudeProvider(api_key=api_key)
+    from core.provider_factory import init_providers  # pylint: disable=import-outside-toplevel
+    init_providers()
     logger.debug("claude_handler.provider_initialized")
 
 
@@ -215,13 +213,6 @@ async def _process_message_batch(thread_id: int,
     if not messages:
         # Should never happen - indicates bug in batching logic
         logger.error("claude_handler.empty_batch", thread_id=thread_id)
-        return
-
-    if claude_provider is None:
-        logger.error("claude_handler.provider_not_initialized")
-        # Send error to first message
-        await messages[0].original_message.answer(
-            "Bot is not properly configured. Please contact administrator.")
         return
 
     # Use first message for bot/chat context
@@ -530,25 +521,29 @@ async def _process_batch_with_session(
                          message_count=len(history))
 
             # 5. Build context
-            context_mgr = ContextManager(claude_provider)
-
-            # Get model config from user
             model_config = get_model(user_model_id)
+            provider = get_provider(user_model_id)
+            context_mgr = ContextManager(provider)
 
             logger.debug("claude_handler.using_model",
                          model_id=user_model_id,
+                         provider=model_config.provider,
                          model_name=model_config.display_name)
 
-            # Compose system prompt: fully static blocks for optimal caching
-            # GLOBAL (cached 1h) + user custom (cached 1h)
-            # Files context moved to list_files tool to avoid cache invalidation
-            system_prompt_blocks = compose_system_prompt_blocks(
+            # Compose system prompt: provider-aware composition
+            # Claude: multi-block with cache_control markers
+            # Others: simple string concatenation
+            system_prompt_blocks = compose_system_prompt_for_provider(
+                provider=model_config.provider,
                 global_prompt=GLOBAL_SYSTEM_PROMPT,
                 custom_prompt=user_custom_prompt)
 
             # Calculate total length for logging
-            total_prompt_length = sum(
-                len(block.get("text", "")) for block in system_prompt_blocks)
+            if isinstance(system_prompt_blocks, list):
+                total_prompt_length = sum(
+                    len(block.get("text", "")) for block in system_prompt_blocks)
+            else:
+                total_prompt_length = len(system_prompt_blocks)
 
             logger.info("claude_handler.system_prompt_composed",
                         thread_id=thread_id,
@@ -587,12 +582,13 @@ async def _process_batch_with_session(
 
             request = LLMRequest(
                 messages=context,
-                system_prompt=
-                system_prompt_blocks,  # Multi-block for optimal caching
+                system_prompt=system_prompt_blocks,
                 model=user_model_id,
                 max_tokens=model_config.max_output,
                 temperature=config.CLAUDE_TEMPERATURE,
-                tools=get_tool_definitions(exclude=exclude_tools))
+                tools=get_tool_definitions(
+                    exclude=exclude_tools,
+                    provider=model_config.provider))
 
             logger.info("claude_handler.request_prepared",
                         thread_id=thread_id,
@@ -619,7 +615,7 @@ async def _process_batch_with_session(
             try:
                 # Reset cache accumulator so we track creation across
                 # all tool loop turns for this user message
-                claude_provider.reset_cache_accumulator()
+                provider.reset_cache_accumulator()
 
                 # Phase 3.4: Continuation loop for sequential file delivery
                 # Max 5 continuations to prevent infinite loops
@@ -645,7 +641,7 @@ async def _process_batch_with_session(
                         user_id=thread.user_id,
                         telegram_thread_id=thread.thread_id,
                         continuation_conversation=continuation_conversation,
-                        claude_provider=claude_provider,
+                        provider=provider,
                     )
                     result = await orchestrator.stream()
 
@@ -666,8 +662,8 @@ async def _process_batch_with_session(
 
                     # Preserve compaction: stream_events() resets last_compaction
                     # each call, so capture it when it fires (any iteration)
-                    if claude_provider.last_compaction:
-                        compaction_summary = claude_provider.last_compaction
+                    if provider.last_compaction:
+                        compaction_summary = provider.last_compaction
 
                     # Collect response parts
                     if response_text:
@@ -877,89 +873,82 @@ async def _process_batch_with_session(
                 return
 
             # 9. Get usage stats, stop_reason, thinking, and calculate cost
-            usage = await claude_provider.get_usage()
-            stop_reason = claude_provider.get_stop_reason()
+            usage = await provider.get_usage()
+            stop_reason = provider.get_stop_reason()
             # Phase 1.4.3: Get thinking blocks with signatures for DB storage
             # (required for Extended Thinking - API needs signatures in context)
-            thinking_blocks_json = claude_provider.get_thinking_blocks_json()
+            thinking_blocks_json = provider.get_thinking_blocks_json()
             # Opus 4.6: compaction_summary already captured in continuation
             # loop above (stream_events resets last_compaction each call)
 
-            # Calculate Claude API cost using centralized pricing
-            # Uses TTL breakdown for accurate pricing (1h explicit vs 5m auto)
+            # Calculate API cost using provider-aware pricing
             cost_usd = float(
-                calculate_claude_cost(
-                    model_id=model_config.model_id,
-                    input_tokens=usage.input_tokens,
-                    output_tokens=usage.output_tokens,
-                    cache_read_tokens=usage.cache_read_tokens or 0,
-                    cache_creation_tokens=usage.cache_creation_tokens or 0,
-                    thinking_tokens=usage.thinking_tokens,
-                    cache_creation_1h_tokens=usage.cache_creation_1h_tokens,
-                    cache_creation_5m_tokens=usage.cache_creation_5m_tokens,
-                ))
+                calculate_provider_cost(user_model_id, usage))
 
-            # Calculate cache costs separately for logging
+            # Claude-specific cache cost breakdown
             cache_read_cost = 0.0
             cache_creation_cost = 0.0
-            if usage.cache_read_tokens and model_config.pricing_cache_read:
-                cache_read_cost = ((usage.cache_read_tokens / 1_000_000) *
-                                   model_config.pricing_cache_read)
-            # Use TTL breakdown for accurate cache creation cost
-            if usage.cache_creation_1h_tokens > 0 and model_config.pricing_cache_write_1h:
-                cache_creation_cost += (
-                    (usage.cache_creation_1h_tokens / 1_000_000) *
-                    model_config.pricing_cache_write_1h)
-            if usage.cache_creation_5m_tokens > 0 and model_config.pricing_cache_write_5m:
-                cache_creation_cost += (
-                    (usage.cache_creation_5m_tokens / 1_000_000) *
-                    model_config.pricing_cache_write_5m)
-
-            # Always record cache write cost as separate metric
-            if cache_creation_cost > 0:
-                record_cost(service="cache_write",
-                            amount_usd=cache_creation_cost)
-
-            # Determine user charge (with or without cache write subsidy)
             cache_write_subsidized = False
-            if not config.CHARGE_USERS_FOR_CACHE_WRITE and cache_creation_cost > 0:
-                cache_write_cost_precise = float(
-                    calculate_cache_write_cost(
-                        model_id=model_config.model_id,
-                        cache_creation_tokens=(usage.cache_creation_tokens or
-                                               0),
-                        cache_creation_1h_tokens=usage.cache_creation_1h_tokens,
-                        cache_creation_5m_tokens=usage.cache_creation_5m_tokens,
-                    ))
-                user_charge_usd = cost_usd - cache_write_cost_precise
-                cache_write_subsidized = True
-                logger.info(
-                    "claude_handler.cache_write_subsidized",
-                    user_id=user_id,
-                    cache_write_cost=round(cache_write_cost_precise, 6),
-                    total_cost=round(cost_usd, 6),
-                    user_charge=round(user_charge_usd, 6),
-                )
-            else:
-                user_charge_usd = cost_usd
+            if model_config.provider == "claude":
+                if usage.cache_read_tokens and model_config.pricing_cache_read:
+                    cache_read_cost = ((usage.cache_read_tokens / 1_000_000) *
+                                       model_config.pricing_cache_read)
+                if usage.cache_creation_1h_tokens > 0 and model_config.pricing_cache_write_1h:
+                    cache_creation_cost += (
+                        (usage.cache_creation_1h_tokens / 1_000_000) *
+                        model_config.pricing_cache_write_1h)
+                if usage.cache_creation_5m_tokens > 0 and model_config.pricing_cache_write_5m:
+                    cache_creation_cost += (
+                        (usage.cache_creation_5m_tokens / 1_000_000) *
+                        model_config.pricing_cache_write_5m)
 
-            # Calculate web_search cost ($0.01 per search request)
-            web_search_cost = usage.web_search_requests * 0.01
-            if web_search_cost > 0:
-                cost_usd += web_search_cost
-                user_charge_usd += web_search_cost
-                logger.info(
-                    "tools.web_search.user_charged",
-                    user_id=user_id,
-                    web_search_requests=usage.web_search_requests,
-                    cost_usd=web_search_cost,
-                )
-                # Record each web_search as a tool call for metrics
-                for _ in range(usage.web_search_requests):
-                    record_tool_call(tool_name="web_search",
-                                     success=True,
-                                     duration=0.0)
-                record_cost(service="web_search", amount_usd=web_search_cost)
+                # Always record cache write cost as separate metric
+                if cache_creation_cost > 0:
+                    record_cost(service="cache_write",
+                                amount_usd=cache_creation_cost)
+
+                # Determine user charge (with or without cache write subsidy)
+                if not config.CHARGE_USERS_FOR_CACHE_WRITE and cache_creation_cost > 0:
+                    cache_write_cost_precise = float(
+                        calculate_cache_write_cost(
+                            model_id=model_config.model_id,
+                            cache_creation_tokens=(usage.cache_creation_tokens or
+                                                   0),
+                            cache_creation_1h_tokens=usage.cache_creation_1h_tokens,
+                            cache_creation_5m_tokens=usage.cache_creation_5m_tokens,
+                        ))
+                    user_charge_usd = cost_usd - cache_write_cost_precise
+                    cache_write_subsidized = True
+                    logger.info(
+                        "claude_handler.cache_write_subsidized",
+                        user_id=user_id,
+                        cache_write_cost=round(cache_write_cost_precise, 6),
+                        total_cost=round(cost_usd, 6),
+                        user_charge=round(user_charge_usd, 6),
+                    )
+                else:
+                    user_charge_usd = cost_usd
+
+                # Calculate web_search cost ($0.01 per search request)
+                web_search_cost = usage.web_search_requests * 0.01
+                if web_search_cost > 0:
+                    cost_usd += web_search_cost
+                    user_charge_usd += web_search_cost
+                    logger.info(
+                        "tools.web_search.user_charged",
+                        user_id=user_id,
+                        web_search_requests=usage.web_search_requests,
+                        cost_usd=web_search_cost,
+                    )
+                    # Record each web_search as a tool call for metrics
+                    for _ in range(usage.web_search_requests):
+                        record_tool_call(tool_name="web_search",
+                                         success=True,
+                                         duration=0.0)
+                    record_cost(service="web_search", amount_usd=web_search_cost)
+            else:
+                # Non-Claude providers: no cache cost breakdown
+                user_charge_usd = cost_usd
 
             # Record response time (Claude API duration)
             response_duration = time.perf_counter() - request_start_time
@@ -996,7 +985,7 @@ async def _process_batch_with_session(
                 cache_read_tokens=usage.cache_read_tokens,
                 cache_write_tokens=usage.cache_creation_tokens,
             )
-            record_cost(service="claude",
+            record_cost(service=model_config.provider,
                         amount_usd=cost_usd - cache_creation_cost)
             record_message_sent(chat_type=first_message.chat.type)
 
@@ -1004,13 +993,14 @@ async def _process_batch_with_session(
             record_claude_response_time(model=user_model_id,
                                         seconds=response_duration)
 
-            # Record cache metrics (Phase 3.1: Prometheus)
-            if usage.cache_read_tokens and usage.cache_read_tokens > 0:
-                record_cache_hit(tokens_saved=usage.cache_read_tokens)
-            # Only count 1h cache creation as "miss" (system prompt re-cache).
-            # 5m auto-caching of thinking blocks is expected API behavior.
-            if usage.cache_creation_1h_tokens > 0:
-                record_cache_miss()
+            # Record cache metrics (Phase 3.1: Prometheus, Claude only)
+            if model_config.provider == "claude":
+                if usage.cache_read_tokens and usage.cache_read_tokens > 0:
+                    record_cache_hit(tokens_saved=usage.cache_read_tokens)
+                # Only count 1h cache creation as "miss" (system prompt re-cache).
+                # 5m auto-caching of thinking blocks is expected API behavior.
+                if usage.cache_creation_1h_tokens > 0:
+                    record_cache_miss()
 
             # Phase 1.4.4: Handle special stop reasons
             if stop_reason == "model_context_window_exceeded":
@@ -1186,7 +1176,7 @@ async def _process_batch_with_session(
             try:
                 # Build description with all cost components
                 desc_parts = [
-                    f"Claude API: {usage.input_tokens} in",
+                    f"{model_config.provider.capitalize()} API: {usage.input_tokens} in",
                     f"{usage.output_tokens} out",
                 ]
                 if usage.thinking_tokens:

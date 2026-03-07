@@ -915,4 +915,5 @@ TOOL_CONFIG = ToolConfig(
     executor=execute_self_critique,
     emoji="🔍",
     needs_bot_session=True,
+    providers={"claude"},  # Uses Claude Opus 4.6 internally
 )

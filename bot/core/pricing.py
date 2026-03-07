@@ -250,6 +250,45 @@ def calculate_cache_write_cost(
 WEB_SEARCH_COST_PER_REQUEST = Decimal("0.01")
 
 
+def calculate_provider_cost(model_full_id: str, usage: 'TokenUsage') -> Decimal:
+    """Calculate cost for any provider based on model config and usage.
+
+    Routes to provider-specific cost calculation. For Claude, uses the
+    detailed cache-aware calculation. For others, uses generic pricing.
+
+    Args:
+        model_full_id: Full model ID like "claude:sonnet" or "google:flash".
+        usage: TokenUsage from the provider.
+
+    Returns:
+        Cost in USD as Decimal.
+    """
+    from config import get_model  # pylint: disable=import-outside-toplevel
+
+    model_config = get_model(model_full_id)
+
+    if model_config.provider == "claude":
+        return calculate_claude_cost(
+            model_id=model_config.model_id,
+            input_tokens=usage.input_tokens,
+            output_tokens=usage.output_tokens,
+            cache_read_tokens=usage.cache_read_tokens,
+            cache_creation_tokens=usage.cache_creation_tokens,
+            thinking_tokens=usage.thinking_tokens,
+            cache_creation_1h_tokens=usage.cache_creation_1h_tokens,
+            cache_creation_5m_tokens=usage.cache_creation_5m_tokens,
+        )
+
+    # Generic pricing for Google and others: input + output + thinking
+    input_cost = (Decimal(str(usage.input_tokens)) / Decimal("1000000") *
+                  Decimal(str(model_config.pricing_input)))
+    output_cost = (Decimal(str(usage.output_tokens)) / Decimal("1000000") *
+                   Decimal(str(model_config.pricing_output)))
+    thinking_cost = (Decimal(str(usage.thinking_tokens)) / Decimal("1000000") *
+                     Decimal(str(model_config.pricing_output)))
+    return input_cost + output_cost + thinking_cost
+
+
 def calculate_web_search_cost(request_count: int) -> Decimal:
     """Calculate web search cost.
 

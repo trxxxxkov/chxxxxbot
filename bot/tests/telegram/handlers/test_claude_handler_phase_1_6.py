@@ -213,8 +213,8 @@ async def test_voice_message_transcript_prefix(
                return_value=mock_user_file_repo), \
          patch('telegram.handlers.claude.ServiceFactory',
                return_value=mock_services), \
-         patch('telegram.handlers.claude.claude_provider',
-               mock_claude_provider):
+         patch('telegram.handlers.claude.get_provider',
+               return_value=mock_claude_provider):
 
         mock_get_session.return_value = mock_session_context(mock_session)
 
@@ -277,8 +277,8 @@ async def test_image_with_caption(mock_session, mock_message, sample_metadata,
                return_value=mock_user_file_repo), \
          patch('telegram.handlers.claude.ServiceFactory',
                return_value=mock_services), \
-         patch('telegram.handlers.claude.claude_provider',
-               mock_claude_provider):
+         patch('telegram.handlers.claude.get_provider',
+               return_value=mock_claude_provider):
 
         mock_get_session.return_value = mock_session_context(mock_session)
 
@@ -332,8 +332,8 @@ async def test_image_without_caption(mock_session, mock_message,
                return_value=mock_user_file_repo), \
          patch('telegram.handlers.claude.ServiceFactory',
                return_value=mock_services), \
-         patch('telegram.handlers.claude.claude_provider',
-               mock_claude_provider):
+         patch('telegram.handlers.claude.get_provider',
+               return_value=mock_claude_provider):
 
         mock_get_session.return_value = mock_session_context(mock_session)
 
@@ -382,8 +382,8 @@ async def test_regular_text_message(mock_session, mock_message, sample_metadata,
                return_value=mock_user_file_repo), \
          patch('telegram.handlers.claude.ServiceFactory',
                return_value=mock_services), \
-         patch('telegram.handlers.claude.claude_provider',
-               mock_claude_provider):
+         patch('telegram.handlers.claude.get_provider',
+               return_value=mock_claude_provider):
 
         mock_get_session.return_value = mock_session_context(mock_session)
 

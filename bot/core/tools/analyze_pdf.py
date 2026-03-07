@@ -233,4 +233,5 @@ TOOL_CONFIG = ToolConfig(
     format_result=None,  # No system message for analysis tools
     file_id_param="claude_file_id",
     allowed_mime_prefixes=["application/pdf"],  # Only PDF MIME type
+    providers={"claude"},  # Uses Claude PDF API
 )

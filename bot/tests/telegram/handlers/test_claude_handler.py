@@ -174,23 +174,19 @@ class TestInitClaudeProvider:
     """Tests for init_claude_provider function."""
 
     def test_init_creates_provider(self):
-        """Should create ClaudeProvider and set global."""
+        """Should call init_providers via factory."""
         with patch(
-                "telegram.handlers.claude.ClaudeProvider") as mock_provider_cls:
-            mock_provider_cls.return_value = MagicMock()
-
+                "core.provider_factory.init_providers") as mock_init:
             from telegram.handlers.claude import init_claude_provider
 
             init_claude_provider("test_api_key")
 
-            mock_provider_cls.assert_called_once_with(api_key="test_api_key")
+            mock_init.assert_called_once()
 
     def test_init_logs_initialization(self):
         """Should log provider initialization."""
         with patch(
-                "telegram.handlers.claude.ClaudeProvider") as mock_provider_cls:
-            mock_provider_cls.return_value = MagicMock()
-
+                "core.provider_factory.init_providers"):
             with patch("telegram.handlers.claude.logger") as mock_logger:
                 from telegram.handlers.claude import init_claude_provider
 
@@ -325,29 +321,6 @@ class TestProcessMessageBatch:
             )
 
     @pytest.mark.asyncio
-    async def test_provider_not_initialized(
-        self,
-        mock_telegram_message,
-        sample_metadata,
-    ):
-        """Should send error when provider not initialized."""
-        processed = make_processed_message(
-            text="Hello",
-            metadata=sample_metadata,
-            original_message=mock_telegram_message,
-        )
-
-        with patch("telegram.handlers.claude.claude_provider", None):
-            with patch("telegram.handlers.claude.logger"):
-                from telegram.handlers.claude import _process_message_batch
-
-                await _process_message_batch(thread_id=42, messages=[processed])
-
-                mock_telegram_message.answer.assert_called_once()
-                call_args = mock_telegram_message.answer.call_args[0][0]
-                assert "not properly configured" in call_args
-
-    @pytest.mark.asyncio
     async def test_concurrency_limit_exceeded(
         self,
         mock_telegram_message,
@@ -372,8 +345,8 @@ class TestProcessMessageBatch:
             )
             yield  # pylint: disable=unreachable
 
-        with patch("telegram.handlers.claude.claude_provider",
-                   mock_claude_provider):
+        with patch("telegram.handlers.claude.get_provider",
+                   return_value=mock_claude_provider):
             with patch(
                     "telegram.handlers.claude.concurrency_context",
                     mock_concurrency_raises,
@@ -912,8 +885,8 @@ class TestBatchMetrics:
 
         mock_record_batched = MagicMock()
 
-        with patch("telegram.handlers.claude.claude_provider",
-                   mock_claude_provider):
+        with patch("telegram.handlers.claude.get_provider",
+                   return_value=mock_claude_provider):
             with patch(
                     "telegram.handlers.claude.concurrency_context",
                     mock_concurrency_context,
@@ -953,8 +926,8 @@ class TestBatchMetrics:
 
         mock_record_batched = MagicMock()
 
-        with patch("telegram.handlers.claude.claude_provider",
-                   mock_claude_provider):
+        with patch("telegram.handlers.claude.get_provider",
+                   return_value=mock_claude_provider):
             with patch(
                     "telegram.handlers.claude.concurrency_context",
                     mock_concurrency_context,

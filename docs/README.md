@@ -88,6 +88,14 @@ Documents are organized by development phase for easy navigation.
 | [phase-3.3-cache-first-plan.md](phase-3.3-cache-first-plan.md) | Cache-first architecture: write-behind, circuit breaker, alerting | **implemented** |
 | [phase-3.4-flexible-file-delivery.md](phase-3.4-flexible-file-delivery.md) | Flexible file delivery: preview_file, sequential delivery | **implemented** |
 
+### Phase 4: Multi-Provider Architecture
+
+| File | Description | Status |
+|------|-------------|--------|
+| Multi-provider LLM support | Claude + Google Gemini via abstract LLMProvider, provider factory, provider-aware tools/pricing | **implemented** |
+
+Key files: `core/base.py`, `core/provider_factory.py`, `core/google/client.py`, `core/pricing.py` (`calculate_provider_cost`)
+
 ### Architecture
 
 | File | Description | Status |
@@ -123,7 +131,7 @@ Documents are organized by development phase for easy navigation.
 - DatabaseMiddleware for session management
 
 ### Phase 1.3: Claude Integration (Core) ✅
-- Claude Sonnet 4.5 (claude-sonnet-4-5-20250929)
+- Claude Haiku/Sonnet 4.5, Opus 4.6
 - Real-time streaming (no buffering)
 - Token-based context management (200K window)
 - Thread-based conversation history
@@ -192,6 +200,16 @@ Documents are organized by development phase for easy navigation.
 - preview_file tool for data inspection
 - Sequential delivery mode
 - Turn break handling
+
+### Phase 4.1: Multi-Provider Architecture ✅
+- Abstract LLMProvider interface (`core/base.py`)
+- Provider factory with lazy singletons (`core/provider_factory.py`)
+- Google Gemini provider (`core/google/client.py`)
+- 3 Gemini models: Flash-Lite, Flash, Pro
+- Provider-aware tools (13 total, 7 universal, 6 Claude-only)
+- Provider-aware pricing (`calculate_provider_cost`)
+- Google Search grounding for Gemini models
+- Model selector keyboard with Google section
 
 ---
 

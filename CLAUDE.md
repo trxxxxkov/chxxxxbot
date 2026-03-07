@@ -4,9 +4,9 @@ Guidance for Claude Code when working with this repository.
 
 ## Project Overview
 
-Telegram bot with LLM integration (Claude, planned: OpenAI, Gemini). Microservices architecture with Docker Compose.
+Telegram bot with multi-provider LLM integration (Claude, Google Gemini). Microservices architecture with Docker Compose.
 
-**Stack:** Python 3.12+, aiogram 3.24, PostgreSQL 16, Redis 7, Anthropic SDK
+**Stack:** Python 3.12+, aiogram 3.24, PostgreSQL 16, Redis 7, Anthropic SDK, Google GenAI SDK
 
 ---
 
@@ -30,16 +30,19 @@ chxxxxbot/
 │   │   ├── keyboards/          # Inline/reply keyboards
 │   │   └── loader.py           # Bot initialization
 │   ├── core/
+│   │   ├── base.py             # Abstract LLMProvider interface
+│   │   ├── provider_factory.py # Provider factory (lazy singletons)
 │   │   ├── claude/             # Claude API client, context manager
+│   │   ├── google/             # Google Gemini API client
 │   │   ├── tools/              # Tool implementations
 │   │   ├── message_queue.py    # 200ms batching for split messages
-│   │   └── pricing.py          # Cost calculation
+│   │   └── pricing.py          # Cost calculation (multi-provider)
 │   ├── services/               # Payment, balance, topic naming services
 │   ├── db/
 │   │   ├── models/             # User, Chat, Thread, Message, Payment, etc.
 │   │   └── repositories/       # CRUD operations
 │   ├── cache/                  # Redis caching layer
-│   └── tests/                  # 1300+ tests
+│   └── tests/                  # 2000+ tests
 ├── postgres/                   # PostgreSQL + Alembic migrations
 ├── redis/                      # Redis cache
 ├── grafana/                    # Monitoring dashboards + alerts
@@ -56,27 +59,34 @@ chxxxxbot/
 ## Current Capabilities
 
 ### LLM Integration
-- **Models:** Claude Haiku/Sonnet 4.5, Opus 4.6 (selectable via /model)
-- **Streaming:** Real-time token streaming to Telegram
+- **Multi-provider:** Claude (Anthropic) + Google Gemini via abstract LLMProvider
+- **Claude models:** Haiku/Sonnet 4.5, Opus 4.6
+- **Gemini models:** Flash-Lite, Flash, Pro (with thinking + Google Search grounding)
+- **Provider factory:** Lazy singleton per provider (`core/provider_factory.py`)
+- **Streaming:** Real-time token streaming to Telegram (provider-agnostic)
 - **Context:** 200K token window with automatic management
-- **Extended Thinking:** 16K budget tokens for complex reasoning
-- **Prompt Caching:** 5-minute ephemeral cache (10x cost reduction)
+- **Extended Thinking:** 16K budget tokens for complex reasoning (Claude + Gemini)
+- **Prompt Caching:** 5-minute ephemeral cache for Claude (10x cost reduction)
 
-### Tools (10 total)
-| Tool | Purpose | Cost |
-|------|---------|------|
-| `analyze_image` | Vision analysis via Files API | Paid |
-| `analyze_pdf` | PDF text + visual analysis | Paid |
-| `execute_python` | E2B sandbox with file I/O | Paid |
-| `generate_image` | Google Gemini image generation | Paid |
-| `transcribe_audio` | Whisper speech-to-text | Paid |
-| `web_search` | Internet search (server-side) | Paid |
-| `web_fetch` | Fetch URL content (server-side) | Free |
-| `render_latex` | LaTeX to PNG | Free |
-| `preview_file` | Preview cached file before delivery | Free* |
-| `deliver_file` | Send cached file to user | Free |
+### Tools (13 total)
+| Tool | Purpose | Cost | Providers |
+|------|---------|------|-----------|
+| `analyze_image` | Vision analysis via Files API | Paid | Claude |
+| `analyze_pdf` | PDF text + visual analysis | Paid | Claude |
+| `execute_python` | E2B sandbox with file I/O | Paid | All |
+| `generate_image` | Google Gemini image generation | Paid | All |
+| `transcribe_audio` | Whisper speech-to-text | Paid | All |
+| `extended_thinking` | Force extended thinking mode | Paid | Claude |
+| `self_critique` | Self-critique via Opus subagent | Paid | Claude |
+| `web_search` | Internet search (server-side) | Paid | Claude |
+| `web_fetch` | Fetch URL content (server-side) | Free | Claude |
+| `render_latex` | LaTeX to PNG | Free | All |
+| `preview_file` | Preview cached file before delivery | Free* | All |
+| `deliver_file` | Send cached file to user | Free | All |
+| `list_files` | List cached files in thread | Free | All |
 
 *`preview_file` is free for text/CSV, paid for images/PDFs (uses Vision API)
+*Gemini models get Google Search grounding built-in (replaces web_search/web_fetch)
 
 ### File Handling
 - **Input:** Any file type (images, PDFs, audio, video, documents)
@@ -148,7 +158,9 @@ chxxxxbot/
 | `telegram/handlers/claude.py` | ~1700 | Main message handler, streaming, tools |
 | `telegram/pipeline/handler.py` | ~360 | Unified message processing entry point |
 | `telegram/pipeline/normalizer.py` | ~700 | Message normalization, file downloads |
-| `core/tools/registry.py` | ~330 | Tool definitions and dispatch |
+| `core/tools/registry.py` | ~380 | Tool definitions and dispatch (provider-aware) |
+| `core/provider_factory.py` | ~60 | Provider factory with lazy singletons |
+| `core/google/client.py` | ~510 | Google Gemini provider implementation |
 | `cache/write_behind.py` | ~620 | Async DB write queue with retry |
 | `core/tools/execute_python.py` | ~950 | E2B sandbox code execution |
 

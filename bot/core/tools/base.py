@@ -92,6 +92,7 @@ class ToolConfig:  # pylint: disable=too-many-instance-attributes
     is_server_side: bool = False
     file_id_param: Optional[str] = None  # Parameter with claude_file_id
     allowed_mime_prefixes: list[str] = field(default_factory=list)
+    providers: set[str] = field(default_factory=lambda: {"claude", "google"})
 
     def __post_init__(self) -> None:
         """Validate configuration after initialization."""

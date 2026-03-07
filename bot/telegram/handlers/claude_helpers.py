@@ -131,3 +131,26 @@ def compose_system_prompt_blocks(
             blocks.append({"type": "text", "text": custom_prompt})
 
     return blocks
+
+
+def compose_system_prompt_for_provider(
+    provider: str,
+    global_prompt: str,
+    custom_prompt: str | None,
+) -> str | list[dict]:
+    """Provider-aware system prompt composition.
+
+    Claude uses multi-block format with cache_control markers.
+    Other providers use simple string concatenation.
+
+    Args:
+        provider: Provider name ("claude", "google", etc.).
+        global_prompt: Base system prompt (same for all users).
+        custom_prompt: User's personal instructions (or None).
+
+    Returns:
+        List of blocks for Claude, plain string for other providers.
+    """
+    if provider == "claude":
+        return compose_system_prompt_blocks(global_prompt, custom_prompt)
+    return compose_system_prompt(global_prompt, custom_prompt)

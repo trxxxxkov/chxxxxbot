@@ -49,35 +49,20 @@ def get_model_keyboard(current: str) -> InlineKeyboardBuilder:
             InlineKeyboardButton(text=button_text,
                                  callback_data=f"model:{full_id}"))
 
-    # Future: OpenAI section (Phase 3.4)
-    # openai_models = get_models_by_provider("openai")
-    # if openai_models:
-    #     builder.row(
-    #         InlineKeyboardButton(text="🔵 OpenAI Models",
-    #                              callback_data="noop"))
-    #     for model in openai_models:
-    #         full_id = model.get_full_id()
-    #         is_current = (full_id == current)
-    #         button_text = f"{'✅ ' if is_current else ''}{model.display_name}"
-    #         button_text += f" (${model.pricing_input}/${model.pricing_output})"
-    #         builder.row(
-    #             InlineKeyboardButton(text=button_text,
-    #                                  callback_data=f"model:{full_id}"))
-
-    # Future: Google section (Phase 3.4)
-    # google_models = get_models_by_provider("google")
-    # if google_models:
-    #     builder.row(
-    #         InlineKeyboardButton(text="🔴 Google Models",
-    #                              callback_data="noop"))
-    #     for model in google_models:
-    #         full_id = model.get_full_id()
-    #         is_current = (full_id == current)
-    #         button_text = f"{'✅ ' if is_current else ''}{model.display_name}"
-    #         button_text += f" (${model.pricing_input}/${model.pricing_output})"
-    #         builder.row(
-    #             InlineKeyboardButton(text=button_text,
-    #                                  callback_data=f"model:{full_id}"))
+    # Google Gemini section
+    google_models = get_models_by_provider("google")
+    if google_models:
+        builder.row(
+            InlineKeyboardButton(text="--- Google Gemini ---",
+                                 callback_data="noop"))
+        for model in google_models:
+            full_id = model.get_full_id()
+            is_current = (full_id == current)
+            button_text = f"{'✅ ' if is_current else ''}{model.display_name}"
+            button_text += f" (${model.pricing_input}/${model.pricing_output})"
+            builder.row(
+                InlineKeyboardButton(text=button_text,
+                                     callback_data=f"model:{full_id}"))
 
     return builder
 
@@ -120,6 +105,10 @@ def format_model_info(model: ModelConfig, lang: str = "en") -> str:
         key_caps.append("Vision")
     if model.has_capability("effort"):
         key_caps.append("Effort Control")
+    if model.has_capability("grounding"):
+        key_caps.append("Google Search")
+    if model.has_capability("thinking"):
+        key_caps.append("Thinking")
 
     if key_caps:
         info += get_text("model.info_features",

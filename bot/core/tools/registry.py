@@ -60,6 +60,7 @@ WEB_SEARCH_CONFIG = ToolConfig(
     executor=None,
     emoji="🔍",
     is_server_side=True,
+    providers={"claude"},  # Anthropic server-side only
 )
 
 WEB_FETCH_CONFIG = ToolConfig(
@@ -80,6 +81,7 @@ WEB_FETCH_CONFIG = ToolConfig(
     executor=None,
     emoji="🌐",
     is_server_side=True,
+    providers={"claude"},  # Anthropic server-side only
 )
 
 # ============================================================================
@@ -114,22 +116,28 @@ TOOLS: Dict[str, ToolConfig] = {
 
 
 def get_tool_definitions(
-    exclude: Optional[set[str]] = None,) -> List[Dict[str, Any]]:
-    """Get tool definitions for Claude API.
+    exclude: Optional[set[str]] = None,
+    provider: str = "claude",
+) -> List[Dict[str, Any]]:
+    """Get tool definitions filtered by provider.
 
     Args:
         exclude: Optional set of tool names to exclude.
+        provider: Provider name to filter tools for (default: "claude").
 
     Returns:
         List of tool schema dictionaries.
     """
-    if exclude:
-        return [
-            tool.definition
-            for tool in TOOLS.values()
-            if tool.name not in exclude
-        ]
-    return [tool.definition for tool in TOOLS.values()]
+    defs = []
+    for tool in TOOLS.values():
+        if exclude and tool.name in exclude:
+            continue
+        if provider not in tool.providers:
+            continue
+        if provider != "claude" and tool.is_server_side:
+            continue  # Server-side tools are Claude-only
+        defs.append(tool.definition)
+    return defs
 
 
 def get_tool_emoji(tool_name: str) -> str:

@@ -97,7 +97,7 @@ def mock_llm_request():
         MagicMock(role="user", content="Hello"),
     ]
     request.system_prompt = "You are a helpful assistant"
-    request.model = "claude-3-sonnet"
+    request.model = "claude:sonnet"
     request.max_tokens = 4096
     request.temperature = 1.0
     request.tools = []
@@ -160,6 +160,7 @@ def mock_claude_provider():
     """Create mock Claude provider."""
     provider = MagicMock()
     provider.stream_events = MagicMock()
+    provider.get_serialized_assistant_content.return_value = None
     return provider
 
 
@@ -332,7 +333,7 @@ class TestStreamingOrchestratorInit:
 
         assert orchestrator._telegram_thread_id == 789
         assert orchestrator._continuation_conversation == continuation
-        assert orchestrator._claude_provider == mock_claude_provider
+        assert orchestrator._provider == mock_claude_provider
 
 
 class TestStreamingOrchestratorStream:
@@ -1513,7 +1514,7 @@ class TestStreamingOrchestratorToolExecutor:
 class TestStreamingOrchestratorClaudeProvider:
     """Tests for Claude provider handling."""
 
-    def test_get_claude_provider_uses_injected(
+    def test_get_provider_uses_injected(
         self,
         mock_llm_request,
         mock_telegram_message,
@@ -1521,7 +1522,7 @@ class TestStreamingOrchestratorClaudeProvider:
         mock_user_file_repo,
         mock_claude_provider,
     ):
-        """Should use injected Claude provider."""
+        """Should use injected provider."""
         orchestrator = StreamingOrchestrator(
             request=mock_llm_request,
             first_message=mock_telegram_message,
@@ -1533,17 +1534,17 @@ class TestStreamingOrchestratorClaudeProvider:
             claude_provider=mock_claude_provider,
         )
 
-        provider = orchestrator._get_claude_provider()
+        provider = orchestrator._get_provider()
         assert provider is mock_claude_provider
 
-    def test_get_claude_provider_uses_singleton_when_not_injected(
+    def test_get_provider_uses_factory_when_not_injected(
         self,
         mock_llm_request,
         mock_telegram_message,
         mock_session,
         mock_user_file_repo,
     ):
-        """Should use singleton when no provider injected."""
+        """Should use factory when no provider injected."""
         orchestrator = StreamingOrchestrator(
             request=mock_llm_request,
             first_message=mock_telegram_message,
@@ -1554,12 +1555,13 @@ class TestStreamingOrchestratorClaudeProvider:
             user_id=456,
         )
 
-        # claude_provider is imported inside the method from telegram.handlers.claude
+        mock_provider = MagicMock()
         with patch(
-                "telegram.handlers.claude.claude_provider") as mock_singleton:
-            provider = orchestrator._get_claude_provider()
+                "core.provider_factory.get_provider",
+                return_value=mock_provider) as mock_factory:
+            provider = orchestrator._get_provider()
 
-        assert provider is mock_singleton
+        assert provider is mock_provider
 
 
 class TestConstants:

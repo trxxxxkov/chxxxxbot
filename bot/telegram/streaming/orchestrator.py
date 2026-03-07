@@ -26,7 +26,7 @@ from utils.structured_logging import get_logger
 if TYPE_CHECKING:
     from aiogram import Bot
     from aiogram import types
-    from core.claude.provider import ClaudeProvider
+    from core.base import LLMProvider
     from db.repositories.user_file_repository import UserFileRepository
     from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -40,16 +40,24 @@ DRAFT_KEEPALIVE_INTERVAL = 3.0
 def format_tool_results(
     tool_uses: list[dict],
     results: list[dict],
+    provider: str = "claude",
 ) -> list[dict]:
-    """Format tool results for Claude API.
+    """Format tool results for LLM API.
 
     Args:
         tool_uses: List of tool use dicts with id and name.
         results: List of result dicts matching tool_uses order.
+        provider: Provider name ("claude" or "google").
 
     Returns:
-        List of tool_result content blocks for Claude.
+        List of tool_result content blocks.
     """
+    if provider == "google":
+        return [{
+            "type": "function_response",
+            "name": tool_uses[i]["name"],
+            "response": {"result": str(results[i])},
+        } for i in range(len(tool_uses))]
     return [{
         "type": "tool_result",
         "tool_use_id": tool_uses[i]["id"],
@@ -155,7 +163,8 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
         user_id: int,
         telegram_thread_id: int | None = None,
         continuation_conversation: list | None = None,
-        claude_provider: "ClaudeProvider | None" = None,
+        claude_provider: "LLMProvider | None" = None,
+        provider: "LLMProvider | None" = None,
     ):
         """Initialize StreamingOrchestrator.
 
@@ -169,7 +178,8 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
             user_id: User ID.
             telegram_thread_id: Telegram thread/topic ID.
             continuation_conversation: Conversation state for continuation.
-            claude_provider: Optional ClaudeProvider (uses singleton if None).
+            claude_provider: Deprecated, use provider instead.
+            provider: LLMProvider instance (uses factory if None).
         """
         self._request = request
         self._first_message = first_message
@@ -180,7 +190,7 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
         self._user_id = user_id
         self._telegram_thread_id = telegram_thread_id
         self._continuation_conversation = continuation_conversation
-        self._claude_provider = claude_provider
+        self._provider = provider or claude_provider
 
         # Lazy-loaded components
         self._tool_executor: ToolExecutor | None = None
@@ -188,12 +198,12 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
         # Track if files were delivered across iterations
         self._has_delivered_files = False
 
-    def _get_claude_provider(self):
-        """Get Claude provider (lazy import to avoid circular deps)."""
-        if self._claude_provider is not None:
-            return self._claude_provider
-        from telegram.handlers.claude import claude_provider
-        return claude_provider
+    def _get_provider(self):
+        """Get LLM provider (lazy import to avoid circular deps)."""
+        if self._provider is not None:
+            return self._provider
+        from core.provider_factory import get_provider  # pylint: disable=import-outside-toplevel
+        return get_provider(self._request.model)
 
     def _get_tool_executor(self) -> ToolExecutor:
         """Get or create tool executor."""
@@ -298,7 +308,7 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
                 generating_scope_active = True
 
                 try:
-                    provider = self._get_claude_provider()
+                    provider = self._get_provider()
                     async for event in provider.stream_events(iter_request):
                         # Check for cancellation
                         if cancel_event.is_set():
@@ -361,8 +371,15 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
                 elif stream.stop_reason == "tool_use" and not stream.pending_tools:
                     # Only server-side tools were called (web_search, web_fetch)
                     # They are executed by API automatically, just add to conversation
-                    captured_msg = stream.captured_message
-                    if captured_msg and captured_msg.content:
+                    provider = self._get_provider()
+                    provider_content = provider.get_serialized_assistant_content()
+                    if provider_content:
+                        conversation.append({
+                            "role": "assistant",
+                            "content": provider_content
+                        })
+                    elif stream.captured_message and stream.captured_message.content:
+                        captured_msg = stream.captured_message
                         serialized_content = [
                             serialize_content_block(block)
                             for block in captured_msg.content
@@ -372,6 +389,7 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
                             "role": "assistant",
                             "content": serialized_content
                         })
+                    if True:  # Always log
                         logger.info(
                             "orchestrator.server_tools_only",
                             thread_id=self._thread_id,
@@ -557,18 +575,33 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
 
         await stream.update_display()
 
-        # Format tool results for Claude
+        # Format tool results for LLM
         tool_uses = [{"id": t.tool_id, "name": t.name} for t in pending_tools]
         results = [r.result for r in batch_result.results]
-        tool_results = format_tool_results(tool_uses, results)
+
+        provider = self._get_provider()
+        provider_content = provider.get_serialized_assistant_content()
+        # Determine provider name for format differences
+        from config import get_model  # pylint: disable=import-outside-toplevel
+        provider_name = get_model(self._request.model).provider
+        tool_results = format_tool_results(tool_uses, results,
+                                           provider=provider_name)
 
         # Add to conversation (strip thinking blocks so prefix matches DB)
         # DB saves only final text, not thinking. Keeping thinking in tool
         # loop conversation would cause prefix mismatch on the next user
         # message, invalidating the cache. Stripping is safe: API accepts
         # all-or-nothing for thinking, and the model re-reasons each turn.
-        captured_msg = stream.captured_message
-        if captured_msg and captured_msg.content:
+        if provider_content:
+            # Provider already has serialized content (e.g., Google)
+            conversation.append({
+                "role": "assistant",
+                "content": provider_content
+            })
+            conversation.append({"role": "user", "content": tool_results})
+        elif stream.captured_message and stream.captured_message.content:
+            # Fall back to Anthropic-style serialization
+            captured_msg = stream.captured_message
             serialized_content = [
                 serialize_content_block(block)
                 for block in captured_msg.content

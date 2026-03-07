@@ -480,4 +480,5 @@ TOOL_CONFIG = ToolConfig(
     emoji="🧠",
     needs_bot_session=False,
     format_result=format_extended_thinking_result,
+    providers={"claude"},  # Uses Claude Extended Thinking API
 )

@@ -201,4 +201,5 @@ TOOL_CONFIG = ToolConfig(
     format_result=None,  # No system message for analysis tools
     file_id_param="claude_file_id",
     allowed_mime_prefixes=["image/"],  # Only image/* MIME types
+    providers={"claude"},  # Uses Claude Vision API
 )

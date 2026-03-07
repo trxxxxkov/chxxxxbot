@@ -12,6 +12,7 @@ from abc import abstractmethod
 from typing import AsyncIterator
 
 from core.models import LLMRequest
+from core.models import StreamEvent
 from core.models import TokenUsage
 
 
@@ -45,6 +46,20 @@ class LLMProvider(ABC):
             APIConnectionError: Failed to connect to API.
             APITimeoutError: API request timed out.
             ContextWindowExceededError: Context exceeds model's window.
+        """
+        pass  # pylint: disable=unnecessary-pass
+
+    @abstractmethod
+    async def stream_events(self, request: LLMRequest) -> AsyncIterator[StreamEvent]:
+        """Stream structured events from LLM. Used by orchestrator.
+
+        Yields StreamEvent objects for thinking, text, tool use, etc.
+
+        Args:
+            request: LLM request with messages, system prompt, model config.
+
+        Yields:
+            StreamEvent objects as they arrive from API.
         """
         pass  # pylint: disable=unnecessary-pass
 
@@ -120,3 +135,10 @@ class LLMProvider(ABC):
             Format: [{"type": "thinking", "thinking": "...", "signature": "..."}]
         """
         return None  # Default implementation returns None
+
+    def reset_cache_accumulator(self) -> None:
+        """Reset prompt cache tracking. No-op for providers without caching."""
+
+    def get_serialized_assistant_content(self) -> list[dict] | None:
+        """Get last assistant message content in provider-native format for tool loop."""
+        return None
