@@ -260,8 +260,10 @@ class GeminiProvider(LLMProvider):
                     )
                 )
 
-        # Add Google Search grounding if model supports it
-        if model_config.has_capability("grounding"):
+        # Add Google Search grounding if model supports it.
+        # Google API doesn't allow combining built-in tools (google_search)
+        # with custom function declarations in the same request.
+        if model_config.has_capability("grounding") and not google_tools:
             google_tools.append(
                 genai_types.Tool(google_search=genai_types.GoogleSearch()))
 
