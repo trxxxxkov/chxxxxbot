@@ -15,7 +15,6 @@ NO __init__.py - use direct import:
 from decimal import Decimal
 from typing import Any, Callable, Optional, TYPE_CHECKING
 
-from core.pricing import calculate_claude_cost
 from utils.structured_logging import get_logger
 
 if TYPE_CHECKING:
@@ -106,15 +105,39 @@ class CostTracker:  # pylint: disable=too-many-instance-attributes
     def calculate_total_cost(self) -> Decimal:
         """Calculate total cost in USD.
 
+        Uses provider-aware pricing when model_full_id can be resolved.
+        Falls back to Claude pricing for backward compatibility.
+
         Returns:
             Total cost as Decimal (API tokens + tool costs).
         """
-        token_cost = calculate_claude_cost(
-            model_id=self.model_id,
-            input_tokens=self.total_input_tokens,
-            output_tokens=self.total_output_tokens,
-            thinking_tokens=self.total_thinking_tokens,
-        )
+        from config import MODEL_REGISTRY  # pylint: disable=import-outside-toplevel
+
+        # Find model_full_id (e.g., "claude:opus") from model_id
+        model_full_id = None
+        for full_id, cfg in MODEL_REGISTRY.items():
+            if cfg.model_id == self.model_id:
+                model_full_id = full_id
+                break
+
+        if model_full_id:
+            from core.pricing import calculate_provider_cost  # pylint: disable=import-outside-toplevel
+            from core.models import TokenUsage  # pylint: disable=import-outside-toplevel
+            usage = TokenUsage(
+                input_tokens=self.total_input_tokens,
+                output_tokens=self.total_output_tokens,
+                thinking_tokens=self.total_thinking_tokens,
+            )
+            token_cost = calculate_provider_cost(model_full_id, usage)
+        else:
+            from core.pricing import calculate_claude_cost  # pylint: disable=import-outside-toplevel
+            token_cost = calculate_claude_cost(
+                model_id=self.model_id,
+                input_tokens=self.total_input_tokens,
+                output_tokens=self.total_output_tokens,
+                thinking_tokens=self.total_thinking_tokens,
+            )
+
         tool_cost = sum(cost for _, cost in self.tool_costs)
         return token_cost + tool_cost
 

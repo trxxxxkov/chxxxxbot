@@ -39,7 +39,7 @@ from db.models.message import Message as DBMessage, MessageRole
 | `language_code` | Optional[str] | User | `language_code` | IETF tag (e.g., "en", "ru") |
 | `is_premium` | Optional[bool] | User | `is_premium` | Telegram Premium status |
 | `added_to_attachment_menu` | Optional[bool] | User | `added_to_attachment_menu` | Bot in attachment menu |
-| - | - | User | `current_model` | Custom field (default: "claude") |
+| - | - | User | `model_id` | Custom field (default: "claude:haiku") |
 | - | - | User | `first_seen_at` | Auto-set on first creation |
 | - | - | User | `last_seen_at` | Auto-updated |
 
@@ -144,8 +144,9 @@ async def extract_chat(message: Message, session: AsyncSession):
 | `from_user.id` | int | Thread | `user_id` | Which user owns thread |
 | - | - | Thread | `id` | Internal auto-increment ID |
 | - | - | Thread | `title` | Custom field |
-| - | - | Thread | `model_name` | Custom field (default: "claude") |
-| - | - | Thread | `system_prompt` | Custom field |
+| - | - | Thread | `files_context` | Auto-generated file list for system prompt |
+| - | - | Thread | `needs_topic_naming` | Whether topic needs LLM-generated name |
+| - | - | Thread | `is_cleared` | Whether Telegram topic was deleted |
 
 ### Thread Logic
 

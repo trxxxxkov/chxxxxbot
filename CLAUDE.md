@@ -6,7 +6,7 @@ Guidance for Claude Code when working with this repository.
 
 Telegram bot with multi-provider LLM integration (Claude, Google Gemini). Microservices architecture with Docker Compose.
 
-**Stack:** Python 3.12+, aiogram 3.24, PostgreSQL 16, Redis 7, Anthropic SDK, Google GenAI SDK
+**Stack:** Python 3.12+, aiogram 3.25+, PostgreSQL 16, Redis 7, Anthropic SDK, Google GenAI SDK
 
 ---
 
@@ -60,7 +60,7 @@ chxxxxbot/
 
 ### LLM Integration
 - **Multi-provider:** Claude (Anthropic) + Google Gemini via abstract LLMProvider
-- **Claude models:** Haiku/Sonnet 4.5, Opus 4.6
+- **Claude models:** Haiku 4.5, Sonnet/Opus 4.6
 - **Gemini models:** Flash-Lite, Flash, Pro (with thinking + Google Search grounding)
 - **Gemini Vision/PDF:** Inline image and PDF analysis via `Part.from_bytes()`
 - **Provider factory:** Lazy singleton per provider (`core/provider_factory.py`)
@@ -68,6 +68,7 @@ chxxxxbot/
 - **Context:** 200K token window with automatic management
 - **Extended Thinking:** Adaptive for Claude, `thinking_level=HIGH` for Gemini 3
 - **Prompt Caching:** 5-minute ephemeral cache for Claude (10x cost reduction)
+- **Google Caching:** Explicit cache for system prompt + tools (90% input discount), implicit for history
 
 ### Tools (13 total)
 | Tool | Purpose | Cost | Providers |
@@ -96,6 +97,7 @@ chxxxxbot/
 
 ### Payment System
 - **Telegram Stars:** Native payment integration
+- **Starter Balance:** $0.50 for new users
 - **Balance:** USD balance with soft-check (can go negative once)
 - **Tool Cost Control:** Rejects paid tools when balance < 0
 - **Generation Stop:** /stop or new message cancels, charges partial usage
@@ -156,14 +158,14 @@ chxxxxbot/
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `telegram/handlers/claude.py` | ~1700 | Main message handler, streaming, tools |
-| `telegram/pipeline/handler.py` | ~360 | Unified message processing entry point |
-| `telegram/pipeline/normalizer.py` | ~700 | Message normalization, file downloads |
-| `core/tools/registry.py` | ~380 | Tool definitions and dispatch (provider-aware) |
+| `telegram/handlers/claude.py` | ~1400 | Main message handler, streaming, tools |
+| `telegram/pipeline/handler.py` | ~500 | Unified message processing entry point |
+| `telegram/pipeline/normalizer.py` | ~870 | Message normalization, file downloads |
+| `core/tools/registry.py` | ~440 | Tool definitions and dispatch (provider-aware) |
 | `core/provider_factory.py` | ~60 | Provider factory with lazy singletons |
-| `core/google/client.py` | ~510 | Google Gemini provider implementation |
-| `cache/write_behind.py` | ~620 | Async DB write queue with retry |
-| `core/tools/execute_python.py` | ~950 | E2B sandbox code execution |
+| `core/google/client.py` | ~840 | Google Gemini provider with caching |
+| `cache/write_behind.py` | ~850 | Async DB write queue with retry |
+| `core/tools/execute_python.py` | ~720 | E2B sandbox code execution |
 
 ---
 
@@ -191,7 +193,6 @@ docker compose build bot && docker compose up -d bot
 Based on audit (2026-01-27):
 - **Service initialization duplication** — Same repo/service setup in 5+ places
 - **Singleton patterns inconsistent** — 3 different patterns across codebase
-- **Streaming handler too large** — `_stream_with_unified_events` is 500+ lines
 - **Balance check logic scattered** — Duplicated in middleware, handlers, tools
 
 See `PLAN.md` for improvement roadmap.
@@ -201,6 +202,6 @@ See `PLAN.md` for improvement roadmap.
 ## Documentation
 
 See `docs/` for detailed architecture:
-- `docs/database.md` - DB schema and repositories
+- `docs/phase-1.2-database.md` - DB schema and repositories
 - `docs/phase-*.md` - Feature implementation details
 - `docs/README.md` - Documentation index

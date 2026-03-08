@@ -804,22 +804,22 @@ async def _process_batch_with_session(
                 if request.tools:
                     estimated_input_tokens += 346 + len(request.tools) * 200
 
-                # Calculate partial cost (provider-aware)
-                if model_config.provider == "claude":
-                    # Cache-aware pricing for Claude
+                # Calculate partial cost (provider-aware, cache-aware)
+                if model_config.pricing_cache_read:
+                    # Cache-aware: system prompt likely cached (Claude
+                    # ephemeral, Google explicit cache for sys+tools)
                     system_prompt_tokens = total_prompt_length // 4
                     user_context_tokens = max(
                         0, estimated_input_tokens - system_prompt_tokens)
-                    cache_pricing = (model_config.pricing_cache_read or
-                                     model_config.pricing_input * 0.1)
                     partial_cost = (
-                        (system_prompt_tokens / 1_000_000) * cache_pricing +
+                        (system_prompt_tokens / 1_000_000) *
+                        model_config.pricing_cache_read +
                         (user_context_tokens / 1_000_000) *
                         model_config.pricing_input +
                         ((estimated_output_tokens + estimated_thinking_tokens) /
                          1_000_000) * model_config.pricing_output)
                 else:
-                    # Simple pricing for Google and other providers
+                    # No cache pricing — full input rate
                     partial_cost = (
                         (estimated_input_tokens / 1_000_000) *
                         model_config.pricing_input +
@@ -893,14 +893,14 @@ async def _process_batch_with_session(
             cost_usd = float(
                 calculate_provider_cost(user_model_id, usage))
 
-            # Claude-specific cache cost breakdown
+            # Cache cost breakdown (provider-agnostic read, Claude-specific write)
             cache_read_cost = 0.0
             cache_creation_cost = 0.0
             cache_write_subsidized = False
+            if usage.cache_read_tokens and model_config.pricing_cache_read:
+                cache_read_cost = ((usage.cache_read_tokens / 1_000_000) *
+                                   model_config.pricing_cache_read)
             if model_config.provider == "claude":
-                if usage.cache_read_tokens and model_config.pricing_cache_read:
-                    cache_read_cost = ((usage.cache_read_tokens / 1_000_000) *
-                                       model_config.pricing_cache_read)
                 if usage.cache_creation_1h_tokens > 0 and model_config.pricing_cache_write_1h:
                     cache_creation_cost += (
                         (usage.cache_creation_1h_tokens / 1_000_000) *
@@ -1019,10 +1019,10 @@ async def _process_batch_with_session(
             record_llm_response_time(model=user_model_id,
                                         seconds=response_duration)
 
-            # Record cache metrics (Phase 3.1: Prometheus, Claude only)
+            # Record cache metrics (Prometheus, all providers with caching)
+            if usage.cache_read_tokens and usage.cache_read_tokens > 0:
+                record_cache_hit(tokens_saved=usage.cache_read_tokens)
             if model_config.provider == "claude":
-                if usage.cache_read_tokens and usage.cache_read_tokens > 0:
-                    record_cache_hit(tokens_saved=usage.cache_read_tokens)
                 # Only count 1h cache creation as "miss" (system prompt re-cache).
                 # 5m auto-caching of thinking blocks is expected API behavior.
                 if usage.cache_creation_1h_tokens > 0:

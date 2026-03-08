@@ -117,7 +117,7 @@ Key files: `core/base.py`, `core/provider_factory.py`, `core/google/client.py`, 
 ## Phase Overview
 
 ### Phase 1.1: Minimal Bot ✅
-- Aiogram 3.24 framework
+- Aiogram 3.25+ framework
 - Telegram polling
 - Basic handlers (start, echo)
 - Structured logging
@@ -125,13 +125,13 @@ Key files: `core/base.py`, `core/provider_factory.py`, `core/google/client.py`, 
 
 ### Phase 1.2: PostgreSQL ✅
 - SQLAlchemy 2.0 async ORM
-- 4 models: User, Chat, Thread, Message
+- 8 models: User, Chat, Thread, Message, UserFile, Payment, BalanceOperation, ToolCall
 - Repository pattern with base class
 - Alembic migrations
 - DatabaseMiddleware for session management
 
 ### Phase 1.3: Claude Integration (Core) ✅
-- Claude Haiku/Sonnet 4.5, Opus 4.6
+- Claude Haiku 4.5, Sonnet/Opus 4.6
 - Real-time streaming (no buffering)
 - Token-based context management (200K window)
 - Thread-based conversation history
@@ -164,7 +164,7 @@ Key files: `core/base.py`, `core/provider_factory.py`, `core/google/client.py`, 
 - Automatic file delivery
 
 ### Phase 2.1: Payment System ✅
-- User balance in USD ($0.10 starter)
+- User balance in USD ($0.50 starter)
 - Telegram Stars integration
 - Admin commands (/topup, /set_margin)
 - Cost tracking for all APIs

@@ -247,7 +247,7 @@ git update-index --skip-worktree secrets/*
 ### Payment System
 
 **Balance System:**
-- All users start with $0.10 balance
+- All users start with $0.50 balance
 - Balance is used to pay for API calls (Claude, tools, external APIs)
 - Soft balance check: requests allowed while balance > 0 (can go negative once)
 - After balance ≤ 0, further requests are blocked until top-up

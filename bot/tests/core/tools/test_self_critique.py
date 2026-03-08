@@ -184,17 +184,18 @@ class TestCostTracker:
         # Add tool costs
         tracker.add_tool_cost("execute_python", Decimal("0.01"))
 
-        with patch("core.cost_tracker.calculate_claude_cost") as mock_calc:
+        with patch("core.pricing.calculate_provider_cost") as mock_calc:
             mock_calc.return_value = Decimal("0.05")
 
             total = tracker.calculate_total_cost()
 
-            mock_calc.assert_called_once_with(
-                model_id="claude-opus-4-6",
-                input_tokens=10000,
-                output_tokens=2000,
-                thinking_tokens=5000,
-            )
+            mock_calc.assert_called_once()
+            call_args = mock_calc.call_args
+            assert call_args[0][0] == "claude:opus"  # model_full_id
+            usage = call_args[0][1]
+            assert usage.input_tokens == 10000
+            assert usage.output_tokens == 2000
+            assert usage.thinking_tokens == 5000
             # Token cost (0.05) + tool cost (0.01) = 0.06
             assert total == Decimal("0.06")
 
@@ -1239,7 +1240,7 @@ class TestCostCharging:
 
         with patch("core.tools.self_critique.get_model") as mock_get_model, \
              patch("services.factory.ServiceFactory") as mock_factory_class, \
-             patch("core.cost_tracker.calculate_claude_cost") as mock_calc:
+             patch("core.pricing.calculate_claude_cost") as mock_calc:
 
             mock_config = Mock()
             mock_config.model_id = "claude-opus-4-6"
@@ -1306,7 +1307,7 @@ class TestCostCharging:
         with patch("core.tools.self_critique.get_model") as mock_get_model, \
              patch("services.factory.ServiceFactory") as mock_factory_class, \
              patch("core.tools.registry.execute_tool") as mock_exec_tool, \
-             patch("core.cost_tracker.calculate_claude_cost") as mock_calc, \
+             patch("core.pricing.calculate_claude_cost") as mock_calc, \
              patch("core.tools.self_critique.calculate_e2b_cost") as mock_e2b:
 
             mock_config = Mock()

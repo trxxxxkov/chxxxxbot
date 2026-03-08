@@ -147,9 +147,14 @@ username: Optional[str]          # @username (unique)
 language_code: Optional[str]     # IETF language tag (e.g., "en")
 is_premium: bool                 # Telegram Premium status
 added_to_attachment_menu: bool   # Bot in attachment menu
+allows_users_to_create_topics: bool  # Bot API 9.4
 
 # Bot-specific fields
-current_model: str               # Selected LLM model (default: "claude")
+model_id: str                    # Selected LLM model (default: "claude:haiku")
+custom_prompt: Optional[str]     # Personal instructions (personality, tone, style)
+balance: Decimal                 # USD balance (default: $0.50 starter)
+message_count: int               # Total messages sent (activity tracking)
+total_tokens_used: int           # Total tokens consumed (cost analysis)
 first_seen_at: datetime          # When user first used bot
 last_seen_at: datetime           # Last activity timestamp
 ```
@@ -157,6 +162,8 @@ last_seen_at: datetime           # Last activity timestamp
 **Relationships:**
 - `users.id` ← `threads.user_id` (one-to-many)
 - `users.id` ← `messages.from_user_id` (one-to-many)
+- `users.id` ← `payments.user_id` (one-to-many)
+- `users.id` ← `balance_operations.user_id` (one-to-many)
 
 **Indexes:**
 - `idx_users_username` on username (partial: WHERE username IS NOT NULL)
@@ -223,9 +230,12 @@ chat_id: int                  # FK → chats.id
 user_id: int                  # FK → users.id
 thread_id: Optional[int]      # Telegram thread/topic ID (NULL = main chat)
 title: Optional[str]          # Thread title
-model_name: str               # LLM model (default: "claude")
-system_prompt: Optional[str]  # Custom system prompt
+files_context: Optional[str]  # Auto-generated file list for system prompt
+needs_topic_naming: bool      # Whether topic needs LLM-generated name
+is_cleared: bool              # Whether Telegram topic was deleted
 ```
+
+**Note:** Model selection is per user (`User.model_id`), not per thread.
 
 **Thread Logic:**
 - `thread_id = NULL` → main chat (no forum topic)
@@ -248,7 +258,6 @@ thread = Thread(
     chat_id=123,
     user_id=456,
     thread_id=None,  # main chat
-    model_name="claude",
 )
 
 # Forum topic thread
@@ -257,7 +266,6 @@ thread = Thread(
     user_id=456,
     thread_id=789,  # forum topic ID
     title="General Discussion",
-    model_name="claude",
 )
 ```
 
@@ -290,8 +298,20 @@ role: MessageRole             # USER, ASSISTANT, or SYSTEM (for LLM API)
 text_content: Optional[str]   # Text content
 caption: Optional[str]        # Media caption
 
-# Reply info
+# Reply context (denormalized)
 reply_to_message_id: Optional[int]  # Replied message ID
+reply_snippet: Optional[str]        # First 200 chars of replied message
+reply_sender_display: Optional[str]  # @username or "First Last" of replied sender
+quote_data: Optional[dict]          # Quote: {text, position, is_manual}
+
+# Forward & sender context
+forward_origin: Optional[dict]      # Forward origin: {type, display, date, ...}
+sender_display: Optional[str]       # Cached @username or "First Last"
+
+# Edit tracking
+edit_count: int                     # Number of times edited
+original_content: Optional[str]     # First version before any edits
+
 media_group_id: Optional[str]       # Groups related media
 
 # Denormalized attachment flags (for FAST queries with B-tree indexes)
@@ -305,8 +325,18 @@ attachment_count: int         # Total attachments
 attachments: dict             # JSONB array with full attachment data
 
 # Token tracking
-input_tokens: Optional[int]   # LLM input tokens (for billing)
-output_tokens: Optional[int]  # LLM output tokens (for billing)
+input_tokens: Optional[int]            # LLM input tokens (for billing)
+output_tokens: Optional[int]           # LLM output tokens (for billing)
+cache_creation_input_tokens: Optional[int]  # Cache creation tokens
+cache_read_input_tokens: Optional[int]      # Cache read tokens
+thinking_tokens: Optional[int]         # Extended thinking tokens
+thinking_blocks: Optional[str]         # Extended thinking content
+
+# Model & cost tracking
+model_id: Optional[str]               # Model used (e.g., "claude-sonnet-4-6")
+compaction_summary: Optional[str]      # Server-side compaction summary (Opus 4.6)
+cache_write_subsidized: bool           # Whether cache write cost was absorbed
+cache_write_cost_usd: Optional[float]  # Cache write cost in USD
 
 created_at: int               # Record creation timestamp (Unix)
 ```
@@ -608,7 +638,6 @@ thread, was_created = await thread_repo.get_or_create_thread(
     chat_id=123,
     user_id=456,
     thread_id=None,  # main chat, or 789 for forum topic
-    model_name="claude",
 )
 
 # Get active thread for user in specific chat/topic
@@ -623,9 +652,6 @@ threads = await thread_repo.get_user_threads(user_id=456, limit=10)
 
 # Get all threads in chat
 threads = await thread_repo.get_chat_threads(chat_id=123, limit=10)
-
-# Update thread model
-await thread_repo.update_thread_model(thread_id=1, model_name="openai")
 
 # Delete thread
 await thread_repo.delete_thread(thread_id=1)
@@ -1022,34 +1048,15 @@ def get_database_url() -> str:
 
 ---
 
-## Future: Redis Caching (Phase 3)
+## Redis Caching (Phase 3 — Complete)
 
-Repository pattern is ready for Redis caching layer:
+Redis caching is implemented with a write-behind pattern. See `cache/` module:
+- `cache/user_cache.py` — User data (balance, model_id, custom_prompt)
+- `cache/thread_cache.py` — Thread history with atomic append
+- `cache/exec_cache.py` — Code execution file caching
+- `cache/write_behind.py` — Async DB write queue (5s flush, batch 100, retry)
 
-```python
-# Future implementation
-class CachedUserRepository(UserRepository):
-    def __init__(self, session: AsyncSession, redis: Redis):
-        super().__init__(session)
-        self.redis = redis
-
-    async def get_by_telegram_id(self, telegram_id: int):
-        # Check cache first
-        cached = await self.redis.get(f"user:{telegram_id}")
-        if cached:
-            return deserialize(cached)
-
-        # Fallback to DB
-        user = await super().get_by_telegram_id(telegram_id)
-
-        # Cache result
-        if user:
-            await self.redis.setex(f"user:{telegram_id}", 3600, serialize(user))
-
-        return user
-```
-
-**No handler changes needed** - just swap repository implementation.
+All TTLs: 3600s (1 hour). See `docs/phase-3.2-redis-cache.md` for details.
 
 ---
 
@@ -1136,26 +1143,19 @@ async def save_llm_response(
     )
 ```
 
-### Pattern 3: Switch LLM Model for Thread
+### Pattern 3: Switch LLM Model for User
 ```python
 async def switch_model(
-    chat_id: int,
     user_id: int,
-    thread_id: Optional[int],
     new_model: str,
     session: AsyncSession,
 ):
-    thread_repo = ThreadRepository(session)
+    user_repo = UserRepository(session)
 
-    # Find thread
-    thread = await thread_repo.get_active_thread(
-        chat_id=chat_id,
-        user_id=user_id,
-        thread_id=thread_id,
-    )
-
-    if thread:
-        await thread_repo.update_thread_model(thread.id, new_model)
+    # Model is per-user, not per-thread
+    user = await user_repo.get_by_id(user_id)
+    if user:
+        user.model_id = new_model
 ```
 
 ---

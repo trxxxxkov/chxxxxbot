@@ -280,13 +280,23 @@ def calculate_provider_cost(model_full_id: str, usage: 'TokenUsage') -> Decimal:
         )
 
     # Generic pricing for Google and others: input + output + thinking
-    input_cost = (Decimal(str(usage.input_tokens)) / Decimal("1000000") *
+    # Subtract cached tokens from input (they're billed at discounted rate)
+    uncached_input = max(0, usage.input_tokens - usage.cache_read_tokens)
+    input_cost = (Decimal(str(uncached_input)) / Decimal("1000000") *
                   Decimal(str(model_config.pricing_input)))
+
+    # Cache read cost (discounted input tokens)
+    cache_read_cost = Decimal("0")
+    if usage.cache_read_tokens > 0 and model_config.pricing_cache_read:
+        cache_read_cost = (Decimal(str(usage.cache_read_tokens)) /
+                           Decimal("1000000") *
+                           Decimal(str(model_config.pricing_cache_read)))
+
     output_cost = (Decimal(str(usage.output_tokens)) / Decimal("1000000") *
                    Decimal(str(model_config.pricing_output)))
     thinking_cost = (Decimal(str(usage.thinking_tokens)) / Decimal("1000000") *
                      Decimal(str(model_config.pricing_output)))
-    return input_cost + output_cost + thinking_cost
+    return input_cost + cache_read_cost + output_cost + thinking_cost
 
 
 def calculate_web_search_cost(request_count: int) -> Decimal:

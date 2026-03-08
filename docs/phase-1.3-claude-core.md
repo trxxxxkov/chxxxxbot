@@ -529,7 +529,6 @@ async def handle_claude_message(message: types.Message, session: AsyncSession):
         chat_id=chat.id,
         user_id=user.id,
         thread_id=message.message_thread_id,  # Bot API 9.3 forum topics
-        model_name=config.CLAUDE_DEFAULT_MODEL,
     )
 
     # 4. Save user message
@@ -555,7 +554,7 @@ async def handle_claude_message(message: types.Message, session: AsyncSession):
 
     # 7. Build context that fits in token window
     context_mgr = ContextManager(claude_provider)
-    model_config = config.CLAUDE_MODELS["claude-sonnet-4.5"]
+    model_config = config.get_model("claude:sonnet")
 
     context = await context_mgr.build_context(
         messages=llm_messages,
@@ -671,17 +670,8 @@ class ModelConfig:
     input_price_per_mtok: float      # Price per million input tokens (USD)
     output_price_per_mtok: float     # Price per million output tokens (USD)
 
-# Model registry
-CLAUDE_MODELS = {
-    "claude-sonnet-4.5": ModelConfig(
-        name="claude-sonnet-4-5-20250929",
-        display_name="Claude Sonnet 4.5",
-        context_window=200_000,
-        max_output_tokens=64_000,
-        input_price_per_mtok=3.0,
-        output_price_per_mtok=15.0
-    ),
-}
+# Model registry (see config.py MODEL_REGISTRY for full list)
+# Access via: config.get_model("claude:sonnet"), config.get_model("google:flash"), etc.
 
 # Global system prompt (same for all users in Phase 1.3)
 GLOBAL_SYSTEM_PROMPT = (

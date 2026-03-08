@@ -16,7 +16,7 @@ NO __init__.py - use direct import:
 
 import asyncio
 import base64
-import json
+import hashlib
 import time
 import uuid
 from typing import AsyncIterator, Optional
@@ -236,7 +236,138 @@ class GeminiProvider(LLMProvider):
         self._last_thinking: Optional[str] = None
         self._last_assistant_content: Optional[list[dict]] = None
         self.last_compaction: Optional[str] = None
+        # Explicit cache: maps content_hash -> (cache_name, expire_timestamp)
+        self._content_caches: dict[str, tuple[str, float]] = {}
+        # Negative cache: hashes that failed creation -> retry_after timestamp
+        self._cache_creation_failures: dict[str, float] = {}
         logger.info("gemini_provider.initialized")
+
+    async def _get_or_create_cache(
+        self,
+        model_id: str,
+        system_instruction: Optional[str],
+        google_tools: list,
+        google_contents: Optional[list[dict]] = None,
+    ) -> tuple[Optional[str], Optional[list[dict]]]:
+        """Get or create explicit cache for system + tools + conversation.
+
+        Caches system instruction, tools, and conversation history (all but
+        last user message). Google requires minimum 1024 tokens for caching.
+        Returns cache name and the remaining contents to send.
+
+        Args:
+            model_id: Google model ID.
+            system_instruction: System prompt string.
+            google_tools: List of genai_types.Tool objects.
+            google_contents: Converted conversation messages.
+
+        Returns:
+            Tuple of (cache_name or None, remaining_contents or None).
+            If cache is used, remaining_contents has only the uncached tail.
+        """
+        if not system_instruction and not google_tools:
+            return None, None
+
+        from google.genai import types as genai_types  # pylint: disable=import-outside-toplevel
+
+        # Determine cacheable conversation prefix (all but last user message)
+        # Include history in cache for tool loops and long conversations
+        cache_contents = None
+        remaining_contents = google_contents
+        if google_contents and len(google_contents) > 1:
+            cache_contents = google_contents[:-1]
+            remaining_contents = google_contents[-1:]
+
+        # Build content hash
+        hash_parts = [model_id]
+        if system_instruction:
+            hash_parts.append(system_instruction)
+        if google_tools:
+            hash_parts.append(repr(google_tools))
+        if cache_contents:
+            hash_parts.append(repr(cache_contents))
+        content_hash = hashlib.sha256(
+            "||".join(hash_parts).encode()).hexdigest()[:16]
+
+        now = time.time()
+
+        # Skip if recently failed (negative cache, 5 min cooldown)
+        if content_hash in self._cache_creation_failures:
+            if now < self._cache_creation_failures[content_hash]:
+                return None, None
+            del self._cache_creation_failures[content_hash]
+
+        # Check existing cache (with expiration)
+        if content_hash in self._content_caches:
+            cache_name, expire_ts = self._content_caches[content_hash]
+            if now < expire_ts - 60:  # 60s safety margin
+                logger.debug(
+                    "gemini.cache.hit",
+                    cache_name=cache_name,
+                    content_hash=content_hash,
+                    ttl_remaining=round(expire_ts - now),
+                )
+                return cache_name, remaining_contents
+            # Expired — remove and recreate
+            del self._content_caches[content_hash]
+
+        # Clean up expired entries
+        expired = [
+            k for k, (_, ts) in self._content_caches.items()
+            if now >= ts - 60
+        ]
+        for k in expired:
+            del self._content_caches[k]
+
+        # Create new cache
+        try:
+            client = get_google_client()
+
+            cache_config_kwargs: dict = {"ttl": "3600s"}
+            if system_instruction:
+                cache_config_kwargs["system_instruction"] = system_instruction
+            if google_tools:
+                cache_config_kwargs["tools"] = google_tools
+            if cache_contents:
+                cache_config_kwargs["contents"] = cache_contents
+
+            cache = await asyncio.to_thread(
+                client.caches.create,
+                model=model_id,
+                config=genai_types.CreateCachedContentConfig(
+                    **cache_config_kwargs),
+            )
+
+            expire_ts = now + 3600  # 1 hour from now
+            self._content_caches[content_hash] = (cache.name, expire_ts)
+
+            # Log cache token count if available
+            cache_tokens = 0
+            if hasattr(cache, 'usage_metadata') and cache.usage_metadata:
+                cache_tokens = getattr(
+                    cache.usage_metadata, 'total_token_count', 0) or 0
+
+            logger.info(
+                "gemini.cache.created",
+                model=model_id,
+                cache_name=cache.name,
+                cache_tokens=cache_tokens,
+                content_hash=content_hash,
+                has_contents=cache_contents is not None,
+            )
+            return cache.name, remaining_contents
+
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            error_msg = str(e)[:200]
+            # Negative cache: don't retry for 5 minutes
+            self._cache_creation_failures[content_hash] = now + 300
+            logger.info(
+                "gemini.cache.create_failed",
+                model=model_id,
+                error=error_msg,
+                content_hash=content_hash,
+            )
+            return None, None
 
     @staticmethod
     async def _resolve_file_bytes(
@@ -356,6 +487,7 @@ class GeminiProvider(LLMProvider):
         self._last_stop_reason = None
         self._last_thinking = None
         self._last_assistant_content = None
+        self._last_model_id = model_config.model_id
 
         # Convert messages to Google format
         conversation = []
@@ -406,13 +538,32 @@ class GeminiProvider(LLMProvider):
                         parts.append(block)
                 system_instruction = "\n\n".join(p for p in parts if p)
 
-        # Build config
-        generate_config = genai_types.GenerateContentConfig(
-            system_instruction=system_instruction,
-            max_output_tokens=request.max_tokens,
-            temperature=request.temperature,
-            tools=google_tools if google_tools else None,
-        )
+        # Try explicit cache for system prompt + tools + conversation
+        cache_name = None
+        if model_config.has_capability("caching"):
+            cache_name, cached_remaining = await self._get_or_create_cache(
+                model_id=model_config.model_id,
+                system_instruction=system_instruction,
+                google_tools=google_tools,
+                google_contents=google_contents,
+            )
+            if cache_name and cached_remaining is not None:
+                google_contents = cached_remaining
+
+        # Build config (omit system_instruction/tools when using cache)
+        if cache_name:
+            generate_config = genai_types.GenerateContentConfig(
+                cached_content=cache_name,
+                max_output_tokens=request.max_tokens,
+                temperature=request.temperature,
+            )
+        else:
+            generate_config = genai_types.GenerateContentConfig(
+                system_instruction=system_instruction,
+                max_output_tokens=request.max_tokens,
+                temperature=request.temperature,
+                tools=google_tools if google_tools else None,
+            )
 
         # Enable thinking for capable models
         if model_config.has_capability("thinking"):
@@ -427,6 +578,7 @@ class GeminiProvider(LLMProvider):
             messages=len(google_contents),
             tools=len(google_tools),
             has_system=system_instruction is not None,
+            using_cache=cache_name is not None,
         )
 
         start_time = time.perf_counter()
@@ -441,6 +593,7 @@ class GeminiProvider(LLMProvider):
             input_tokens = 0
             output_tokens = 0
             thinking_tokens = 0
+            cache_read_tokens = 0
             grounding_requests = 0
 
             def _sync_stream():
@@ -461,6 +614,7 @@ class GeminiProvider(LLMProvider):
                         input_tokens = getattr(meta, 'prompt_token_count', 0) or 0
                         output_tokens = getattr(meta, 'candidates_token_count', 0) or 0
                         thinking_tokens = getattr(meta, 'thoughts_token_count', 0) or 0
+                        cache_read_tokens = getattr(meta, 'cached_content_token_count', 0) or 0
                     continue
 
                 candidate = chunk.candidates[0]
@@ -471,6 +625,7 @@ class GeminiProvider(LLMProvider):
                     input_tokens = getattr(meta, 'prompt_token_count', 0) or 0
                     output_tokens = getattr(meta, 'candidates_token_count', 0) or 0
                     thinking_tokens = getattr(meta, 'thoughts_token_count', 0) or 0
+                    cache_read_tokens = getattr(meta, 'cached_content_token_count', 0) or 0
 
                 # Check finish reason
                 finish_reason = getattr(candidate, 'finish_reason', None)
@@ -565,6 +720,7 @@ class GeminiProvider(LLMProvider):
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
                 thinking_tokens=thinking_tokens,
+                cache_read_tokens=cache_read_tokens,
                 web_search_requests=grounding_requests,
             )
 
@@ -575,8 +731,10 @@ class GeminiProvider(LLMProvider):
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
                 thinking_tokens=thinking_tokens,
+                cache_read_tokens=cache_read_tokens,
                 grounding_requests=grounding_requests,
                 stop_reason=stop_reason,
+                using_cache=cache_name is not None,
                 elapsed_ms=round(elapsed * 1000, 2),
             )
 
@@ -599,7 +757,22 @@ class GeminiProvider(LLMProvider):
                 model=model_config.model_id,
                 error_type=error_type,
                 error=error_msg[:500],
+                using_cache=cache_name is not None,
             )
+
+            # Invalidate cache on cache-related errors (expired, not found)
+            if cache_name and ("cachedContent" in error_msg
+                               or "NOT_FOUND" in error_msg
+                               or "cached" in error_msg.lower()):
+                self._content_caches = {
+                    k: v for k, v in self._content_caches.items()
+                    if v[0] != cache_name
+                }
+                logger.warning(
+                    "gemini.cache.invalidated",
+                    cache_name=cache_name,
+                    error=error_msg[:200],
+                )
 
             # Map Google errors to our exception types
             if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
@@ -614,12 +787,22 @@ class GeminiProvider(LLMProvider):
             if "connection" in error_msg.lower():
                 raise APIConnectionError(
                     f"Google API connection error: {error_msg}") from e
+            if "PERMISSION_DENIED" in error_msg or "403" in error_msg:
+                raise APIConnectionError(
+                    f"Google API permission denied: {error_msg}") from e
+            if "UNAUTHENTICATED" in error_msg or "401" in error_msg:
+                raise APIConnectionError(
+                    f"Google API authentication error: {error_msg}") from e
+            if "INVALID_ARGUMENT" in error_msg or "400" in error_msg:
+                raise InvalidModelError(
+                    f"Google API invalid request: {error_msg}") from e
 
             raise
 
     async def get_token_count(self, text: str) -> int:
         """Count tokens using Google's count_tokens API.
 
+        Uses the model from the last request for accurate tokenization.
         Falls back to estimation (~4 chars per token) if API call fails.
 
         Args:
@@ -630,10 +813,12 @@ class GeminiProvider(LLMProvider):
         """
         try:
             client = get_google_client()
+            count_model = getattr(self, '_last_model_id', None) or \
+                "gemini-3.1-flash-lite-preview"
 
             def _sync_count():
                 response = client.models.count_tokens(
-                    model="gemini-2.0-flash-lite",
+                    model=count_model,
                     contents=text,
                 )
                 return response.total_tokens

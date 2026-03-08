@@ -258,12 +258,13 @@ MODEL_REGISTRY: dict[str, ModelConfig] = {
             pricing_output=1.50,
             pricing_cache_write_5m=None,
             pricing_cache_write_1h=None,
-            pricing_cache_read=None,
+            pricing_cache_read=0.025,  # 10% of input (Google 90% discount)
             latency_tier="fastest",
             capabilities={
                 "vision": True,
                 "streaming": True,
                 "grounding": True,
+                "caching": True,
             },
         ),
     "google:flash":
@@ -278,13 +279,14 @@ MODEL_REGISTRY: dict[str, ModelConfig] = {
             pricing_output=3.00,
             pricing_cache_write_5m=None,
             pricing_cache_write_1h=None,
-            pricing_cache_read=None,
+            pricing_cache_read=0.05,  # 10% of input (Google 90% discount)
             latency_tier="fast",
             capabilities={
                 "vision": True,
                 "streaming": True,
                 "thinking": True,
                 "grounding": True,
+                "caching": True,
             },
         ),
     "google:pro":
@@ -299,13 +301,14 @@ MODEL_REGISTRY: dict[str, ModelConfig] = {
             pricing_output=12.00,
             pricing_cache_write_5m=None,
             pricing_cache_write_1h=None,
-            pricing_cache_read=None,
+            pricing_cache_read=0.20,  # 10% of input (Google 90% discount)
             latency_tier="moderate",
             capabilities={
                 "vision": True,
                 "streaming": True,
                 "thinking": True,
                 "grounding": True,
+                "caching": True,
             },
         ),
     # ============ Future: OpenAI Models ============
@@ -441,7 +444,7 @@ def get_models_by_provider(provider: str) -> list[ModelConfig]:
 
 
 def get_default_model() -> ModelConfig:
-    """Get default model (Claude Sonnet 4.6).
+    """Get default model (Claude Haiku 4.5).
 
     Returns:
         Default ModelConfig.

@@ -7,7 +7,7 @@
 Implementation of a complete payment system where users pay for bot usage through Telegram Stars. All API costs (LLM models, tools, external APIs) are tracked and charged to user balance.
 
 **Key principles:**
-- Users pay for themselves (starter balance: $0.10)
+- Users pay for themselves (starter balance: $0.50)
 - Honest billing: charge exactly what was spent
 - Pre-purchase model: buy balance with Stars, then spend on API calls
 - Soft balance check: allow requests while balance > 0 (can go negative once)
@@ -161,7 +161,7 @@ class User(Base, TimestampMixin):
     balance: Mapped[Decimal] = mapped_column(
         Numeric(precision=10, scale=4),
         nullable=False,
-        default=0.1000,  # $0.10 starter balance
+        default=0.5000,  # $0.50 starter balance
         comment="User balance in USD"
     )
 
@@ -171,7 +171,7 @@ class User(Base, TimestampMixin):
 
 **Rationale:**
 - `Numeric(10, 4)`: Up to $999,999.9999 with 4 decimal precision
-- Default `0.1000`: $0.10 starter balance for new users
+- Default `0.5000`: $0.50 starter balance for new users
 - Index on balance: Fast filtering for blocked users
 
 ### 2. New Table: payments
@@ -502,7 +502,7 @@ TELEGRAM_TOPICS_FEE: float = 0.15      # k2: 15% - Topics in private chats commi
 DEFAULT_OWNER_MARGIN: float = 0.0      # k3: 0% - Default owner margin (configurable)
 
 # Balance settings
-STARTER_BALANCE_USD: float = 0.10  # New users get $0.10 starter balance
+STARTER_BALANCE_USD: float = 0.50  # New users get $0.50 starter balance
 MINIMUM_BALANCE_FOR_REQUEST: float = 0.0  # Allow requests while balance > 0
 
 # Refund settings
@@ -724,7 +724,7 @@ Use /pay to purchase balance with Telegram Stars.
 
 Phase 2.1 implements a complete payment system with:
 
-- **User balance** - USD balance per user with $0.10 starter
+- **User balance** - USD balance per user with $0.50 starter
 - **Telegram Stars integration** - Native payment with proper commission handling
 - **Commission formula** - y = x * (1 - k1 - k2 - k3) where x = stars * rate
 - **Soft balance check** - Allow requests while balance > 0 (can go negative once)

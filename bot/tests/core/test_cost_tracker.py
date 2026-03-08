@@ -123,7 +123,7 @@ class TestCalculateTotalCost:
         tracker = CostTracker(model_id="claude-opus-4-6", user_id=1)
         tracker.add_api_usage(1000000, 100000)  # 1M in, 100K out
 
-        with patch("core.cost_tracker.calculate_claude_cost") as mock_calc:
+        with patch("core.pricing.calculate_provider_cost") as mock_calc:
             mock_calc.return_value = Decimal("7.50")  # $5 in + $2.50 out
             cost = tracker.calculate_total_cost()
 
@@ -137,7 +137,7 @@ class TestCalculateTotalCost:
         tracker.add_tool_cost("tool1", Decimal("0.10"))
         tracker.add_tool_cost("tool2", Decimal("0.20"))
 
-        with patch("core.cost_tracker.calculate_claude_cost") as mock_calc:
+        with patch("core.pricing.calculate_claude_cost") as mock_calc:
             mock_calc.return_value = Decimal("0.50")
             cost = tracker.calculate_total_cost()
 
@@ -197,7 +197,7 @@ class TestFinalizeAndCharge:
         mock_session = AsyncMock()
 
         with patch("services.factory.ServiceFactory") as mock_factory_class, \
-             patch("core.cost_tracker.calculate_claude_cost") as mock_calc:
+             patch("core.pricing.calculate_claude_cost") as mock_calc:
             mock_calc.return_value = Decimal("0.05")
             mock_factory = Mock()
             mock_factory.balance.charge_user = AsyncMock()
@@ -231,7 +231,7 @@ class TestFinalizeAndCharge:
         mock_session = AsyncMock()
 
         with patch("services.factory.ServiceFactory") as mock_factory_class, \
-             patch("core.cost_tracker.calculate_claude_cost") as mock_calc:
+             patch("core.pricing.calculate_claude_cost") as mock_calc:
             mock_calc.return_value = Decimal("0.10")
             mock_factory = Mock()
             mock_factory.balance.charge_user = AsyncMock()
