@@ -62,10 +62,11 @@ chxxxxbot/
 - **Multi-provider:** Claude (Anthropic) + Google Gemini via abstract LLMProvider
 - **Claude models:** Haiku/Sonnet 4.5, Opus 4.6
 - **Gemini models:** Flash-Lite, Flash, Pro (with thinking + Google Search grounding)
+- **Gemini Vision/PDF:** Inline image and PDF analysis via `Part.from_bytes()`
 - **Provider factory:** Lazy singleton per provider (`core/provider_factory.py`)
 - **Streaming:** Real-time token streaming to Telegram (provider-agnostic)
 - **Context:** 200K token window with automatic management
-- **Extended Thinking:** 16K budget tokens for complex reasoning (Claude + Gemini)
+- **Extended Thinking:** Adaptive for Claude, `thinking_level=HIGH` for Gemini 3
 - **Prompt Caching:** 5-minute ephemeral cache for Claude (10x cost reduction)
 
 ### Tools (13 total)
@@ -77,7 +78,7 @@ chxxxxbot/
 | `generate_image` | Google Gemini image generation | Paid | All |
 | `transcribe_audio` | Whisper speech-to-text | Paid | All |
 | `extended_thinking` | Force extended thinking mode | Paid | Claude |
-| `self_critique` | Self-critique via Opus subagent | Paid | Claude |
+| `self_critique` | Cross-provider critique via Opus subagent | Paid | All |
 | `web_search` | Internet search (server-side) | Paid | Claude |
 | `web_fetch` | Fetch URL content (server-side) | Free | Claude |
 | `render_latex` | LaTeX to PNG | Free | All |
