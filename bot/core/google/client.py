@@ -8,6 +8,7 @@ NO __init__.py - use direct import:
     from core.google.client import GeminiProvider
 """
 
+import base64
 import json
 import time
 import uuid
@@ -167,9 +168,14 @@ def _convert_messages_for_google(
                             }
                         })
 
-                    elif block_type == "image":
-                        # Skip images for now (Phase 4)
-                        pass
+                    elif block_type == "inline_data":
+                        parts.append({
+                            "inline_data": {
+                                "mime_type": block.get("mime_type",
+                                                       "image/jpeg"),
+                                "data": block.get("data", ""),
+                            }
+                        })
 
         if parts:
             contents.append({"role": role, "parts": parts})
@@ -188,6 +194,66 @@ class GeminiProvider(LLMProvider):
         self._last_assistant_content: Optional[list[dict]] = None
         self.last_compaction: Optional[str] = None
         logger.info("gemini_provider.initialized")
+
+    @staticmethod
+    async def _resolve_file_bytes(
+        conversation: list[dict],
+    ) -> list[dict]:
+        """Pre-resolve file references to inline bytes for Gemini.
+
+        Replaces Anthropic-style image/document blocks with inline base64
+        data that Gemini can consume. Must be called before
+        _convert_messages_for_google().
+
+        Args:
+            conversation: Messages in LLM intermediate format.
+
+        Returns:
+            Messages with file blocks replaced by inline_data blocks.
+        """
+        from cache.file_cache import get_cached_file  # pylint: disable=import-outside-toplevel
+
+        resolved = []
+        for msg in conversation:
+            content = msg["content"]
+            if not isinstance(content, list):
+                resolved.append(msg)
+                continue
+
+            new_blocks = []
+            for block in content:
+                if isinstance(block, dict):
+                    block_type = block.get("type", "")
+                    if block_type in ("image", "document"):
+                        telegram_file_id = block.get("telegram_file_id")
+                        mime_type = block.get("mime_type", "image/jpeg")
+                        if telegram_file_id:
+                            file_bytes = await get_cached_file(
+                                telegram_file_id)
+                            if file_bytes:
+                                new_blocks.append({
+                                    "type": "inline_data",
+                                    "mime_type": mime_type,
+                                    "data": base64.b64encode(
+                                        file_bytes).decode(),
+                                })
+                                continue
+                        # No bytes available - skip silently
+                        logger.debug(
+                            "gemini.resolve_file_bytes.skip",
+                            block_type=block_type,
+                            has_telegram_id=bool(telegram_file_id),
+                        )
+                        continue
+                    new_blocks.append(block)
+                else:
+                    new_blocks.append(block)
+
+            resolved.append({
+                "role": msg["role"],
+                "content": new_blocks if new_blocks else msg["content"],
+            })
+        return resolved
 
     async def stream_message(self, request: LLMRequest) -> AsyncIterator[str]:
         """Stream response text from Gemini.
@@ -244,6 +310,8 @@ class GeminiProvider(LLMProvider):
                 "content": content,
             })
 
+        # Resolve file references to inline bytes before conversion
+        conversation = await self._resolve_file_bytes(conversation)
         google_contents = _convert_messages_for_google(conversation)
 
         # Convert tool definitions
@@ -293,7 +361,7 @@ class GeminiProvider(LLMProvider):
         # Enable thinking for capable models
         if model_config.has_capability("thinking"):
             generate_config.thinking_config = genai_types.ThinkingConfig(
-                thinking_budget=16384,
+                thinking_level="HIGH",
             )
 
         logger.info(

@@ -70,6 +70,8 @@ class TestMultimodalFormatting:
         """Create a sample image file."""
         file = MagicMock(spec=UserFile)
         file.claude_file_id = "file_abc123"
+        file.telegram_file_id = "tg_img_123"
+        file.mime_type = "image/jpeg"
         file.file_type = FileType.IMAGE
         file.filename = "photo.jpg"
         return file
@@ -79,6 +81,8 @@ class TestMultimodalFormatting:
         """Create a sample PDF file."""
         file = MagicMock(spec=UserFile)
         file.claude_file_id = "file_def456"
+        file.telegram_file_id = "tg_pdf_456"
+        file.mime_type = "application/pdf"
         file.file_type = FileType.PDF
         file.filename = "document.pdf"
         return file
@@ -103,10 +107,12 @@ class TestMultimodalFormatting:
         assert isinstance(msg.content, list)
         assert len(msg.content) == 2
 
-        # First block should be image
+        # First block should be image with Gemini metadata
         assert msg.content[0]["type"] == "image"
         assert msg.content[0]["source"]["type"] == "file"
         assert msg.content[0]["source"]["file_id"] == "file_abc123"
+        assert msg.content[0]["telegram_file_id"] == "tg_img_123"
+        assert msg.content[0]["mime_type"] == "image/jpeg"
 
         # Second block should be text
         assert msg.content[1]["type"] == "text"
@@ -132,9 +138,11 @@ class TestMultimodalFormatting:
         msg = result[0]
         assert isinstance(msg.content, list)
 
-        # First block should be document
+        # First block should be document with Gemini metadata
         assert msg.content[0]["type"] == "document"
         assert msg.content[0]["source"]["file_id"] == "file_def456"
+        assert msg.content[0]["telegram_file_id"] == "tg_pdf_456"
+        assert msg.content[0]["mime_type"] == "application/pdf"
 
     @pytest.mark.asyncio
     async def test_user_message_with_multiple_files(self, formatter,
@@ -264,6 +272,8 @@ class TestBuildMultimodalContent:
 
         image = MagicMock(spec=UserFile)
         image.claude_file_id = "file_123"
+        image.telegram_file_id = "tg_img_123"
+        image.mime_type = "image/jpeg"
         image.file_type = FileType.IMAGE
 
         blocks = formatter._build_multimodal_content([image], "caption")
@@ -275,6 +285,8 @@ class TestBuildMultimodalContent:
                 "type": "file",
                 "file_id": "file_123"
             },
+            "telegram_file_id": "tg_img_123",
+            "mime_type": "image/jpeg",
         }
         assert blocks[1] == {"type": "text", "text": "caption"}
 
@@ -284,6 +296,8 @@ class TestBuildMultimodalContent:
 
         pdf = MagicMock(spec=UserFile)
         pdf.claude_file_id = "file_456"
+        pdf.telegram_file_id = "tg_pdf_456"
+        pdf.mime_type = "application/pdf"
         pdf.file_type = FileType.PDF
 
         blocks = formatter._build_multimodal_content([pdf], "question")
@@ -294,6 +308,8 @@ class TestBuildMultimodalContent:
                 "type": "file",
                 "file_id": "file_456"
             },
+            "telegram_file_id": "tg_pdf_456",
+            "mime_type": "application/pdf",
         }
 
     def test_empty_text_still_added(self):
@@ -302,6 +318,8 @@ class TestBuildMultimodalContent:
 
         image = MagicMock(spec=UserFile)
         image.claude_file_id = "file_123"
+        image.telegram_file_id = "tg_img_123"
+        image.mime_type = "image/jpeg"
         image.file_type = FileType.IMAGE
 
         blocks = formatter._build_multimodal_content([image], "")

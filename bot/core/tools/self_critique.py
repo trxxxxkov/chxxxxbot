@@ -3,6 +3,10 @@
 This tool launches an independent verification session using Claude Opus 4.6
 with an adversarial system prompt focused on finding flaws.
 
+Cross-provider: Available to ALL providers (Claude and Gemini). Always uses
+Claude Opus as the critic regardless of the caller's provider, providing
+truly independent cross-provider verification when called from Gemini.
+
 The subagent has access to tools:
 - execute_python: Run tests, debug, visualize
 - preview_file: Examine any file type
@@ -25,7 +29,7 @@ from decimal import Decimal
 import json
 from typing import Any, Awaitable, Callable, Optional, TYPE_CHECKING
 
-# AsyncAnthropic client obtained from global claude_provider
+# AsyncAnthropic client obtained from provider factory
 from config import get_model
 from core.cost_tracker import CostTracker as BaseCostTracker
 from core.pricing import calculate_claude_cost
@@ -457,6 +461,10 @@ async def execute_self_critique(  # pylint: disable=too-many-return-statements
     """Execute critical self-verification subagent.
 
     ALWAYS uses Claude Opus 4.6 for maximum verification quality.
+    Available to ALL providers (Claude and Gemini) for cross-provider
+    independent verification. When called from Gemini, provides truly
+    independent cross-provider critique via Opus.
+
     Cost is dynamic - user pays actual Opus token costs + tool costs.
 
     Args:
@@ -472,7 +480,7 @@ async def execute_self_critique(  # pylint: disable=too-many-return-statements
         on_subagent_tool: Optional callback called when subagent uses a tool.
             Used to update display with tool progress.
         anthropic_client: Optional Anthropic client for dependency injection.
-            If not provided, falls back to global claude_provider.
+            If not provided, uses provider factory to get Claude client.
             Useful for testing and custom client configurations.
         cancel_event: Optional asyncio.Event for cancellation.
             If set, subagent will stop and return partial results.
@@ -525,30 +533,14 @@ async def execute_self_critique(  # pylint: disable=too-many-return-statements
         verification_hints=verification_hints,
         focus_areas=focus_areas)
 
-    # 4. Get Anthropic client (dependency injection or fallback to global)
+    # 4. Get Anthropic client (dependency injection or fallback to provider factory)
     client = anthropic_client
     if client is None:
-        # Fallback to global claude_provider for backward compatibility
-        # Import here to avoid circular imports at module level
-        from telegram.handlers.claude import claude_provider
-
-        if claude_provider is None:
-            logger.error("self_critique.provider_not_initialized",
-                         user_id=user_id)
-            return {
-                "verdict":
-                    "ERROR",
-                "error":
-                    "claude_provider_not_initialized",
-                "message":
-                    "Claude provider not initialized. Please try again later.",
-                "cost_usd":
-                    0.0,
-                "iterations":
-                    0
-            }
-        client = claude_provider.client
-        logger.debug("self_critique.client_from_provider", user_id=user_id)
+        # Use provider factory for clean dependency resolution (no circular imports)
+        from core.provider_factory import get_provider
+        provider = get_provider(VERIFICATION_MODEL_ID)
+        client = provider.client
+        logger.debug("self_critique.client_from_factory", user_id=user_id)
     else:
         logger.debug("self_critique.client_injected", user_id=user_id)
 
@@ -915,5 +907,5 @@ TOOL_CONFIG = ToolConfig(
     executor=execute_self_critique,
     emoji="🔍",
     needs_bot_session=True,
-    providers={"claude"},  # Uses Claude Opus 4.6 internally
+    providers={"claude", "google"},  # Cross-provider: Opus critiques all
 )

@@ -310,21 +310,31 @@ class ContextFormatter:
                 continue
 
             if file.file_type == FileType.IMAGE:
-                content_blocks.append({
+                block: dict[str, Any] = {
                     "type": "image",
                     "source": {
                         "type": "file",
                         "file_id": file.claude_file_id,
-                    }
-                })
+                    },
+                }
+                if file.telegram_file_id:
+                    block["telegram_file_id"] = file.telegram_file_id
+                if file.mime_type:
+                    block["mime_type"] = file.mime_type
+                content_blocks.append(block)
             elif file.file_type == FileType.PDF:
-                content_blocks.append({
+                block = {
                     "type": "document",
                     "source": {
                         "type": "file",
                         "file_id": file.claude_file_id,
-                    }
-                })
+                    },
+                }
+                if file.telegram_file_id:
+                    block["telegram_file_id"] = file.telegram_file_id
+                if file.mime_type:
+                    block["mime_type"] = file.mime_type
+                content_blocks.append(block)
 
         # Add text block (always add at least placeholder to ensure non-empty)
         if text_content:
