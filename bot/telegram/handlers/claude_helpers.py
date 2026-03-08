@@ -141,7 +141,8 @@ def compose_system_prompt_for_provider(
     """Provider-aware system prompt composition.
 
     Claude uses multi-block format with cache_control markers.
-    Other providers use simple string concatenation.
+    Other providers use simple string concatenation + current date
+    (Claude gets the date from Anthropic's API automatically).
 
     Args:
         provider: Provider name ("claude", "google", etc.).
@@ -153,4 +154,13 @@ def compose_system_prompt_for_provider(
     """
     if provider == "claude":
         return compose_system_prompt_blocks(global_prompt, custom_prompt)
-    return compose_system_prompt(global_prompt, custom_prompt)
+
+    # Non-Claude providers: add current date context
+    from datetime import datetime, timezone  # pylint: disable=import-outside-toplevel
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    date_context = f"Current date: {today}."
+
+    parts = [global_prompt, date_context]
+    if custom_prompt:
+        parts.append(custom_prompt)
+    return "\n\n".join(parts)
