@@ -2,12 +2,19 @@
 
 Implements the LLMProvider interface for Google Gemini using the
 official google-genai SDK. Handles streaming, tool use, thinking,
-and Google Search grounding.
+thought signatures, and Google Search grounding.
+
+Thought signatures: Gemini 3 returns encrypted reasoning state with
+function calls. These must be preserved and sent back in subsequent
+turns, otherwise function calling returns 400 errors. We capture
+signatures from response parts and include them in serialized
+assistant content for the tool loop.
 
 NO __init__.py - use direct import:
     from core.google.client import GeminiProvider
 """
 
+import asyncio
 import base64
 import json
 import time
@@ -131,15 +138,24 @@ def _convert_messages_for_google(
                     if block_type == "text":
                         text = block.get("text", "")
                         if text.strip():
-                            parts.append({"text": text})
+                            text_part = {"text": text}
+                            if block.get("thought_signature"):
+                                text_part["thought_signature"] = block[
+                                    "thought_signature"]
+                            parts.append(text_part)
 
                     elif block_type == "tool_use":
-                        parts.append({
+                        fc_part = {
                             "function_call": {
                                 "name": block.get("name", ""),
                                 "args": block.get("input", {}),
                             }
-                        })
+                        }
+                        # Preserve thought signature (Gemini 3)
+                        if block.get("thought_signature"):
+                            fc_part["thought_signature"] = block[
+                                "thought_signature"]
+                        parts.append(fc_part)
 
                     elif block_type == "tool_result":
                         result_content = block.get("content", "")
@@ -176,6 +192,33 @@ def _convert_messages_for_google(
                                 "data": block.get("data", ""),
                             }
                         })
+
+                    elif "function_call" in block:
+                        # Google-native format from
+                        # get_serialized_assistant_content()
+                        fc_part = {
+                            "function_call": block["function_call"],
+                        }
+                        if block.get("thought_signature"):
+                            fc_part["thought_signature"] = block[
+                                "thought_signature"]
+                        parts.append(fc_part)
+
+                    elif "function_response" in block:
+                        # Google-native format from tool results
+                        parts.append({
+                            "function_response": block["function_response"],
+                        })
+
+                    elif not block_type and "text" in block:
+                        # Google-native format: {"text": "..."}
+                        text = block["text"]
+                        if text.strip():
+                            text_part = {"text": text}
+                            if block.get("thought_signature"):
+                                text_part["thought_signature"] = block[
+                                    "thought_signature"]
+                            parts.append(text_part)
 
         if parts:
             contents.append({"role": role, "parts": parts})
@@ -282,7 +325,6 @@ class GeminiProvider(LLMProvider):
         Yields:
             StreamEvent objects.
         """
-        import asyncio  # pylint: disable=import-outside-toplevel
         from google.genai import types as genai_types  # pylint: disable=import-outside-toplevel
 
         # Validate model
@@ -362,6 +404,7 @@ class GeminiProvider(LLMProvider):
         if model_config.has_capability("thinking"):
             generate_config.thinking_config = genai_types.ThinkingConfig(
                 thinking_level="HIGH",
+                include_thoughts=True,
             )
 
         logger.info(
@@ -441,12 +484,21 @@ class GeminiProvider(LLMProvider):
                             elif isinstance(fc.args, dict):
                                 tool_input = fc.args
 
-                        assistant_parts.append({
+                        fc_part = {
                             "function_call": {
                                 "name": fc.name,
                                 "args": tool_input,
                             }
-                        })
+                        }
+
+                        # Preserve thought signature for Gemini 3
+                        # Required for function calling multi-turn
+                        thought_sig = getattr(
+                            part, 'thought_signature', None)
+                        if thought_sig:
+                            fc_part["thought_signature"] = thought_sig
+
+                        assistant_parts.append(fc_part)
 
                         yield StreamEvent(
                             type="tool_use",
@@ -463,7 +515,13 @@ class GeminiProvider(LLMProvider):
                     # Handle text
                     elif part.text and not getattr(part, 'thought', False):
                         response_text += part.text
-                        assistant_parts.append({"text": part.text})
+                        text_part = {"text": part.text}
+                        # Preserve thought signature on text parts too
+                        thought_sig = getattr(
+                            part, 'thought_signature', None)
+                        if thought_sig:
+                            text_part["thought_signature"] = thought_sig
+                        assistant_parts.append(text_part)
                         yield StreamEvent(
                             type="text_delta",
                             content=part.text,
