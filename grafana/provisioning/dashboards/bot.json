@@ -380,274 +380,80 @@
         },
         "overrides": [
           {
-            "matcher": {
-              "id": "byName",
-              "options": "Claude Opus 4.6"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "#E5E7EB",
-                  "mode": "fixed"
-                }
-              }
-            ]
+            "matcher": { "id": "byName", "options": "Claude Opus 4.6" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "#E5E7EB", "mode": "fixed" } }]
           },
           {
-            "matcher": {
-              "id": "byName",
-              "options": "Claude Sonnet 4.6"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "#D1D5DB",
-                  "mode": "fixed"
-                }
-              }
-            ]
+            "matcher": { "id": "byName", "options": "Claude Sonnet 4.6" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "#9AA0A9", "mode": "fixed" } }]
           },
           {
-            "matcher": {
-              "id": "byName",
-              "options": "Claude Haiku 4.5"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "#6B7280",
-                  "mode": "fixed"
-                }
-              }
-            ]
+            "matcher": { "id": "byName", "options": "Gemini 3.1 Pro" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "#848B95", "mode": "fixed" } }]
           },
           {
-            "matcher": {
-              "id": "byName",
-              "options": "Gemini 3.1 Pro"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "#9CA3AF",
-                  "mode": "fixed"
-                }
-              }
-            ]
+            "matcher": { "id": "byName", "options": "Claude Haiku 4.5" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "#505967", "mode": "fixed" } }]
           },
           {
-            "matcher": {
-              "id": "byName",
-              "options": "Gemini 3 Flash"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "#4B5563",
-                  "mode": "fixed"
-                }
-              }
-            ]
+            "matcher": { "id": "byName", "options": "Gemini 3 Flash" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "#424B5A", "mode": "fixed" } }]
           },
           {
-            "matcher": {
-              "id": "byName",
-              "options": "Gemini 3.1 Flash-Lite"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "#374151",
-                  "mode": "fixed"
-                }
-              }
-            ]
+            "matcher": { "id": "byName", "options": "Gemini 3.1 Flash-Lite" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "#374151", "mode": "fixed" } }]
           },
           {
-            "matcher": {
-              "id": "byName",
-              "options": "self_critique"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "#EF4444",
-                  "mode": "fixed"
-                }
-              }
-            ]
+            "matcher": { "id": "byName", "options": "self_critique" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "#EF4444", "mode": "fixed" } }]
           },
           {
-            "matcher": {
-              "id": "byName",
-              "options": "extended_thinking"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "#F97316",
-                  "mode": "fixed"
-                }
-              }
-            ]
+            "matcher": { "id": "byName", "options": "extended_thinking" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "#F97316", "mode": "fixed" } }]
           },
           {
-            "matcher": {
-              "id": "byName",
-              "options": "generate_image"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "#FBBF24",
-                  "mode": "fixed"
-                }
-              }
-            ]
+            "matcher": { "id": "byName", "options": "generate_image" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "#FBBF24", "mode": "fixed" } }]
           },
           {
-            "matcher": {
-              "id": "byName",
-              "options": "execute_python"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "#EAB308",
-                  "mode": "fixed"
-                }
-              }
-            ]
+            "matcher": { "id": "byName", "options": "web_search" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "#EAB308", "mode": "fixed" } }]
           },
           {
-            "matcher": {
-              "id": "byName",
-              "options": "web_search"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "#84CC16",
-                  "mode": "fixed"
-                }
-              }
-            ]
+            "matcher": { "id": "byName", "options": "execute_python" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "#84CC16", "mode": "fixed" } }]
           },
           {
-            "matcher": {
-              "id": "byName",
-              "options": "transcribe_audio"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "#22C55E",
-                  "mode": "fixed"
-                }
-              }
-            ]
+            "matcher": { "id": "byName", "options": "transcribe_audio" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "#22C55E", "mode": "fixed" } }]
           },
           {
-            "matcher": {
-              "id": "byName",
-              "options": "analyze_pdf"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "#14B8A6",
-                  "mode": "fixed"
-                }
-              }
-            ]
+            "matcher": { "id": "byName", "options": "analyze_pdf" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "#14B8A6", "mode": "fixed" } }]
           },
           {
-            "matcher": {
-              "id": "byName",
-              "options": "analyze_image"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "#06B6D4",
-                  "mode": "fixed"
-                }
-              }
-            ]
+            "matcher": { "id": "byName", "options": "analyze_image" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "#06B6D4", "mode": "fixed" } }]
           },
           {
-            "matcher": {
-              "id": "byName",
-              "options": "preview_file"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "#3B82F6",
-                  "mode": "fixed"
-                }
-              }
-            ]
+            "matcher": { "id": "byName", "options": "preview_file" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "#3B82F6", "mode": "fixed" } }]
           },
           {
-            "matcher": {
-              "id": "byName",
-              "options": "stop_generation"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "#6366F1",
-                  "mode": "fixed"
-                }
-              }
-            ]
+            "matcher": { "id": "byName", "options": "stop_generation" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "#6366F1", "mode": "fixed" } }]
           },
           {
-            "matcher": {
-              "id": "byName",
-              "options": "topic_naming"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "#8B5CF6",
-                  "mode": "fixed"
-                }
-              }
-            ]
+            "matcher": { "id": "byName", "options": "cache_write" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "#8B5CF6", "mode": "fixed" } }]
           },
           {
-            "matcher": {
-              "id": "byName",
-              "options": "topic_routing"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "#A78BFA",
-                  "mode": "fixed"
-                }
-              }
-            ]
+            "matcher": { "id": "byName", "options": "topic_naming" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "#A78BFA", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "topic_routing" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "#C4B5FD", "mode": "fixed" } }]
           }
         ]
       },
@@ -675,175 +481,118 @@
       },
       "targets": [
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "loki"
-          },
+          "datasource": { "type": "loki", "uid": "loki" },
           "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.user_charged\" | model_id=\"claude:opus\" | source!=\"self_critique\" | unwrap cost_usd [$__interval])) or vector(0)",
           "legendFormat": "Claude Opus 4.6",
-          "refId": "A"
+          "refId": "A1"
         },
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "loki"
-          },
+          "datasource": { "type": "loki", "uid": "loki" },
           "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.user_charged\" | model_id=\"claude:sonnet\" | unwrap cost_usd [$__interval])) or vector(0)",
           "legendFormat": "Claude Sonnet 4.6",
           "refId": "A2"
         },
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "loki"
-          },
-          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.user_charged\" | model_id=\"claude:haiku\" | unwrap cost_usd [$__interval])) or vector(0)",
-          "legendFormat": "Claude Haiku 4.5",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.user_charged\" | model_id=\"google:pro\" | unwrap cost_usd [$__interval])) or vector(0)",
+          "legendFormat": "Gemini 3.1 Pro",
           "refId": "A3"
         },
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "loki"
-          },
-          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.user_charged\" | model_id=\"google:pro\" | unwrap cost_usd [$__interval])) or vector(0)",
-          "legendFormat": "Gemini 3.1 Pro",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.user_charged\" | model_id=\"claude:haiku\" | unwrap cost_usd [$__interval])) or vector(0)",
+          "legendFormat": "Claude Haiku 4.5",
           "refId": "A4"
         },
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "loki"
-          },
+          "datasource": { "type": "loki", "uid": "loki" },
           "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.user_charged\" | model_id=\"google:flash\" | unwrap cost_usd [$__interval])) or vector(0)",
           "legendFormat": "Gemini 3 Flash",
           "refId": "A5"
         },
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "loki"
-          },
+          "datasource": { "type": "loki", "uid": "loki" },
           "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.user_charged\" | model_id=\"google:flash-lite\" | unwrap cost_usd [$__interval])) or vector(0)",
           "legendFormat": "Gemini 3.1 Flash-Lite",
           "refId": "A6"
         },
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "loki"
-          },
+          "datasource": { "type": "loki", "uid": "loki" },
           "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"self_critique.cost_charged\" | unwrap total_cost [$__interval])) or vector(0)",
           "legendFormat": "self_critique",
-          "refId": "SC"
+          "refId": "B1"
         },
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "loki"
-          },
+          "datasource": { "type": "loki", "uid": "loki" },
           "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"extended_thinking\" | unwrap cost_usd [$__interval])) or vector(0)",
           "legendFormat": "extended_thinking",
-          "refId": "B"
+          "refId": "B2"
         },
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "loki"
-          },
+          "datasource": { "type": "loki", "uid": "loki" },
           "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"generate_image\" | unwrap cost_usd [$__interval])) or vector(0)",
           "legendFormat": "generate_image",
-          "refId": "C"
+          "refId": "B3"
         },
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "loki"
-          },
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "(sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.web_search.user_charged\" | source!=\"self_critique\" | unwrap cost_usd [$__interval])) or vector(0)) + (sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"web_search\" | unwrap cost_usd [$__interval])) or vector(0))",
+          "legendFormat": "web_search",
+          "refId": "B4"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
           "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"execute_python\" | source!=\"self_critique\" | unwrap cost_usd [$__interval])) or vector(0)",
           "legendFormat": "execute_python",
-          "refId": "D"
+          "refId": "B5"
         },
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "loki"
-          },
-          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.web_search.user_charged\" | source!=\"self_critique\" | unwrap cost_usd [$__interval])) or vector(0) + sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"web_search\" | unwrap cost_usd [$__interval])) or vector(0)",
-          "legendFormat": "web_search",
-          "refId": "E"
-        },
-        {
-          "datasource": {
-            "type": "loki",
-            "uid": "loki"
-          },
+          "datasource": { "type": "loki", "uid": "loki" },
           "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"transcribe_audio\" | unwrap cost_usd [$__interval])) or vector(0)",
           "legendFormat": "transcribe_audio",
-          "refId": "F"
+          "refId": "B6"
         },
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "loki"
-          },
+          "datasource": { "type": "loki", "uid": "loki" },
           "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"analyze_pdf\" | unwrap cost_usd [$__interval])) or vector(0)",
           "legendFormat": "analyze_pdf",
-          "refId": "G"
+          "refId": "B7"
         },
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "loki"
-          },
+          "datasource": { "type": "loki", "uid": "loki" },
           "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"analyze_image\" | unwrap cost_usd [$__interval])) or vector(0)",
           "legendFormat": "analyze_image",
-          "refId": "H"
+          "refId": "B8"
         },
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "loki"
-          },
+          "datasource": { "type": "loki", "uid": "loki" },
           "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"preview_file\" | unwrap cost_usd [$__interval])) or vector(0)",
           "legendFormat": "preview_file",
-          "refId": "I"
+          "refId": "B9"
         },
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "loki"
-          },
+          "datasource": { "type": "loki", "uid": "loki" },
           "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.cancelled_user_charged\" | unwrap cost_usd [$__interval])) or vector(0)",
           "legendFormat": "stop_generation",
-          "refId": "J"
+          "refId": "C1"
         },
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "loki"
-          },
-          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"topic_naming.user_charged\" | unwrap cost_usd [$__interval])) or vector(0)",
-          "legendFormat": "topic_naming",
-          "refId": "K"
-        },
-        {
-          "datasource": {
-            "type": "loki",
-            "uid": "loki"
-          },
+          "datasource": { "type": "loki", "uid": "loki" },
           "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.user_charged\" | unwrap cache_write_cost [$__interval])) or vector(0)",
           "legendFormat": "cache_write",
-          "refId": "L"
+          "refId": "C2"
         },
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "loki"
-          },
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"topic_naming.user_charged\" | unwrap cost_usd [$__interval])) or vector(0)",
+          "legendFormat": "topic_naming",
+          "refId": "C3"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
           "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"topic_routing.cost\" | unwrap cost_usd [$__interval])) or vector(0)",
           "legendFormat": "topic_routing",
-          "refId": "M"
+          "refId": "C4"
         }
       ],
       "title": "Costs",
