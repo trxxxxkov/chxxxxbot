@@ -137,8 +137,13 @@ async def _process_single_file(
             # - It's an image type
             # - Supported by Telegram photo API
             # - as_document is NOT set (user didn't request full quality)
-            if (not as_document and file_type == FileType.IMAGE and mime_type
-                    in ["image/jpeg", "image/png", "image/gif", "image/webp"]):
+            # Telegram photo limit: 10MB
+            _PHOTO_SIZE_LIMIT = 10 * 1024 * 1024
+
+            if (not as_document and file_type == FileType.IMAGE
+                    and mime_type
+                    in ["image/jpeg", "image/png", "image/gif", "image/webp"]
+                    and len(file_bytes) <= _PHOTO_SIZE_LIMIT):
                 sent_msg = await _send_with_retry(
                     first_message.bot.send_photo,
                     filename=filename,

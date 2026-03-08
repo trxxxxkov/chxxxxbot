@@ -10,11 +10,13 @@ NO __init__.py - use direct import:
 
 from typing import Any
 
-# Fields that API returns but doesn't accept on input
+# Fields that API returns or internal fields that shouldn't be sent
 # These are removed during serialization
 API_OUTPUT_ONLY_FIELDS = frozenset({
     "parsed_output",  # Structured Outputs parsing result
     "citations",  # Server tool citations
+    "telegram_file_id",  # Internal: used by Gemini for file resolution
+    "mime_type",  # Internal: used by Gemini for inline_data
 })
 
 # Block types that have additional output-only fields
