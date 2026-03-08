@@ -27,9 +27,9 @@ from core.pricing import calculate_claude_cost
 from db.models.thread import Thread
 from services.factory import ServiceFactory
 from sqlalchemy.ext.asyncio import AsyncSession
-from utils.metrics import record_claude_request
-from utils.metrics import record_claude_tokens
 from utils.metrics import record_cost
+from utils.metrics import record_llm_request
+from utils.metrics import record_llm_tokens
 from utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
@@ -208,8 +208,8 @@ class TopicNamingService:
             )
 
             # Record Prometheus metrics
-            record_claude_request(model=self.model, success=True)
-            record_claude_tokens(
+            record_llm_request(model=self.model, success=True)
+            record_llm_tokens(
                 model=self.model,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,

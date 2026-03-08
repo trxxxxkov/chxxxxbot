@@ -251,6 +251,12 @@ def record_claude_response_time(model: str, seconds: float) -> None:
     CLAUDE_RESPONSE_TIME.labels(model=model).observe(seconds)
 
 
+# Provider-generic aliases (same Prometheus counters, just cleaner names)
+record_llm_request = record_claude_request
+record_llm_tokens = record_claude_tokens
+record_llm_response_time = record_claude_response_time
+
+
 def record_tool_call(tool_name: str, success: bool, duration: float) -> None:
     """Record a tool call with its execution time."""
     TOOL_CALLS.labels(tool_name=tool_name,

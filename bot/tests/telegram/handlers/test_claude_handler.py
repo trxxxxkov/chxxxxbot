@@ -599,7 +599,7 @@ class TestErrorHandling:
             "record_error":
                 patch("telegram.handlers.claude.record_error"),
             "record_request":
-                patch("telegram.handlers.claude.record_claude_request"),
+                patch("telegram.handlers.claude.record_llm_request"),
             "logger":
                 patch("telegram.handlers.claude.logger"),
         }

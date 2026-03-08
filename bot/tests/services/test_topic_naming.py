@@ -231,8 +231,8 @@ class TestMaybeNameTopic:
                    return_value=mock_service_factory), \
              patch("services.topic_naming.update_cached_balance",
                    new_callable=AsyncMock) as mock_update_cache, \
-             patch("services.topic_naming.record_claude_request"), \
-             patch("services.topic_naming.record_claude_tokens"), \
+             patch("services.topic_naming.record_llm_request"), \
+             patch("services.topic_naming.record_llm_tokens"), \
              patch("services.topic_naming.record_cost"), \
              patch.object(topic_naming_service, "model", "claude-haiku-test"), \
              patch("config.TOPIC_NAMING_ENABLED", True):
@@ -337,8 +337,8 @@ class TestMaybeNameTopic:
                    return_value=mock_service_factory), \
              patch("services.topic_naming.update_cached_balance",
                    new_callable=AsyncMock), \
-             patch("services.topic_naming.record_claude_request"), \
-             patch("services.topic_naming.record_claude_tokens"), \
+             patch("services.topic_naming.record_llm_request"), \
+             patch("services.topic_naming.record_llm_tokens"), \
              patch("services.topic_naming.record_cost"), \
              patch.object(topic_naming_service, "model", "claude-haiku-test"), \
              patch("config.TOPIC_NAMING_ENABLED", True):
@@ -397,8 +397,8 @@ class TestMaybeNameTopic:
                    return_value=mock_service_factory), \
              patch("services.topic_naming.update_cached_balance",
                    new_callable=AsyncMock), \
-             patch("services.topic_naming.record_claude_request") as mock_req, \
-             patch("services.topic_naming.record_claude_tokens") as mock_tok, \
+             patch("services.topic_naming.record_llm_request") as mock_req, \
+             patch("services.topic_naming.record_llm_tokens") as mock_tok, \
              patch("services.topic_naming.record_cost") as mock_cost, \
              patch.object(topic_naming_service, "model", "claude-haiku-test"), \
              patch("config.TOPIC_NAMING_ENABLED", True):
@@ -556,8 +556,8 @@ class TestTopicNamingEdgeCases:
                    return_value=mock_service_factory), \
              patch("services.topic_naming.update_cached_balance",
                    new_callable=AsyncMock), \
-             patch("services.topic_naming.record_claude_request"), \
-             patch("services.topic_naming.record_claude_tokens"), \
+             patch("services.topic_naming.record_llm_request"), \
+             patch("services.topic_naming.record_llm_tokens"), \
              patch("services.topic_naming.record_cost"), \
              patch.object(topic_naming_service, "model", "claude-haiku-test"), \
              patch("config.TOPIC_NAMING_ENABLED", True):

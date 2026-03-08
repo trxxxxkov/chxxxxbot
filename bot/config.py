@@ -358,6 +358,7 @@ DEFAULT_MODEL_ID = "claude:haiku"
 # Import system prompt from separate module for better maintainability
 # pylint: disable=wrong-import-position
 from prompts.system_prompt import GLOBAL_SYSTEM_PROMPT  # noqa: E402, F401
+from prompts.system_prompt import get_system_prompt  # noqa: E402, F401
 
 # ============================================================================
 # Model Registry Helper Functions

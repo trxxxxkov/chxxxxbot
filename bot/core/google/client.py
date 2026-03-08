@@ -427,6 +427,7 @@ class GeminiProvider(LLMProvider):
             input_tokens = 0
             output_tokens = 0
             thinking_tokens = 0
+            grounding_requests = 0
 
             def _sync_stream():
                 return client.models.generate_content_stream(
@@ -527,10 +528,11 @@ class GeminiProvider(LLMProvider):
                             content=part.text,
                         )
 
-                    # Handle grounding metadata (server-side search)
-                    if hasattr(chunk, 'grounding_metadata') and chunk.grounding_metadata:
-                        # Google Search was used - record as server tool
-                        pass  # Cost tracked via usage metadata
+                # Track grounding metadata (outside parts loop)
+                # grounding_metadata is on the candidate, not on individual parts
+                g_meta = getattr(candidate, 'grounding_metadata', None)
+                if g_meta and getattr(g_meta, 'grounding_chunks', None):
+                    grounding_requests += 1
 
             # Determine stop reason
             stop_reason = "end_turn"
@@ -543,11 +545,13 @@ class GeminiProvider(LLMProvider):
             self._last_thinking = thinking_text if thinking_text else None
             self._last_assistant_content = assistant_parts if assistant_parts else None
 
-            # Build usage
+            # Build usage (grounding_requests maps to web_search_requests
+            # for unified cost tracking in the handler)
             self._last_usage = TokenUsage(
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
                 thinking_tokens=thinking_tokens,
+                web_search_requests=grounding_requests,
             )
 
             elapsed = time.perf_counter() - start_time
@@ -557,6 +561,7 @@ class GeminiProvider(LLMProvider):
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
                 thinking_tokens=thinking_tokens,
+                grounding_requests=grounding_requests,
                 stop_reason=stop_reason,
                 elapsed_ms=round(elapsed * 1000, 2),
             )
@@ -599,15 +604,33 @@ class GeminiProvider(LLMProvider):
             raise
 
     async def get_token_count(self, text: str) -> int:
-        """Estimate tokens (~4 chars per token).
+        """Count tokens using Google's count_tokens API.
+
+        Falls back to estimation (~4 chars per token) if API call fails.
 
         Args:
             text: Text to count tokens for.
 
         Returns:
-            Estimated token count.
+            Token count.
         """
-        return len(text) // 4
+        try:
+            client = get_google_client()
+
+            def _sync_count():
+                response = client.models.count_tokens(
+                    model="gemini-2.0-flash-lite",
+                    contents=text,
+                )
+                return response.total_tokens
+
+            return await asyncio.wait_for(
+                asyncio.to_thread(_sync_count),
+                timeout=5.0,
+            )
+        except Exception:  # pylint: disable=broad-exception-caught
+            # Fallback to estimation
+            return len(text) // 4
 
     async def get_usage(self) -> TokenUsage:
         """Return usage from last request.

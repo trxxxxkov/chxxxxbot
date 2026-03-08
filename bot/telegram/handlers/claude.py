@@ -47,7 +47,7 @@ import config
 from config import CLAUDE_TOKEN_BUFFER_PERCENT
 from config import FILES_API_TTL_HOURS
 from config import get_model
-from config import GLOBAL_SYSTEM_PROMPT
+from config import get_system_prompt
 from core.claude.context import ContextManager
 from core.provider_factory import get_provider
 from core.claude.files_api import upload_to_files_api
@@ -92,9 +92,9 @@ from telegram.streaming.formatting import \
 from telegram.streaming.orchestrator import StreamingOrchestrator
 from utils.metrics import record_cache_hit
 from utils.metrics import record_cache_miss
-from utils.metrics import record_claude_request
-from utils.metrics import record_claude_response_time
-from utils.metrics import record_claude_tokens
+from utils.metrics import record_llm_request
+from utils.metrics import record_llm_response_time
+from utils.metrics import record_llm_tokens
 from utils.metrics import record_cost
 from utils.metrics import record_error
 from utils.metrics import record_message_sent
@@ -535,7 +535,7 @@ async def _process_batch_with_session(
             # Others: simple string concatenation
             system_prompt_blocks = compose_system_prompt_for_provider(
                 provider=model_config.provider,
-                global_prompt=GLOBAL_SYSTEM_PROMPT,
+                global_prompt=get_system_prompt(model_config.provider),
                 custom_prompt=user_custom_prompt)
 
             # Calculate total length for logging
@@ -867,7 +867,7 @@ async def _process_batch_with_session(
                         )
 
                 # Record metrics for cancelled request
-                record_claude_request(model=user_model_id, success=True)
+                record_llm_request(model=user_model_id, success=True)
                 record_cost(service="claude_cancelled", amount_usd=partial_cost)
 
                 return
@@ -950,6 +950,24 @@ async def _process_batch_with_session(
                 # Non-Claude providers: no cache cost breakdown
                 user_charge_usd = cost_usd
 
+                # Google Search grounding cost (~$0.02 per grounded query)
+                if (usage.web_search_requests > 0
+                        and model_config.provider == "google"):
+                    from core.pricing import GOOGLE_SEARCH_GROUNDING_COST
+                    grounding_cost = float(
+                        GOOGLE_SEARCH_GROUNDING_COST
+                    ) * usage.web_search_requests
+                    cost_usd += grounding_cost
+                    user_charge_usd += grounding_cost
+                    logger.info(
+                        "tools.google_grounding.user_charged",
+                        user_id=user_id,
+                        grounding_requests=usage.web_search_requests,
+                        cost_usd=grounding_cost,
+                    )
+                    record_cost(service="google_grounding",
+                                amount_usd=grounding_cost)
+
             # Record response time (Claude API duration)
             response_duration = time.perf_counter() - request_start_time
             claude_api_ms = response_duration * 1000
@@ -977,8 +995,8 @@ async def _process_batch_with_session(
                         total_request_ms=round(total_request_ms, 2))
 
             # Record Prometheus metrics
-            record_claude_request(model=user_model_id, success=True)
-            record_claude_tokens(
+            record_llm_request(model=user_model_id, success=True)
+            record_llm_tokens(
                 model=user_model_id,
                 input_tokens=usage.input_tokens,
                 output_tokens=usage.output_tokens,
@@ -990,7 +1008,7 @@ async def _process_batch_with_session(
             record_message_sent(chat_type=first_message.chat.type)
 
             # Record response time for Prometheus
-            record_claude_response_time(model=user_model_id,
+            record_llm_response_time(model=user_model_id,
                                         seconds=response_duration)
 
             # Record cache metrics (Phase 3.1: Prometheus, Claude only)
@@ -1291,7 +1309,7 @@ async def _process_batch_with_session(
                     error=str(e),
                     retry_after=e.retry_after)
         record_error(error_type="rate_limit", handler="claude")
-        record_claude_request(model="unknown", success=False)
+        record_llm_request(model="unknown", success=False)
 
         retry_msg = ""
         if e.retry_after:
@@ -1308,7 +1326,7 @@ async def _process_batch_with_session(
                     thread_id=thread_id,
                     error=str(e))
         record_error(error_type="connection_error", handler="claude")
-        record_claude_request(model="unknown", success=False)
+        record_llm_request(model="unknown", success=False)
 
         await _send_to_thread(
             first_message.bot, first_message, thread, "⚠️ Connection error.\n\n"
@@ -1319,7 +1337,7 @@ async def _process_batch_with_session(
         # External API timeout - gracefully handled
         logger.info("claude_handler.timeout", thread_id=thread_id, error=str(e))
         record_error(error_type="timeout", handler="claude")
-        record_claude_request(model="unknown", success=False)
+        record_llm_request(model="unknown", success=False)
 
         await _send_to_thread(
             first_message.bot, first_message, thread,
@@ -1334,7 +1352,7 @@ async def _process_batch_with_session(
                     error=str(e),
                     error_type=type(e).__name__)
         record_error(error_type="llm_error", handler="claude")
-        record_claude_request(model="unknown", success=False)
+        record_llm_request(model="unknown", success=False)
 
         await _send_to_thread(
             first_message.bot, first_message, thread, f"⚠️ Error: {str(e)}\n\n"
