@@ -369,6 +369,9 @@ async def execute_tool(
                     val = tool_input.pop(key, None)
                     if val is not None:
                         extra[key] = val
+                # Pass model_id for provider-aware tools (e.g. google web_search)
+                if model_id and tool.name == "web_search":
+                    extra["model_id"] = model_id
                 result = await executor(
                     bot=bot,
                     session=session,

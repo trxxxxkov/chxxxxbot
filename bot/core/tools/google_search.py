@@ -29,8 +29,8 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
-# Use cheapest model for search — grounding does the heavy lifting
-SEARCH_MODEL_ID = "google:flash-lite"
+# Fallback model if user's model is unavailable
+FALLBACK_SEARCH_MODEL_ID = "google:flash-lite"
 
 # =============================================================================
 # Prometheus Metrics
@@ -96,12 +96,13 @@ async def execute_google_search(
     session: 'AsyncSession',
     thread_id: Optional[int] = None,
     user_id: int,
+    model_id: Optional[str] = None,
     **kwargs,
 ) -> dict[str, Any]:
     """Execute web search via Google Search grounding subagent.
 
-    Spawns a separate Gemini Flash-Lite request with only google_search
-    grounding enabled (no function calling). Returns the grounded response.
+    Uses the same Gemini model the user selected for the search request.
+    Grounding does the heavy lifting; the model synthesizes results.
 
     Args:
         query: Search query or question.
@@ -109,6 +110,8 @@ async def execute_google_search(
         session: Database session.
         thread_id: Current thread ID.
         user_id: User ID for cost tracking.
+        model_id: User's current model (e.g. "google:pro"). Falls back
+            to flash-lite if not provided or not a Google model.
 
     Returns:
         Dict with search results and cost.
@@ -116,16 +119,27 @@ async def execute_google_search(
     import asyncio  # pylint: disable=import-outside-toplevel
     from google.genai import types as genai_types  # pylint: disable=import-outside-toplevel
 
+    # Use user's model for search (same model = better context understanding)
+    search_model_id = FALLBACK_SEARCH_MODEL_ID
+    if model_id:
+        try:
+            cfg = get_model(model_id)
+            if cfg.provider == "google":
+                search_model_id = model_id
+        except KeyError:
+            pass
+
     logger.info("google_search.started",
                 user_id=user_id,
+                model=search_model_id,
                 query=query[:200])
 
     try:
-        model_config = get_model(SEARCH_MODEL_ID)
+        model_config = get_model(search_model_id)
     except KeyError:
         return {
             "error": "search_model_unavailable",
-            "message": f"Search model {SEARCH_MODEL_ID} not configured",
+            "message": f"Search model {search_model_id} not configured",
         }
 
     # Build request with ONLY google_search grounding (no function calling)
