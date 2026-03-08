@@ -126,7 +126,7 @@ class User(Base, TimestampMixin):
     model_id: Mapped[str] = mapped_column(
         String(100),  # Fits "provider:alias" format (e.g., "claude:sonnet")
         nullable=False,
-        default="claude:haiku",  # Default: Claude Haiku 4.5 (cheapest)
+        default="google:flash-lite",  # Default: Google Flash-Lite 3.1 (cheapest)
         doc="Model identifier in format 'provider:alias' "
         "(e.g., 'claude:sonnet', 'openai:gpt4')",
     )
@@ -143,9 +143,9 @@ class User(Base, TimestampMixin):
     balance: Mapped[Decimal] = mapped_column(
         Numeric(precision=10, scale=4),
         nullable=False,
-        default=Decimal("0.5000"),
-        server_default="0.5000",
-        doc="User balance in USD. Default: $0.50 starter balance. "
+        default=Decimal("1.0000"),
+        server_default="1.0000",
+        doc="User balance in USD. Default: $1.00 starter balance. "
         "Allows requests while balance > 0 (can go negative after one request).",
     )
 

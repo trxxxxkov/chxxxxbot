@@ -290,8 +290,8 @@ MESSAGES: MessageDict = {
         "ru": "**Текущая модель:**\n",
     },
     "model.select_new": {
-        "en": "\n\n👇 Claude · Google\n🔴 flagship · 🟢 balanced · 🔵 fast",
-        "ru": "\n\n👇 Claude · Google\n🔴 флагман · 🟢 баланс · 🔵 быстрый",
+        "en": "\n\n👇 Claude · Google\n🟢 flagship · 🔵 balanced · 🔵 fast",
+        "ru": "\n\n👇 Claude · Google\n🟢 флагман · 🔵 баланс · 🔵 быстрый",
     },
     "model.changed": {
         "en": "✅ **Model changed**\n\n",

@@ -334,8 +334,8 @@ MODEL_REGISTRY: dict[str, ModelConfig] = {
     # ),
 }
 
-# Default model (Claude Haiku 4.5 - cheapest, good for new users)
-DEFAULT_MODEL_ID = "claude:haiku"
+# Default model (Google Flash-Lite 3.1 - cheapest, good for new users)
+DEFAULT_MODEL_ID = "google:flash-lite"
 
 # ============================================================================
 # System Prompt Architecture
@@ -511,7 +511,7 @@ DEFAULT_OWNER_MARGIN: float = 0.0  # k3: 0% Default owner margin (configurable)
 CHARGE_USERS_FOR_CACHE_WRITE: bool = True
 
 # Balance settings
-STARTER_BALANCE_USD: float = 0.50  # New users get $0.50 starter balance
+STARTER_BALANCE_USD: float = 1.00  # New users get $1.00 starter balance
 MINIMUM_BALANCE_FOR_REQUEST: float = 0.0  # Allow requests while balance > 0
 
 # Refund settings

@@ -15,7 +15,7 @@ from i18n import get_text
 
 # Button styles by pricing tier (top = expensive, bottom = cheap)
 # Telegram supports: primary (blue), success (green), danger (red)
-TIER_STYLES = ["danger", "success", "primary"]
+TIER_STYLES = ["success", "primary", "primary"]
 
 
 def _short_name(model: ModelConfig) -> str:

@@ -150,9 +150,9 @@ added_to_attachment_menu: bool   # Bot in attachment menu
 allows_users_to_create_topics: bool  # Bot API 9.4
 
 # Bot-specific fields
-model_id: str                    # Selected LLM model (default: "claude:haiku")
+model_id: str                    # Selected LLM model (default: "google:flash-lite")
 custom_prompt: Optional[str]     # Personal instructions (personality, tone, style)
-balance: Decimal                 # USD balance (default: $0.50 starter)
+balance: Decimal                 # USD balance (default: $1.00 starter)
 message_count: int               # Total messages sent (activity tracking)
 total_tokens_used: int           # Total tokens consumed (cost analysis)
 first_seen_at: datetime          # When user first used bot

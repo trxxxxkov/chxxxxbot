@@ -39,7 +39,7 @@ from db.models.message import Message as DBMessage, MessageRole
 | `language_code` | Optional[str] | User | `language_code` | IETF tag (e.g., "en", "ru") |
 | `is_premium` | Optional[bool] | User | `is_premium` | Telegram Premium status |
 | `added_to_attachment_menu` | Optional[bool] | User | `added_to_attachment_menu` | Bot in attachment menu |
-| - | - | User | `model_id` | Custom field (default: "claude:haiku") |
+| - | - | User | `model_id` | Custom field (default: "google:flash-lite") |
 | - | - | User | `first_seen_at` | Auto-set on first creation |
 | - | - | User | `last_seen_at` | Auto-updated |
 

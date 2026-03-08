@@ -97,7 +97,7 @@ chxxxxbot/
 
 ### Payment System
 - **Telegram Stars:** Native payment integration
-- **Starter Balance:** $0.50 for new users
+- **Starter Balance:** $1.00 for new users
 - **Balance:** USD balance with soft-check (can go negative once)
 - **Tool Cost Control:** Rejects paid tools when balance < 0
 - **Generation Stop:** /stop or new message cancels, charges partial usage

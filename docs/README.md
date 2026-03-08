@@ -164,7 +164,7 @@ Key files: `core/base.py`, `core/provider_factory.py`, `core/google/client.py`, 
 - Automatic file delivery
 
 ### Phase 2.1: Payment System ✅
-- User balance in USD ($0.50 starter)
+- User balance in USD ($1.00 starter)
 - Telegram Stars integration
 - Admin commands (/topup, /set_margin)
 - Cost tracking for all APIs

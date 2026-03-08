@@ -49,8 +49,8 @@ def get_provider(model_full_id: str) -> LLMProvider:
 
 
 def init_providers() -> None:
-    """Pre-initialize default provider (Claude). Others initialized lazily."""
-    get_provider("claude:haiku")
+    """Pre-initialize default provider (Google). Others initialized lazily."""
+    get_provider("google:flash-lite")
 
 
 def clear_providers() -> None:

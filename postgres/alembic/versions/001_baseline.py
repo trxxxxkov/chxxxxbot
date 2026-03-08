@@ -72,7 +72,7 @@ def upgrade() -> None:
         sa.Column('custom_prompt', sa.Text(), nullable=True),
         sa.Column('balance',
                   sa.Numeric(10, 4),
-                  server_default='0.1000',
+                  server_default='1.0000',
                   nullable=False),
         sa.Column('message_count',
                   sa.BigInteger(),

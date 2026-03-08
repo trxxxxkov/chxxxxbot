@@ -37,7 +37,7 @@ class TestBalanceService:
         """Test retrieving user balance."""
         balance = await balance_service.get_balance(pg_sample_user.id)
 
-        assert balance == Decimal("0.5000")  # Default starter balance
+        assert balance == Decimal("1.0000")  # Default starter balance
 
     @pytest.mark.asyncio
     async def test_get_balance_user_not_found(self, balance_service):
@@ -248,8 +248,8 @@ class TestBalanceService:
             description="Zero amount test",
         )
         # Balance should remain unchanged
-        assert balance_before == Decimal("0.5000")
-        assert balance_after == Decimal("0.5000")
+        assert balance_before == Decimal("1.0000")
+        assert balance_after == Decimal("1.0000")
 
     @pytest.mark.asyncio
     async def test_get_balance_history(self, balance_service, pg_session,
@@ -387,7 +387,7 @@ class TestBalanceService:
         )
 
         balance = await balance_service.get_balance(pg_sample_user.id)
-        assert balance == Decimal("5.5000")  # 0.5 starter + 5.0 topup
+        assert balance == Decimal("6.0000")  # 1.0 starter + 5.0 topup
 
         # 2. Make several charges
         for i in range(5):
@@ -398,7 +398,7 @@ class TestBalanceService:
             )
 
         balance = await balance_service.get_balance(pg_sample_user.id)
-        assert balance == Decimal("3.0000")  # 5.5 - 2.5
+        assert balance == Decimal("3.5000")  # 6.0 - 2.5
 
         # 3. Check can still make requests
         can_request, user_exists = await balance_service.can_make_request(
@@ -409,7 +409,7 @@ class TestBalanceService:
         # 4. Drain balance
         await balance_service.charge_user(
             user_id=pg_sample_user.id,
-            amount=Decimal("3.0000"),
+            amount=Decimal("3.5000"),
             description="Final charge",
         )
 

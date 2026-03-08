@@ -309,7 +309,7 @@ class TestBalanceOperations:
         # Spend most of balance
         await balance_service.charge_user(
             user_id=integration_sample_user.id,
-            amount=Decimal("0.49"),
+            amount=Decimal("0.99"),
             description="API call 1",
         )
 

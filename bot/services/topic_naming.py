@@ -293,7 +293,7 @@ class TopicNamingService:
                 # Google and other providers: simple pricing
                 naming_model_full = (
                     "google:flash-lite" if provider == "google"
-                    else user_model_id or "claude:haiku")
+                    else user_model_id or "google:flash-lite")
                 cost_usd = calculate_provider_cost(
                     naming_model_full,
                     TokenUsage(
