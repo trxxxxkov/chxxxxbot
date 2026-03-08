@@ -1,7 +1,7 @@
 """Model selection keyboard for /model command.
 
 This module creates inline keyboards for selecting LLM models,
-grouped by provider with support for future multi-provider setup.
+displayed as two columns (Anthropic | Google) sorted by tier.
 
 NO __init__.py - use direct import:
     from telegram.keyboards.model_selector import get_model_keyboard
@@ -13,56 +13,74 @@ from config import get_models_by_provider
 from config import ModelConfig
 from i18n import get_text
 
+# Button styles by pricing tier (top = expensive, bottom = cheap)
+# Telegram supports: primary (blue), success (green), danger (red)
+TIER_STYLES = ["danger", "success", "primary"]
+
+
+def _short_name(model: ModelConfig) -> str:
+    """Strip provider prefix for compact button labels.
+
+    "Claude Opus 4.6" → "Opus 4.6"
+    "Gemini 3.1 Pro" → "Gemini 3.1 Pro" (keep as-is)
+    """
+    name = model.display_name
+    if name.startswith("Claude "):
+        return name[7:]  # Strip "Claude "
+    return name
+
 
 def get_model_keyboard(current: str) -> InlineKeyboardBuilder:
     """Build inline keyboard for model selection.
 
-    Creates keyboard grouped by provider (Claude, OpenAI, Google, etc.)
-    with current model marked with checkmark.
+    Two columns: Anthropic (left) | Google (right).
+    Rows sorted by tier: expensive (top) → cheap (bottom).
+    Colors: premium (gold) → success (green) → primary (blue).
 
     Args:
         current: Current model full_id (e.g., "claude:sonnet").
 
     Returns:
         InlineKeyboardBuilder with model selection buttons.
-
-    Examples:
-        >>> keyboard = get_model_keyboard("claude:sonnet")
-        >>> keyboard.as_markup()
-        # Returns InlineKeyboardMarkup with buttons
     """
     builder = InlineKeyboardBuilder()
 
-    # Claude models section (no header - info is in model display_name)
-    claude_models = get_models_by_provider("claude")
-    for model in claude_models:
-        full_id = model.get_full_id()
-        is_current = full_id == current
+    # Get models sorted expensive → cheap (reverse of default order)
+    claude_models = list(reversed(get_models_by_provider("claude")))
+    google_models = list(reversed(get_models_by_provider("google")))
 
-        # Button text with checkmark for current model
-        button_text = f"{'✅ ' if is_current else ''}{model.display_name}"
+    # Pair models by tier (both lists should have same length)
+    max_rows = max(len(claude_models), len(google_models))
 
-        # Add pricing info
-        button_text += f" (${model.pricing_input}/${model.pricing_output})"
+    for i in range(max_rows):
+        style = TIER_STYLES[i] if i < len(TIER_STYLES) else "primary"
+        buttons = []
 
-        builder.row(
-            InlineKeyboardButton(text=button_text,
-                                 callback_data=f"model:{full_id}"))
-
-    # Google Gemini section
-    google_models = get_models_by_provider("google")
-    if google_models:
-        builder.row(
-            InlineKeyboardButton(text="--- Google Gemini ---",
-                                 callback_data="noop"))
-        for model in google_models:
+        # Left column: Claude
+        if i < len(claude_models):
+            model = claude_models[i]
             full_id = model.get_full_id()
-            is_current = (full_id == current)
-            button_text = f"{'✅ ' if is_current else ''}{model.display_name}"
-            button_text += f" (${model.pricing_input}/${model.pricing_output})"
-            builder.row(
-                InlineKeyboardButton(text=button_text,
-                                     callback_data=f"model:{full_id}"))
+            mark = "✅ " if full_id == current else ""
+            buttons.append(
+                InlineKeyboardButton(
+                    text=f"{mark}{_short_name(model)}",
+                    callback_data=f"model:{full_id}",
+                    style=style,
+                ))
+
+        # Right column: Google
+        if i < len(google_models):
+            model = google_models[i]
+            full_id = model.get_full_id()
+            mark = "✅ " if full_id == current else ""
+            buttons.append(
+                InlineKeyboardButton(
+                    text=f"{mark}{_short_name(model)}",
+                    callback_data=f"model:{full_id}",
+                    style=style,
+                ))
+
+        builder.row(*buttons)
 
     return builder
 
