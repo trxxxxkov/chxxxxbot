@@ -192,11 +192,17 @@ async def model_selection_callback(  # pylint: disable=too-many-locals
                 old_model=old_model_id,
                 new_model=new_model_id)
 
-    # Update message
-    success_text = get_text("model.changed", lang)
-    success_text += format_model_info(new_model, lang)
+    # Update message with new model info and refreshed keyboard
+    message_text = get_text("model.selection_title", lang)
+    message_text += get_text("model.current_model", lang)
+    message_text += format_model_info(new_model, lang)
+    message_text += get_text("model.select_new", lang)
 
-    await callback.message.edit_text(success_text, parse_mode="Markdown")
+    keyboard = get_model_keyboard(current=new_model_id)
+
+    await callback.message.edit_text(message_text,
+                                     reply_markup=keyboard.as_markup(),
+                                     parse_mode="Markdown")
     await callback.answer(
         get_text("model.changed_to", lang, model_name=new_model.display_name))
 
