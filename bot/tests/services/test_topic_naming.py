@@ -108,7 +108,7 @@ class TestGenerateTitle:
 
         with patch("services.topic_naming.get_anthropic_async_client",
                    return_value=mock_anthropic_client):
-            title, input_tokens, output_tokens = await (
+            title, input_tokens, output_tokens, provider = await (
                 topic_naming_service.generate_title(
                     user_message=
                     "What's the difference between async and await?",
@@ -118,6 +118,7 @@ class TestGenerateTitle:
         assert title == "Python async/await"
         assert input_tokens == 150
         assert output_tokens == 8
+        assert provider == "claude"
 
     @pytest.mark.asyncio
     async def test_generate_title_removes_double_quotes(
@@ -129,7 +130,7 @@ class TestGenerateTitle:
 
         with patch("services.topic_naming.get_anthropic_async_client",
                    return_value=mock_anthropic_client):
-            title, _, _ = await topic_naming_service.generate_title(
+            title, _, _, _ = await topic_naming_service.generate_title(
                 "user msg", "bot response")
 
         assert title == "Quoted Title"
@@ -144,7 +145,7 @@ class TestGenerateTitle:
 
         with patch("services.topic_naming.get_anthropic_async_client",
                    return_value=mock_anthropic_client):
-            title, _, _ = await topic_naming_service.generate_title(
+            title, _, _, _ = await topic_naming_service.generate_title(
                 "user msg", "bot response")
 
         assert title == "Single Quoted"
@@ -161,7 +162,7 @@ class TestGenerateTitle:
 
         with patch("services.topic_naming.get_anthropic_async_client",
                    return_value=mock_anthropic_client):
-            title, _, _ = await topic_naming_service.generate_title(
+            title, _, _, _ = await topic_naming_service.generate_title(
                 "user msg", "bot response")
 
         assert len(title) == 50
@@ -201,7 +202,7 @@ class TestGenerateTitle:
 
         with patch("services.topic_naming.get_anthropic_async_client",
                    return_value=mock_anthropic_client):
-            title, _, _ = await topic_naming_service.generate_title(
+            title, _, _, _ = await topic_naming_service.generate_title(
                 "user msg", "bot response")
 
         assert title == "Title with spaces"
@@ -506,7 +507,7 @@ class TestTopicNamingEdgeCases:
 
         with patch("services.topic_naming.get_anthropic_async_client",
                    return_value=mock_anthropic_client):
-            title, _, _ = await topic_naming_service.generate_title("", "")
+            title, _, _, _ = await topic_naming_service.generate_title("", "")
 
         assert title == "New Chat"
 
@@ -520,7 +521,7 @@ class TestTopicNamingEdgeCases:
 
         with patch("services.topic_naming.get_anthropic_async_client",
                    return_value=mock_anthropic_client):
-            title, _, _ = await topic_naming_service.generate_title(
+            title, _, _, _ = await topic_naming_service.generate_title(
                 "Помоги написать резюме", "Конечно! Создам резюме...")
 
         assert title == "Резюме Python разработчика"
@@ -535,7 +536,7 @@ class TestTopicNamingEdgeCases:
 
         with patch("services.topic_naming.get_anthropic_async_client",
                    return_value=mock_anthropic_client):
-            title, _, _ = await topic_naming_service.generate_title(
+            title, _, _, _ = await topic_naming_service.generate_title(
                 "Help with Python", "Sure!")
 
         assert title == "🐍 Python Help"

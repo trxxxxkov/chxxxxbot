@@ -788,7 +788,7 @@ async def _process_batch_with_session(
                 estimated_thinking_tokens = thinking_chars // 4
 
                 # Estimate input tokens from context
-                # (system prompt + messages sent to Claude)
+                # (system prompt + messages sent to API)
                 context_chars = total_prompt_length
                 for msg in context:
                     if isinstance(msg.content, str):
@@ -804,28 +804,33 @@ async def _process_batch_with_session(
                 if request.tools:
                     estimated_input_tokens += 346 + len(request.tools) * 200
 
-                # Calculate partial cost with cache assumption
-                # System prompt is likely cached (multi-block), use cache pricing
-                system_prompt_tokens = total_prompt_length // 4
-                user_context_tokens = max(
-                    0, estimated_input_tokens - system_prompt_tokens)
-
-                # Cache read pricing for system prompt (10x cheaper)
-                cache_pricing = (model_config.pricing_cache_read or
-                                 model_config.pricing_input * 0.1)
-
-                partial_cost = (
-                    (system_prompt_tokens / 1_000_000) * cache_pricing +
-                    (user_context_tokens / 1_000_000) *
-                    model_config.pricing_input +
-                    ((estimated_output_tokens + estimated_thinking_tokens) /
-                     1_000_000) * model_config.pricing_output)
+                # Calculate partial cost (provider-aware)
+                if model_config.provider == "claude":
+                    # Cache-aware pricing for Claude
+                    system_prompt_tokens = total_prompt_length // 4
+                    user_context_tokens = max(
+                        0, estimated_input_tokens - system_prompt_tokens)
+                    cache_pricing = (model_config.pricing_cache_read or
+                                     model_config.pricing_input * 0.1)
+                    partial_cost = (
+                        (system_prompt_tokens / 1_000_000) * cache_pricing +
+                        (user_context_tokens / 1_000_000) *
+                        model_config.pricing_input +
+                        ((estimated_output_tokens + estimated_thinking_tokens) /
+                         1_000_000) * model_config.pricing_output)
+                else:
+                    # Simple pricing for Google and other providers
+                    partial_cost = (
+                        (estimated_input_tokens / 1_000_000) *
+                        model_config.pricing_input +
+                        ((estimated_output_tokens + estimated_thinking_tokens) /
+                         1_000_000) * model_config.pricing_output)
 
                 logger.info(
                     "claude_handler.cancelled_partial_charge",
                     thread_id=thread_id,
-                    system_prompt_tokens=system_prompt_tokens,
-                    user_context_tokens=user_context_tokens,
+                    provider=model_config.provider,
+                    estimated_input_tokens=estimated_input_tokens,
                     estimated_output_tokens=estimated_output_tokens,
                     estimated_thinking_tokens=estimated_thinking_tokens,
                     output_chars=output_chars,
@@ -836,11 +841,12 @@ async def _process_batch_with_session(
                 # Charge user for partial usage (tools already charged separately)
                 if partial_cost > 0:
                     try:
+                        provider_name = model_config.provider.capitalize()
                         balance_after = await services.balance.charge_user(
                             user_id=user_id,
                             amount=partial_cost,
                             description=(
-                                f"Claude API (cancelled): "
+                                f"{provider_name} API (cancelled): "
                                 f"~{estimated_input_tokens} input + "
                                 f"~{estimated_output_tokens} output + "
                                 f"~{estimated_thinking_tokens} thinking tokens"
@@ -868,7 +874,9 @@ async def _process_batch_with_session(
 
                 # Record metrics for cancelled request
                 record_llm_request(model=user_model_id, success=True)
-                record_cost(service="claude_cancelled", amount_usd=partial_cost)
+                record_cost(
+                    service=f"{model_config.provider}_cancelled",
+                    amount_usd=partial_cost)
 
                 return
 
@@ -1276,6 +1284,7 @@ async def _process_batch_with_session(
                             user_message=first_user_text,
                             bot_response=response_text,
                             session=session,
+                            user_model_id=user_model_id,
                         )
                     except Exception as naming_error:  # pylint: disable=broad-exception-caught
                         # External error, not critical - gracefully handled

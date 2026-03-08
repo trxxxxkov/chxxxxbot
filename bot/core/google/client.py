@@ -257,6 +257,8 @@ class GeminiProvider(LLMProvider):
         from cache.file_cache import get_cached_file  # pylint: disable=import-outside-toplevel
 
         resolved = []
+        files_resolved = 0
+        total_inline_bytes = 0
         for msg in conversation:
             content = msg["content"]
             if not isinstance(content, list):
@@ -274,12 +276,15 @@ class GeminiProvider(LLMProvider):
                             file_bytes = await get_cached_file(
                                 telegram_file_id)
                             if file_bytes:
+                                encoded = base64.b64encode(
+                                    file_bytes).decode()
                                 new_blocks.append({
                                     "type": "inline_data",
                                     "mime_type": mime_type,
-                                    "data": base64.b64encode(
-                                        file_bytes).decode(),
+                                    "data": encoded,
                                 })
+                                files_resolved += 1
+                                total_inline_bytes += len(encoded)
                                 continue
                         # No bytes available - skip silently
                         logger.debug(
@@ -296,6 +301,15 @@ class GeminiProvider(LLMProvider):
                 "role": msg["role"],
                 "content": new_blocks if new_blocks else msg["content"],
             })
+
+        if files_resolved > 0:
+            logger.info(
+                "gemini.resolve_file_bytes.complete",
+                files_resolved=files_resolved,
+                total_inline_kb=round(total_inline_bytes / 1024, 1),
+                estimated_tokens=total_inline_bytes // 4,
+            )
+
         return resolved
 
     async def stream_message(self, request: LLMRequest) -> AsyncIterator[str]:
