@@ -1,12 +1,13 @@
-"""Google Search subagent tool for Gemini models.
+"""Google Search + URL Context subagent tool for Gemini models.
 
-Launches a separate Gemini request with Google Search grounding enabled.
-This works around the API limitation that prevents combining google_search
-grounding with custom function calling in the same request.
+Launches a separate Gemini request with Google Search grounding and URL
+context enabled. This works around the API limitation that prevents
+combining built-in tools (google_search, url_context) with custom
+function calling in the same request.
 
 Architecture: similar to self_critique — a subagent with a single request.
-The subagent uses a lightweight model (Flash-Lite) with grounding to answer
-the query, then returns the grounded response with sources.
+The subagent uses a lightweight model (Flash-Lite) with grounding + URL
+context to answer search queries or read specific URLs.
 
 Available only for Google provider (Claude has native web_search/web_fetch).
 
@@ -60,15 +61,15 @@ GOOGLE_SEARCH_TOOL = {
     "name":
         "web_search",
     "description":
-        """Search the internet using Google Search.
+        """Search the internet or read a specific URL.
 
-Use this tool when you need current information, facts, news, documentation,
-or anything that requires up-to-date web data.
+Use this tool when you need:
+- Current information, facts, news, documentation (web search)
+- To read content from a specific URL the user shared (URL fetch)
 
-The search is performed via Google Search grounding — results are accurate
-and include source citations.
+Supports both search queries and direct URLs (web pages, PDFs, images).
 
-Returns: grounded answer with sources. Cost: ~$0.02 per search.""",
+Returns: grounded answer with sources. Cost: ~$0.02 per query.""",
     "input_schema": {
         "type": "object",
         "properties": {
@@ -145,8 +146,9 @@ async def execute_google_search(
     # Build request with ONLY google_search grounding (no function calling)
     system_prompt = (
         "You are a search assistant. Answer the user's query using the "
-        "information from Google Search. Be factual and concise. "
-        "Include relevant details, numbers, and dates. "
+        "information from Google Search and URL context. Be factual and "
+        "concise. Include relevant details, numbers, and dates. "
+        "If the query contains a URL, read and summarize its content. "
         "If the search returns multiple perspectives, present them fairly."
     )
 
@@ -154,7 +156,10 @@ async def execute_google_search(
         system_instruction=system_prompt,
         max_output_tokens=4096,
         temperature=0.2,
-        tools=[genai_types.Tool(google_search=genai_types.GoogleSearch())],
+        tools=[
+            genai_types.Tool(google_search=genai_types.GoogleSearch()),
+            genai_types.Tool(url_context=genai_types.UrlContext()),
+        ],
     )
 
     try:
@@ -180,9 +185,8 @@ async def execute_google_search(
 
         # Extract grounding sources
         sources = []
-        grounding_meta = getattr(response, 'candidates', [{}])
-        if grounding_meta and len(grounding_meta) > 0:
-            candidate = grounding_meta[0]
+        if response.candidates:
+            candidate = response.candidates[0]
             g_meta = getattr(candidate, 'grounding_metadata', None)
             if g_meta:
                 chunks = getattr(g_meta, 'grounding_chunks', None)
@@ -193,6 +197,21 @@ async def execute_google_search(
                             sources.append({
                                 "title": getattr(web, 'title', ''),
                                 "uri": getattr(web, 'uri', ''),
+                            })
+
+            # Extract URL context metadata (fetched URLs)
+            url_meta = getattr(candidate, 'url_context_metadata', None)
+            if url_meta:
+                url_metadata = getattr(url_meta, 'url_metadata', [])
+                for um in (url_metadata or []):
+                    url = getattr(um, 'retrieved_url', '')
+                    status = getattr(um, 'url_retrieval_status', '')
+                    if url and 'SUCCESS' in str(status):
+                        # Add fetched URL to sources if not already there
+                        if not any(s.get('uri') == url for s in sources):
+                            sources.append({
+                                "title": f"[fetched] {url[:60]}",
+                                "uri": url,
                             })
 
         # Calculate cost (API tokens + grounding)
