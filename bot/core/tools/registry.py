@@ -38,6 +38,7 @@ from core.tools.deliver_file import TOOL_CONFIG as DELIVER_FILE_CONFIG
 from core.tools.execute_python import TOOL_CONFIG as EXECUTE_PYTHON_CONFIG
 from core.tools.extended_thinking import TOOL_CONFIG as EXTENDED_THINK_CONFIG
 from core.tools.generate_image import TOOL_CONFIG as GENERATE_IMAGE_CONFIG
+from core.tools.google_search import TOOL_CONFIG as GOOGLE_SEARCH_CONFIG
 from core.tools.list_files import TOOL_CONFIG as LIST_FILES_CONFIG
 from core.tools.preview_file import TOOL_CONFIG as PREVIEW_FILE_CONFIG
 from core.tools.render_latex import TOOL_CONFIG as RENDER_LATEX_CONFIG
@@ -108,6 +109,9 @@ TOOLS: Dict[str, ToolConfig] = {
     "self_critique": SELF_CRITIQUE_CONFIG,
     "web_search": WEB_SEARCH_CONFIG,
     "web_fetch": WEB_FETCH_CONFIG,
+    # Google subagent version of web_search (same tool name, different provider)
+    # Registered under separate key; resolved by get_tool_for_provider()
+    "google_web_search": GOOGLE_SEARCH_CONFIG,
 }
 
 # ============================================================================
@@ -140,6 +144,34 @@ def get_tool_definitions(
     return defs
 
 
+def get_tool_for_provider(tool_name: str, provider: str) -> Optional[ToolConfig]:
+    """Get tool config by name, preferring provider-specific version.
+
+    Some tools (e.g., web_search) have different implementations per provider.
+    This function finds the best match: first checks for a provider-specific
+    version, then falls back to the default.
+
+    Args:
+        tool_name: Tool name as called by the LLM.
+        provider: Provider name ("claude" or "google").
+
+    Returns:
+        ToolConfig or None if not found.
+    """
+    # Direct key match first
+    tool = TOOLS.get(tool_name)
+    if tool and provider in tool.providers:
+        return tool
+
+    # Search for provider-specific version by definition name
+    for config in TOOLS.values():
+        if config.name == tool_name and provider in config.providers:
+            return config
+
+    # Fall back to direct key match even if provider doesn't match
+    return tool
+
+
 def get_tool_emoji(tool_name: str) -> str:
     """Get emoji for a tool.
 
@@ -150,6 +182,11 @@ def get_tool_emoji(tool_name: str) -> str:
         Emoji string, or default 🔧 if not found.
     """
     tool = TOOLS.get(tool_name)
+    if not tool:
+        # Check by definition name (for provider-specific tools)
+        for config in TOOLS.values():
+            if config.name == tool_name:
+                return config.emoji
     return tool.emoji if tool else "🔧"
 
 
@@ -252,6 +289,7 @@ async def execute_tool(
     session: 'AsyncSession',
     thread_id: Optional[int] = None,
     user_id: Optional[int] = None,
+    model_id: Optional[str] = None,
 ) -> Dict[str, str]:
     """Execute a tool by name with given input.
 
@@ -267,6 +305,8 @@ async def execute_tool(
             with the conversation (used by execute_python, render_latex).
         user_id: Optional user ID for balance checks and cost tracking
             (required by self_critique).
+        model_id: Optional model ID for provider-aware tool resolution
+            (e.g., "google:flash" → uses Google web_search subagent).
 
     Returns:
         Tool execution result as dictionary.
@@ -280,8 +320,17 @@ async def execute_tool(
                 tool_name=tool_name,
                 tool_input_keys=list(tool_input.keys()))
 
-    # Validate tool exists
-    tool = TOOLS.get(tool_name)
+    # Resolve provider from model_id for provider-aware tool lookup
+    provider = "claude"
+    if model_id:
+        try:
+            from config import get_model as _get_model  # pylint: disable=import-outside-toplevel
+            provider = _get_model(model_id).provider
+        except (KeyError, ImportError):
+            pass
+
+    # Find tool config (provider-aware for tools like web_search)
+    tool = get_tool_for_provider(tool_name, provider)
     if not tool:
         available = ", ".join(TOOLS.keys())
         error_msg = f"Tool '{tool_name}' not found. Available: {available}"
@@ -307,18 +356,25 @@ async def execute_tool(
     try:
         # Execute tool (all tools are async)
         if tool.needs_bot_session:
-            # self_critique requires user_id for balance check and cost tracking
-            if tool_name == "self_critique":
+            # Tools that need user_id for cost tracking
+            _tools_needing_user_id = {"self_critique", "web_search"}
+            if tool.name in _tools_needing_user_id:
                 if user_id is None:
                     raise ValueError(
-                        "self_critique requires user_id for cost tracking")
+                        f"{tool.name} requires user_id for cost tracking")
+                # Extract special callbacks before passing to executor
+                extra = {}
+                for key in ("on_subagent_tool", "cancel_event",
+                            "on_thinking_chunk"):
+                    val = tool_input.pop(key, None)
+                    if val is not None:
+                        extra[key] = val
                 result = await executor(
                     bot=bot,
                     session=session,
                     thread_id=thread_id,
                     user_id=user_id,
-                    on_subagent_tool=tool_input.pop("on_subagent_tool", None),
-                    cancel_event=tool_input.pop("cancel_event", None),
+                    **extra,
                     **tool_input,
                 )
             else:

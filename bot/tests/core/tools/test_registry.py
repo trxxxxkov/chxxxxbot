@@ -361,11 +361,19 @@ class TestGetToolDefinitions:
             assert isinstance(definition, dict)
 
     def test_includes_all_registered_tools(self):
-        """Test that all registered tools are included."""
+        """Test that all registered tools are included for each provider."""
         from core.tools.registry import get_tool_definitions
         from core.tools.registry import TOOLS
-        definitions = get_tool_definitions()
-        assert len(definitions) == len(TOOLS)
+        # Claude gets all tools except google-only ones
+        claude_defs = get_tool_definitions(provider="claude")
+        claude_tools = [t for t in TOOLS.values()
+                        if "claude" in t.providers]
+        assert len(claude_defs) == len(claude_tools)
+        # Google gets its own subset
+        google_defs = get_tool_definitions(provider="google")
+        google_tools = [t for t in TOOLS.values()
+                        if "google" in t.providers and not t.is_server_side]
+        assert len(google_defs) == len(google_tools)
 
     def test_includes_web_search_definition(self):
         """Test that web_search definition is included."""

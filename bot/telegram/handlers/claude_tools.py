@@ -212,7 +212,8 @@ async def execute_single_tool_safe(
                                     bot,
                                     session,
                                     thread_id=thread_id,
-                                    user_id=user_id)
+                                    user_id=user_id,
+                                    model_id=extra_kwargs.get("model_id"))
         duration = time.time() - start_time
 
         # Add metadata for post-processing

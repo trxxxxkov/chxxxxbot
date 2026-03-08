@@ -160,9 +160,9 @@ class ToolExecutor:
             if tool.name == "extended_thinking" and on_thinking_chunk:
                 thinking_callback = on_thinking_chunk
 
-            # Add model_id for extended_thinking
+            # Pass model_id for provider-aware tool resolution
             extra_kwargs = {}
-            if tool.name == "extended_thinking" and model_id:
+            if model_id:
                 extra_kwargs["model_id"] = model_id
 
             result = await execute_single_tool_safe(
