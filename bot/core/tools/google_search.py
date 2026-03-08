@@ -234,7 +234,7 @@ async def execute_google_search(
         # Charge user
         from services.factory import ServiceFactory  # pylint: disable=import-outside-toplevel
         services = ServiceFactory(session)
-        await services.balance.charge(
+        await services.balance.charge_user(
             user_id=user_id,
             amount=total_cost,
             description=f"Google Search: {query[:50]}",

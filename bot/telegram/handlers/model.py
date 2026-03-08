@@ -8,6 +8,7 @@ This module contains handlers for model selection:
 from aiogram import F
 from aiogram import Router
 from aiogram import types
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
 from cache.user_cache import invalidate_user
 from config import get_default_model
@@ -200,9 +201,13 @@ async def model_selection_callback(  # pylint: disable=too-many-locals
 
     keyboard = get_model_keyboard(current=new_model_id)
 
-    await callback.message.edit_text(message_text,
-                                     reply_markup=keyboard.as_markup(),
-                                     parse_mode="Markdown")
+    try:
+        await callback.message.edit_text(message_text,
+                                         reply_markup=keyboard.as_markup(),
+                                         parse_mode="Markdown")
+    except TelegramBadRequest:
+        pass  # Same model re-selected, content unchanged
+
     await callback.answer(
         get_text("model.changed_to", lang, model_name=new_model.display_name))
 

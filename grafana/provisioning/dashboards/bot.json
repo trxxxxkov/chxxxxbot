@@ -102,7 +102,7 @@
         "type": "loki",
         "uid": "loki"
       },
-      "description": "Total spent on Anthropic (Claude API, vision, web_search, extended_thinking, stop_generation, preview_file) in selected time range",
+      "description": "Total spent on Anthropic (Claude models, vision, web_search, extended_thinking, stop_generation, preview_file) in selected time range",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -153,7 +153,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "(sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=~\"claude_handler.user_charged|claude_handler.cancelled_user_charged|topic_naming.user_charged|topic_routing.cost\" | unwrap cost_usd [$__interval])) or vector(0)) + (sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.user_charged\" | unwrap cache_write_cost [$__interval])) or vector(0)) + (sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=~\"analyze_image|analyze_pdf|preview_file|extended_thinking\" | unwrap cost_usd [$__interval])) or vector(0)) + (sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"self_critique.cost_charged\" | unwrap total_cost [$__interval])) or vector(0))",
+          "expr": "(sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=~\"claude_handler.user_charged|claude_handler.cancelled_user_charged\" | model_id=~\"claude:.*\" | unwrap cost_usd [$__interval])) or vector(0)) + (sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=~\"topic_naming.user_charged|topic_routing.cost\" | unwrap cost_usd [$__interval])) or vector(0)) + (sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.user_charged\" | model_id=~\"claude:.*\" | unwrap cache_write_cost [$__interval])) or vector(0)) + (sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=~\"analyze_image|analyze_pdf|preview_file|extended_thinking\" | unwrap cost_usd [$__interval])) or vector(0)) + (sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"self_critique.cost_charged\" | unwrap total_cost [$__interval])) or vector(0))",
           "refId": "A"
         }
       ],
@@ -228,7 +228,7 @@
         "type": "loki",
         "uid": "loki"
       },
-      "description": "Total spent on Google (Gemini image generation) in selected time range",
+      "description": "Total spent on Google (Gemini models, image generation, web search) in selected time range",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -279,7 +279,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"generate_image\" | unwrap cost_usd [$__interval])) or vector(0)",
+          "expr": "(sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=~\"claude_handler.user_charged|claude_handler.cancelled_user_charged\" | model_id=~\"google:.*\" | unwrap cost_usd [$__interval])) or vector(0)) + (sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.user_charged\" | model_id=~\"google:.*\" | unwrap cache_write_cost [$__interval])) or vector(0)) + (sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=~\"generate_image|web_search\" | unwrap cost_usd [$__interval])) or vector(0))",
           "refId": "A"
         }
       ],
@@ -403,7 +403,7 @@
               {
                 "id": "color",
                 "value": {
-                  "fixedColor": "#9CA3AF",
+                  "fixedColor": "#D1D5DB",
                   "mode": "fixed"
                 }
               }
@@ -418,7 +418,52 @@
               {
                 "id": "color",
                 "value": {
+                  "fixedColor": "#6B7280",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Gemini 3.1 Pro"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#9CA3AF",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Gemini 3 Flash"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
                   "fixedColor": "#4B5563",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Gemini 3.1 Flash-Lite"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#374151",
                   "mode": "fixed"
                 }
               }
@@ -661,6 +706,33 @@
             "type": "loki",
             "uid": "loki"
           },
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.user_charged\" | model_id=\"google:pro\" | unwrap cost_usd [$__interval])) or vector(0)",
+          "legendFormat": "Gemini 3.1 Pro",
+          "refId": "A4"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.user_charged\" | model_id=\"google:flash\" | unwrap cost_usd [$__interval])) or vector(0)",
+          "legendFormat": "Gemini 3 Flash",
+          "refId": "A5"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"claude_handler.user_charged\" | model_id=\"google:flash-lite\" | unwrap cost_usd [$__interval])) or vector(0)",
+          "legendFormat": "Gemini 3.1 Flash-Lite",
+          "refId": "A6"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
           "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"self_critique.cost_charged\" | unwrap total_cost [$__interval])) or vector(0)",
           "legendFormat": "self_critique",
           "refId": "SC"
@@ -697,7 +769,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.web_search.user_charged\" | source!=\"self_critique\" | unwrap cost_usd [$__interval])) or vector(0)",
+          "expr": "sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.web_search.user_charged\" | source!=\"self_critique\" | unwrap cost_usd [$__interval])) or vector(0) + sum(sum_over_time({service=\"bot\"} |~ \"${user_filter}\" | json | event=\"tools.loop.user_charged_for_tool\" | tool_name=\"web_search\" | unwrap cost_usd [$__interval])) or vector(0)",
           "legendFormat": "web_search",
           "refId": "E"
         },
