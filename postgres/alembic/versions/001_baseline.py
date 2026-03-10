@@ -188,7 +188,7 @@ def upgrade() -> None:
         sa.Column('attachment_count', sa.Integer(), nullable=False, default=0),
         sa.Column('attachments',
                   postgresql.JSONB(),
-                  server_default="'[]'",
+                  server_default=sa.text("'[]'"),
                   nullable=False),
         sa.Column('input_tokens', sa.Integer(), nullable=True),
         sa.Column('output_tokens', sa.Integer(), nullable=True),

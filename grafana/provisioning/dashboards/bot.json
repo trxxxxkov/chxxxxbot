@@ -91,6 +91,7 @@
             "uid": "prometheus"
           },
           "expr": "up{job=\"bot\"}",
+          "instant": true,
           "refId": "A"
         }
       ],
