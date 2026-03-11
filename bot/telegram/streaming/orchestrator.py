@@ -551,6 +551,12 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
         async def on_thinking_chunk(chunk: str) -> None:
             await stream.handle_thinking_delta(chunk)
 
+        # Capture provider content BEFORE tool execution.
+        # Provider is a singleton — concurrent requests calling stream_events()
+        # will reset _last_assistant_content during tool execution.
+        provider = self._get_provider()
+        provider_content = provider.get_serialized_assistant_content()
+
         # Execute tools
         executor = self._get_tool_executor()
         batch_result = await executor.execute_batch(
@@ -578,9 +584,6 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
         # Format tool results for LLM
         tool_uses = [{"id": t.tool_id, "name": t.name} for t in pending_tools]
         results = [r.result for r in batch_result.results]
-
-        provider = self._get_provider()
-        provider_content = provider.get_serialized_assistant_content()
         # Determine provider name for format differences
         from config import get_model  # pylint: disable=import-outside-toplevel
         provider_name = get_model(self._request.model).provider
