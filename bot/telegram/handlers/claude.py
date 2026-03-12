@@ -732,7 +732,8 @@ async def _process_batch_with_session(
                                        thread_id=thread_id)
                         bot_message = await _send_with_retry(
                             first_message,
-                            "⚠️ Claude returned an empty response. "
+                            f"⚠️ {model_config.display_name} returned "
+                            "an empty response. "
                             "Please try rephrasing your message.")
 
             except OverloadedError as e:

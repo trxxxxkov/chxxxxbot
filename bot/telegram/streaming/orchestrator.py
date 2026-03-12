@@ -389,6 +389,21 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
                             "role": "assistant",
                             "content": serialized_content
                         })
+                    elif stream.content_blocks:
+                        serialized_content = [
+                            block for block in stream.content_blocks
+                            if block.get('type') != 'thinking'
+                        ]
+                        if serialized_content:
+                            logger.warning(
+                                "orchestrator.content_blocks_fallback",
+                                thread_id=self._thread_id,
+                                block_count=len(serialized_content),
+                            )
+                            conversation.append({
+                                "role": "assistant",
+                                "content": serialized_content
+                            })
                     if True:  # Always log
                         logger.info(
                             "orchestrator.server_tools_only",
@@ -615,6 +630,43 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
                 "content": serialized_content
             })
             conversation.append({"role": "user", "content": tool_results})
+        elif stream.content_blocks:
+            # Last resort: reconstruct from session's incrementally-tracked
+            # blocks. Works even when stream_complete was never received.
+            serialized_content = [
+                block for block in stream.content_blocks
+                if block.get('type') != 'thinking'
+            ]
+            if serialized_content:
+                logger.warning(
+                    "orchestrator.content_blocks_fallback",
+                    thread_id=self._thread_id,
+                    block_count=len(serialized_content),
+                )
+                conversation.append({
+                    "role": "assistant",
+                    "content": serialized_content
+                })
+                conversation.append({
+                    "role": "user",
+                    "content": tool_results
+                })
+            else:
+                logger.error(
+                    "orchestrator.no_assistant_message",
+                    thread_id=self._thread_id,
+                    tool_count=len(pending_tools),
+                )
+                await dm.current.clear()
+                return StreamResult(
+                    text="⚠️ Tool execution error: "
+                    "missing assistant context",
+                    display_text="⚠️ Tool execution error: "
+                    "missing assistant context",
+                    was_cancelled=True,
+                    cancellation_reason=CancellationReason.ERROR,
+                    has_delivered_files=self._has_delivered_files,
+                )
         else:
             logger.error(
                 "orchestrator.no_assistant_message",
