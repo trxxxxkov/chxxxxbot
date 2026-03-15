@@ -766,19 +766,19 @@ def fix_truncated_md2(text: str) -> str:
     # Fix 2: Close unclosed formatting by counting markers
     # For MarkdownV2, we need balanced: *, _, __, ~, ||, `, ```
 
-    # Count code blocks (```) - must be balanced
-    code_block_count = result.count("```")
+    # Count code blocks and inline code using escape-aware counting.
+    # _count_unescaped skips \` and \\ so escaped backticks inside
+    # code blocks don't produce false counts.
+    code_block_count = _count_unescaped(result, "```")
     if code_block_count % 2 == 1:
         # Add newline if needed before closing
         if not result.endswith("\n"):
             result += "\n"
         result += "```"
 
-    # After closing code blocks, check inline code
-    # Only count ` that are NOT part of ```
-    # Simple approach: temporarily remove ``` and count `
-    temp = result.replace("```", "")
-    inline_code_count = temp.count("`")
+    # Inline code: count unescaped ` minus those consumed by ```
+    total_backticks = _count_unescaped(result, "`")
+    inline_code_count = total_backticks - 3 * _count_unescaped(result, "```")
     if inline_code_count % 2 == 1:
         result += "`"
 
@@ -817,6 +817,38 @@ def fix_truncated_md2(text: str) -> str:
     # NOTE: We don't handle || spoiler - all | are escaped individually
 
     return result
+
+
+def _count_unescaped(text: str, pattern: str) -> int:
+    """Count unescaped occurrences of pattern in text.
+
+    Skips escape sequences (\\x) so that \\` is not counted as `.
+    Does NOT track code context — use _count_outside_code for that.
+
+    Args:
+        text: MarkdownV2 text.
+        pattern: Literal string to count.
+
+    Returns:
+        Count of unescaped occurrences.
+    """
+    count = 0
+    i = 0
+    n = len(text)
+    pat_len = len(pattern)
+
+    while i < n:
+        # Skip escape sequences
+        if text[i] == "\\" and i + 1 < n:
+            i += 2
+            continue
+        if text[i:i + pat_len] == pattern:
+            count += 1
+            i += pat_len
+            continue
+        i += 1
+
+    return count
 
 
 def _count_outside_code(text: str, marker: str) -> int:

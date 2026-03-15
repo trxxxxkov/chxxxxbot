@@ -865,6 +865,27 @@ class TestFixTruncatedMd2:
         result = fix_truncated_md2("```\n*not bold*\n```")
         assert result == "```\n*not bold*\n```"
 
+    def test_escaped_backtick_in_code_block_no_stray_close(self):
+        r"""Escaped backticks (\`) in code blocks must not cause stray `."""
+        from telegram.streaming.markdown_v2 import fix_truncated_md2
+        # Code block with one escaped backtick (odd count without fix)
+        text = "```latex\n%% start of file \\`template.tex\\'\n```"
+        result = fix_truncated_md2(text)
+        # Must NOT have a stray backtick appended after closing ```
+        assert result.endswith("```")
+        assert not result.endswith("````")
+
+    def test_escaped_backtick_truncated_code_block(self):
+        r"""Truncated code block with escaped backticks stays valid."""
+        from telegram.streaming.markdown_v2 import fix_truncated_md2
+        # Truncated mid-code-block: opening ``` but no closing
+        text = "```latex\n\\\\documentclass{article}\n\\`file\\`…"
+        result = fix_truncated_md2(text)
+        # Should close code block, NOT add stray backtick
+        assert result.rstrip().endswith("```")
+        # Count backticks: should be exactly 2 sets of ``` (open + close)
+        assert result.count("```") == 2
+
     def test_formatting_markers_not_escaped(self):
         """Formatting markers should not be escaped as leading chars."""
         from telegram.streaming.markdown_v2 import fix_truncated_md2
