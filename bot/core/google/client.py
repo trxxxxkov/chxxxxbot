@@ -36,6 +36,9 @@ from utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
 
+# Sentinel for async stream iteration (cannot use None — could be a valid value)
+_STREAM_DONE = object()
+
 
 def _convert_tools_for_google(tools: list[dict]) -> list[dict]:
     """Convert tool definitions from Anthropic format to Google format.
@@ -606,7 +609,15 @@ class GeminiProvider(LLMProvider):
             # Run sync streaming in thread
             stream_iter = await asyncio.to_thread(_sync_stream)
 
-            for chunk in stream_iter:
+            # Iterate asynchronously: each next() runs in the thread
+            # pool so the event loop stays free between chunks (unlike
+            # a bare ``for chunk in stream_iter`` which would block).
+            loop = asyncio.get_running_loop()
+            while True:
+                chunk = await loop.run_in_executor(
+                    None, next, stream_iter, _STREAM_DONE)
+                if chunk is _STREAM_DONE:
+                    break
                 if not chunk.candidates:
                     # Check for usage metadata on final chunk
                     if hasattr(chunk, 'usage_metadata') and chunk.usage_metadata:
