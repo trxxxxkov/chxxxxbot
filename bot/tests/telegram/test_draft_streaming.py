@@ -494,9 +494,10 @@ class TestDraftStreamerErrorHandling:
                                        parse_mode="MarkdownV2",
                                        force=True)
 
-        # Should succeed on retry
+        # Parse error is skipped (no plain-text fallback) to avoid
+        # showing raw escape sequences during streaming
         assert result is True
-        assert call_count == 2  # First call failed, second succeeded
+        assert call_count == 1  # Single call, skipped on parse error
 
 
 class TestTruncateForTelegram:

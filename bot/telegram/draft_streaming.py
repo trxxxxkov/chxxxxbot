@@ -441,17 +441,18 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
         except TelegramBadRequest as e:
             error_msg = str(e).lower()
 
-            # Architectural trade-off: MarkdownV2 formatting vs compatibility
-            # This is expected behavior - fallback to plain text when parse fails
+            # Parse error during streaming: skip this update, keep last
+            # successful rendering. Next update with more content will
+            # likely succeed. This prevents showing raw escape sequences
+            # (\., \(, \-) that occur when falling back to plain text.
+            # finalize() has its own separate fallback for the final message.
             if "can't parse entities" in error_msg and parse_mode:
-                logger.debug("draft_streamer.parse_error_fallback",
+                logger.debug("draft_streamer.parse_error_skipped",
                              chat_id=self.chat_id,
                              draft_id=self.draft_id,
                              parse_mode=parse_mode,
                              error=str(e))
-                return await self.update(text_to_send,
-                                         parse_mode=None,
-                                         force=force)
+                return True  # Keep last successful draft text
 
             # Expected edge case during streaming: first chunk may produce
             # MarkdownV2 that Telegram considers "empty" (only control chars).
@@ -474,11 +475,6 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
                         chat_id=self.chat_id,
                         draft_id=self.draft_id,
                         error=str(e))
-            # Try without parse_mode as fallback
-            if parse_mode:
-                return await self.update(text_to_send,
-                                         parse_mode=None,
-                                         force=force)
             return False
 
     async def flush_pending(self,
@@ -581,25 +577,15 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
             error_msg = str(e).lower()
             is_parse_error = "can't parse entities" in error_msg
 
-            # Parse error - try again with plain text and track it
-            if is_parse_error and effective_parse_mode:
+            # Parse error — skip keepalive, draft keeps last good text.
+            # Don't retry with parse_mode=None: draft API remembers the
+            # initial parse_mode and retrying plain text doesn't help.
+            if is_parse_error:
                 if not self._keepalive_failure_logged:
                     logger.info("draft_streamer.keepalive_parse_error",
                                 chat_id=self.chat_id,
                                 parse_mode=effective_parse_mode,
                                 error=str(e))
-                self._last_parse_mode = None  # Track fallback
-                return await self._send_keepalive(None)  # Retry without parse
-
-            # Parse error even with None - draft API limitation (expected edge case)
-            if is_parse_error and not effective_parse_mode:
-                if not self._keepalive_failure_logged:
-                    logger.info(
-                        "draft_streamer.keepalive_parse_error_persistent",
-                        chat_id=self.chat_id,
-                        error=str(e),
-                        hint="Draft parse_mode cannot be changed after creation"
-                    )
                     self._keepalive_failure_logged = True
                 return False
 
