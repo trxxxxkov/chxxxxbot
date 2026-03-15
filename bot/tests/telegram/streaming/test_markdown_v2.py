@@ -63,8 +63,10 @@ class TestEscapeContexts:
              "https://example.com/path?q=1+1"),
             ("https://example.com/path)", EscapeContext.URL,
              r"https://example.com/path\)"),
-            # PRE context - no escaping
-            ("_*[]()~`>#+-=|{}.!", EscapeContext.PRE, "_*[]()~`>#+-=|{}.!"),
+            # PRE context - only escapes ` and \
+            ("_*[]()~`>#+-=|{}.!", EscapeContext.PRE, r"_*[]()~\`>#+-=|{}.!"),
+            (r"path\to\file", EscapeContext.PRE, r"path\\to\\file"),
+            ("no special chars", EscapeContext.PRE, "no special chars"),
         ])
     def test_context_aware_escaping(self, input_text, context, expected):
         """Should escape based on context rules."""
@@ -302,7 +304,7 @@ class TestLongMessageHandling:
         assert "*bold end*" in result or "*bold end\\*" in result
 
     def test_long_code_block_preserved(self):
-        """Long code blocks should be preserved without internal escaping."""
+        """Long code blocks preserve content, escaping only \\ and `."""
         code_content = "var x = 1+1; // 2\n" * 200
         text = f"```javascript\n{code_content}```"
         result = render_streaming_safe(text)
@@ -706,11 +708,36 @@ class TestRegressionCases:
         assert r"\*\*" in result
 
     def test_json_in_code_block(self):
-        """JSON in code block should not be escaped."""
+        """JSON in code block: only \\ and ` escaped."""
         json_code = '```json\n{"key": "value", "num": 1+1}\n```'
         result = render_streaming_safe(json_code)
         assert '"key"' in result
         assert "1+1" in result
+
+    def test_latex_backslashes_in_code_block(self):
+        r"""Backslashes in code blocks must be escaped for MarkdownV2."""
+        latex = "```latex\n\\frac{a}{b} + \\sum_{i=1}^{n} x_i\n```"
+        result = render_streaming_safe(latex)
+        # Backslashes must be doubled for Telegram to display them
+        assert "\\\\frac" in result
+        assert "\\\\sum" in result
+        # Braces should NOT be escaped inside code blocks
+        assert "{a}" in result
+        assert "{b}" in result
+
+    def test_display_math_backslashes_preserved(self):
+        r"""Display math \[...\] converted to code block preserves \\."""
+        text = r"Result: \[\frac{a}{b}\]"
+        result = render_streaming_safe(text)
+        # preprocess converts \[...\] to ```...```
+        # Inside code block, \ must be escaped
+        assert "\\\\frac" in result
+
+    def test_backtick_in_code_block_escaped(self):
+        """Lone backtick inside code block must be escaped."""
+        text = '```\nx = "`"\n```'
+        result = render_streaming_safe(text)
+        assert "\\`" in result
 
     def test_single_tilde_not_strikethrough(self):
         """Single ~ should be escaped, not treated as strikethrough."""

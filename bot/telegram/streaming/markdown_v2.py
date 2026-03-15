@@ -25,7 +25,7 @@ class EscapeContext(str, Enum):
     - NORMAL: Full escaping of all special chars
     - CODE: Only escape ` and \
     - URL: Only escape ) and \
-    - PRE: Inside code block, no escaping needed (handled by ```)
+    - PRE: Inside code block, escape only ` and \\ (per MarkdownV2 spec)
     """
 
     NORMAL = "normal"
@@ -126,8 +126,10 @@ def escape_markdown_v2(text: str,
         return ""
 
     if context == EscapeContext.PRE:
-        # Inside code blocks, no escaping needed
-        return text
+        # Inside code blocks: escape ` and \ (per MarkdownV2 spec)
+        result = text.replace("\\", "\\\\")
+        result = result.replace("`", "\\`")
+        return result
 
     if context == EscapeContext.CODE:
         # Inside inline code: only escape ` and \
@@ -336,9 +338,14 @@ def _render_markdown_v2(text: str, auto_close: bool = True) -> str:
                 push_context(FormattingType.CODE_BLOCK, "```", language)
                 continue
 
-        # Inside code block - output as-is (no escaping)
+        # Inside code block - escape only ` and \ (per MarkdownV2 spec)
         if current_context() == FormattingType.CODE_BLOCK:
-            result.append(text[i])
+            if text[i] == "\\":
+                result.append("\\\\")
+            elif text[i] == "`" and text[i:i + 3] != "```":
+                result.append("\\`")
+            else:
+                result.append(text[i])
             i += 1
             continue
 
