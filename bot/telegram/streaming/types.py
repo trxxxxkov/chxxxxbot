@@ -117,3 +117,9 @@ class StreamResult:  # pylint: disable=too-many-instance-attributes
     iterations: int = 0
     has_sent_parts: bool = False
     has_delivered_files: bool = False
+    # Provider state captured at stream_complete time to avoid
+    # singleton race condition (concurrent requests share one provider
+    # and stream_events() resets _last_usage/_last_stop_reason on entry).
+    usage: Any = None  # TokenUsage
+    stop_reason_from_provider: str = ""
+    thinking_blocks_json: "str | None" = None

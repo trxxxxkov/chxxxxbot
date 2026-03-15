@@ -882,11 +882,19 @@ async def _process_batch_with_session(
                 return
 
             # 9. Get usage stats, stop_reason, thinking, and calculate cost
-            usage = await provider.get_usage()
-            stop_reason = provider.get_stop_reason()
+            # Prefer values captured at stream_complete time (on StreamResult)
+            # to avoid singleton race condition — concurrent requests share
+            # one provider instance and stream_events() resets state on entry.
+            if result.usage is not None:
+                usage = result.usage
+            else:
+                usage = await provider.get_usage()
+            stop_reason = result.stop_reason_from_provider or provider.get_stop_reason()
             # Phase 1.4.3: Get thinking blocks with signatures for DB storage
             # (required for Extended Thinking - API needs signatures in context)
-            thinking_blocks_json = provider.get_thinking_blocks_json()
+            thinking_blocks_json = (result.thinking_blocks_json
+                                    if result.thinking_blocks_json is not None
+                                    else provider.get_thinking_blocks_json())
             # Opus 4.6: compaction_summary already captured in continuation
             # loop above (stream_events resets last_compaction each call)
 

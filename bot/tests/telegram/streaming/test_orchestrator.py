@@ -43,6 +43,7 @@ class MockStreamEvent:  # pylint: disable=too-many-instance-attributes
     tool_input: dict | None = None
     stop_reason: str | None = None
     final_message: Any = None
+    usage: Any = None
     is_server_tool: bool = False
 
 

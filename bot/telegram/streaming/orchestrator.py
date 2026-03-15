@@ -272,6 +272,10 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
         ):
             stream = StreamingSession(dm, self._thread_id)
             total_output_chars = 0
+            # Capture provider state at stream_complete time to avoid
+            # singleton race condition (see provider_factory.py).
+            captured_usage = None
+            captured_thinking_blocks_json = None
             # Anchor cache breakpoint to last clean message before
             # tool blocks. Stays stable across tool loop iterations,
             # and matches what DB will return for the next message.
@@ -342,6 +346,14 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
                             stream.handle_message_end(event.stop_reason)
                         elif event.type == "stream_complete":
                             stream.handle_stream_complete(event.final_message)
+                            # Capture provider state NOW — before any
+                            # await that could let another coroutine call
+                            # stream_events() and reset the singleton.
+                            captured_usage = event.usage
+                            provider = self._get_provider()
+                            captured_thinking_blocks_json = (
+                                provider.get_thinking_blocks_json()
+                            )
                 finally:
                     if generating_scope_active:
                         await action_manager.pop_scope(generating_scope_id)
@@ -359,13 +371,17 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
                 # Handle end_turn/pause_turn
                 if stream.stop_reason in ("end_turn", "pause_turn"):
                     return await self._handle_completion(
-                        stream, dm, iteration + 1)
+                        stream, dm, iteration + 1,
+                        captured_usage, captured_thinking_blocks_json)
 
                 # Handle tool execution
                 if stream.stop_reason == "tool_use" and stream.pending_tools:
                     result = await self._execute_tools(stream, dm, conversation,
                                                        cancel_event, iteration)
                     if result is not None:
+                        # Attach captured usage for turn break path
+                        result.usage = captured_usage
+                        result.thinking_blocks_json = captured_thinking_blocks_json
                         return result
                     # Continue to next iteration with updated conversation
                 elif stream.stop_reason == "tool_use" and not stream.pending_tools:
@@ -473,6 +489,8 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
         stream: StreamingSession,
         dm: DraftManager,
         iterations: int,
+        usage: "Any | None" = None,
+        thinking_blocks_json: "str | None" = None,
     ) -> StreamResult:
         """Handle normal completion (end_turn/pause_turn)."""
         final_answer = stream.get_final_text()
@@ -511,6 +529,9 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
             iterations=iterations,
             has_sent_parts=stream.has_sent_parts,
             has_delivered_files=self._has_delivered_files,
+            usage=usage,
+            stop_reason_from_provider=stream.stop_reason or "",
+            thinking_blocks_json=thinking_blocks_json,
         )
 
     async def _execute_tools(
