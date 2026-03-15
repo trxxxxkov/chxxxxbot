@@ -15,10 +15,10 @@ from unittest.mock import patch
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
 import pytest
-from telegram.draft_streaming import _truncate_for_telegram
 from telegram.draft_streaming import DraftStreamer
 from telegram.draft_streaming import MIN_UPDATE_INTERVAL
-from telegram.draft_streaming import TELEGRAM_MESSAGE_LIMIT
+from telegram.streaming.constants import TELEGRAM_LIMIT
+from telegram.streaming.truncation import TruncationManager
 
 
 @pytest.fixture
@@ -506,32 +506,32 @@ class TestTruncateForTelegram:
     def test_short_text_unchanged(self):
         """Text within limit should be returned unchanged."""
         text = "Short text"
-        assert _truncate_for_telegram(text) == text
+        assert TruncationManager.truncate_for_telegram(text) == text
 
     def test_exactly_at_limit_unchanged(self):
         """Text exactly at 4096 should be returned unchanged."""
-        text = "x" * TELEGRAM_MESSAGE_LIMIT
-        assert _truncate_for_telegram(text) == text
+        text = "x" * TELEGRAM_LIMIT
+        assert TruncationManager.truncate_for_telegram(text) == text
 
     def test_plain_text_truncated(self):
         """Plain text over limit should be truncated with ellipsis."""
         text = "x" * 5000
-        result = _truncate_for_telegram(text, None)
-        assert len(result) == TELEGRAM_MESSAGE_LIMIT
+        result = TruncationManager.truncate_for_telegram(text, None)
+        assert len(result) == TELEGRAM_LIMIT
         assert result.endswith("…")
 
     def test_markdown_v2_truncated(self):
         """MarkdownV2 text should be truncated with room for formatting fix."""
         text = "x" * 5000
-        result = _truncate_for_telegram(text, "MarkdownV2")
-        assert len(result) <= TELEGRAM_MESSAGE_LIMIT
+        result = TruncationManager.truncate_for_telegram(text, "MarkdownV2")
+        assert len(result) <= TELEGRAM_LIMIT
 
     def test_markdown_v2_fixes_broken_formatting(self):
         """MarkdownV2 truncation should close unclosed formatting."""
         # Text with unclosed bold that gets cut
         text = "*bold text " + "x" * 5000
-        result = _truncate_for_telegram(text, "MarkdownV2")
-        assert len(result) <= TELEGRAM_MESSAGE_LIMIT
+        result = TruncationManager.truncate_for_telegram(text, "MarkdownV2")
+        assert len(result) <= TELEGRAM_LIMIT
         # Bold should be closed
         bold_count = result.count("*")
         assert bold_count % 2 == 0
@@ -540,16 +540,16 @@ class TestTruncateForTelegram:
         """MarkdownV2 with escaped special chars should fit in limit."""
         # Each \= is 2 chars — text with many special chars
         text = "a\\=b\\+c\\-d\\." * 1000
-        result = _truncate_for_telegram(text, "MarkdownV2")
-        assert len(result) <= TELEGRAM_MESSAGE_LIMIT
+        result = TruncationManager.truncate_for_telegram(text, "MarkdownV2")
+        assert len(result) <= TELEGRAM_LIMIT
 
     def test_safety_check_after_fix(self):
         """If fix_truncated_md2 makes text longer, re-truncate."""
         # Create text that when truncated at 4076 + fix might exceed 4096
         # Use unclosed code block to trigger fix_truncated_md2 adding ```
         text = "```python\n" + "x" * 5000
-        result = _truncate_for_telegram(text, "MarkdownV2")
-        assert len(result) <= TELEGRAM_MESSAGE_LIMIT
+        result = TruncationManager.truncate_for_telegram(text, "MarkdownV2")
+        assert len(result) <= TELEGRAM_LIMIT
 
 
 class TestFinalizeErrorHandling:
@@ -577,7 +577,7 @@ class TestFinalizeErrorHandling:
 
         # send_message should be called with truncated text
         call_args = mock_bot.send_message.call_args
-        assert len(call_args.kwargs["text"]) <= TELEGRAM_MESSAGE_LIMIT
+        assert len(call_args.kwargs["text"]) <= TELEGRAM_LIMIT
 
     @pytest.mark.asyncio
     async def test_finalize_handles_message_too_long(self, streamer, mock_bot):
@@ -632,7 +632,7 @@ class TestFinalizeErrorHandling:
         # Second call should have truncated text
         second_call_text = mock_bot.send_message.call_args_list[1].kwargs[
             "text"]
-        assert len(second_call_text) <= TELEGRAM_MESSAGE_LIMIT
+        assert len(second_call_text) <= TELEGRAM_LIMIT
         assert message.message_id == 123
 
     @pytest.mark.asyncio

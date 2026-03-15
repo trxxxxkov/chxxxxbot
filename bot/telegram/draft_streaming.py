@@ -12,22 +12,20 @@ import asyncio
 from asyncio import Task
 import random
 import time
-from typing import Literal, Optional
+from typing import Optional
 
 from aiogram import Bot
 from aiogram import types
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.exceptions import TelegramRetryAfter
 from aiogram.methods import SendMessageDraft
+from telegram.streaming.constants import DEFAULT_PARSE_MODE
+from telegram.streaming.constants import ParseMode
+from telegram.streaming.constants import TELEGRAM_LIMIT
+from telegram.streaming.truncation import TruncationManager
 from utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
-
-# Type alias for parse mode
-ParseMode = Literal["MarkdownV2", "HTML"]
-
-# Default parse mode
-DEFAULT_PARSE_MODE: ParseMode = "MarkdownV2"
 
 # Minimum interval between draft updates (seconds)
 # sendMessageDraft still has rate limits, just more relaxed than edit_message
@@ -45,39 +43,6 @@ DEFAULT_KEEPALIVE_INTERVAL = 6.0
 # Minimum time since last update before sending keepalive (seconds)
 # If we recently sent an update, skip keepalive to avoid flood control
 MIN_TIME_BEFORE_KEEPALIVE = 4.0
-
-# Telegram message character limit
-TELEGRAM_MESSAGE_LIMIT = 4096
-
-
-def _truncate_for_telegram(text: str, parse_mode: Optional[str] = None) -> str:
-    """Truncate text to fit Telegram's message character limit.
-
-    For MarkdownV2, leaves room for fix_truncated_md2 to close any
-    formatting markers broken by truncation.
-
-    Args:
-        text: Text to truncate.
-        parse_mode: Parse mode ("MarkdownV2", "HTML", or None).
-
-    Returns:
-        Text truncated to fit within TELEGRAM_MESSAGE_LIMIT.
-    """
-    if len(text) <= TELEGRAM_MESSAGE_LIMIT:
-        return text
-
-    if parse_mode == "MarkdownV2":
-        from telegram.streaming.markdown_v2 import fix_truncated_md2
-
-        # Leave room for formatting fixes (closing markers like *, _, ```)
-        truncated = text[:TELEGRAM_MESSAGE_LIMIT - 20] + "…"
-        truncated = fix_truncated_md2(truncated)
-        # Safety check: fix_truncated_md2 may add chars
-        if len(truncated) > TELEGRAM_MESSAGE_LIMIT:
-            truncated = truncated[:TELEGRAM_MESSAGE_LIMIT - 1] + "…"
-        return truncated
-
-    return text[:TELEGRAM_MESSAGE_LIMIT - 1] + "…"
 
 
 class DraftManager:
@@ -383,10 +348,10 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
             self._pending_text = None
 
         # Truncate if too long (Telegram limit)
-        # Must use _truncate_for_telegram to properly close broken MarkdownV2
+        # Must use truncate_for_telegram to properly close broken MarkdownV2
         # entities — raw slicing can cut mid-escape or mid-entity marker
-        if len(text_to_send) > TELEGRAM_MESSAGE_LIMIT:
-            text_to_send = _truncate_for_telegram(text_to_send, parse_mode)
+        if len(text_to_send) > TELEGRAM_LIMIT:
+            text_to_send = TruncationManager.truncate_for_telegram(text_to_send, parse_mode)
 
         try:
             await self.bot(
@@ -651,7 +616,7 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
 
         # Truncate if exceeds Telegram limit (formatted text can exceed 4096
         # after MarkdownV2 escaping even if raw text was within split threshold)
-        text_to_send = _truncate_for_telegram(text_to_send, parse_mode)
+        text_to_send = TruncationManager.truncate_for_telegram(text_to_send, parse_mode)
 
         logger.info("draft_streamer.finalizing",
                     chat_id=self.chat_id,
@@ -680,7 +645,7 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
                              parse_mode=parse_mode,
                              text_length=len(text_to_send),
                              error=str(e))
-                text_to_send = _truncate_for_telegram(text_to_send, None)
+                text_to_send = TruncationManager.truncate_for_telegram(text_to_send, None)
                 message = await self.bot.send_message(
                     chat_id=self.chat_id,
                     text=text_to_send,

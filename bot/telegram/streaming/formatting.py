@@ -13,23 +13,19 @@ NO __init__.py - use direct import:
 
 import html
 import re
-from typing import Literal, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from telegram.streaming.display_manager import DisplayManager
 
+from telegram.streaming.constants import DEFAULT_PARSE_MODE
+from telegram.streaming.constants import ParseMode
 from telegram.streaming.markdown_v2 import escape_markdown_v2
 from telegram.streaming.markdown_v2 import format_expandable_blockquote_md2
 from telegram.streaming.markdown_v2 import render_streaming_safe
 from telegram.streaming.truncation import TruncationManager
 from telegram.streaming.types import BlockType
 from telegram.streaming.types import DisplayBlock
-
-# Type alias for parse mode
-ParseMode = Literal["MarkdownV2", "HTML"]
-
-# Default parse mode for new messages
-DEFAULT_PARSE_MODE: ParseMode = "MarkdownV2"
 
 
 def escape_html(text: str) -> str:

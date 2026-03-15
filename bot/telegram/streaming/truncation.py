@@ -10,23 +10,14 @@ NO __init__.py - use direct import:
     from telegram.streaming.truncation import TruncationManager
 """
 
-from typing import Literal
+from typing import Optional
 
+from telegram.streaming.constants import MIN_THINKING_SPACE
+from telegram.streaming.constants import ParseMode
+from telegram.streaming.constants import SAFETY_MARGIN_HTML
+from telegram.streaming.constants import SAFETY_MARGIN_MD2
+from telegram.streaming.constants import TELEGRAM_LIMIT
 from telegram.streaming.markdown_v2 import fix_truncated_md2
-
-# Telegram message limit
-TELEGRAM_LIMIT = 4096
-
-# Safety margin for formatting overhead
-# MarkdownV2 needs larger margin due to escaping overhead
-SAFETY_MARGIN_HTML = 46
-SAFETY_MARGIN_MD2 = 100  # More margin for escaping overhead
-
-# Minimum space to keep for thinking (if less, hide it entirely)
-MIN_THINKING_SPACE = 100
-
-# Type alias for parse mode
-ParseMode = Literal["MarkdownV2", "HTML"]
 
 
 def _safe_truncate_start_md2(content: str, available_chars: int) -> str:
@@ -328,3 +319,32 @@ class TruncationManager:
         """
         # Only split if thinking is already gone and text is large
         return not thinking_formatted and text_length >= self._effective_limit
+
+    @staticmethod
+    def truncate_for_telegram(text: str,
+                              parse_mode: Optional[str] = None) -> str:
+        """Truncate text to fit Telegram's message character limit.
+
+        For MarkdownV2, leaves room for fix_truncated_md2 to close any
+        formatting markers broken by truncation.
+
+        Args:
+            text: Text to truncate.
+            parse_mode: Parse mode ("MarkdownV2", "HTML", or None).
+
+        Returns:
+            Text truncated to fit within TELEGRAM_LIMIT.
+        """
+        if len(text) <= TELEGRAM_LIMIT:
+            return text
+
+        if parse_mode == "MarkdownV2":
+            # Leave room for formatting fixes (closing markers like *, _, ```)
+            truncated = text[:TELEGRAM_LIMIT - 20] + "…"
+            truncated = fix_truncated_md2(truncated)
+            # Safety check: fix_truncated_md2 may add chars
+            if len(truncated) > TELEGRAM_LIMIT:
+                truncated = truncated[:TELEGRAM_LIMIT - 1] + "…"
+            return truncated
+
+        return text[:TELEGRAM_LIMIT - 1] + "…"

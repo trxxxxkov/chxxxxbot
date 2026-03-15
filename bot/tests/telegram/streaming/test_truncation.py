@@ -5,9 +5,9 @@ by prioritizing text content over thinking content.
 """
 
 import pytest
-from telegram.streaming.truncation import MIN_THINKING_SPACE
-from telegram.streaming.truncation import SAFETY_MARGIN_HTML
-from telegram.streaming.truncation import TELEGRAM_LIMIT
+from telegram.streaming.constants import MIN_THINKING_SPACE
+from telegram.streaming.constants import SAFETY_MARGIN_HTML
+from telegram.streaming.constants import TELEGRAM_LIMIT
 from telegram.streaming.truncation import TruncationManager
 
 # Use HTML effective limit for backward compatibility in tests

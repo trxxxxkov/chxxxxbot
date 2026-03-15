@@ -9,10 +9,10 @@ from typing import Any, Optional
 from core.tools.registry import get_tool_emoji
 from telegram.draft_streaming import DraftManager
 from telegram.streaming.display_manager import DisplayManager
-from telegram.streaming.formatting import DEFAULT_PARSE_MODE
+from telegram.streaming.constants import DEFAULT_PARSE_MODE
+from telegram.streaming.constants import ParseMode
 from telegram.streaming.formatting import format_display
 from telegram.streaming.formatting import format_final_text
-from telegram.streaming.formatting import ParseMode
 from telegram.streaming.formatting import strip_tool_markers
 from telegram.streaming.truncation import TruncationManager
 from telegram.streaming.types import BlockType
@@ -627,9 +627,8 @@ class StreamingSession:  # pylint: disable=too-many-instance-attributes
 
         # MarkdownV2 escaping can make formatted text much longer than raw text
         # (each special char gets a \ prefix). Truncate if exceeds Telegram limit.
-        from telegram.draft_streaming import _truncate_for_telegram
-        final_text = _truncate_for_telegram(final_text.strip(),
-                                            self._parse_mode)
+        final_text = TruncationManager.truncate_for_telegram(
+            final_text.strip(), self._parse_mode)
 
         logger.info("stream.session.splitting_message",
                     thread_id=self._thread_id,
