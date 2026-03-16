@@ -290,8 +290,20 @@ MESSAGES: MessageDict = {
         "ru": "**Текущая модель:**\n",
     },
     "model.select_new": {
-        "en": "\n\n🟢 flagship · 🔵 balanced · 🔵 fast",
-        "ru": "\n\n🟢 флагман · 🔵 баланс · 🔵 быстрый",
+        "en":
+            "\n\n"
+            "**Claude** (Anthropic)\n"
+            "Reasoning, code, analysis\n\n"
+            "**Gemini** (Google)\n"
+            "Search, long context, speed\n\n"
+            "🟢 flagship · 🔵 balanced · 🔵 fast",
+        "ru":
+            "\n\n"
+            "**Claude** (Anthropic)\n"
+            "Рассуждения, код, анализ\n\n"
+            "**Gemini** (Google)\n"
+            "Поиск, длинный контекст, скорость\n\n"
+            "🟢 флагман · 🔵 баланс · 🔵 быстрый",
     },
     "model.changed": {
         "en": "✅ **Model changed**\n\n",
