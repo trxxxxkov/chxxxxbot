@@ -909,43 +909,44 @@ async def _process_batch_with_session(
             if usage.cache_read_tokens and model_config.pricing_cache_read:
                 cache_read_cost = ((usage.cache_read_tokens / 1_000_000) *
                                    model_config.pricing_cache_read)
+            # Cache write cost (universal — 0 when pricing is None)
+            if usage.cache_creation_1h_tokens > 0 and model_config.pricing_cache_write_1h:
+                cache_creation_cost += (
+                    (usage.cache_creation_1h_tokens / 1_000_000) *
+                    model_config.pricing_cache_write_1h)
+            if usage.cache_creation_5m_tokens > 0 and model_config.pricing_cache_write_5m:
+                cache_creation_cost += (
+                    (usage.cache_creation_5m_tokens / 1_000_000) *
+                    model_config.pricing_cache_write_5m)
+
+            if cache_creation_cost > 0:
+                record_cost(service="cache_write",
+                            amount_usd=cache_creation_cost)
+
+            # Subsidy logic (universal — only fires when cache_creation_cost > 0)
+            if not config.CHARGE_USERS_FOR_CACHE_WRITE and cache_creation_cost > 0:
+                cache_write_cost_precise = float(
+                    calculate_cache_write_cost(
+                        model_id=model_config.model_id,
+                        cache_creation_tokens=(usage.cache_creation_tokens or
+                                               0),
+                        cache_creation_1h_tokens=usage.cache_creation_1h_tokens,
+                        cache_creation_5m_tokens=usage.cache_creation_5m_tokens,
+                    ))
+                user_charge_usd = cost_usd - cache_write_cost_precise
+                cache_write_subsidized = True
+                logger.info(
+                    "claude_handler.cache_write_subsidized",
+                    user_id=user_id,
+                    cache_write_cost=round(cache_write_cost_precise, 6),
+                    total_cost=round(cost_usd, 6),
+                    user_charge=round(user_charge_usd, 6),
+                )
+            else:
+                user_charge_usd = cost_usd
+
+            # Provider-specific additional costs
             if model_config.provider == "claude":
-                if usage.cache_creation_1h_tokens > 0 and model_config.pricing_cache_write_1h:
-                    cache_creation_cost += (
-                        (usage.cache_creation_1h_tokens / 1_000_000) *
-                        model_config.pricing_cache_write_1h)
-                if usage.cache_creation_5m_tokens > 0 and model_config.pricing_cache_write_5m:
-                    cache_creation_cost += (
-                        (usage.cache_creation_5m_tokens / 1_000_000) *
-                        model_config.pricing_cache_write_5m)
-
-                # Always record cache write cost as separate metric
-                if cache_creation_cost > 0:
-                    record_cost(service="cache_write",
-                                amount_usd=cache_creation_cost)
-
-                # Determine user charge (with or without cache write subsidy)
-                if not config.CHARGE_USERS_FOR_CACHE_WRITE and cache_creation_cost > 0:
-                    cache_write_cost_precise = float(
-                        calculate_cache_write_cost(
-                            model_id=model_config.model_id,
-                            cache_creation_tokens=(usage.cache_creation_tokens or
-                                                   0),
-                            cache_creation_1h_tokens=usage.cache_creation_1h_tokens,
-                            cache_creation_5m_tokens=usage.cache_creation_5m_tokens,
-                        ))
-                    user_charge_usd = cost_usd - cache_write_cost_precise
-                    cache_write_subsidized = True
-                    logger.info(
-                        "claude_handler.cache_write_subsidized",
-                        user_id=user_id,
-                        cache_write_cost=round(cache_write_cost_precise, 6),
-                        total_cost=round(cost_usd, 6),
-                        user_charge=round(user_charge_usd, 6),
-                    )
-                else:
-                    user_charge_usd = cost_usd
-
                 # Calculate web_search cost ($0.01 per search request)
                 web_search_cost = usage.web_search_requests * 0.01
                 if web_search_cost > 0:
@@ -963,13 +964,9 @@ async def _process_batch_with_session(
                                          success=True,
                                          duration=0.0)
                     record_cost(service="web_search", amount_usd=web_search_cost)
-            else:
-                # Non-Claude providers: no cache cost breakdown
-                user_charge_usd = cost_usd
-
+            elif model_config.provider == "google":
                 # Google Search grounding cost (~$0.02 per grounded query)
-                if (usage.web_search_requests > 0
-                        and model_config.provider == "google"):
+                if usage.web_search_requests > 0:
                     from core.pricing import GOOGLE_SEARCH_GROUNDING_COST
                     grounding_cost = float(
                         GOOGLE_SEARCH_GROUNDING_COST

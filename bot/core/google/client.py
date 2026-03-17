@@ -243,6 +243,8 @@ class GeminiProvider(LLMProvider):
         self._content_caches: dict[str, tuple[str, float]] = {}
         # Negative cache: hashes that failed creation -> retry_after timestamp
         self._cache_creation_failures: dict[str, float] = {}
+        # Cache creation tokens from last _get_or_create_cache() call
+        self._last_cache_creation_tokens: int = 0
         logger.info("gemini_provider.initialized")
 
     async def _get_or_create_cache(
@@ -304,6 +306,7 @@ class GeminiProvider(LLMProvider):
         if content_hash in self._content_caches:
             cache_name, expire_ts = self._content_caches[content_hash]
             if now < expire_ts - 60:  # 60s safety margin
+                self._last_cache_creation_tokens = 0
                 logger.debug(
                     "gemini.cache.hit",
                     cache_name=cache_name,
@@ -350,6 +353,7 @@ class GeminiProvider(LLMProvider):
                 cache_tokens = getattr(
                     cache.usage_metadata, 'total_token_count', 0) or 0
 
+            self._last_cache_creation_tokens = cache_tokens
             logger.info(
                 "gemini.cache.created",
                 model=model_id,
@@ -364,6 +368,7 @@ class GeminiProvider(LLMProvider):
             error_msg = str(e)[:200]
             # Negative cache: don't retry for 5 minutes
             self._cache_creation_failures[content_hash] = now + 300
+            self._last_cache_creation_tokens = 0
             logger.info(
                 "gemini.cache.create_failed",
                 model=model_id,
@@ -732,6 +737,7 @@ class GeminiProvider(LLMProvider):
                 output_tokens=output_tokens,
                 thinking_tokens=thinking_tokens,
                 cache_read_tokens=cache_read_tokens,
+                cache_creation_tokens=self._last_cache_creation_tokens,
                 web_search_requests=grounding_requests,
             )
 
