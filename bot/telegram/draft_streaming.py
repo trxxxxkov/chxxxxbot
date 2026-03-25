@@ -22,6 +22,7 @@ from aiogram.methods import SendMessageDraft
 from telegram.streaming.constants import DEFAULT_PARSE_MODE
 from telegram.streaming.constants import ParseMode
 from telegram.streaming.constants import TELEGRAM_LIMIT
+from telegram.streaming.markdown_v2 import strip_markdown_v2_escaping
 from telegram.streaming.truncation import TruncationManager
 from utils.structured_logging import get_logger
 
@@ -639,13 +640,14 @@ class DraftStreamer:  # pylint: disable=too-many-instance-attributes
             if ("can't parse entities" in error_msg or
                     "message is too long" in error_msg) and parse_mode:
                 # Parse error or length overflow — fallback to plain text
-                # Re-truncate: MarkdownV2 escapes (\= \+ etc.) make text longer
+                # Strip MarkdownV2 escaping (\- \. \( etc.) so user sees clean text
+                text_to_send = strip_markdown_v2_escaping(text_to_send)
+                text_to_send = TruncationManager.truncate_for_telegram(text_to_send, None)
                 logger.debug("draft_streamer.finalize_fallback",
                              chat_id=self.chat_id,
                              parse_mode=parse_mode,
                              text_length=len(text_to_send),
                              error=str(e))
-                text_to_send = TruncationManager.truncate_for_telegram(text_to_send, None)
                 message = await self.bot.send_message(
                     chat_id=self.chat_id,
                     text=text_to_send,

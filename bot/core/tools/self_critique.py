@@ -293,6 +293,66 @@ CostTracker = BaseCostTracker
 # =============================================================================
 
 
+def _try_parse_json_verdict(text: str) -> Optional[dict[str, Any]]:
+    """Try to extract and parse a JSON verdict from text.
+
+    Handles JSON wrapped in markdown code blocks (```json ... ```)
+    or bare JSON. Also searches for JSON objects within longer text
+    (e.g., thinking blocks that contain analysis + JSON).
+
+    Args:
+        text: Text that may contain JSON verdict.
+
+    Returns:
+        Parsed dict if valid JSON found, None otherwise.
+    """
+    if not text or not text.strip():
+        return None
+
+    # Try markdown code block first
+    json_text = text
+    if "```json" in text:
+        start = text.find("```json") + 7
+        end = text.find("```", start)
+        if end > start:
+            json_text = text[start:end].strip()
+    elif "```" in text:
+        start = text.find("```") + 3
+        end = text.find("```", start)
+        if end > start:
+            json_text = text[start:end].strip()
+
+    # Try to parse directly
+    try:
+        result = json.loads(json_text)
+        if isinstance(result, dict):
+            return result
+    except (json.JSONDecodeError, ValueError):
+        pass
+
+    # Try to find a JSON object in the text (for thinking blocks)
+    # Look for { ... "verdict" ... }
+    brace_start = text.find("{")
+    if brace_start >= 0:
+        # Find the matching closing brace
+        depth = 0
+        for i in range(brace_start, len(text)):
+            if text[i] == "{":
+                depth += 1
+            elif text[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    try:
+                        result = json.loads(text[brace_start:i + 1])
+                        if isinstance(result, dict) and "verdict" in result:
+                            return result
+                    except (json.JSONDecodeError, ValueError):
+                        pass
+                    break
+
+    return None
+
+
 def _build_verification_context(user_request: str, content: Optional[str],
                                 file_ids: Optional[list[str]],
                                 verification_hints: Optional[list[str]],
@@ -683,23 +743,25 @@ async def execute_self_critique(  # pylint: disable=too-many-return-statements
                 if block.type == "text":
                     result_text += block.text
 
-            # Try to parse JSON
-            try:
-                # Find JSON in response (may have markdown code blocks)
-                json_text = result_text
-                if "```json" in result_text:
-                    start = result_text.find("```json") + 7
-                    end = result_text.find("```", start)
-                    json_text = result_text[start:end].strip()
-                elif "```" in result_text:
-                    start = result_text.find("```") + 3
-                    end = result_text.find("```", start)
-                    json_text = result_text[start:end].strip()
+            # If no text blocks, try thinking blocks (model may put
+            # JSON in thinking or return only thinking with no text)
+            thinking_text = ""
+            if not result_text.strip():
+                for block in response.content:
+                    if block.type == "thinking":
+                        thinking_text += block.thinking
+                logger.info("self_critique.no_text_blocks",
+                            has_thinking=bool(thinking_text),
+                            thinking_length=len(thinking_text),
+                            iteration=iteration)
 
-                result = json.loads(json_text)
+            # Use text blocks first, fall back to thinking blocks
+            source_text = result_text if result_text.strip() else thinking_text
 
-                # Finalize cost and charge user
-                verdict = result.get("verdict", "UNKNOWN")
+            # Try to parse JSON from source text
+            parsed_result = _try_parse_json_verdict(source_text)
+            if parsed_result is not None:
+                verdict = parsed_result.get("verdict", "UNKNOWN")
                 total_cost = await cost_tracker.finalize_and_charge(
                     session=session,
                     user_id=user_id,
@@ -707,45 +769,64 @@ async def execute_self_critique(  # pylint: disable=too-many-return-statements
                     verdict=verdict,
                     iterations=iteration + 1)
 
-                result["cost_usd"] = float(total_cost)
-                result["_already_charged"] = True
-                result["iterations"] = iteration + 1
-                result["tokens_used"] = {
+                parsed_result["cost_usd"] = float(total_cost)
+                parsed_result["_already_charged"] = True
+                parsed_result["iterations"] = iteration + 1
+                parsed_result["tokens_used"] = {
                     "input": cost_tracker.total_input_tokens,
                     "output": cost_tracker.total_output_tokens,
                     "thinking": cost_tracker.total_thinking_tokens
                 }
 
-                logger.info("self_critique.completed",
-                            verdict=verdict,
-                            alignment_score=result.get("alignment_score"),
-                            issues_count=len(result.get("issues", [])),
-                            iterations=iteration + 1,
-                            total_cost=float(total_cost))
+                logger.info(
+                    "self_critique.completed",
+                    verdict=verdict,
+                    alignment_score=parsed_result.get("alignment_score"),
+                    issues_count=len(parsed_result.get("issues", [])),
+                    iterations=iteration + 1,
+                    total_cost=float(total_cost),
+                    source="thinking" if not result_text.strip() else "text")
 
-                return result
+                return parsed_result
 
-            except json.JSONDecodeError as e:
-                logger.warning("self_critique.invalid_json",
-                               error=str(e),
-                               response_preview=result_text[:500])
+            # JSON parsing failed — build a synthetic result from
+            # whatever content we have so the user gets something useful
+            logger.warning(
+                "self_critique.invalid_json",
+                response_preview=(source_text or "")[:500],
+                had_text=bool(result_text.strip()),
+                had_thinking=bool(thinking_text))
 
-                # Still charge for the attempt
-                total_cost = await cost_tracker.finalize_and_charge(
-                    session=session,
-                    user_id=user_id,
-                    source="self_critique",
-                    verdict="ERROR",
-                    iterations=iteration + 1)
+            total_cost = await cost_tracker.finalize_and_charge(
+                session=session,
+                user_id=user_id,
+                source="self_critique",
+                verdict="ERROR",
+                iterations=iteration + 1)
 
+            # If we have thinking content, return it as the analysis
+            # so the user still sees the verification work
+            if thinking_text.strip():
                 return {
-                    "verdict": "ERROR",
-                    "error": "invalid_response_format",
-                    "raw_response": result_text[:2000],
+                    "verdict": "UNKNOWN",
+                    "summary": thinking_text[:2000],
+                    "issues": [],
+                    "recommendations": [],
+                    "note": "Model returned analysis in thinking only, "
+                            "no structured verdict produced.",
                     "cost_usd": float(total_cost),
                     "_already_charged": True,
                     "iterations": iteration + 1
                 }
+
+            return {
+                "verdict": "ERROR",
+                "error": "invalid_response_format",
+                "raw_response": result_text[:2000],
+                "cost_usd": float(total_cost),
+                "_already_charged": True,
+                "iterations": iteration + 1
+            }
 
         # Handle tool use
         elif response.stop_reason == "tool_use":

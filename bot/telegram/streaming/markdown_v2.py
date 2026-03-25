@@ -97,6 +97,59 @@ def preprocess_unsupported_markdown(text: str) -> str:
     return result
 
 
+def strip_markdown_v2_escaping(text: str) -> str:
+    r"""Strip MarkdownV2 escape sequences to produce clean plain text.
+
+    Used when falling back from MarkdownV2 to plain text (parse_mode=None).
+    Removes backslashes before MarkdownV2 special characters so the user
+    doesn't see raw escape sequences like \-, \., \( in their message.
+
+    Also removes MarkdownV2 structural markers:
+    - Expandable blockquote markers: **> prefix, || suffix
+    - Single > blockquote prefixes
+
+    Args:
+        text: MarkdownV2-escaped text.
+
+    Returns:
+        Clean plain text without escape sequences.
+
+    Examples:
+        >>> strip_markdown_v2_escaping(r"1\+1\=2")
+        '1+1=2'
+        >>> strip_markdown_v2_escaping(r"Hello \(world\)")
+        'Hello (world)'
+    """
+    if not text:
+        return ""
+
+    # Remove backslash before any MarkdownV2 special character
+    # Pattern: \ followed by one of the special chars
+    result = re.sub(r'\\([_*\[\]()~`>#+=|{}.!\-\\])', r'\1', text)
+
+    # Remove expandable blockquote markers:
+    # **> at line start (expandable marker) → remove entirely
+    # > at line start (blockquote prefix) → remove
+    # || at end of last line (expandable end marker) → remove
+    lines = result.split("\n")
+    cleaned_lines: list[str] = []
+    for line in lines:
+        if line.startswith("**>"):
+            cleaned_lines.append(line[3:])
+        elif line.startswith(">"):
+            cleaned_lines.append(line[1:])
+        else:
+            cleaned_lines.append(line)
+
+    result = "\n".join(cleaned_lines)
+
+    # Remove trailing || (expandable blockquote end marker)
+    if result.endswith("||"):
+        result = result[:-2]
+
+    return result
+
+
 def escape_markdown_v2(text: str,
                        context: EscapeContext = EscapeContext.NORMAL) -> str:
     r"""Escape special characters for Telegram MarkdownV2.
