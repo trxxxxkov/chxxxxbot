@@ -14,6 +14,7 @@ NO __init__.py - use direct import:
 from datetime import datetime
 from datetime import timedelta
 from datetime import timezone
+from uuid import uuid4
 
 from cache.thread_cache import invalidate_files
 from config import FILES_API_TTL_HOURS
@@ -86,12 +87,16 @@ async def process_batch(
                     upload_context = processed.text or None
 
                     for file in processed.files:
+                        # Generate placeholder if Files API upload failed
+                        # DB requires non-null unique claude_file_id
+                        db_claude_file_id = (file.claude_file_id
+                                             or f"unavailable:{uuid4().hex}")
                         await file_repo.create(
                             message_id=processed.metadata.message_id,
                             telegram_file_id=file.telegram_file_id,
                             telegram_file_unique_id=file.
                             telegram_file_unique_id,
-                            claude_file_id=file.claude_file_id,
+                            claude_file_id=db_claude_file_id,
                             filename=file.filename,
                             file_type=_media_type_to_file_type(file.file_type),
                             mime_type=file.mime_type,

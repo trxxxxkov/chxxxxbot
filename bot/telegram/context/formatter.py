@@ -306,30 +306,34 @@ class ContextFormatter:
 
         # Add file blocks first (images, then PDFs)
         for file in files:
-            if not file.claude_file_id:
-                continue
+            # Check if Files API ID is available
+            # Placeholder IDs (unavailable:*) mean upload failed
+            has_valid_file_id = (file.claude_file_id and
+                                 not file.claude_file_id.startswith(
+                                     "unavailable:"))
+
+            if not has_valid_file_id and not file.telegram_file_id:
+                continue  # No way to reference this file
 
             if file.file_type == FileType.IMAGE:
-                block: dict[str, Any] = {
-                    "type": "image",
-                    "source": {
+                block: dict[str, Any] = {"type": "image"}
+                if has_valid_file_id:
+                    block["source"] = {
                         "type": "file",
                         "file_id": file.claude_file_id,
-                    },
-                }
+                    }
                 if file.telegram_file_id:
                     block["telegram_file_id"] = file.telegram_file_id
                 if file.mime_type:
                     block["mime_type"] = file.mime_type
                 content_blocks.append(block)
             elif file.file_type == FileType.PDF:
-                block = {
-                    "type": "document",
-                    "source": {
+                block = {"type": "document"}
+                if has_valid_file_id:
+                    block["source"] = {
                         "type": "file",
                         "file_id": file.claude_file_id,
-                    },
-                }
+                    }
                 if file.telegram_file_id:
                     block["telegram_file_id"] = file.telegram_file_id
                 if file.mime_type:

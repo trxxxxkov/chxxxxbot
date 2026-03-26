@@ -211,11 +211,12 @@ class TestMultimodalFormatting:
         mock_repo.get_by_message_id.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_file_without_claude_id_skipped(self, formatter, mock_session,
-                                                  user_message):
-        """Files without claude_file_id are skipped."""
+    async def test_file_without_claude_id_or_telegram_id_skipped(
+            self, formatter, mock_session, user_message):
+        """Files without both claude_file_id and telegram_file_id are skipped."""
         bad_file = MagicMock(spec=UserFile)
         bad_file.claude_file_id = None  # No Claude ID
+        bad_file.telegram_file_id = None  # No Telegram ID either
         bad_file.file_type = FileType.IMAGE
 
         mock_repo = AsyncMock()
@@ -229,10 +230,41 @@ class TestMultimodalFormatting:
                 [user_message], mock_session)
 
         msg = result[0]
-        # Should return text only since file has no claude_id
+        # Should return text only since file has no references
         assert isinstance(msg.content, list)
         assert len(msg.content) == 1
         assert msg.content[0]["type"] == "text"
+
+    @pytest.mark.asyncio
+    async def test_file_without_claude_id_included_with_telegram_id(
+            self, formatter, mock_session, user_message):
+        """Files without claude_file_id but with telegram_file_id are included.
+
+        Google provider resolves files via telegram_file_id from Redis cache.
+        """
+        file_no_claude = MagicMock(spec=UserFile)
+        file_no_claude.claude_file_id = None
+        file_no_claude.telegram_file_id = "tg_file_123"
+        file_no_claude.file_type = FileType.IMAGE
+        file_no_claude.mime_type = "image/jpeg"
+
+        mock_repo = AsyncMock()
+        mock_repo.get_by_message_id.return_value = [file_no_claude]
+
+        with patch(
+                "db.repositories.user_file_repository.UserFileRepository",
+                return_value=mock_repo,
+        ):
+            result = await formatter.format_conversation_with_files(
+                [user_message], mock_session)
+
+        msg = result[0]
+        assert isinstance(msg.content, list)
+        assert len(msg.content) == 2
+        image_block = msg.content[0]
+        assert image_block["type"] == "image"
+        assert "source" not in image_block  # No Files API source
+        assert image_block["telegram_file_id"] == "tg_file_123"
 
     @pytest.mark.asyncio
     async def test_conversation_preserves_order(self, formatter, mock_session,
@@ -327,12 +359,13 @@ class TestBuildMultimodalContent:
         assert len(blocks) == 1
         assert blocks[0]["type"] == "image"
 
-    def test_files_without_claude_id_skipped(self):
-        """Files without claude_file_id are not included."""
+    def test_files_without_any_id_skipped(self):
+        """Files without both claude_file_id and telegram_file_id are skipped."""
         formatter = ContextFormatter()
 
         bad_file = MagicMock(spec=UserFile)
         bad_file.claude_file_id = None
+        bad_file.telegram_file_id = None
         bad_file.file_type = FileType.IMAGE
 
         blocks = formatter._build_multimodal_content([bad_file], "text")
@@ -340,3 +373,21 @@ class TestBuildMultimodalContent:
         # Only text block should be present
         assert len(blocks) == 1
         assert blocks[0]["type"] == "text"
+
+    def test_files_with_unavailable_claude_id_included(self):
+        """Files with unavailable claude_file_id but telegram_file_id included."""
+        formatter = ContextFormatter()
+
+        file = MagicMock(spec=UserFile)
+        file.claude_file_id = "unavailable:abc123"
+        file.telegram_file_id = "tg_file_456"
+        file.file_type = FileType.IMAGE
+        file.mime_type = "image/jpeg"
+
+        blocks = formatter._build_multimodal_content([file], "text")
+
+        # Image + text blocks
+        assert len(blocks) == 2
+        assert blocks[0]["type"] == "image"
+        assert "source" not in blocks[0]  # No Files API source
+        assert blocks[0]["telegram_file_id"] == "tg_file_456"

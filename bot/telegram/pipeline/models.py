@@ -75,7 +75,7 @@ class UploadedFile:  # pylint: disable=too-many-instance-attributes
     to the Files API. The claude_file_id is guaranteed to be valid.
 
     Attributes:
-        claude_file_id: Files API ID (ready to use in message content).
+        claude_file_id: Files API ID (None if upload failed/skipped).
         telegram_file_id: Telegram file ID (for DB reference).
         telegram_file_unique_id: Telegram unique file ID (for dedup).
         file_type: Media type classification.
@@ -85,7 +85,7 @@ class UploadedFile:  # pylint: disable=too-many-instance-attributes
         metadata: Additional metadata (width/height, duration, etc).
     """
 
-    claude_file_id: str
+    claude_file_id: Optional[str]
     telegram_file_id: str
     telegram_file_unique_id: str
     file_type: MediaType

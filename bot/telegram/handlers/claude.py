@@ -336,10 +336,12 @@ async def _process_batch_with_session(
                     else:
                         # Generate file mention
                         file = processed.files[0]
+                        file_ref = (file.claude_file_id
+                                    or file.telegram_file_id or "cached")
                         text_content = (
                             f"📎 User uploaded {file.file_type.value}: "
                             f"{file.filename} ({file.size_bytes} bytes) "
-                            f"[file_id: {file.claude_file_id}]")
+                            f"[file_id: {file_ref}]")
                 else:
                     # Regular text message
                     text_content = processed.text or ""

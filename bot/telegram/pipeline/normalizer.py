@@ -352,12 +352,13 @@ class MessageNormalizer:
         file_id: str,
         filename: str,
         mime_type: str,
-    ) -> tuple[bytes, str]:
-        """Download file and upload to Files API in parallel where possible.
+    ) -> tuple[bytes, Optional[str]]:
+        """Download file, cache in Redis, and upload to Files API.
 
-        Optimized flow:
+        Flow:
         1. Download file from Telegram
-        2. Parallel: cache in Redis + upload to Files API (~100-200ms savings)
+        2. Cache in Redis (always - needed for Google provider)
+        3. Try Files API upload (non-fatal if it fails)
 
         Args:
             message: Telegram message (for bot access).
@@ -366,10 +367,10 @@ class MessageNormalizer:
             mime_type: MIME type for Files API upload.
 
         Returns:
-            Tuple of (file_content, claude_file_id).
+            Tuple of (file_content, claude_file_id or None).
 
         Raises:
-            ValueError: If download or upload fails.
+            ValueError: If download fails.
         """
         # Step 1: Download from Telegram
         file_info = await message.bot.get_file(file_id)
@@ -380,16 +381,27 @@ class MessageNormalizer:
 
         content = file_bytes_io.read()
 
-        # Step 2: Parallel cache + upload (~100-200ms latency savings)
-        # Both operations are independent after download completes
-        _, claude_file_id = await asyncio.gather(
-            cache_file(file_id, content, filename=filename),
-            upload_to_files_api(
+        # Step 2: Cache in Redis (always needed for Google inline resolution)
+        await cache_file(file_id, content, filename=filename)
+
+        # Step 3: Try Files API upload (non-fatal)
+        # Google models don't need Files API - they use cached bytes.
+        # If upload fails, the file is still usable via Redis cache.
+        try:
+            claude_file_id = await upload_to_files_api(
                 file_bytes=content,
                 filename=filename,
                 mime_type=mime_type,
-            ),
-        )
+            )
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.warning(
+                "normalizer.files_api_upload_skipped",
+                filename=filename,
+                file_id=file_id,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+            claude_file_id = None
 
         return content, claude_file_id
 
@@ -817,11 +829,23 @@ class MessageNormalizer:
                                                   filename=filename)
             doc_bytes, mime_type, filename = self._convert_image_to_jpeg(
                 doc_bytes, mime_type, filename)
-            claude_file_id = await upload_to_files_api(
-                file_bytes=doc_bytes,
-                filename=filename,
-                mime_type=mime_type,
-            )
+            # Cache converted bytes for Google inline resolution
+            await cache_file(document.file_id, doc_bytes, filename=filename)
+            try:
+                claude_file_id = await upload_to_files_api(
+                    file_bytes=doc_bytes,
+                    filename=filename,
+                    mime_type=mime_type,
+                )
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                logger.warning(
+                    "normalizer.files_api_upload_skipped",
+                    filename=filename,
+                    file_id=document.file_id,
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
+                claude_file_id = None
         else:
             # Standard path: download, cache and upload in parallel
             doc_bytes, claude_file_id = await self._download_and_upload(

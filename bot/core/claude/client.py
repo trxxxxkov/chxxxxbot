@@ -86,10 +86,21 @@ def _filter_empty_messages(messages: list) -> list:
         # Safety net: sanitize list content blocks before sending to API
         # Primary sanitization happens in orchestrator, this catches edge cases
         if isinstance(content, list):
-            content = [
-                serialize_content_block(block) if isinstance(block, dict)
-                or hasattr(block, 'model_dump') else block for block in content
-            ]
+            sanitized = []
+            for block in content:
+                if isinstance(block, dict) or hasattr(block, 'model_dump'):
+                    serialized = serialize_content_block(block)
+                    # Skip image/document blocks without source
+                    # (Files API upload failed - only usable by Google
+                    #  via telegram_file_id inline resolution)
+                    if (isinstance(serialized, dict)
+                            and serialized.get("type") in ("image", "document")
+                            and "source" not in serialized):
+                        continue
+                    sanitized.append(serialized)
+                else:
+                    sanitized.append(block)
+            content = sanitized
         result.append({"role": msg.role, "content": content})
     return result
 
@@ -185,20 +196,19 @@ class ClaudeProvider(LLMProvider):
             api_key: Anthropic API key.
         """
         # Beta headers for advanced features
-        # - interleaved-thinking: Extended Thinking feature
+        # - interleaved-thinking: Extended Thinking (deprecated for Opus 4.6,
+        #   still needed for Sonnet 4.6 and Haiku 4.5)
         # - context-management: Context editing (thinking block clearing)
         # - compact: Server-side compaction (Opus 4.6)
         # - files-api: Files API for multimodal content
-        # - code-execution-web-tools: Dynamic filtering for web search/fetch
-        # Note: effort, web-search, extended-cache-ttl are now GA
+        # Note: effort, web-search, extended-cache-ttl, web tools are now GA
         self.client = anthropic.AsyncAnthropic(
             api_key=api_key,
             default_headers={
                 "anthropic-beta": ("interleaved-thinking-2025-05-14,"
                                    "context-management-2025-06-27,"
                                    "compact-2026-01-12,"
-                                   "files-api-2025-04-14,"
-                                   "code-execution-web-tools-2026-02-09")
+                                   "files-api-2025-04-14")
             })
         self.last_usage: Optional[TokenUsage] = None
         self.last_message: Optional[
@@ -216,7 +226,7 @@ class ClaudeProvider(LLMProvider):
         logger.debug("claude_provider.initialized",
                      beta_features=[
                          "interleaved-thinking", "context-management",
-                         "compact", "files-api", "code-execution-web-tools"
+                         "compact", "files-api"
                      ])
 
     def reset_cache_accumulator(self):

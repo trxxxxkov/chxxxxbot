@@ -33,10 +33,10 @@ RUN pip install --no-cache-dir \
     sqlalchemy[asyncio]>=2.0.0 \
     asyncpg>=0.29.0 \
     alembic>=1.13.0 \
-    anthropic>=0.83.0 \
+    anthropic>=0.86.0 \
     openai>=1.0.0 \
     e2b-code-interpreter>=1.0.0 \
-    google-genai>=1.0.0 \
+    google-genai>=1.68.0 \
     pillow>=10.0.0 \
     pillow-heif>=0.18.0 \
     matplotlib>=3.8.0 \
