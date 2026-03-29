@@ -28,6 +28,59 @@ from utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
 
+# Max image dimension for Files API (multi-image requests).
+# Claude API rejects images > 2000px when many images are in context.
+_MAX_IMAGE_DIM = 2000
+
+
+def _downscale_image_bytes(
+    file_bytes: bytes,
+    mime_type: str,
+    max_dim: int = _MAX_IMAGE_DIM,
+) -> tuple[bytes, str]:
+    """Downscale image if any dimension exceeds max_dim.
+
+    Args:
+        file_bytes: Original image bytes.
+        mime_type: MIME type of the image.
+        max_dim: Maximum allowed dimension in pixels.
+
+    Returns:
+        Tuple of (possibly resized bytes, mime_type).
+    """
+    try:
+        from io import BytesIO  # pylint: disable=import-outside-toplevel
+
+        from PIL import Image  # pylint: disable=import-outside-toplevel
+
+        img = Image.open(BytesIO(file_bytes))
+        w, h = img.size
+
+        if w <= max_dim and h <= max_dim:
+            return file_bytes, mime_type
+
+        scale = max_dim / max(w, h)
+        new_w = int(w * scale)
+        new_h = int(h * scale)
+        img = img.resize((new_w, new_h), Image.LANCZOS)
+
+        fmt = "PNG" if "png" in mime_type else "JPEG"
+        buf = BytesIO()
+        if fmt == "JPEG" and img.mode in ("RGBA", "P"):
+            img = img.convert("RGB")
+        img.save(buf, format=fmt, quality=85)
+        resized = buf.getvalue()
+
+        logger.info("files.image_downscaled",
+                    original=f"{w}x{h}",
+                    resized=f"{new_w}x{new_h}",
+                    original_size=len(file_bytes),
+                    resized_size=len(resized))
+        return resized, mime_type
+
+    except Exception:  # pylint: disable=broad-exception-caught
+        return file_bytes, mime_type
+
 # Retry settings for network errors
 MAX_SEND_RETRIES = 3
 RETRY_DELAY_SECONDS = 1.0
@@ -122,9 +175,16 @@ async def _process_single_file(
                                         telegram_thread_id)
 
         async with manager.uploading(file_type=file_type):
+            # Step 0.5: Downscale images > 2000px for Files API
+            # Claude API rejects oversized images in multi-image requests
+            upload_bytes = file_bytes
+            if db_file_type == FileType.IMAGE:
+                upload_bytes, mime_type = _downscale_image_bytes(
+                    file_bytes, mime_type)
+
             # Step 1: Upload to Files API
             claude_file_id = await upload_to_files_api(
-                file_bytes=file_bytes,
+                file_bytes=upload_bytes,
                 filename=filename,
                 mime_type=mime_type,
             )

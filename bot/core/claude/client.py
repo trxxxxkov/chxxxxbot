@@ -55,6 +55,93 @@ def _is_retriable_server_error(e: anthropic.APIStatusError) -> bool:
     return error_type in ('overloaded_error', 'api_error')
 
 
+def _downscale_base64_image(block: dict, max_dim: int = 2000) -> dict:
+    """Downscale a base64 image block if it exceeds max_dim pixels.
+
+    Claude API rejects images > 2000px in any dimension for multi-image
+    requests. This function resizes such images while preserving aspect ratio.
+
+    Args:
+        block: Image content block with source.type == "base64".
+        max_dim: Maximum allowed dimension in pixels.
+
+    Returns:
+        Original block if within limits, or a new block with resized image.
+    """
+    source = block.get("source", {})
+    if source.get("type") != "base64" or "data" not in source:
+        return block
+
+    try:
+        import base64 as b64
+        from io import BytesIO
+
+        from PIL import Image  # pylint: disable=import-outside-toplevel
+
+        raw = b64.b64decode(source["data"])
+        img = Image.open(BytesIO(raw))
+        w, h = img.size
+
+        if w <= max_dim and h <= max_dim:
+            return block
+
+        # Calculate new dimensions preserving aspect ratio
+        scale = max_dim / max(w, h)
+        new_w = int(w * scale)
+        new_h = int(h * scale)
+
+        img = img.resize((new_w, new_h), Image.LANCZOS)
+
+        # Re-encode to original format
+        media_type = source.get("media_type", "image/png")
+        fmt = "PNG" if "png" in media_type else "JPEG"
+        buf = BytesIO()
+        if fmt == "JPEG" and img.mode in ("RGBA", "P"):
+            img = img.convert("RGB")
+        img.save(buf, format=fmt, quality=85)
+
+        new_block = block.copy()
+        new_source = source.copy()
+        new_source["data"] = b64.b64encode(buf.getvalue()).decode("utf-8")
+        new_block["source"] = new_source
+
+        logger.debug("claude.image_downscaled",
+                     original=f"{w}x{h}",
+                     resized=f"{new_w}x{new_h}")
+        return new_block
+
+    except Exception:  # pylint: disable=broad-exception-caught
+        return block
+
+
+def _downscale_images_in_block(block: dict) -> dict:
+    """Downscale base64 images in a content block (top-level or nested).
+
+    Handles both direct image blocks and images nested inside
+    tool_result content lists.
+    """
+    if block.get("type") == "image":
+        return _downscale_base64_image(block)
+
+    # tool_result blocks may contain nested image blocks
+    if (block.get("type") == "tool_result"
+            and isinstance(block.get("content"), list)):
+        new_content = []
+        changed = False
+        for item in block["content"]:
+            if isinstance(item, dict) and item.get("type") == "image":
+                resized = _downscale_base64_image(item)
+                new_content.append(resized)
+                if resized is not item:
+                    changed = True
+            else:
+                new_content.append(item)
+        if changed:
+            block = block.copy()
+            block["content"] = new_content
+    return block
+
+
 def _filter_empty_messages(messages: list) -> list:
     """Filter out messages with empty content and sanitize blocks.
 
@@ -64,6 +151,9 @@ def _filter_empty_messages(messages: list) -> list:
     Also sanitizes list-based content as a safety net: strips API
     output-only fields (text, citations, parsed_output) from server
     tool result blocks that the API returns but rejects on input.
+
+    Downscales base64 images exceeding 2000px to avoid API rejection
+    on multi-image requests.
 
     Args:
         messages: List of Message objects.
@@ -97,6 +187,10 @@ def _filter_empty_messages(messages: list) -> list:
                             and serialized.get("type") in ("image", "document")
                             and "source" not in serialized):
                         continue
+                    # Downscale oversized base64 images (API limit: 2000px
+                    # per dimension for multi-image requests)
+                    if isinstance(serialized, dict):
+                        serialized = _downscale_images_in_block(serialized)
                     sanitized.append(serialized)
                 else:
                     sanitized.append(block)
