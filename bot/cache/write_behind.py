@@ -20,7 +20,7 @@ import json
 import time
 from typing import Any, Dict, List, Optional
 
-from cache.client import get_redis
+from cache.client import get_redis, record_redis_failure
 from utils.metrics import record_redis_operation_time
 from utils.metrics import record_write_flush
 from utils.metrics import set_write_queue_depth
@@ -119,6 +119,7 @@ async def queue_write(write_type: WriteType, data: Dict[str, Any]) -> bool:
             write_type=write_type.value,
             error=str(e),
         )
+        await record_redis_failure()
         return False
 
 
@@ -135,6 +136,7 @@ async def get_queue_depth() -> int:
     try:
         return await redis.llen(WRITE_QUEUE_KEY)
     except Exception:  # pylint: disable=broad-exception-caught
+        await record_redis_failure()
         return 0
 
 
@@ -184,6 +186,7 @@ async def move_to_dlq(item: Dict[str, Any]) -> bool:
             error=str(e),
             write_type=item.get("type"),
         )
+        await record_redis_failure()
         return False
 
 
@@ -200,6 +203,7 @@ async def get_dlq_depth() -> int:
     try:
         return await redis.llen(WRITE_DLQ_KEY)
     except Exception:  # pylint: disable=broad-exception-caught
+        await record_redis_failure()
         return 0
 
 
@@ -256,6 +260,7 @@ async def requeue_failed_items(failed_items: List[Dict[str, Any]]) -> int:
                 write_type=item.get("type"),
                 error=str(e),
             )
+            await record_redis_failure()
 
     return requeued
 
@@ -276,6 +281,7 @@ async def flush_writes_batch() -> tuple[List[Dict[str, Any]], int]:
     try:
         queue_depth = await redis.llen(WRITE_QUEUE_KEY)
     except Exception:  # pylint: disable=broad-exception-caught
+        await record_redis_failure()
         queue_depth = 0
 
     batch_size = get_adaptive_batch_size(queue_depth)
@@ -292,6 +298,7 @@ async def flush_writes_batch() -> tuple[List[Dict[str, Any]], int]:
 
     except Exception as e:  # pylint: disable=broad-exception-caught
         logger.error("write_behind.get_batch_error", error=str(e))
+        await record_redis_failure()
         return writes, batch_size
 
 
@@ -783,6 +790,7 @@ async def _auto_replay_dlq(log) -> None:
 
     except Exception as e:  # pylint: disable=broad-exception-caught
         log.error("write_behind.dlq_replay_error", error=str(e))
+        await record_redis_failure()
 
 
 async def write_behind_task(log) -> None:
