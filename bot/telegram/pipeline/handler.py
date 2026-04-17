@@ -165,6 +165,14 @@ async def handle_message(message: types.Message, session: AsyncSession) -> None:
             normalize_ms=round(normalize_ms, 2),
         )
 
+        # Mark normalization complete right after I/O finishes.
+        # This must happen before queue.add() (which waits for pending
+        # normalizations) to avoid self-deadlock, and as early as possible
+        # so other messages' queue waits don't block on our topic routing
+        # and thread resolution.
+        await tracker.finish(chat_id, message.message_id)
+        normalization_finished = True
+
         # 2. Charge transcription + topic routing (parallel when both needed)
         override_thread_id = None
         route_title = None
@@ -229,14 +237,7 @@ async def handle_message(message: types.Message, session: AsyncSession) -> None:
             thread_resolve_ms=round(thread_resolve_ms, 2),
         )
 
-        # 4. Mark normalization complete BEFORE adding to queue
-        # This must happen before queue.add() because add() waits for
-        # pending normalizations. If we wait until finally block, we get
-        # deadlock: all messages wait for each other's finish().
-        await tracker.finish(chat_id, message.message_id)
-        normalization_finished = True
-
-        # 5. Add to queue
+        # 4. Add to queue
         queue = get_queue()
         await queue.add(thread_id=thread.id, message=processed)
 

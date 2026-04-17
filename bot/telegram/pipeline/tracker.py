@@ -154,12 +154,13 @@ class NormalizationTracker:
             return True
 
         except asyncio.TimeoutError:
-            remaining = len(self._pending.get(chat_id, set()))
+            pending_set = self._pending.get(chat_id, set())
             logger.warning(
                 "normalization_tracker.wait_timeout",
                 chat_id=chat_id,
-                remaining=remaining,
+                remaining=len(pending_set),
                 timeout=timeout,
+                pending_message_ids=list(pending_set),
             )
             return False
 

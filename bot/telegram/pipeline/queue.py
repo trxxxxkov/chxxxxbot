@@ -153,8 +153,9 @@ class ProcessedMessageQueue:
             )
             await self._wait_for_media_group(str(media_group_id))
             # After media group complete, wait for normalizations
-            # 3 seconds is enough: files normalize in parallel (~1-2s each)
-            await self._wait_for_pending_normalizations(chat_id, timeout=3.0)
+            # 5 seconds: files normalize in parallel but large albums
+            # (6+ photos) can have one slow download
+            await self._wait_for_pending_normalizations(chat_id, timeout=5.0)
         else:
             # All messages: delay to collect related messages
             # - Text may be split by Telegram (~100ms between parts)
