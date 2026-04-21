@@ -172,7 +172,38 @@ async def execute_google_search(
                 config=config,
             )
 
-        response = await asyncio.to_thread(_sync_generate)
+        # Retry on transient server errors (503 UNAVAILABLE, 500, 504).
+        # Google's search models see bursty demand spikes; a short backoff
+        # usually recovers without the user seeing a failure.
+        max_retries = 3
+        retry_delays = (2, 5, 10)
+        response = None
+        for attempt in range(max_retries + 1):
+            try:
+                response = await asyncio.to_thread(_sync_generate)
+                break
+            except Exception as retry_exc:  # pylint: disable=broad-exception-caught
+                err_msg = str(retry_exc)
+                is_retriable = (
+                    "503" in err_msg
+                    or "UNAVAILABLE" in err_msg
+                    or "500 INTERNAL" in err_msg
+                    or "504" in err_msg
+                    or "DEADLINE_EXCEEDED" in err_msg
+                )
+                if is_retriable and attempt < max_retries:
+                    delay = retry_delays[attempt]
+                    logger.warning(
+                        "google_search.server_error_retry",
+                        user_id=user_id,
+                        attempt=attempt + 1,
+                        max_attempts=max_retries + 1,
+                        delay_seconds=delay,
+                        error=err_msg[:200],
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                raise
 
         # Extract text from response
         response_text = ""

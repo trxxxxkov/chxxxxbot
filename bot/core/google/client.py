@@ -39,6 +39,34 @@ logger = get_logger(__name__)
 # Sentinel for async stream iteration (cannot use None — could be a valid value)
 _STREAM_DONE = object()
 
+# Retry configuration for transient server errors (503 UNAVAILABLE, 500, 504)
+# Matches Claude client pattern (max_retries=3, delays [2, 5, 10])
+_RETRY_MAX_ATTEMPTS = 3
+_RETRY_DELAYS = (2, 5, 10)
+
+
+def _is_retriable_google_error(error_msg: str) -> bool:
+    """Check if a Google API error is a retriable transient server error.
+
+    Retriable errors (server-side, transient):
+    - HTTP 503 UNAVAILABLE (model overloaded / high demand)
+    - HTTP 500 INTERNAL (internal server error)
+    - HTTP 504 DEADLINE_EXCEEDED (server-side timeout)
+
+    Args:
+        error_msg: Stringified error message from google.genai.errors.
+
+    Returns:
+        True if the error should be retried with backoff.
+    """
+    return (
+        "503" in error_msg
+        or "UNAVAILABLE" in error_msg
+        or "500 INTERNAL" in error_msg
+        or "504" in error_msg
+        or "DEADLINE_EXCEEDED" in error_msg
+    )
+
 
 def _convert_tools_for_google(tools: list[dict]) -> list[dict]:
     """Convert tool definitions from Anthropic format to Google format.
@@ -590,11 +618,13 @@ class GeminiProvider(LLMProvider):
         )
 
         start_time = time.perf_counter()
+        has_yielded = False
 
-        # Stream response
-        try:
-            client = get_google_client()
-
+        # Retry loop for transient server errors (503/500/504).
+        # Only safe to retry before any events are yielded to the caller —
+        # mid-stream errors must fail because partial data was observed.
+        for attempt in range(_RETRY_MAX_ATTEMPTS + 1):
+            # Reset accumulators before each attempt
             response_text = ""
             thinking_text = ""
             assistant_parts = []
@@ -604,217 +634,250 @@ class GeminiProvider(LLMProvider):
             cache_read_tokens = 0
             grounding_requests = 0
 
-            def _sync_stream():
-                return client.models.generate_content_stream(
-                    model=model_config.model_id,
-                    contents=google_contents,
-                    config=generate_config,
-                )
+            # Stream response
+            try:
+                client = get_google_client()
 
-            # Run sync streaming in thread
-            stream_iter = await asyncio.to_thread(_sync_stream)
+                def _sync_stream():
+                    return client.models.generate_content_stream(
+                        model=model_config.model_id,
+                        contents=google_contents,
+                        config=generate_config,
+                    )
 
-            # Iterate asynchronously: each next() runs in the thread
-            # pool so the event loop stays free between chunks (unlike
-            # a bare ``for chunk in stream_iter`` which would block).
-            loop = asyncio.get_running_loop()
-            while True:
-                chunk = await loop.run_in_executor(
-                    None, next, stream_iter, _STREAM_DONE)
-                if chunk is _STREAM_DONE:
-                    break
-                if not chunk.candidates:
-                    # Check for usage metadata on final chunk
+                # Run sync streaming in thread
+                stream_iter = await asyncio.to_thread(_sync_stream)
+
+                # Iterate asynchronously: each next() runs in the thread
+                # pool so the event loop stays free between chunks (unlike
+                # a bare ``for chunk in stream_iter`` which would block).
+                loop = asyncio.get_running_loop()
+                while True:
+                    chunk = await loop.run_in_executor(
+                        None, next, stream_iter, _STREAM_DONE)
+                    if chunk is _STREAM_DONE:
+                        break
+                    if not chunk.candidates:
+                        # Check for usage metadata on final chunk
+                        if hasattr(chunk, 'usage_metadata') and chunk.usage_metadata:
+                            meta = chunk.usage_metadata
+                            input_tokens = getattr(meta, 'prompt_token_count', 0) or 0
+                            output_tokens = getattr(meta, 'candidates_token_count', 0) or 0
+                            thinking_tokens = getattr(meta, 'thoughts_token_count', 0) or 0
+                            cache_read_tokens = getattr(meta, 'cached_content_token_count', 0) or 0
+                        continue
+
+                    candidate = chunk.candidates[0]
+
+                    # Extract usage metadata
                     if hasattr(chunk, 'usage_metadata') and chunk.usage_metadata:
                         meta = chunk.usage_metadata
                         input_tokens = getattr(meta, 'prompt_token_count', 0) or 0
                         output_tokens = getattr(meta, 'candidates_token_count', 0) or 0
                         thinking_tokens = getattr(meta, 'thoughts_token_count', 0) or 0
                         cache_read_tokens = getattr(meta, 'cached_content_token_count', 0) or 0
-                    continue
 
-                candidate = chunk.candidates[0]
+                    # Check finish reason
+                    finish_reason = getattr(candidate, 'finish_reason', None)
 
-                # Extract usage metadata
-                if hasattr(chunk, 'usage_metadata') and chunk.usage_metadata:
-                    meta = chunk.usage_metadata
-                    input_tokens = getattr(meta, 'prompt_token_count', 0) or 0
-                    output_tokens = getattr(meta, 'candidates_token_count', 0) or 0
-                    thinking_tokens = getattr(meta, 'thoughts_token_count', 0) or 0
-                    cache_read_tokens = getattr(meta, 'cached_content_token_count', 0) or 0
+                    if not candidate.content or not candidate.content.parts:
+                        continue
 
-                # Check finish reason
-                finish_reason = getattr(candidate, 'finish_reason', None)
+                    for part in candidate.content.parts:
+                        # Handle thinking
+                        if getattr(part, 'thought', False) and part.text:
+                            thinking_text += part.text
+                            has_yielded = True
+                            yield StreamEvent(
+                                type="thinking_delta",
+                                content=part.text,
+                            )
 
-                if not candidate.content or not candidate.content.parts:
-                    continue
+                        # Handle function calls
+                        elif part.function_call:
+                            fc = part.function_call
+                            tool_id = f"google_{uuid.uuid4().hex[:12]}"
+                            tool_input = {}
+                            if fc.args:
+                                # fc.args may be a proto MapComposite or dict
+                                if hasattr(fc.args, 'items'):
+                                    tool_input = dict(fc.args.items())
+                                elif isinstance(fc.args, dict):
+                                    tool_input = fc.args
 
-                for part in candidate.content.parts:
-                    # Handle thinking
-                    if getattr(part, 'thought', False) and part.text:
-                        thinking_text += part.text
-                        yield StreamEvent(
-                            type="thinking_delta",
-                            content=part.text,
-                        )
-
-                    # Handle function calls
-                    elif part.function_call:
-                        fc = part.function_call
-                        tool_id = f"google_{uuid.uuid4().hex[:12]}"
-                        tool_input = {}
-                        if fc.args:
-                            # fc.args may be a proto MapComposite or dict
-                            if hasattr(fc.args, 'items'):
-                                tool_input = dict(fc.args.items())
-                            elif isinstance(fc.args, dict):
-                                tool_input = fc.args
-
-                        fc_part = {
-                            "function_call": {
-                                "name": fc.name,
-                                "args": tool_input,
+                            fc_part = {
+                                "function_call": {
+                                    "name": fc.name,
+                                    "args": tool_input,
+                                }
                             }
-                        }
 
-                        # Preserve thought signature for Gemini 3
-                        # Required for function calling multi-turn
-                        thought_sig = getattr(
-                            part, 'thought_signature', None)
-                        if thought_sig:
-                            fc_part["thought_signature"] = thought_sig
+                            # Preserve thought signature for Gemini 3
+                            # Required for function calling multi-turn
+                            thought_sig = getattr(
+                                part, 'thought_signature', None)
+                            if thought_sig:
+                                fc_part["thought_signature"] = thought_sig
 
-                        assistant_parts.append(fc_part)
+                            assistant_parts.append(fc_part)
 
-                        yield StreamEvent(
-                            type="tool_use",
-                            tool_name=fc.name,
-                            tool_id=tool_id,
-                        )
-                        yield StreamEvent(
-                            type="block_end",
-                            tool_name=fc.name,
-                            tool_id=tool_id,
-                            tool_input=tool_input,
-                        )
+                            has_yielded = True
+                            yield StreamEvent(
+                                type="tool_use",
+                                tool_name=fc.name,
+                                tool_id=tool_id,
+                            )
+                            yield StreamEvent(
+                                type="block_end",
+                                tool_name=fc.name,
+                                tool_id=tool_id,
+                                tool_input=tool_input,
+                            )
 
-                    # Handle text
-                    elif part.text and not getattr(part, 'thought', False):
-                        response_text += part.text
-                        text_part = {"text": part.text}
-                        # Preserve thought signature on text parts too
-                        thought_sig = getattr(
-                            part, 'thought_signature', None)
-                        if thought_sig:
-                            text_part["thought_signature"] = thought_sig
-                        assistant_parts.append(text_part)
-                        yield StreamEvent(
-                            type="text_delta",
-                            content=part.text,
-                        )
+                        # Handle text
+                        elif part.text and not getattr(part, 'thought', False):
+                            response_text += part.text
+                            text_part = {"text": part.text}
+                            # Preserve thought signature on text parts too
+                            thought_sig = getattr(
+                                part, 'thought_signature', None)
+                            if thought_sig:
+                                text_part["thought_signature"] = thought_sig
+                            assistant_parts.append(text_part)
+                            has_yielded = True
+                            yield StreamEvent(
+                                type="text_delta",
+                                content=part.text,
+                            )
 
-                # Track grounding metadata (outside parts loop)
-                # grounding_metadata is on the candidate, not on individual parts
-                g_meta = getattr(candidate, 'grounding_metadata', None)
-                if g_meta and getattr(g_meta, 'grounding_chunks', None):
-                    grounding_requests += 1
+                    # Track grounding metadata (outside parts loop)
+                    # grounding_metadata is on the candidate, not on individual parts
+                    g_meta = getattr(candidate, 'grounding_metadata', None)
+                    if g_meta and getattr(g_meta, 'grounding_chunks', None):
+                        grounding_requests += 1
 
-            # Determine stop reason
-            stop_reason = "end_turn"
-            if assistant_parts and any(
-                "function_call" in p for p in assistant_parts
-            ):
-                stop_reason = "tool_use"
+                # Determine stop reason
+                stop_reason = "end_turn"
+                if assistant_parts and any(
+                    "function_call" in p for p in assistant_parts
+                ):
+                    stop_reason = "tool_use"
 
-            self._last_stop_reason = stop_reason
-            self._last_thinking = thinking_text if thinking_text else None
-            self._last_assistant_content = assistant_parts if assistant_parts else None
+                self._last_stop_reason = stop_reason
+                self._last_thinking = thinking_text if thinking_text else None
+                self._last_assistant_content = assistant_parts if assistant_parts else None
 
-            # Build usage (grounding_requests maps to web_search_requests
-            # for unified cost tracking in the handler)
-            self._last_usage = TokenUsage(
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-                thinking_tokens=thinking_tokens,
-                cache_read_tokens=cache_read_tokens,
-                cache_creation_tokens=self._last_cache_creation_tokens,
-                web_search_requests=grounding_requests,
-            )
-
-            elapsed = time.perf_counter() - start_time
-            logger.info(
-                "gemini.stream_events.complete",
-                model=model_config.model_id,
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-                thinking_tokens=thinking_tokens,
-                cache_read_tokens=cache_read_tokens,
-                grounding_requests=grounding_requests,
-                stop_reason=stop_reason,
-                using_cache=cache_name is not None,
-                elapsed_ms=round(elapsed * 1000, 2),
-            )
-
-            # Yield completion events
-            yield StreamEvent(
-                type="message_end",
-                stop_reason=stop_reason,
-            )
-            yield StreamEvent(
-                type="stream_complete",
-                usage=self._last_usage,
-                thinking=self._last_thinking,
-            )
-
-        except Exception as e:
-            error_type = type(e).__name__
-            error_msg = str(e)
-            logger.error(
-                "gemini.stream_events.error",
-                model=model_config.model_id,
-                error_type=error_type,
-                error=error_msg[:500],
-                using_cache=cache_name is not None,
-            )
-
-            # Invalidate cache on cache-related errors (expired, not found)
-            if cache_name and ("cachedContent" in error_msg
-                               or "NOT_FOUND" in error_msg
-                               or "cached" in error_msg.lower()):
-                self._content_caches = {
-                    k: v for k, v in self._content_caches.items()
-                    if v[0] != cache_name
-                }
-                logger.warning(
-                    "gemini.cache.invalidated",
-                    cache_name=cache_name,
-                    error=error_msg[:200],
+                # Build usage (grounding_requests maps to web_search_requests
+                # for unified cost tracking in the handler)
+                self._last_usage = TokenUsage(
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    thinking_tokens=thinking_tokens,
+                    cache_read_tokens=cache_read_tokens,
+                    cache_creation_tokens=self._last_cache_creation_tokens,
+                    web_search_requests=grounding_requests,
                 )
 
-            # Map Google errors to our exception types
-            if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
-                raise RateLimitError(
-                    f"Google API rate limit: {error_msg}") from e
-            if "503" in error_msg or "UNAVAILABLE" in error_msg:
-                raise OverloadedError(
-                    f"Google API overloaded: {error_msg}") from e
-            if "timeout" in error_msg.lower():
-                raise APITimeoutError(
-                    f"Google API timeout: {error_msg}") from e
-            if "connection" in error_msg.lower():
-                raise APIConnectionError(
-                    f"Google API connection error: {error_msg}") from e
-            if "PERMISSION_DENIED" in error_msg or "403" in error_msg:
-                raise APIConnectionError(
-                    f"Google API permission denied: {error_msg}") from e
-            if "UNAUTHENTICATED" in error_msg or "401" in error_msg:
-                raise APIConnectionError(
-                    f"Google API authentication error: {error_msg}") from e
-            if "INVALID_ARGUMENT" in error_msg or "400" in error_msg:
-                raise InvalidModelError(
-                    f"Google API invalid request: {error_msg}") from e
+                elapsed = time.perf_counter() - start_time
+                logger.info(
+                    "gemini.stream_events.complete",
+                    model=model_config.model_id,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    thinking_tokens=thinking_tokens,
+                    cache_read_tokens=cache_read_tokens,
+                    grounding_requests=grounding_requests,
+                    stop_reason=stop_reason,
+                    using_cache=cache_name is not None,
+                    attempt=attempt + 1,
+                    elapsed_ms=round(elapsed * 1000, 2),
+                )
 
-            raise
+                # Yield completion events
+                yield StreamEvent(
+                    type="message_end",
+                    stop_reason=stop_reason,
+                )
+                yield StreamEvent(
+                    type="stream_complete",
+                    usage=self._last_usage,
+                    thinking=self._last_thinking,
+                )
+
+                # Success — exit retry loop
+                return
+
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                error_type = type(e).__name__
+                error_msg = str(e)
+
+                # Retry transient server errors when safe.
+                # Only retry if no events have been yielded to the caller.
+                if (_is_retriable_google_error(error_msg)
+                        and not has_yielded
+                        and attempt < _RETRY_MAX_ATTEMPTS):
+                    delay = _RETRY_DELAYS[attempt]
+                    logger.warning(
+                        "gemini.stream_events.server_error_retry",
+                        model=model_config.model_id,
+                        attempt=attempt + 1,
+                        max_attempts=_RETRY_MAX_ATTEMPTS + 1,
+                        delay_seconds=delay,
+                        error_type=error_type,
+                        error=error_msg[:200],
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+
+                # Non-retriable, mid-stream, or attempts exhausted
+                logger.error(
+                    "gemini.stream_events.error",
+                    model=model_config.model_id,
+                    error_type=error_type,
+                    error=error_msg[:500],
+                    using_cache=cache_name is not None,
+                    attempts=attempt + 1,
+                    has_yielded=has_yielded,
+                )
+
+                # Invalidate cache on cache-related errors (expired, not found)
+                if cache_name and ("cachedContent" in error_msg
+                                   or "NOT_FOUND" in error_msg
+                                   or "cached" in error_msg.lower()):
+                    self._content_caches = {
+                        k: v for k, v in self._content_caches.items()
+                        if v[0] != cache_name
+                    }
+                    logger.warning(
+                        "gemini.cache.invalidated",
+                        cache_name=cache_name,
+                        error=error_msg[:200],
+                    )
+
+                # Map Google errors to our exception types
+                if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
+                    raise RateLimitError(
+                        f"Google API rate limit: {error_msg}") from e
+                if "503" in error_msg or "UNAVAILABLE" in error_msg:
+                    raise OverloadedError(
+                        f"Google API overloaded: {error_msg}") from e
+                if "timeout" in error_msg.lower():
+                    raise APITimeoutError(
+                        f"Google API timeout: {error_msg}") from e
+                if "connection" in error_msg.lower():
+                    raise APIConnectionError(
+                        f"Google API connection error: {error_msg}") from e
+                if "PERMISSION_DENIED" in error_msg or "403" in error_msg:
+                    raise APIConnectionError(
+                        f"Google API permission denied: {error_msg}") from e
+                if "UNAUTHENTICATED" in error_msg or "401" in error_msg:
+                    raise APIConnectionError(
+                        f"Google API authentication error: {error_msg}") from e
+                if "INVALID_ARGUMENT" in error_msg or "400" in error_msg:
+                    raise InvalidModelError(
+                        f"Google API invalid request: {error_msg}") from e
+
+                raise
 
     async def get_token_count(self, text: str) -> int:
         """Count tokens using Google's count_tokens API.

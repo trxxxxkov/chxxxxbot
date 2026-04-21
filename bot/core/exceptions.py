@@ -94,14 +94,17 @@ class APITimeoutError(LLMError):
 
 
 class OverloadedError(LLMError):
-    """API server is overloaded (HTTP 529).
+    """API server is overloaded (HTTP 529 for Claude, 503 for Gemini).
 
     Raised when the API returns an overloaded error after retry attempts
     are exhausted. This is a transient condition — the user should retry later.
     """
 
     recoverable = True
-    user_message = "⏳ Claude is currently overloaded. Please try again in a minute."
+    user_message = (
+        "⏳ The AI model is currently overloaded. "
+        "Please try again in a minute."
+    )
     log_level = "warning"
 
 
