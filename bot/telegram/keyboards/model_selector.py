@@ -7,6 +7,7 @@ NO __init__.py - use direct import:
     from telegram.keyboards.model_selector import get_model_keyboard
 """
 
+from aiogram.enums import ButtonStyle
 from aiogram.types import InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from config import get_models_by_provider
@@ -16,6 +17,9 @@ from i18n import get_text
 # Button styles by pricing tier (top = expensive, bottom = cheap)
 # Telegram supports: primary (blue), success (green), danger (red)
 TIER_STYLES = ["success", "primary", "primary"]
+
+# Providers that are temporarily disabled (shown in red, click triggers alert)
+DISABLED_PROVIDERS: set[str] = {"claude"}
 
 
 def _short_name(model: ModelConfig) -> str:
@@ -61,11 +65,13 @@ def get_model_keyboard(current: str) -> InlineKeyboardBuilder:
             model = claude_models[i]
             full_id = model.get_full_id()
             mark = "✅ " if full_id == current else ""
+            is_disabled = model.provider in DISABLED_PROVIDERS
             buttons.append(
                 InlineKeyboardButton(
                     text=f"{mark}{_short_name(model)}",
-                    callback_data=f"model:{full_id}",
-                    style=style,
+                    callback_data=(f"model_unavailable:{full_id}"
+                                   if is_disabled else f"model:{full_id}"),
+                    style=ButtonStyle.DANGER if is_disabled else style,
                 ))
 
         # Right column: Google
@@ -73,11 +79,13 @@ def get_model_keyboard(current: str) -> InlineKeyboardBuilder:
             model = google_models[i]
             full_id = model.get_full_id()
             mark = "✅ " if full_id == current else ""
+            is_disabled = model.provider in DISABLED_PROVIDERS
             buttons.append(
                 InlineKeyboardButton(
                     text=f"{mark}{_short_name(model)}",
-                    callback_data=f"model:{full_id}",
-                    style=style,
+                    callback_data=(f"model_unavailable:{full_id}"
+                                   if is_disabled else f"model:{full_id}"),
+                    style=ButtonStyle.DANGER if is_disabled else style,
                 ))
 
         builder.row(*buttons)

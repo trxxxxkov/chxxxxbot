@@ -321,6 +321,10 @@ MESSAGES: MessageDict = {
         "en": "⚠️ Invalid model selection",
         "ru": "⚠️ Неверный выбор модели",
     },
+    "model.temporarily_unavailable": {
+        "en": "⚠️ Claude models are temporarily unavailable. Please choose a Gemini model.",
+        "ru": "⚠️ Модели Claude временно недоступны. Пожалуйста, выберите модель Gemini.",
+    },
 
     # Model info formatting
     "model.info_provider": {

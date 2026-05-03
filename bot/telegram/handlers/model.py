@@ -212,6 +212,21 @@ async def model_selection_callback(  # pylint: disable=too-many-locals
         get_text("model.changed_to", lang, model_name=new_model.display_name))
 
 
+@router.callback_query(F.data.startswith("model_unavailable:"))
+async def model_unavailable_callback(callback: types.CallbackQuery) -> None:
+    """Handles clicks on temporarily disabled model buttons.
+
+    Shows an alert without changing the user's current model.
+
+    Args:
+        callback: Callback query from a disabled model button.
+    """
+    lang = get_lang(callback.from_user.language_code
+                    if callback.from_user else None)
+    await callback.answer(get_text("model.temporarily_unavailable", lang),
+                          show_alert=True)
+
+
 @router.callback_query(F.data == "noop")
 async def noop_callback(callback: types.CallbackQuery) -> None:
     """Handles no-op callbacks (section headers in keyboards).
