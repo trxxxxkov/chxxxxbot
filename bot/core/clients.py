@@ -195,12 +195,13 @@ def get_google_client():
         from google import genai  # pylint: disable=import-outside-toplevel
         from google.genai import types as genai_types  # pylint: disable=import-outside-toplevel
         api_key = read_secret("google_api_key")
-        # 240s = 4 min; enough for Gemini Pro with thinking, fails fast on hangs.
+        # 600s = 10 min: covers Gemini 3 Pro thinking + tools under load;
+        # 240s was too aggressive — legit Pro responses were timing out at 4 min.
         # HttpOptions.timeout is in milliseconds.
-        http_options = genai_types.HttpOptions(timeout=240_000)
+        http_options = genai_types.HttpOptions(timeout=600_000)
         _google_client = genai.Client(
             api_key=api_key, http_options=http_options)
-        logger.info("clients.google.initialized", timeout_ms=240_000)
+        logger.info("clients.google.initialized", timeout_ms=600_000)
 
     return _google_client
 
