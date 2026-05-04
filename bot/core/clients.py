@@ -182,6 +182,10 @@ def get_openai_async_client():
 def get_google_client():
     """Get Google GenAI client.
 
+    Configured with HTTP timeout to prevent hanging when Gemini is overloaded
+    (the SDK has no default timeout, so calls can hang for 7+ minutes before
+    surfacing 503 UNAVAILABLE errors).
+
     Returns:
         Configured Google client.
     """
@@ -189,9 +193,14 @@ def get_google_client():
 
     if _google_client is None:
         from google import genai  # pylint: disable=import-outside-toplevel
+        from google.genai import types as genai_types  # pylint: disable=import-outside-toplevel
         api_key = read_secret("google_api_key")
-        _google_client = genai.Client(api_key=api_key)
-        logger.info("clients.google.initialized")
+        # 240s = 4 min; enough for Gemini Pro with thinking, fails fast on hangs.
+        # HttpOptions.timeout is in milliseconds.
+        http_options = genai_types.HttpOptions(timeout=240_000)
+        _google_client = genai.Client(
+            api_key=api_key, http_options=http_options)
+        logger.info("clients.google.initialized", timeout_ms=240_000)
 
     return _google_client
 
