@@ -385,9 +385,11 @@ class ClaudeProvider(LLMProvider):
         api_params = {
             "model": model_config.model_id,
             "max_tokens": request.max_tokens,
-            "temperature": request.temperature,
             "messages": api_messages,
         }
+        # Opus 4.7+ rejects temperature/top_p/top_k; omit them for those models
+        if not model_config.has_capability("omit_sampling_params"):
+            api_params["temperature"] = request.temperature
 
         # Add tools if provided
         if request.tools:
@@ -599,9 +601,11 @@ class ClaudeProvider(LLMProvider):
             "model":
                 model_config.model_id,  # e.g., "claude-sonnet-4-6"
             "max_tokens": request.max_tokens,
-            "temperature": request.temperature,
             "messages": api_messages,
         }
+        # Opus 4.7+ rejects temperature/top_p/top_k; omit them for those models
+        if not model_config.has_capability("omit_sampling_params"):
+            api_params["temperature"] = request.temperature
 
         # Phase 1.5: Add tools if provided
         if request.tools:
@@ -1136,9 +1140,11 @@ class ClaudeProvider(LLMProvider):
         api_params = {
             "model": model_config.model_id,
             "max_tokens": request.max_tokens,
-            "temperature": request.temperature,
             "messages": api_messages,
         }
+        # Opus 4.7+ rejects temperature/top_p/top_k; omit them for those models
+        if not model_config.has_capability("omit_sampling_params"):
+            api_params["temperature"] = request.temperature
 
         # Add tools if provided
         if request.tools:

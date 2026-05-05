@@ -84,7 +84,7 @@ class BaseSubagent(ABC):  # pylint: disable=too-many-instance-attributes
         class SelfCritiqueSubagent(BaseSubagent):
             def __init__(self, ...):
                 config = SubagentConfig(
-                    model_id="claude-opus-4-6",
+                    model_id="claude-opus-4-7",
                     system_prompt=CRITICAL_REVIEWER_PROMPT,
                     tools=VERIFICATION_TOOLS,
                 )

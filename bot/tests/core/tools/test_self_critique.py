@@ -68,7 +68,7 @@ def mock_balance_op_repo():
 def mock_model_config():
     """Mock model configuration for Opus."""
     config = Mock()
-    config.model_id = "claude-opus-4-6"
+    config.model_id = "claude-opus-4-7"
     config.pricing_input = 15.0  # $15 per 1M input
     config.pricing_output = 75.0  # $75 per 1M output
     config.pricing_cache_read = None
@@ -120,9 +120,9 @@ class TestCostTracker:
         """Test CostTracker initialization."""
         from core.tools.self_critique import CostTracker
 
-        tracker = CostTracker(model_id="claude-opus-4-6", user_id=12345)
+        tracker = CostTracker(model_id="claude-opus-4-7", user_id=12345)
 
-        assert tracker.model_id == "claude-opus-4-6"
+        assert tracker.model_id == "claude-opus-4-7"
         assert tracker.user_id == 12345
         assert tracker.total_input_tokens == 0
         assert tracker.total_output_tokens == 0
@@ -133,7 +133,7 @@ class TestCostTracker:
         """Test adding API token usage."""
         from core.tools.self_critique import CostTracker
 
-        tracker = CostTracker(model_id="claude-opus-4-6", user_id=12345)
+        tracker = CostTracker(model_id="claude-opus-4-7", user_id=12345)
 
         tracker.add_api_usage(input_tokens=1000,
                               output_tokens=500,
@@ -147,7 +147,7 @@ class TestCostTracker:
         """Test that API usage accumulates across calls."""
         from core.tools.self_critique import CostTracker
 
-        tracker = CostTracker(model_id="claude-opus-4-6", user_id=12345)
+        tracker = CostTracker(model_id="claude-opus-4-7", user_id=12345)
 
         tracker.add_api_usage(input_tokens=1000, output_tokens=500)
         tracker.add_api_usage(input_tokens=500, output_tokens=250)
@@ -159,7 +159,7 @@ class TestCostTracker:
         """Test adding tool costs."""
         from core.tools.self_critique import CostTracker
 
-        tracker = CostTracker(model_id="claude-opus-4-6", user_id=12345)
+        tracker = CostTracker(model_id="claude-opus-4-7", user_id=12345)
 
         tracker.add_tool_cost("execute_python", Decimal("0.005"))
         tracker.add_tool_cost("preview_file", Decimal("0.002"))
@@ -172,7 +172,7 @@ class TestCostTracker:
         """Test total cost calculation."""
         from core.tools.self_critique import CostTracker
 
-        tracker = CostTracker(model_id="claude-opus-4-6", user_id=12345)
+        tracker = CostTracker(model_id="claude-opus-4-7", user_id=12345)
 
         # Add API usage
         tracker.add_api_usage(
@@ -325,7 +325,7 @@ class TestBalanceCheck:
 
             # Setup mocks
             mock_config = Mock()
-            mock_config.model_id = "claude-opus-4-6"
+            mock_config.model_id = "claude-opus-4-7"
             mock_get_model.return_value = mock_config
 
             mock_balance_service = AsyncMock()
@@ -363,7 +363,7 @@ class TestBalanceCheck:
 
             # Setup model config
             mock_config = Mock()
-            mock_config.model_id = "claude-opus-4-6"
+            mock_config.model_id = "claude-opus-4-7"
             mock_get_model.return_value = mock_config
 
             # Setup ServiceFactory
@@ -403,7 +403,7 @@ class TestBalanceCheck:
              patch("services.factory.ServiceFactory") as mock_factory_class:
 
             mock_config = Mock()
-            mock_config.model_id = "claude-opus-4-6"
+            mock_config.model_id = "claude-opus-4-7"
             mock_get_model.return_value = mock_config
 
             # Setup ServiceFactory
@@ -691,7 +691,7 @@ class TestJSONParsing:
              patch("services.factory.ServiceFactory") as mock_factory_class:
 
             mock_config = Mock()
-            mock_config.model_id = "claude-opus-4-6"
+            mock_config.model_id = "claude-opus-4-7"
             mock_get_model.return_value = mock_config
 
             mock_factory = Mock()
@@ -731,7 +731,7 @@ class TestJSONParsing:
              patch("services.factory.ServiceFactory") as mock_factory_class:
 
             mock_config = Mock()
-            mock_config.model_id = "claude-opus-4-6"
+            mock_config.model_id = "claude-opus-4-7"
             mock_get_model.return_value = mock_config
 
             mock_factory = Mock()
@@ -764,7 +764,7 @@ class TestJSONParsing:
              patch("services.factory.ServiceFactory") as mock_factory_class:
 
             mock_config = Mock()
-            mock_config.model_id = "claude-opus-4-6"
+            mock_config.model_id = "claude-opus-4-7"
             mock_get_model.return_value = mock_config
 
             mock_factory = Mock()
@@ -816,7 +816,7 @@ class TestToolLoopIntegration:
              patch("services.factory.ServiceFactory") as mock_factory_class:
 
             mock_config = Mock()
-            mock_config.model_id = "claude-opus-4-6"
+            mock_config.model_id = "claude-opus-4-7"
             mock_get_model.return_value = mock_config
 
             mock_factory = Mock()
@@ -892,7 +892,7 @@ class TestToolLoopIntegration:
              patch("core.tools.registry.execute_tool") as mock_exec_tool:
 
             mock_config = Mock()
-            mock_config.model_id = "claude-opus-4-6"
+            mock_config.model_id = "claude-opus-4-7"
             mock_get_model.return_value = mock_config
 
             mock_factory = Mock()
@@ -978,7 +978,7 @@ class TestToolLoopIntegration:
              patch("core.tools.registry.execute_tool") as mock_exec_tool:
 
             mock_config = Mock()
-            mock_config.model_id = "claude-opus-4-6"
+            mock_config.model_id = "claude-opus-4-7"
             mock_get_model.return_value = mock_config
 
             mock_factory = Mock()
@@ -1060,7 +1060,7 @@ class TestMaxIterations:
              patch("core.tools.registry.execute_tool") as mock_exec_tool:
 
             mock_config = Mock()
-            mock_config.model_id = "claude-opus-4-6"
+            mock_config.model_id = "claude-opus-4-7"
             mock_get_model.return_value = mock_config
 
             mock_factory = Mock()
@@ -1119,7 +1119,7 @@ class TestCancellation:
              patch("services.factory.ServiceFactory") as mock_factory_class:
 
             mock_config = Mock()
-            mock_config.model_id = "claude-opus-4-6"
+            mock_config.model_id = "claude-opus-4-7"
             mock_get_model.return_value = mock_config
 
             mock_factory = Mock()
@@ -1181,7 +1181,7 @@ class TestCancellation:
              patch("core.tools.registry.execute_tool") as mock_exec_tool:
 
             mock_config = Mock()
-            mock_config.model_id = "claude-opus-4-6"
+            mock_config.model_id = "claude-opus-4-7"
             mock_get_model.return_value = mock_config
 
             mock_factory = Mock()
@@ -1243,7 +1243,7 @@ class TestCostCharging:
              patch("core.pricing.calculate_claude_cost") as mock_calc:
 
             mock_config = Mock()
-            mock_config.model_id = "claude-opus-4-6"
+            mock_config.model_id = "claude-opus-4-7"
             mock_get_model.return_value = mock_config
 
             mock_factory = Mock()
@@ -1311,7 +1311,7 @@ class TestCostCharging:
              patch("core.tools.self_critique.calculate_e2b_cost") as mock_e2b:
 
             mock_config = Mock()
-            mock_config.model_id = "claude-opus-4-6"
+            mock_config.model_id = "claude-opus-4-7"
             mock_get_model.return_value = mock_config
 
             mock_factory = Mock()

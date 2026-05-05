@@ -120,7 +120,7 @@ class TestCalculateTotalCost:
 
     def test_calculate_total_cost_tokens_only(self):
         """Test calculating cost with only tokens."""
-        tracker = CostTracker(model_id="claude-opus-4-6", user_id=1)
+        tracker = CostTracker(model_id="claude-opus-4-7", user_id=1)
         tracker.add_api_usage(1000000, 100000)  # 1M in, 100K out
 
         with patch("core.pricing.calculate_provider_cost") as mock_calc:

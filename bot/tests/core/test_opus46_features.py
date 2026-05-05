@@ -747,16 +747,16 @@ class TestModelRegistryOpus46:
     """Tests for Opus 4.6 model configuration."""
 
     def test_opus_model_id(self):
-        """Opus should use claude-opus-4-6 model ID."""
+        """Opus should use claude-opus-4-7 model ID."""
         from config import get_model
         model = get_model("claude:opus")
-        assert model.model_id == "claude-opus-4-6"
+        assert model.model_id == "claude-opus-4-7"
 
     def test_opus_display_name(self):
-        """Opus should display as 'Claude Opus 4.6'."""
+        """Opus should display as 'Claude Opus 4.7'."""
         from config import get_model
         model = get_model("claude:opus")
-        assert model.display_name == "Claude Opus 4.6"
+        assert model.display_name == "Claude Opus 4.7"
 
     def test_opus_max_output(self):
         """Opus should support 128K max output."""

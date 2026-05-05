@@ -76,7 +76,7 @@ TOPIC_ROUTING_MAX_TOKENS = 60  # JSON response with optional title
 TOPIC_TEMP_NAME_MAX_LENGTH = 30  # Max chars for temp name from General
 
 # Vision model IDs for tool API calls (analyze_image, analyze_pdf, preview_file)
-VISION_MODEL_ID = "claude-opus-4-6"  # Full analysis (image, PDF)
+VISION_MODEL_ID = "claude-opus-4-7"  # Full analysis (image, PDF)
 VISION_MODEL_ID_LITE = "claude-sonnet-4-6"  # Lighter preview analysis
 
 
@@ -219,11 +219,11 @@ MODEL_REGISTRY: dict[str, ModelConfig] = {
     "claude:opus":
         ModelConfig(
             provider="claude",
-            model_id="claude-opus-4-6",
+            model_id="claude-opus-4-7",
             alias="opus",
-            display_name="Claude Opus 4.6",
+            display_name="Claude Opus 4.7",
             context_window=
-            200_000,  # 1M beta available, keep 200K for cost safety
+            200_000,  # 1M context available at standard pricing, keep 200K for cost safety
             max_output=128_000,
             pricing_input=5.0,
             pricing_output=25.0,
@@ -232,16 +232,17 @@ MODEL_REGISTRY: dict[str, ModelConfig] = {
             pricing_cache_read=0.50,  # 0.1x multiplier
             latency_tier="moderate",
             capabilities={
-                "extended_thinking": True,
-                "interleaved_thinking": True,
+                # Opus 4.7: extended_thinking removed, only adaptive_thinking
                 "adaptive_thinking": True,
                 "effort": True,
                 "effort_max": True,
                 "compaction": True,
                 "context_awareness": True,
                 "vision": True,
+                "high_resolution_images": True,  # Opus 4.7: 2576px (vs 1568px)
                 "streaming": True,
                 "prompt_caching": True,
+                "omit_sampling_params": True,  # Opus 4.7: temperature/top_p/top_k rejected
             },
         ),
     # ============ Google Gemini Models ============
@@ -462,7 +463,7 @@ def list_all_models() -> list[tuple[str, str]]:
         >>> models = list_all_models()
         >>> models
         [('claude:haiku', 'Claude Haiku 4.5'),
-         ('claude:opus', 'Claude Opus 4.6'),
+         ('claude:opus', 'Claude Opus 4.7'),
          ('claude:sonnet', 'Claude Sonnet 4.6')]
     """
     items = [(full_id, model.display_name)

@@ -125,7 +125,9 @@ def format_model_info(model: ModelConfig, lang: str = "en") -> str:
 
     # Add key capabilities
     key_caps = []
-    if model.has_capability("extended_thinking"):
+    if model.has_capability("adaptive_thinking"):
+        key_caps.append("Adaptive Thinking")
+    elif model.has_capability("extended_thinking"):
         key_caps.append("Extended Thinking")
     if model.has_capability("vision"):
         key_caps.append("Vision")
