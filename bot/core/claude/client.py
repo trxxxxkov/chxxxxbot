@@ -19,6 +19,7 @@ from core.exceptions import APIConnectionError
 from core.exceptions import APITimeoutError
 from core.exceptions import InvalidModelError
 from core.exceptions import OverloadedError
+from core.exceptions import ProviderUnavailableError
 from core.exceptions import RateLimitError
 from core.models import LLMRequest
 from core.models import StreamEvent
@@ -53,6 +54,32 @@ def _is_retriable_server_error(e: anthropic.APIStatusError) -> bool:
         return True
     error_type = _get_error_type(e)
     return error_type in ('overloaded_error', 'api_error')
+
+
+def _get_error_message(e: anthropic.APIStatusError) -> str:
+    """Extract human-readable error message from APIStatusError body."""
+    body = getattr(e, 'body', None)
+    if isinstance(body, dict):
+        error_info = body.get('error')
+        if isinstance(error_info, dict):
+            msg = error_info.get('message')
+            if isinstance(msg, str):
+                return msg
+    return str(e)
+
+
+def _is_credit_balance_error(e: anthropic.APIStatusError) -> bool:
+    """Detect Anthropic 400 'credit balance is too low' error.
+
+    This indicates the bot owner's Anthropic account is out of credits —
+    the user cannot fix this, the bot owner must top up at console.anthropic.com.
+    """
+    if e.status_code != 400:
+        return False
+    if _get_error_type(e) != 'invalid_request_error':
+        return False
+    msg = _get_error_message(e).lower()
+    return 'credit balance' in msg and 'too low' in msg
 
 
 def _downscale_base64_image(block: dict, max_dim: int = 2000) -> dict:
@@ -1375,6 +1402,18 @@ class ClaudeProvider(LLMProvider):
                 return
 
             except anthropic.APIStatusError as e:
+                # Account-level: bot owner ran out of Anthropic credits.
+                # Surface as ProviderUnavailableError so handler can suggest
+                # a different model and admin gets a clear alert in logs.
+                if _is_credit_balance_error(e):
+                    logger.error(
+                        "claude.stream_events.credit_balance_too_low",
+                        request_id=getattr(e, 'request_id', None),
+                        message=_get_error_message(e))
+                    raise ProviderUnavailableError(
+                        "Anthropic account credit balance exhausted "
+                        "— admin must top up at console.anthropic.com") from e
+
                 # Detect retriable server errors:
                 # - HTTP 529 / overloaded_error (API overloaded)
                 # - HTTP 500 / api_error (internal server error)

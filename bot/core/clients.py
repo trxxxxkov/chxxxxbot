@@ -195,13 +195,15 @@ def get_google_client():
         from google import genai  # pylint: disable=import-outside-toplevel
         from google.genai import types as genai_types  # pylint: disable=import-outside-toplevel
         api_key = read_secret("google_api_key")
-        # 600s = 10 min: covers Gemini 3 Pro thinking + tools under load;
-        # 240s was too aggressive — legit Pro responses were timing out at 4 min.
+        # 900s = 15 min: applies per-chunk during streaming (httpx read timeout).
+        # Gemini 3 Pro with HIGH thinking + grounding + tool loops can have
+        # long silent gaps between chunks; 600s caused at least one ReadTimeout
+        # in production. Bumped to 900s for headroom.
         # HttpOptions.timeout is in milliseconds.
-        http_options = genai_types.HttpOptions(timeout=600_000)
+        http_options = genai_types.HttpOptions(timeout=900_000)
         _google_client = genai.Client(
             api_key=api_key, http_options=http_options)
-        logger.info("clients.google.initialized", timeout_ms=600_000)
+        logger.info("clients.google.initialized", timeout_ms=900_000)
 
     return _google_client
 

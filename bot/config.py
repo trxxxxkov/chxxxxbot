@@ -250,7 +250,7 @@ MODEL_REGISTRY: dict[str, ModelConfig] = {
     "google:flash-lite":
         ModelConfig(
             provider="google",
-            model_id="gemini-3.1-flash-lite-preview",
+            model_id="gemini-3.1-flash-lite",
             alias="flash-lite",
             display_name="Gemini 3.1 Flash-Lite",
             context_window=1_048_576,

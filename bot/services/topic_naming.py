@@ -110,7 +110,7 @@ class TopicNamingService:
                 model_config = get_model(user_model_id)
                 if model_config.provider == "google":
                     # Use Flash-Lite for Google users (~40% cheaper)
-                    return "gemini-3.1-flash-lite-preview", "google"
+                    return "gemini-3.1-flash-lite", "google"
             except KeyError:
                 pass
         return self.model, "claude"

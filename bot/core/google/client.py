@@ -28,6 +28,7 @@ from core.exceptions import APIConnectionError
 from core.exceptions import APITimeoutError
 from core.exceptions import InvalidModelError
 from core.exceptions import OverloadedError
+from core.exceptions import ProviderUnavailableError
 from core.exceptions import RateLimitError
 from core.models import LLMRequest
 from core.models import StreamEvent
@@ -52,6 +53,9 @@ def _is_retriable_google_error(error_msg: str) -> bool:
     - HTTP 503 UNAVAILABLE (model overloaded / high demand)
     - HTTP 500 INTERNAL (internal server error)
     - HTTP 504 DEADLINE_EXCEEDED (server-side timeout)
+    - httpx ReadTimeout / RemoteProtocolError / ConnectError
+      (transient network issues during streaming, including silent gaps
+      between chunks while Gemini Pro is thinking)
 
     Args:
         error_msg: Stringified error message from google.genai.errors.
@@ -59,12 +63,34 @@ def _is_retriable_google_error(error_msg: str) -> bool:
     Returns:
         True if the error should be retried with backoff.
     """
+    msg_lower = error_msg.lower()
     return (
         "503" in error_msg
         or "UNAVAILABLE" in error_msg
         or "500 INTERNAL" in error_msg
         or "504" in error_msg
         or "DEADLINE_EXCEEDED" in error_msg
+        or "read operation timed out" in msg_lower
+        or "readtimeout" in msg_lower
+        or "remoteprotocolerror" in msg_lower
+        or "connecterror" in msg_lower
+        or "connection error" in msg_lower
+        or "connection reset" in msg_lower
+    )
+
+
+def _is_free_tier_quota_zero(error_msg: str) -> bool:
+    """Detect Google 'free_tier ... limit: 0' error.
+
+    The bot's Google API key project is on free tier where Pro/preview models
+    have quota=0 (i.e., not available without billing). User can't fix this
+    by retrying — the bot owner must enable billing on the Google Cloud project
+    or restrict users to free-tier-eligible models.
+    """
+    return (
+        "RESOURCE_EXHAUSTED" in error_msg
+        and "free_tier" in error_msg
+        and "limit: 0" in error_msg
     )
 
 
@@ -856,6 +882,18 @@ class GeminiProvider(LLMProvider):
 
                 # Map Google errors to our exception types
                 if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
+                    # Free-tier quota=0 is an account-level config issue, not
+                    # a transient rate limit — surface clearly so admin sees it.
+                    if _is_free_tier_quota_zero(error_msg):
+                        logger.error(
+                            "gemini.stream_events.free_tier_quota_zero",
+                            model=model_config.model_id,
+                            hint="Enable billing on Google Cloud project "
+                                 "or restrict users to free-tier models")
+                        raise ProviderUnavailableError(
+                            "Google project on free tier with quota=0 for "
+                            f"model {model_config.model_id} — admin must "
+                            "enable billing") from e
                     raise RateLimitError(
                         f"Google API rate limit: {error_msg}") from e
                 if "503" in error_msg or "UNAVAILABLE" in error_msg:
@@ -894,7 +932,7 @@ class GeminiProvider(LLMProvider):
         try:
             client = get_google_client()
             count_model = getattr(self, '_last_model_id', None) or \
-                "gemini-3.1-flash-lite-preview"
+                "gemini-3.1-flash-lite"
 
             def _sync_count():
                 response = client.models.count_tokens(

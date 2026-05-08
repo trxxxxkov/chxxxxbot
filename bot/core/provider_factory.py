@@ -16,6 +16,18 @@ logger = get_logger(__name__)
 
 _providers: dict[str, LLMProvider] = {}
 
+# Within-provider degradation chain for graceful 503 fallback.
+# When a model returns OverloadedError after retries, the handler
+# can transparently retry with a cheaper sibling that runs on
+# different infrastructure capacity. Same provider = same conversation
+# format, same tools, no message conversion needed.
+_FALLBACK_CHAIN: dict[str, str] = {
+    "google:pro": "google:flash",
+    "google:flash": "google:flash-lite",
+    "claude:opus": "claude:sonnet",
+    "claude:sonnet": "claude:haiku",
+}
+
 
 def get_provider(model_full_id: str) -> LLMProvider:
     """Get or create provider for model. Lazy singleton per provider type.
@@ -56,3 +68,20 @@ def init_providers() -> None:
 def clear_providers() -> None:
     """Clear all cached providers. Useful for testing."""
     _providers.clear()
+
+
+def get_fallback_model(model_full_id: str) -> str | None:
+    """Return the next-cheaper model in the same provider, or None.
+
+    Used by the message handler to transparently degrade on transient
+    capacity errors (503 UNAVAILABLE on overloaded preview models).
+    Same-provider chain keeps message format, tools, and pricing
+    semantics consistent — no cross-provider format conversion needed.
+
+    Args:
+        model_full_id: Full model ID like "google:pro" or "claude:opus".
+
+    Returns:
+        Fallback model ID, or None if at the end of the chain.
+    """
+    return _FALLBACK_CHAIN.get(model_full_id)

@@ -49,6 +49,7 @@ from config import FILES_API_TTL_HOURS
 from config import get_model
 from config import get_system_prompt
 from core.claude.context import ContextManager
+from core.provider_factory import get_fallback_model
 from core.provider_factory import get_provider
 from core.claude.files_api import upload_to_files_api
 from core.exceptions import APIConnectionError
@@ -56,6 +57,7 @@ from core.exceptions import APITimeoutError
 from core.exceptions import ContextWindowExceededError
 from core.exceptions import LLMError
 from core.exceptions import OverloadedError
+from core.exceptions import ProviderUnavailableError
 from core.exceptions import RateLimitError
 from core.exceptions import ToolValidationError
 from core.models import LLMRequest
@@ -614,165 +616,209 @@ async def _process_batch_with_session(
                         thread_id=thread_id,
                         tool_count=len(request.tools) if request.tools else 0)
 
-            try:
-                # Reset cache accumulator so we track creation across
-                # all tool loop turns for this user message
-                provider.reset_cache_accumulator()
+            # Fallback retry loop: on OverloadedError, transparently
+            # degrade to a cheaper sibling model in the same provider.
+            # See provider_factory._FALLBACK_CHAIN for the order.
+            fallback_attempted = False
+            while True:
+                try:
+                    # Reset cache accumulator so we track creation across
+                    # all tool loop turns for this user message
+                    provider.reset_cache_accumulator()
 
-                # Phase 3.4: Continuation loop for sequential file delivery
-                # Max 5 continuations to prevent infinite loops
-                max_continuations = 5
-                continuation_conversation = None
-                all_response_parts = []
-                final_bot_message = None
+                    # Phase 3.4: Continuation loop for sequential file delivery
+                    # Max 5 continuations to prevent infinite loops
+                    max_continuations = 5
+                    continuation_conversation = None
+                    all_response_parts = []
+                    final_bot_message = None
 
-                was_cancelled = False  # Track if user cancelled generation
-                thinking_chars = 0  # Track thinking chars for partial payment
-                output_chars = 0  # Track output chars for partial payment
-                any_files_delivered = False  # Track if files delivered across continuations
-                compaction_summary = None  # Preserve compaction across continuations
-                for continuation_idx in range(max_continuations + 1):
-                    # Use StreamingOrchestrator for cleaner streaming flow
-                    orchestrator = StreamingOrchestrator(
-                        request=request,
-                        first_message=first_message,
-                        thread_id=thread_id,
-                        session=session,
-                        user_file_repo=user_file_repo,
-                        chat_id=thread.chat_id,
-                        user_id=thread.user_id,
-                        telegram_thread_id=thread.thread_id,
-                        continuation_conversation=continuation_conversation,
-                        provider=provider,
-                    )
-                    result = await orchestrator.stream()
-
-                    # Extract values from StreamResult
-                    response_text = result.text
-                    bot_message = result.message
-                    needs_continuation = result.needs_continuation
-                    conversation_state = result.conversation
-                    was_cancelled = result.was_cancelled
-
-                    # Accumulate chars across iterations for partial billing
-                    thinking_chars += result.thinking_chars
-                    output_chars += result.output_chars
-
-                    # Track file deliveries across continuations
-                    if result.has_delivered_files:
-                        any_files_delivered = True
-
-                    # Preserve compaction: stream_events() resets last_compaction
-                    # each call, so capture it when it fires (any iteration)
-                    if provider.last_compaction:
-                        compaction_summary = provider.last_compaction
-
-                    # Collect response parts
-                    if response_text:
-                        all_response_parts.append(response_text)
-
-                    # Keep track of latest message for DB
-                    if bot_message:
-                        final_bot_message = bot_message
-
-                    if not needs_continuation:
-                        # Normal completion
-                        break
-
-                    # Continuation needed (sequential delivery)
-                    logger.info("claude_handler.continuation",
-                                thread_id=thread_id,
-                                continuation_idx=continuation_idx + 1,
-                                max_continuations=max_continuations)
-
-                    continuation_conversation = conversation_state
-
-                else:
-                    # Max continuations reached (typically from many sequential
-                    # deliver_file calls). This is not an error - files were
-                    # delivered, just more than expected.
-                    logger.info("claude_handler.max_continuations_reached",
-                                thread_id=thread_id,
-                                max_continuations=max_continuations,
-                                response_parts_count=len(all_response_parts))
-
-                # Combine all response parts
-                response_text = "\n\n".join(all_response_parts)
-                bot_message = final_bot_message
-
-                # With sendMessageDraft, final message is already sent via finalize()
-                # No cleanup needed - drafts don't create intermediate messages
-
-                # Strip tool markers for database storage
-                clean_response = _strip_tool_markers(
-                    response_text) if response_text else ""
-
-                # If finalize failed, send fallback message
-                if not bot_message:
-                    if clean_response:
-                        safe_final = escape_html(clean_response)
-                        chunks = split_text_smart(safe_final)
-                        for chunk in chunks:
-                            bot_message = await _send_with_retry(
-                                first_message, chunk)
-                    elif (all_response_parts or result.has_sent_parts or
-                          any_files_delivered):
-                        # Had content in previous continuations, split parts,
-                        # or files delivered via deliver_file tool
-                        logger.debug(
-                            "claude_handler.silent_completion",
+                    was_cancelled = False  # Track if user cancelled generation
+                    thinking_chars = 0  # Track thinking chars for partial payment
+                    output_chars = 0  # Track output chars for partial payment
+                    any_files_delivered = False  # Track if files delivered across continuations
+                    compaction_summary = None  # Preserve compaction across continuations
+                    for continuation_idx in range(max_continuations + 1):
+                        # Use StreamingOrchestrator for cleaner streaming flow
+                        orchestrator = StreamingOrchestrator(
+                            request=request,
+                            first_message=first_message,
                             thread_id=thread_id,
-                            all_response_parts=bool(all_response_parts),
-                            has_sent_parts=result.has_sent_parts,
-                            any_files_delivered=any_files_delivered)
-                        # Content was already delivered, no need to send anything
-                        # Use first_message as virtual bot_message for DB storage
-                        bot_message = first_message
+                            session=session,
+                            user_file_repo=user_file_repo,
+                            chat_id=thread.chat_id,
+                            user_id=thread.user_id,
+                            telegram_thread_id=thread.thread_id,
+                            continuation_conversation=continuation_conversation,
+                            provider=provider,
+                        )
+                        result = await orchestrator.stream()
+
+                        # Extract values from StreamResult
+                        response_text = result.text
+                        bot_message = result.message
+                        needs_continuation = result.needs_continuation
+                        conversation_state = result.conversation
+                        was_cancelled = result.was_cancelled
+
+                        # Accumulate chars across iterations for partial billing
+                        thinking_chars += result.thinking_chars
+                        output_chars += result.output_chars
+
+                        # Track file deliveries across continuations
+                        if result.has_delivered_files:
+                            any_files_delivered = True
+
+                        # Preserve compaction: stream_events() resets last_compaction
+                        # each call, so capture it when it fires (any iteration)
+                        if provider.last_compaction:
+                            compaction_summary = provider.last_compaction
+
+                        # Collect response parts
+                        if response_text:
+                            all_response_parts.append(response_text)
+
+                        # Keep track of latest message for DB
+                        if bot_message:
+                            final_bot_message = bot_message
+
+                        if not needs_continuation:
+                            # Normal completion
+                            break
+
+                        # Continuation needed (sequential delivery)
+                        logger.info("claude_handler.continuation",
+                                    thread_id=thread_id,
+                                    continuation_idx=continuation_idx + 1,
+                                    max_continuations=max_continuations)
+
+                        continuation_conversation = conversation_state
+
                     else:
-                        # External API returned empty - this shouldn't happen
-                        logger.warning("claude_handler.empty_response",
-                                       thread_id=thread_id)
-                        bot_message = await _send_with_retry(
-                            first_message,
-                            f"⚠️ {model_config.display_name} returned "
-                            "an empty response. "
-                            "Please try rephrasing your message.")
+                        # Max continuations reached (typically from many sequential
+                        # deliver_file calls). This is not an error - files were
+                        # delivered, just more than expected.
+                        logger.info("claude_handler.max_continuations_reached",
+                                    thread_id=thread_id,
+                                    max_continuations=max_continuations,
+                                    response_parts_count=len(all_response_parts))
 
-            except OverloadedError as e:
-                logger.warning("claude_handler.overloaded",
-                               thread_id=thread_id,
-                               error=str(e))
-                bot_message = await _send_to_thread(first_message.bot,
-                                                    first_message, thread,
-                                                    e.user_message)
-                return
+                    # Combine all response parts
+                    response_text = "\n\n".join(all_response_parts)
+                    bot_message = final_bot_message
 
-            except TelegramBadRequest as e:
-                if "thread not found" in str(e):
-                    logger.warning(
-                        "claude_handler.thread_deleted",
-                        thread_id=thread_id,
-                        chat_id=first_message.chat.id,
-                    )
+                    # With sendMessageDraft, final message is already sent via finalize()
+                    # No cleanup needed - drafts don't create intermediate messages
+
+                    # Strip tool markers for database storage
+                    clean_response = _strip_tool_markers(
+                        response_text) if response_text else ""
+
+                    # If finalize failed, send fallback message
+                    if not bot_message:
+                        if clean_response:
+                            safe_final = escape_html(clean_response)
+                            chunks = split_text_smart(safe_final)
+                            for chunk in chunks:
+                                bot_message = await _send_with_retry(
+                                    first_message, chunk)
+                        elif (all_response_parts or result.has_sent_parts or
+                              any_files_delivered):
+                            # Had content in previous continuations, split parts,
+                            # or files delivered via deliver_file tool
+                            logger.debug(
+                                "claude_handler.silent_completion",
+                                thread_id=thread_id,
+                                all_response_parts=bool(all_response_parts),
+                                has_sent_parts=result.has_sent_parts,
+                                any_files_delivered=any_files_delivered)
+                            # Content was already delivered, no need to send anything
+                            # Use first_message as virtual bot_message for DB storage
+                            bot_message = first_message
+                        else:
+                            # External API returned empty - this shouldn't happen
+                            logger.warning("claude_handler.empty_response",
+                                           thread_id=thread_id)
+                            bot_message = await _send_with_retry(
+                                first_message,
+                                f"⚠️ {model_config.display_name} returned "
+                                "an empty response. "
+                                "Please try rephrasing your message.")
+
+                    # Streaming succeeded — exit fallback loop
+                    break
+
+                except OverloadedError as e:
+                    # Try once with the cheaper sibling before giving up.
+                    # Same provider = same conversation format / tools, so
+                    # the request can be reused as-is with just model swap.
+                    if not fallback_attempted:
+                        fallback_model_id = get_fallback_model(request.model)
+                        if fallback_model_id:
+                            fallback_attempted = True
+                            original_id = request.model
+                            original_name = model_config.display_name
+                            logger.warning("claude_handler.model_fallback",
+                                           thread_id=thread_id,
+                                           original=original_id,
+                                           fallback=fallback_model_id,
+                                           reason="overloaded")
+                            # Swap model context for the retry
+                            request.model = fallback_model_id
+                            model_config = get_model(fallback_model_id)
+                            provider = get_provider(fallback_model_id)
+                            await _send_to_thread(
+                                first_message.bot, first_message, thread,
+                                f"⏳ {original_name} перегружен — "
+                                f"переключаюсь на {model_config.display_name}…")
+                            continue
+                    logger.warning("claude_handler.overloaded",
+                                   thread_id=thread_id,
+                                   error=str(e))
+                    bot_message = await _send_to_thread(first_message.bot,
+                                                        first_message, thread,
+                                                        e.user_message)
                     return
-                logger.error("claude_handler.streaming_failed",
-                             thread_id=thread_id,
-                             error=str(e),
-                             exc_info=True)
-                bot_message = await _send_to_thread(
-                    first_message.bot, first_message, thread,
-                    "⚠️ An error occurred. Please try again.")
-                return
 
-            except Exception as e:  # pylint: disable=broad-exception-caught
-                logger.error("claude_handler.streaming_failed",
-                             thread_id=thread_id,
-                             error=str(e),
-                             exc_info=True)
-                bot_message = await _send_to_thread(
-                    first_message.bot, first_message, thread,
-                    "⚠️ An error occurred. Please try again.")
-                return
+                except ProviderUnavailableError as e:
+                    # Bot owner needs to act (top up credits / enable billing).
+                    # Log at error level so admin alerts fire; show user a clear
+                    # message asking them to switch model.
+                    logger.error("claude_handler.provider_unavailable",
+                                 thread_id=thread_id,
+                                 model_id=request.model,
+                                 error=str(e))
+                    bot_message = await _send_to_thread(first_message.bot,
+                                                        first_message, thread,
+                                                        e.user_message)
+                    return
+
+                except TelegramBadRequest as e:
+                    if "thread not found" in str(e):
+                        logger.warning(
+                            "claude_handler.thread_deleted",
+                            thread_id=thread_id,
+                            chat_id=first_message.chat.id,
+                        )
+                        return
+                    logger.error("claude_handler.streaming_failed",
+                                 thread_id=thread_id,
+                                 error=str(e),
+                                 exc_info=True)
+                    bot_message = await _send_to_thread(
+                        first_message.bot, first_message, thread,
+                        "⚠️ An error occurred. Please try again.")
+                    return
+
+                except Exception as e:  # pylint: disable=broad-exception-caught
+                    logger.error("claude_handler.streaming_failed",
+                                 thread_id=thread_id,
+                                 error=str(e),
+                                 exc_info=True)
+                    bot_message = await _send_to_thread(
+                        first_message.bot, first_message, thread,
+                        "⚠️ An error occurred. Please try again.")
+                    return
 
             # Check bot_message exists
             if not bot_message:
@@ -1361,6 +1407,19 @@ async def _process_batch_with_session(
             "⚠️ Request timed out.\n\n"
             "The request took too long. Please try again with a shorter "
             "message or simpler question.")
+
+    except ProviderUnavailableError as e:
+        # Bot owner needs to act (top up credits / enable billing).
+        # Log at error level so admin alerts fire.
+        logger.error("claude_handler.provider_unavailable",
+                     thread_id=thread_id,
+                     error=str(e),
+                     error_type=type(e).__name__)
+        record_error(error_type="provider_unavailable", handler="claude")
+        record_llm_request(model="unknown", success=False)
+
+        await _send_to_thread(first_message.bot, first_message, thread,
+                              e.user_message)
 
     except LLMError as e:
         # External API error - gracefully handled

@@ -108,6 +108,27 @@ class OverloadedError(LLMError):
     log_level = "warning"
 
 
+class ProviderUnavailableError(LLMError):
+    """Provider account or billing issue — admin attention required.
+
+    Distinguished from RateLimitError (transient) and OverloadedError (overload):
+    this surfaces persistent account-level failures that the user cannot resolve
+    by retrying. Examples: Anthropic credit balance exhausted, Google Cloud
+    project on free tier with limit=0 for a Pro model.
+
+    Raised so the handler can prompt the user to switch to another model and
+    so logs/alerts can flag the bot owner to top up or enable billing.
+    """
+
+    recoverable = False
+    user_message = (
+        "⚠️ This model is temporarily unavailable due to a provider "
+        "configuration issue. Please try a different model "
+        "(e.g., Gemini Flash-Lite or Claude Haiku)."
+    )
+    log_level = "error"
+
+
 class ContextWindowExceededError(LLMError):
     """Context exceeds model's context window.
 
