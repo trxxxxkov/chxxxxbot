@@ -293,7 +293,7 @@ MODEL_REGISTRY: dict[str, ModelConfig] = {
     "google:pro":
         ModelConfig(
             provider="google",
-            model_id="gemini-3.1-pro-preview-customtools",
+            model_id="gemini-3.1-pro-preview",
             alias="pro",
             display_name="Gemini 3.1 Pro",
             context_window=1_048_576,
