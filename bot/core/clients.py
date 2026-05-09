@@ -195,15 +195,18 @@ def get_google_client():
         from google import genai  # pylint: disable=import-outside-toplevel
         from google.genai import types as genai_types  # pylint: disable=import-outside-toplevel
         api_key = read_secret("google_api_key")
-        # 900s = 15 min: applies per-chunk during streaming (httpx read timeout).
-        # Gemini 3 Pro with HIGH thinking + grounding + tool loops can have
-        # long silent gaps between chunks; 600s caused at least one ReadTimeout
-        # in production. Bumped to 900s for headroom.
+        # 10s: aggressive per-chunk httpx read timeout. Pairs with the no-retry
+        # policy on transient errors (see _RETRY_MAX_ATTEMPTS=0) so that the
+        # handler's Pro→Flash fallback chain engages within ~10s on any stall
+        # or 503. Trade-off: legitimate Pro+HIGH-thinking first-chunk latency
+        # >10s will trigger an unnecessary fallback to Flash. We accept that
+        # because user-perceived "bot is silent" is worse than "answered by
+        # Flash instead of Pro." If false fallbacks become noisy, raise this.
         # HttpOptions.timeout is in milliseconds.
-        http_options = genai_types.HttpOptions(timeout=900_000)
+        http_options = genai_types.HttpOptions(timeout=10_000)
         _google_client = genai.Client(
             api_key=api_key, http_options=http_options)
-        logger.info("clients.google.initialized", timeout_ms=900_000)
+        logger.info("clients.google.initialized", timeout_ms=10_000)
 
     return _google_client
 

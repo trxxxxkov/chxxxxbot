@@ -40,22 +40,28 @@ logger = get_logger(__name__)
 # Sentinel for async stream iteration (cannot use None — could be a valid value)
 _STREAM_DONE = object()
 
-# Retry configuration for transient server errors (503 UNAVAILABLE, 500, 504)
-# Matches Claude client pattern (max_retries=3, delays [2, 5, 10])
-_RETRY_MAX_ATTEMPTS = 3
-_RETRY_DELAYS = (2, 5, 10)
+# Retry configuration for transient server errors (503 UNAVAILABLE, 500, 504).
+# Set to 0: do not retry inside the provider — let exceptions propagate to the
+# handler so the Pro→Flash fallback chain engages immediately. Combined with
+# the 10s HTTP timeout in get_google_client(), this caps user-perceived wait
+# at ~10s before fallback. The Claude client has its own retry policy.
+_RETRY_MAX_ATTEMPTS = 0
+_RETRY_DELAYS = ()
 
 
 def _is_retriable_google_error(error_msg: str) -> bool:
     """Check if a Google API error is a retriable transient server error.
 
-    Retriable errors (server-side, transient):
+    Retriable errors (server-side, transient — fail fast, retry cheap):
     - HTTP 503 UNAVAILABLE (model overloaded / high demand)
     - HTTP 500 INTERNAL (internal server error)
     - HTTP 504 DEADLINE_EXCEEDED (server-side timeout)
-    - httpx ReadTimeout / RemoteProtocolError / ConnectError
-      (transient network issues during streaming, including silent gaps
-      between chunks while Gemini Pro is thinking)
+    - httpx RemoteProtocolError / ConnectError (transient network blip)
+
+    NOT retried here (handled by caller's fallback chain instead):
+    - httpx ReadTimeout — already cost the full HTTP timeout; a retry
+      would block the user another 120s+ for likely the same outcome.
+      Letting it propagate triggers Pro→Flash fallback in the handler.
 
     Args:
         error_msg: Stringified error message from google.genai.errors.
@@ -70,8 +76,6 @@ def _is_retriable_google_error(error_msg: str) -> bool:
         or "500 INTERNAL" in error_msg
         or "504" in error_msg
         or "DEADLINE_EXCEEDED" in error_msg
-        or "read operation timed out" in msg_lower
-        or "readtimeout" in msg_lower
         or "remoteprotocolerror" in msg_lower
         or "connecterror" in msg_lower
         or "connection error" in msg_lower
@@ -899,10 +903,20 @@ class GeminiProvider(LLMProvider):
                 if "503" in error_msg or "UNAVAILABLE" in error_msg:
                     raise OverloadedError(
                         f"Google API overloaded: {error_msg}") from e
-                if "timeout" in error_msg.lower():
+                # Match both "timeout" and "timed out" — httpx.ReadTimeout
+                # stringifies as "The read operation timed out" (no contiguous
+                # "timeout" substring), so a naive `"timeout" in msg` misses it
+                # and the raw httpx exception leaks past the handler's typed
+                # except, breaking the Pro→Flash fallback.
+                msg_lower = error_msg.lower()
+                if (error_type in ("ReadTimeout", "WriteTimeout",
+                                   "ConnectTimeout", "PoolTimeout",
+                                   "APITimeoutError")
+                        or "timeout" in msg_lower
+                        or "timed out" in msg_lower):
                     raise APITimeoutError(
                         f"Google API timeout: {error_msg}") from e
-                if "connection" in error_msg.lower():
+                if "connection" in msg_lower:
                     raise APIConnectionError(
                         f"Google API connection error: {error_msg}") from e
                 if "PERMISSION_DENIED" in error_msg or "403" in error_msg:

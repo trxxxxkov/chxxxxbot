@@ -18,6 +18,7 @@ from telegram.generation_tracker import generation_context
 from telegram.handlers.claude_files import process_generated_files
 from telegram.streaming.session import StreamingSession
 from telegram.streaming.tool_executor import ToolExecutor
+from telegram.streaming.types import BlockType
 from telegram.streaming.types import CancellationReason
 from telegram.streaming.types import StreamResult
 from utils.serialization import serialize_content_block
@@ -165,6 +166,7 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
         continuation_conversation: list | None = None,
         claude_provider: "LLMProvider | None" = None,
         provider: "LLMProvider | None" = None,
+        prefix_text: str | None = None,
     ):
         """Initialize StreamingOrchestrator.
 
@@ -180,6 +182,10 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
             continuation_conversation: Conversation state for continuation.
             claude_provider: Deprecated, use provider instead.
             provider: LLMProvider instance (uses factory if None).
+            prefix_text: Optional text to prepend as the first text block
+                of the streamed message (e.g., "⏳ Pro не отвечает —
+                переключаюсь на Flash…" on fallback). Appears above the
+                actual model response in the same message bubble.
         """
         self._request = request
         self._first_message = first_message
@@ -191,6 +197,7 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
         self._telegram_thread_id = telegram_thread_id
         self._continuation_conversation = continuation_conversation
         self._provider = provider or claude_provider
+        self._prefix_text = prefix_text
 
         # Lazy-loaded components
         self._tool_executor: ToolExecutor | None = None
@@ -271,6 +278,19 @@ class StreamingOrchestrator:  # pylint: disable=too-many-instance-attributes
             ) as dm,
         ):
             stream = StreamingSession(dm, self._thread_id)
+
+            # Seed display with caller-supplied prefix (e.g., fallback notice
+            # "⏳ Pro не отвечает — переключаюсь на Flash…"). Renders above
+            # the model's text in the same message bubble, so the user sees
+            # one continuous reply with a leading note instead of two messages.
+            if self._prefix_text:
+                stream.display.append(BlockType.TEXT, self._prefix_text)
+                logger.info(
+                    "orchestrator.prefix_seeded",
+                    thread_id=self._thread_id,
+                    prefix_chars=len(self._prefix_text),
+                )
+
             total_output_chars = 0
             # Capture provider state at stream_complete time to avoid
             # singleton race condition (see provider_factory.py).

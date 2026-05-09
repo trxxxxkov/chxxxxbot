@@ -91,6 +91,7 @@ from telegram.handlers.claude_helpers import split_text_smart
 from telegram.streaming.formatting import escape_html
 from telegram.streaming.formatting import \
     strip_tool_markers as _strip_tool_markers
+from telegram.streaming.markdown_v2 import render_streaming_safe
 from telegram.streaming.orchestrator import StreamingOrchestrator
 from utils.metrics import record_cache_hit
 from utils.metrics import record_cache_miss
@@ -616,10 +617,25 @@ async def _process_batch_with_session(
                         thread_id=thread_id,
                         tool_count=len(request.tools) if request.tools else 0)
 
-            # Fallback retry loop: on OverloadedError, transparently
-            # degrade to a cheaper sibling model in the same provider.
-            # See provider_factory._FALLBACK_CHAIN for the order.
-            fallback_attempted = False
+            # Fallback retry loop: on OverloadedError / APITimeoutError,
+            # transparently walk the same-provider degradation chain
+            # (e.g. Pro → Flash → Flash-Lite). See provider_factory.
+            # _FALLBACK_CHAIN for the order.
+            fallback_count = 0
+            # Cap on consecutive fallbacks. The chain is finite and
+            # naturally terminates at the leaf model (get_fallback_model
+            # returns None), but the cap guards against future config
+            # mistakes that might introduce a cycle.
+            max_fallback_depth = 3
+            # Accumulating notice like
+            # "⏳ Pro не отвечает — переключаюсь на Flash…\n"
+            # "⏳ Flash не отвечает — переключаюсь на Flash-Lite…\n"
+            # Stashed here so the next orchestrator's first iteration
+            # renders it as the leading text of the same reply bubble
+            # (one continuous reply, no separate notification messages).
+            # Each fallback APPENDS its line so the user sees the full
+            # switch history when the final fallback finally succeeds.
+            fallback_prefix_text: str = ""
             while True:
                 try:
                     # Reset cache accumulator so we track creation across
@@ -640,6 +656,13 @@ async def _process_batch_with_session(
                     compaction_summary = None  # Preserve compaction across continuations
                     for continuation_idx in range(max_continuations + 1):
                         # Use StreamingOrchestrator for cleaner streaming flow
+                        # Prefix only on the first orchestrator after fallback,
+                        # then cleared so subsequent continuations don't repeat.
+                        orchestrator_prefix = (
+                            fallback_prefix_text
+                            if (fallback_prefix_text
+                                and continuation_idx == 0)
+                            else None)
                         orchestrator = StreamingOrchestrator(
                             request=request,
                             first_message=first_message,
@@ -651,7 +674,10 @@ async def _process_batch_with_session(
                             telegram_thread_id=thread.thread_id,
                             continuation_conversation=continuation_conversation,
                             provider=provider,
+                            prefix_text=orchestrator_prefix,
                         )
+                        if orchestrator_prefix:
+                            fallback_prefix_text = ""
                         result = await orchestrator.stream()
 
                         # Extract values from StreamResult
@@ -748,36 +774,94 @@ async def _process_batch_with_session(
                     # Streaming succeeded — exit fallback loop
                     break
 
-                except OverloadedError as e:
-                    # Try once with the cheaper sibling before giving up.
-                    # Same provider = same conversation format / tools, so
+                except (OverloadedError, APITimeoutError) as e:
+                    # Walk the same-provider degradation chain. Same
+                    # provider = same conversation format / tools, so
                     # the request can be reused as-is with just model swap.
-                    if not fallback_attempted:
-                        fallback_model_id = get_fallback_model(request.model)
-                        if fallback_model_id:
-                            fallback_attempted = True
-                            original_id = request.model
-                            original_name = model_config.display_name
-                            logger.warning("claude_handler.model_fallback",
-                                           thread_id=thread_id,
-                                           original=original_id,
-                                           fallback=fallback_model_id,
-                                           reason="overloaded")
-                            # Swap model context for the retry
-                            request.model = fallback_model_id
-                            model_config = get_model(fallback_model_id)
-                            provider = get_provider(fallback_model_id)
-                            await _send_to_thread(
-                                first_message.bot, first_message, thread,
-                                f"⏳ {original_name} перегружен — "
-                                f"переключаюсь на {model_config.display_name}…")
-                            continue
-                    logger.warning("claude_handler.overloaded",
-                                   thread_id=thread_id,
-                                   error=str(e))
-                    bot_message = await _send_to_thread(first_message.bot,
-                                                        first_message, thread,
-                                                        e.user_message)
+                    # Timeout is treated like overload because Gemini Pro
+                    # endpoints can silently stall (no chunks, no error)
+                    # under load — surfaces as ReadTimeout, not 503.
+                    is_timeout = isinstance(e, APITimeoutError)
+                    reason = "timeout" if is_timeout else "overloaded"
+                    state = "не отвечает" if is_timeout else "перегружен"
+                    failed_id = request.model
+                    failed_name = model_config.display_name
+
+                    fallback_model_id = get_fallback_model(request.model)
+                    can_fallback = (fallback_model_id is not None
+                                    and fallback_count < max_fallback_depth)
+
+                    if can_fallback:
+                        fallback_count += 1
+                        # Swap model context for the retry
+                        request.model = fallback_model_id
+                        model_config = get_model(fallback_model_id)
+                        provider = get_provider(fallback_model_id)
+                        logger.warning(
+                            "claude_handler.model_fallback",
+                            thread_id=thread_id,
+                            depth=fallback_count,
+                            original=failed_id,
+                            original_name=failed_name,
+                            fallback=fallback_model_id,
+                            fallback_name=model_config.display_name,
+                            reason=reason,
+                            error_type=type(e).__name__,
+                            error=str(e)[:300],
+                        )
+                        # Append (don't overwrite) so the user sees the
+                        # full chain of switches when the final fallback
+                        # finally succeeds:
+                        #   ⏳ Pro не отвечает — переключаюсь на Flash…
+                        #
+                        #   ⏳ Flash не отвечает — переключаюсь на Flash-Lite…
+                        #
+                        #   [actual response]
+                        # Italic (`_..._`) visually distinguishes the
+                        # status notice from the model's reply. Lines are
+                        # separated by a blank line for readability;
+                        # render_streaming_safe / format_blocks_md2 turns
+                        # the italic markers into MarkdownV2 entities and
+                        # escapes special chars in the display name.
+                        fallback_prefix_text += (
+                            f"_⏳ {failed_name} {state} — "
+                            f"переключаюсь на "
+                            f"{model_config.display_name}…_\n\n")
+                        continue
+
+                    # Chain exhausted (or depth cap hit) — surface failure
+                    log_event = ("claude_handler.timeout"
+                                 if is_timeout
+                                 else "claude_handler.overloaded")
+                    logger.warning(
+                        log_event,
+                        thread_id=thread_id,
+                        model_id=failed_id,
+                        fallback_count=fallback_count,
+                        chain_exhausted=fallback_model_id is None,
+                        depth_capped=(fallback_model_id is not None
+                                      and fallback_count >= max_fallback_depth),
+                        error_type=type(e).__name__,
+                        error=str(e)[:300])
+                    # Include the accumulated chain in the final message so
+                    # the user sees what was tried before giving up.
+                    final_line = (
+                        f"_⏳ {failed_name} тоже {state}._\n\n"
+                        if fallback_count > 0
+                        else f"_⏳ {failed_name} {state}._\n\n")
+                    final_msg_raw = (
+                        fallback_prefix_text
+                        + final_line
+                        + "Попробуйте ещё раз через минуту.")
+                    # Send via MarkdownV2 so the italic markers above turn
+                    # into real italic and `.`/`-`/etc get properly escaped.
+                    final_msg = render_streaming_safe(final_msg_raw)
+                    bot_message = await _send_to_thread(
+                        first_message.bot,
+                        first_message,
+                        thread,
+                        final_msg,
+                        parse_mode="MarkdownV2")
                     return
 
                 except ProviderUnavailableError as e:
