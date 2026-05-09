@@ -16,6 +16,7 @@ from core.exceptions import OverloadedError
 from core.google.client import _RETRY_DELAYS
 from core.google.client import _RETRY_MAX_ATTEMPTS
 from core.google.client import _is_retriable_google_error
+from core.google.client import _is_timeout_error
 
 
 class TestIsRetriableGoogleError:
@@ -49,18 +50,71 @@ class TestIsRetriableGoogleError:
         assert _is_retriable_google_error("403 PERMISSION_DENIED") is False
 
 
-class TestRetryConstants:
-    """Sanity checks on retry configuration."""
+class TestIsTimeoutError:
+    """Tests for _is_timeout_error helper.
 
-    def test_max_attempts_positive(self):
-        assert _RETRY_MAX_ATTEMPTS == 3
+    Errors classified as timeouts map to APITimeoutError, which the
+    handler treats the same as OverloadedError — both walk the
+    Pro→Flash→Flash-Lite fallback chain. Misclassification leaks the raw
+    typed exception past the handler's typed except and the user sees a
+    generic "An error occurred" message instead of the in-bubble fallback.
+    """
+
+    def test_504_in_message(self):
+        # ServerError stringifies as "504 DEADLINE_EXCEEDED. {...}" — no
+        # contiguous "timeout" substring, so before the dedicated 504
+        # branch this fell through to the generic raise and bypassed the
+        # handler's fallback chain.
+        assert _is_timeout_error(
+            "ServerError",
+            "504 DEADLINE_EXCEEDED. {'error': {'code': 504, "
+            "'message': 'Deadline expired before operation could "
+            "complete.', 'status': 'DEADLINE_EXCEEDED'}}",
+        ) is True
+
+    def test_deadline_exceeded_no_code(self):
+        assert _is_timeout_error(
+            "ServerError", "DEADLINE_EXCEEDED") is True
+
+    def test_httpx_read_timeout_class(self):
+        assert _is_timeout_error(
+            "ReadTimeout", "The read operation timed out") is True
+
+    def test_httpx_connect_timeout_class(self):
+        assert _is_timeout_error("ConnectTimeout", "") is True
+
+    def test_generic_timed_out_substring(self):
+        assert _is_timeout_error(
+            "RuntimeError", "Operation timed out") is True
+
+    def test_503_unavailable_not_timeout(self):
+        # 503 is overload, not timeout — separate fallback branch.
+        assert _is_timeout_error(
+            "ServerError", "503 UNAVAILABLE. high demand") is False
+
+    def test_400_invalid_argument_not_timeout(self):
+        assert _is_timeout_error(
+            "ClientError", "400 INVALID_ARGUMENT. bad schema") is False
+
+    def test_429_rate_limit_not_timeout(self):
+        assert _is_timeout_error(
+            "ClientError", "429 RESOURCE_EXHAUSTED") is False
+
+
+class TestRetryConstants:
+    """Sanity checks on retry configuration.
+
+    In-provider retry is intentionally disabled (set to 0 in d2f669c) so
+    transient errors propagate immediately to the handler's Pro→Flash→
+    Flash-Lite fallback chain. Any non-zero retry here would block the
+    user for the full retry budget before fallback engages.
+    """
+
+    def test_in_provider_retry_disabled(self):
+        assert _RETRY_MAX_ATTEMPTS == 0
 
     def test_delays_match_attempts(self):
         assert len(_RETRY_DELAYS) == _RETRY_MAX_ATTEMPTS
-        assert all(d > 0 for d in _RETRY_DELAYS)
-
-    def test_delays_monotonic(self):
-        assert list(_RETRY_DELAYS) == sorted(_RETRY_DELAYS)
 
 
 class TestGoogleSearchRetry:

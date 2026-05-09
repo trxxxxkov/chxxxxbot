@@ -83,6 +83,42 @@ def _is_retriable_google_error(error_msg: str) -> bool:
     )
 
 
+def _is_timeout_error(error_type: str, error_msg: str) -> bool:
+    """Check if a Google API error should be classified as a timeout.
+
+    Maps to APITimeoutError, which the message handler treats the same as
+    OverloadedError — both trigger the Pro→Flash→Flash-Lite fallback chain.
+
+    Covers:
+    - httpx.ReadTimeout / WriteTimeout / ConnectTimeout / PoolTimeout (raw
+      class names — the typed exception leaks past genai sometimes)
+    - Generic substrings "timeout" / "timed out" (httpx.ReadTimeout
+      stringifies as "The read operation timed out", missed by a naive
+      "timeout" in msg check)
+    - HTTP 504 DEADLINE_EXCEEDED — server-side timeout. Pro endpoint
+      accepted the stream then ran past its own deadline before producing
+      a final chunk. Same fallback applies; without this branch the typed
+      ServerError fell through to bare ``raise`` and the handler's
+      ``except (OverloadedError, APITimeoutError)`` missed it.
+
+    Args:
+        error_type: Exception class name (type(e).__name__).
+        error_msg: Stringified error message.
+
+    Returns:
+        True if the error is a timeout that should map to APITimeoutError.
+    """
+    msg_lower = error_msg.lower()
+    return (
+        error_type in ("ReadTimeout", "WriteTimeout", "ConnectTimeout",
+                       "PoolTimeout", "APITimeoutError")
+        or "timeout" in msg_lower
+        or "timed out" in msg_lower
+        or "504" in error_msg
+        or "DEADLINE_EXCEEDED" in error_msg
+    )
+
+
 def _is_free_tier_quota_zero(error_msg: str) -> bool:
     """Detect Google 'free_tier ... limit: 0' error.
 
@@ -903,19 +939,10 @@ class GeminiProvider(LLMProvider):
                 if "503" in error_msg or "UNAVAILABLE" in error_msg:
                     raise OverloadedError(
                         f"Google API overloaded: {error_msg}") from e
-                # Match both "timeout" and "timed out" — httpx.ReadTimeout
-                # stringifies as "The read operation timed out" (no contiguous
-                # "timeout" substring), so a naive `"timeout" in msg` misses it
-                # and the raw httpx exception leaks past the handler's typed
-                # except, breaking the Pro→Flash fallback.
-                msg_lower = error_msg.lower()
-                if (error_type in ("ReadTimeout", "WriteTimeout",
-                                   "ConnectTimeout", "PoolTimeout",
-                                   "APITimeoutError")
-                        or "timeout" in msg_lower
-                        or "timed out" in msg_lower):
+                if _is_timeout_error(error_type, error_msg):
                     raise APITimeoutError(
                         f"Google API timeout: {error_msg}") from e
+                msg_lower = error_msg.lower()
                 if "connection" in msg_lower:
                     raise APIConnectionError(
                         f"Google API connection error: {error_msg}") from e
