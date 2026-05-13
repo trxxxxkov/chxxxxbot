@@ -246,7 +246,32 @@ MODEL_REGISTRY: dict[str, ModelConfig] = {
             },
         ),
     # ============ Google Gemini Models ============
-    # Ordered: Flash-Lite (cheapest) -> Flash (balanced) -> Pro (most capable)
+    # Ordered by production fallback priority among working 3.x models:
+    # Flash (strongest currently reliable) -> Flash-Lite GA -> Flash-Lite Preview.
+    # Pro preview remains listed for historical accounting/UI visibility, but is
+    # disabled because live smoke tests returned only 503/504/ReadTimeout.
+    "google:flash":
+        ModelConfig(
+            provider="google",
+            model_id="gemini-3-flash-preview",
+            alias="flash",
+            display_name="Gemini 3 Flash",
+            context_window=1_048_576,
+            max_output=65_536,
+            pricing_input=0.50,
+            pricing_output=3.00,
+            pricing_cache_write_5m=None,
+            pricing_cache_write_1h=None,
+            pricing_cache_read=0.05,  # 10% of input (Google 90% discount)
+            latency_tier="fast",
+            capabilities={
+                "vision": True,
+                "streaming": True,
+                "thinking": True,
+                "grounding": True,
+                "caching": True,
+            },
+        ),
     "google:flash-lite":
         ModelConfig(
             provider="google",
@@ -268,24 +293,23 @@ MODEL_REGISTRY: dict[str, ModelConfig] = {
                 "caching": True,
             },
         ),
-    "google:flash":
+    "google:flash-lite-preview":
         ModelConfig(
             provider="google",
-            model_id="gemini-3-flash-preview",
-            alias="flash",
-            display_name="Gemini 3 Flash",
+            model_id="gemini-3.1-flash-lite-preview",
+            alias="flash-lite-preview",
+            display_name="Gemini 3.1 Flash-Lite Preview",
             context_window=1_048_576,
             max_output=65_536,
-            pricing_input=0.50,
-            pricing_output=3.00,
+            pricing_input=0.25,
+            pricing_output=1.50,
             pricing_cache_write_5m=None,
             pricing_cache_write_1h=None,
-            pricing_cache_read=0.05,  # 10% of input (Google 90% discount)
-            latency_tier="fast",
+            pricing_cache_read=0.025,  # 10% of input (Google 90% discount)
+            latency_tier="fastest",
             capabilities={
                 "vision": True,
                 "streaming": True,
-                "thinking": True,
                 "grounding": True,
                 "caching": True,
             },
@@ -335,15 +359,13 @@ MODEL_REGISTRY: dict[str, ModelConfig] = {
     # ),
 }
 
-# Default model (Google Flash-Lite 3.1 - cheapest, good for new users)
-DEFAULT_MODEL_ID = "google:flash-lite"
+# Default model: strongest Google 3.x model that passed live stream smoke tests.
+DEFAULT_MODEL_ID = "google:flash"
 
-# Google preview endpoints have been noisy in production (503/504/timeouts) and
-# Flash-Lite 3.1 is now available as the stable GA replacement. Keep preview
-# entries in the registry for historical accounting, but do not route new
-# requests to them.
+# Google Pro preview endpoints are currently noisy in production
+# (503/504/timeouts). Keep them in the registry for historical accounting, but
+# do not route new requests to them.
 DISABLED_MODEL_IDS: set[str] = {
-    "google:flash",
     "google:pro",
 }
 

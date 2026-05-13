@@ -16,14 +16,14 @@ logger = get_logger(__name__)
 
 _providers: dict[str, LLMProvider] = {}
 
-# Within-provider degradation chain for graceful 503 fallback.
-# When a model returns OverloadedError after retries, the handler
-# can transparently retry with a cheaper sibling that runs on
-# different infrastructure capacity. Same provider = same conversation
-# format, same tools, no message conversion needed.
+# Within-provider degradation chain for graceful 503/timeout fallback.
+# Google Pro preview endpoints are intentionally excluded from normal routing:
+# live smoke tests showed persistent 503/504/ReadTimeout. The working 3.x chain
+# starts with the strongest reliable model and degrades to cheaper siblings.
 _FALLBACK_CHAIN: dict[str, str] = {
     "google:pro": "google:flash",
     "google:flash": "google:flash-lite",
+    "google:flash-lite": "google:flash-lite-preview",
     "claude:opus": "claude:sonnet",
     "claude:sonnet": "claude:haiku",
 }

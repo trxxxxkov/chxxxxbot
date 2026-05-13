@@ -41,12 +41,11 @@ logger = get_logger(__name__)
 _STREAM_DONE = object()
 
 # Retry configuration for transient server errors (503 UNAVAILABLE, 500, 504).
-# Retries are only attempted before any stream chunks are yielded, so the
-# caller never sees duplicated partial output. This is especially important now
-# that Flash-Lite GA is the terminal Google model: a single immediate 503 from
-# Google should not fail the whole user request without a cheap second try.
-_RETRY_MAX_ATTEMPTS = 2
-_RETRY_DELAYS = (0.6, 1.5)
+# Keep in-provider retries disabled: production behavior showed systematic
+# errors on specific Google model endpoints, so the handler should move through
+# the explicit same-provider fallback chain instead of waiting on retries.
+_RETRY_MAX_ATTEMPTS = 0
+_RETRY_DELAYS = ()
 
 
 def _is_retriable_google_error(error_msg: str) -> bool:
