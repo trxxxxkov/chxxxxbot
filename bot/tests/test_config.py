@@ -12,6 +12,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from config import get_database_url
+from config import get_default_model
+from config import is_model_available
 import pytest
 
 
@@ -194,6 +196,21 @@ def test_get_database_url_format():
         assert ":" in url.split("@")[0]  # Colon between user and password
         assert ":" in url.split("@")[1]  # Colon between host and port
         assert "/" in url.split("@")[1]  # Slash before database name
+
+
+def test_default_model_is_ga_gemini_flash_lite():
+    """Default Google model uses the GA Flash-Lite endpoint."""
+    model = get_default_model()
+
+    assert model.get_full_id() == "google:flash-lite"
+    assert model.model_id == "gemini-3.1-flash-lite"
+    assert is_model_available(model.get_full_id())
+
+
+def test_google_preview_models_are_not_available():
+    """No new requests should route to noisy Google preview endpoints."""
+    assert not is_model_available("google:flash")
+    assert not is_model_available("google:pro")
 
 
 def test_get_database_url_port_as_string(monkeypatch):

@@ -338,6 +338,15 @@ MODEL_REGISTRY: dict[str, ModelConfig] = {
 # Default model (Google Flash-Lite 3.1 - cheapest, good for new users)
 DEFAULT_MODEL_ID = "google:flash-lite"
 
+# Google preview endpoints have been noisy in production (503/504/timeouts) and
+# Flash-Lite 3.1 is now available as the stable GA replacement. Keep preview
+# entries in the registry for historical accounting, but do not route new
+# requests to them.
+DISABLED_MODEL_IDS: set[str] = {
+    "google:flash",
+    "google:pro",
+}
+
 # ============================================================================
 # System Prompt Architecture
 # ============================================================================
@@ -451,6 +460,11 @@ def get_default_model() -> ModelConfig:
         Default ModelConfig.
     """
     return MODEL_REGISTRY[DEFAULT_MODEL_ID]
+
+
+def is_model_available(full_id: str) -> bool:
+    """Return whether a model can be selected and used for new requests."""
+    return full_id in MODEL_REGISTRY and full_id not in DISABLED_MODEL_IDS
 
 
 def list_all_models() -> list[tuple[str, str]]:

@@ -11,6 +11,7 @@ from aiogram.enums import ButtonStyle
 from aiogram.types import InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from config import get_models_by_provider
+from config import is_model_available
 from config import ModelConfig
 from i18n import get_text
 
@@ -18,7 +19,7 @@ from i18n import get_text
 # Telegram supports: primary (blue), success (green), danger (red)
 TIER_STYLES = ["success", "primary", "primary"]
 
-# Providers that are temporarily disabled (shown in red, click triggers alert)
+# Providers that are temporarily disabled (shown in red, click triggers alert).
 DISABLED_PROVIDERS: set[str] = {"claude"}
 
 
@@ -65,7 +66,8 @@ def get_model_keyboard(current: str) -> InlineKeyboardBuilder:
             model = claude_models[i]
             full_id = model.get_full_id()
             mark = "✅ " if full_id == current else ""
-            is_disabled = model.provider in DISABLED_PROVIDERS
+            is_disabled = (model.provider in DISABLED_PROVIDERS
+                           or not is_model_available(full_id))
             buttons.append(
                 InlineKeyboardButton(
                     text=f"{mark}{_short_name(model)}",
@@ -79,7 +81,8 @@ def get_model_keyboard(current: str) -> InlineKeyboardBuilder:
             model = google_models[i]
             full_id = model.get_full_id()
             mark = "✅ " if full_id == current else ""
-            is_disabled = model.provider in DISABLED_PROVIDERS
+            is_disabled = (model.provider in DISABLED_PROVIDERS
+                           or not is_model_available(full_id))
             buttons.append(
                 InlineKeyboardButton(
                     text=f"{mark}{_short_name(model)}",

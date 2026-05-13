@@ -13,6 +13,7 @@ from aiogram.filters import Command
 from cache.user_cache import invalidate_user
 from config import get_default_model
 from config import get_model
+from config import is_model_available
 from db.repositories.chat_repository import ChatRepository
 from db.repositories.thread_repository import ThreadRepository
 from db.repositories.user_repository import UserRepository
@@ -169,6 +170,14 @@ async def model_selection_callback(  # pylint: disable=too-many-locals
                      user_id=callback.from_user.id)
         await callback.answer(
             get_text("model.not_found", lang, model_id=new_model_id))
+        return
+
+    if not is_model_available(new_model_id):
+        logger.warning("model_selection.unavailable_model",
+                       model_id=new_model_id,
+                       user_id=callback.from_user.id)
+        await callback.answer(get_text("model.temporarily_unavailable", lang),
+                              show_alert=True)
         return
 
     # Get repositories

@@ -41,13 +41,16 @@ from cache.thread_cache import invalidate_messages
 from cache.thread_cache import update_cached_messages
 from cache.user_cache import cache_user
 from cache.user_cache import get_cached_user
+from cache.user_cache import invalidate_user
 from cache.write_behind import queue_write
 from cache.write_behind import WriteType
 import config
 from config import CLAUDE_TOKEN_BUFFER_PERCENT
 from config import FILES_API_TTL_HOURS
+from config import get_default_model
 from config import get_model
 from config import get_system_prompt
+from config import is_model_available
 from core.claude.context import ContextManager
 from core.provider_factory import get_fallback_model
 from core.provider_factory import get_provider
@@ -489,6 +492,20 @@ async def _process_batch_with_session(
                     first_message.bot, first_message, thread,
                     "User not found. Please contact administrator.")
                 return
+
+            if not is_model_available(user_model_id):
+                old_model_id = user_model_id
+                default_model = get_default_model()
+                user_model_id = default_model.get_full_id()
+                user = user or await services.users.get_by_id(user_id)
+                if user:
+                    user.model_id = user_model_id
+                    await session.commit()
+                await invalidate_user(user_id)
+                logger.warning("claude_handler.model_unavailable_remapped",
+                               user_id=user_id,
+                               old_model=old_model_id,
+                               new_model=user_model_id)
 
             # Cache user data if loaded from DB
             if user is not None:
