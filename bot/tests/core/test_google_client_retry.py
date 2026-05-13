@@ -104,14 +104,14 @@ class TestIsTimeoutError:
 class TestRetryConstants:
     """Sanity checks on retry configuration.
 
-    In-provider retry is intentionally disabled (set to 0 in d2f669c) so
-    transient errors propagate immediately to the handler's Pro→Flash→
-    Flash-Lite fallback chain. Any non-zero retry here would block the
-    user for the full retry budget before fallback engages.
+    In-provider retry is intentionally short and only applies before any
+    stream chunks are yielded. Flash-Lite GA is the terminal Google model, so
+    a single immediate 503 should get a cheap second try before surfacing to
+    the user.
     """
 
-    def test_in_provider_retry_disabled(self):
-        assert _RETRY_MAX_ATTEMPTS == 0
+    def test_in_provider_retry_enabled(self):
+        assert _RETRY_MAX_ATTEMPTS == 2
 
     def test_delays_match_attempts(self):
         assert len(_RETRY_DELAYS) == _RETRY_MAX_ATTEMPTS

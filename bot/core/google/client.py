@@ -41,12 +41,12 @@ logger = get_logger(__name__)
 _STREAM_DONE = object()
 
 # Retry configuration for transient server errors (503 UNAVAILABLE, 500, 504).
-# Set to 0: do not retry inside the provider — let exceptions propagate to the
-# handler so the Pro→Flash fallback chain engages immediately. Combined with
-# the 10s HTTP timeout in get_google_client(), this caps user-perceived wait
-# at ~10s before fallback. The Claude client has its own retry policy.
-_RETRY_MAX_ATTEMPTS = 0
-_RETRY_DELAYS = ()
+# Retries are only attempted before any stream chunks are yielded, so the
+# caller never sees duplicated partial output. This is especially important now
+# that Flash-Lite GA is the terminal Google model: a single immediate 503 from
+# Google should not fail the whole user request without a cheap second try.
+_RETRY_MAX_ATTEMPTS = 2
+_RETRY_DELAYS = (0.6, 1.5)
 
 
 def _is_retriable_google_error(error_msg: str) -> bool:
