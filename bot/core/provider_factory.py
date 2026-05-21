@@ -17,13 +17,10 @@ logger = get_logger(__name__)
 _providers: dict[str, LLMProvider] = {}
 
 # Within-provider degradation chain for graceful 503/timeout fallback.
-# Google Pro preview endpoints are intentionally excluded from normal routing:
-# live smoke tests showed persistent 503/504/ReadTimeout. The working 3.x chain
-# starts with the strongest reliable model and degrades to cheaper siblings.
+# Old Google 3.x preview/lite endpoints are intentionally excluded from normal
+# routing because production logs showed repeated 503/504/ReadTimeout.
 _FALLBACK_CHAIN: dict[str, str] = {
     "google:pro": "google:flash",
-    "google:flash": "google:flash-lite",
-    "google:flash-lite": "google:flash-lite-preview",
     "claude:opus": "claude:sonnet",
     "claude:sonnet": "claude:haiku",
 }
@@ -62,7 +59,7 @@ def get_provider(model_full_id: str) -> LLMProvider:
 
 def init_providers() -> None:
     """Pre-initialize default provider (Google). Others initialized lazily."""
-    get_provider("google:flash-lite")
+    get_provider("google:flash")
 
 
 def clear_providers() -> None:

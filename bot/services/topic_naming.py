@@ -109,8 +109,7 @@ class TopicNamingService:
                 from config import get_model  # pylint: disable=import-outside-toplevel
                 model_config = get_model(user_model_id)
                 if model_config.provider == "google":
-                    # Use Flash-Lite for Google users (~40% cheaper)
-                    return "gemini-3.1-flash-lite", "google"
+                    return "gemini-3.5-flash", "google"
             except KeyError:
                 pass
         return self.model, "claude"
@@ -292,8 +291,8 @@ class TopicNamingService:
             else:
                 # Google and other providers: simple pricing
                 naming_model_full = (
-                    "google:flash-lite" if provider == "google"
-                    else user_model_id or "google:flash-lite")
+                    "google:flash" if provider == "google"
+                    else user_model_id or "google:flash")
                 cost_usd = calculate_provider_cost(
                     naming_model_full,
                     TokenUsage(

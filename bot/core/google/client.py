@@ -972,7 +972,7 @@ class GeminiProvider(LLMProvider):
         try:
             client = get_google_client()
             count_model = getattr(self, '_last_model_id', None) or \
-                "gemini-3.1-flash-lite"
+                "gemini-3.5-flash"
 
             def _sync_count():
                 response = client.models.count_tokens(

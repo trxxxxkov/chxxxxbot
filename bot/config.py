@@ -246,23 +246,21 @@ MODEL_REGISTRY: dict[str, ModelConfig] = {
             },
         ),
     # ============ Google Gemini Models ============
-    # Ordered by production fallback priority among working 3.x models:
-    # Flash (strongest currently reliable) -> Flash-Lite GA -> Flash-Lite Preview.
-    # Pro preview remains listed for historical accounting/UI visibility, but is
-    # disabled because live smoke tests returned only 503/504/ReadTimeout.
+    # Keep historical 3.x models in the registry for accounting/UI visibility,
+    # but route new traffic to the stable current model.
     "google:flash":
         ModelConfig(
             provider="google",
-            model_id="gemini-3-flash-preview",
+            model_id="gemini-3.5-flash",
             alias="flash",
-            display_name="Gemini 3 Flash",
+            display_name="Gemini 3.5 Flash",
             context_window=1_048_576,
             max_output=65_536,
-            pricing_input=0.50,
-            pricing_output=3.00,
+            pricing_input=1.50,
+            pricing_output=9.00,
             pricing_cache_write_5m=None,
             pricing_cache_write_1h=None,
-            pricing_cache_read=0.05,  # 10% of input (Google 90% discount)
+            pricing_cache_read=0.15,  # 10% of input (Google 90% discount)
             latency_tier="fast",
             capabilities={
                 "vision": True,
@@ -270,6 +268,10 @@ MODEL_REGISTRY: dict[str, ModelConfig] = {
                 "thinking": True,
                 "grounding": True,
                 "caching": True,
+                "code_execution": True,
+                "function_calling": True,
+                "structured_outputs": True,
+                "url_context": True,
             },
         ),
     "google:flash-lite":
@@ -359,14 +361,16 @@ MODEL_REGISTRY: dict[str, ModelConfig] = {
     # ),
 }
 
-# Default model: strongest Google 3.x model that passed live stream smoke tests.
+# Default model: current stable Gemini Flash endpoint.
 DEFAULT_MODEL_ID = "google:flash"
 
-# Google Pro preview endpoints are currently noisy in production
+# Old Google 3.x preview/lite endpoints have been noisy in production
 # (503/504/timeouts). Keep them in the registry for historical accounting, but
 # do not route new requests to them.
 DISABLED_MODEL_IDS: set[str] = {
     "google:pro",
+    "google:flash-lite",
+    "google:flash-lite-preview",
 }
 
 # ============================================================================

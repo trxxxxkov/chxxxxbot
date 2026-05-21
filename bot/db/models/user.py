@@ -126,7 +126,7 @@ class User(Base, TimestampMixin):
     model_id: Mapped[str] = mapped_column(
         String(100),  # Fits "provider:alias" format (e.g., "claude:sonnet")
         nullable=False,
-        default="google:flash-lite",  # Default: Google Flash-Lite 3.1 (cheapest)
+        default="google:flash",  # Default: current stable Google Flash
         doc="Model identifier in format 'provider:alias' "
         "(e.g., 'claude:sonnet', 'openai:gpt4')",
     )

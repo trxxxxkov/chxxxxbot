@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 # Fallback model if user's model is unavailable
-FALLBACK_SEARCH_MODEL_ID = "google:flash-lite"
+FALLBACK_SEARCH_MODEL_ID = "google:flash"
 
 # =============================================================================
 # Prometheus Metrics

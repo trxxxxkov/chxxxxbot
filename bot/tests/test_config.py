@@ -198,12 +198,12 @@ def test_get_database_url_format():
         assert "/" in url.split("@")[1]  # Slash before database name
 
 
-def test_default_model_is_strongest_working_google_3x():
-    """Default Google model uses the strongest currently reliable 3.x endpoint."""
+def test_default_model_is_current_stable_google_flash():
+    """Default Google model uses the current stable Flash endpoint."""
     model = get_default_model()
 
     assert model.get_full_id() == "google:flash"
-    assert model.model_id == "gemini-3-flash-preview"
+    assert model.model_id == "gemini-3.5-flash"
     assert is_model_available(model.get_full_id())
 
 
@@ -211,8 +211,8 @@ def test_google_pro_preview_model_is_not_available():
     """No new requests should route to noisy Google Pro preview endpoints."""
     assert not is_model_available("google:pro")
     assert is_model_available("google:flash")
-    assert is_model_available("google:flash-lite")
-    assert is_model_available("google:flash-lite-preview")
+    assert not is_model_available("google:flash-lite")
+    assert not is_model_available("google:flash-lite-preview")
 
 
 def test_get_database_url_port_as_string(monkeypatch):
