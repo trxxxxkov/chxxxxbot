@@ -513,6 +513,44 @@ MESSAGES: MessageDict = {
     },
 
     # =========================================================================
+    # Admin - /admin_refund command
+    # =========================================================================
+    "admin.refund_usage": {
+        "en": (
+            "ℹ️ <b>Admin Refund (Force)</b>\n\n"
+            "<b>Usage:</b> <code>/admin_refund &lt;transaction_id&gt;</code>\n\n"
+            "Refunds the payment regardless of owner, age, or balance.\n"
+            "Target user's balance may go negative."),
+        "ru": (
+            "ℹ️ <b>Админ-возврат (форсированно)</b>\n\n"
+            "<b>Использование:</b> <code>/admin_refund &lt;transaction_id&gt;</code>\n\n"
+            "Возврат платежа без проверок владельца, срока и баланса.\n"
+            "Баланс пользователя может уйти в минус."),
+    },
+    "admin.refund_success": {
+        "en": ("✅ <b>Refund processed</b>\n\n"
+               "<b>User:</b> <code>{target_user_id}</code>\n"
+               "<b>Refunded:</b> {stars_amount} ⭐ (${usd_amount})\n"
+               "<b>New balance:</b> ${new_balance}"),
+        "ru": ("✅ <b>Возврат выполнен</b>\n\n"
+               "<b>Пользователь:</b> <code>{target_user_id}</code>\n"
+               "<b>Возвращено:</b> {stars_amount} ⭐ (${usd_amount})\n"
+               "<b>Новый баланс:</b> ${new_balance}"),
+    },
+    "admin.refund_failed": {
+        "en": "❌ <b>Refund failed:</b>\n\n{error}",
+        "ru": "❌ <b>Ошибка возврата:</b>\n\n{error}",
+    },
+    "admin.refund_telegram_failed": {
+        "en": "❌ Telegram refund API call failed. Database changes rolled back.",
+        "ru": "❌ Telegram API возврата вернул ошибку. Изменения в БД откатаны.",
+    },
+    "admin.refund_error": {
+        "en": "❌ Refund failed. Please try again.",
+        "ru": "❌ Ошибка возврата. Попробуйте ещё раз.",
+    },
+
+    # =========================================================================
     # Admin - /set_margin command
     # =========================================================================
     "admin.margin_usage": {

@@ -354,6 +354,105 @@ class PaymentService:
 
         return payment
 
+    async def process_refund_admin(
+        self,
+        admin_user_id: int,
+        telegram_payment_charge_id: str,
+    ) -> Payment:
+        """Process payment refund initiated by an admin.
+
+        Bypasses standard restrictions:
+        - No ownership check (admin can refund any user's payment)
+        - No refund period check (can refund older payments)
+        - No balance check (balance may go negative)
+
+        Caller must call bot.refund_star_payment() separately with the
+        owner user_id of the payment.
+
+        Args:
+            admin_user_id: Telegram user ID of admin performing refund.
+            telegram_payment_charge_id: Transaction ID to refund.
+
+        Returns:
+            Updated Payment record with status=REFUNDED.
+
+        Raises:
+            ValueError: If payment not found or not in COMPLETED status.
+        """
+        logger.info(
+            "payment.admin_refund_started",
+            admin_user_id=admin_user_id,
+            charge_id=telegram_payment_charge_id,
+        )
+
+        payment = await self.payment_repo.get_by_charge_id(
+            telegram_payment_charge_id)
+        if not payment:
+            logger.error(
+                "payment.admin_refund_payment_not_found",
+                admin_user_id=admin_user_id,
+                charge_id=telegram_payment_charge_id,
+            )
+            raise ValueError(f"Payment {telegram_payment_charge_id} not found")
+
+        if payment.status != PaymentStatus.COMPLETED:
+            logger.info(
+                "payment.admin_refund_invalid_status",
+                payment_id=payment.id,
+                status=payment.status.value,
+            )
+            raise ValueError(
+                f"Payment {payment.id} has status {payment.status.value}, "
+                f"cannot refund")
+
+        target_user_id = payment.user_id
+        user = await self.user_repo.get_by_id(target_user_id)
+        if not user:
+            logger.error("payment.admin_refund_user_not_found",
+                         user_id=target_user_id)
+            raise ValueError(f"User {target_user_id} not found")
+
+        balance_before = user.balance
+        user.balance -= payment.credited_usd_amount
+        balance_after = user.balance
+
+        payment.status = PaymentStatus.REFUNDED
+        payment.refunded_at = datetime.now(timezone.utc)
+
+        operation = BalanceOperation(
+            user_id=target_user_id,
+            operation_type=OperationType.REFUND,
+            amount=-payment.credited_usd_amount,
+            balance_before=balance_before,
+            balance_after=balance_after,
+            related_payment_id=payment.id,
+            admin_user_id=admin_user_id,
+            description=(
+                f"Admin refund by {admin_user_id}: "
+                f"{payment.stars_amount} Stars payment refunded, "
+                f"${payment.credited_usd_amount} deducted"),
+        )
+        self.session.add(operation)
+
+        await self.session.commit()
+
+        logger.info(
+            "payment.admin_refund_processed",
+            admin_user_id=admin_user_id,
+            payment_id=payment.id,
+            user_id=target_user_id,
+            stars_amount=payment.stars_amount,
+            refunded_usd=float(payment.credited_usd_amount),
+            balance_before=float(balance_before),
+            balance_after=float(balance_after),
+            charge_id=telegram_payment_charge_id,
+            msg="Admin refund processed (balance may be negative)",
+        )
+
+        await update_cached_balance(target_user_id, balance_after)
+
+        return payment
+
     async def process_refund(
         self,
         user_id: int,

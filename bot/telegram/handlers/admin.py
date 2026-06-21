@@ -171,6 +171,121 @@ async def cmd_topup(message: Message, session: AsyncSession):
         await message.answer(get_text("admin.topup_error", lang))
 
 
+@router.message(Command("admin_refund"))
+async def cmd_admin_refund(message: Message, session: AsyncSession):
+    """Handler for /admin_refund command - admin-initiated Stars refund.
+
+    Privileged users only.
+    Usage: /admin_refund <transaction_id>
+
+    Bypasses ownership, refund-period, and balance checks. The target
+    user's balance is whichever user originally made the payment; their
+    balance may go negative as a result.
+    """
+    user_id = message.from_user.id
+    lang = get_lang(message.from_user.language_code)
+
+    if not is_privileged(user_id):
+        logger.warning(
+            "admin.refund_unauthorized",
+            user_id=user_id,
+            username=message.from_user.username,
+            msg="Unauthorized admin_refund attempt",
+        )
+        await message.answer(get_text("admin.unauthorized", lang))
+        return
+
+    args = message.text.split(maxsplit=1)
+    if len(args) < 2:
+        await message.answer(get_text("admin.refund_usage", lang))
+        return
+
+    transaction_id = args[1].strip()
+
+    logger.info(
+        "admin.refund_requested",
+        admin_user_id=user_id,
+        admin_username=message.from_user.username,
+        transaction_id=transaction_id,
+    )
+
+    services = ServiceFactory(session)
+
+    try:
+        payment_record = await services.payment.process_refund_admin(
+            admin_user_id=user_id,
+            telegram_payment_charge_id=transaction_id,
+        )
+
+        target_user_id = payment_record.user_id
+
+        success = await message.bot.refund_star_payment(
+            user_id=target_user_id,
+            telegram_payment_charge_id=transaction_id,
+        )
+
+        if not success:
+            await session.rollback()
+            logger.error(
+                "admin.refund_telegram_api_failed",
+                admin_user_id=user_id,
+                target_user_id=target_user_id,
+                transaction_id=transaction_id,
+                msg="Telegram refund API call failed, rolled back DB changes",
+            )
+            await message.answer(get_text("admin.refund_telegram_failed", lang))
+            return
+
+        new_balance = await services.balance.get_balance(target_user_id)
+
+        await message.answer(
+            get_text(
+                "admin.refund_success",
+                lang,
+                target_user_id=target_user_id,
+                stars_amount=payment_record.stars_amount,
+                usd_amount=payment_record.credited_usd_amount,
+                new_balance=new_balance,
+            ))
+
+        logger.info(
+            "admin.refund_success",
+            admin_user_id=user_id,
+            target_user_id=target_user_id,
+            payment_id=payment_record.id,
+            stars_refunded=payment_record.stars_amount,
+            usd_deducted=float(payment_record.credited_usd_amount),
+            new_balance=float(new_balance),
+        )
+
+        logger.info(
+            "stars.refund_processed",
+            user_id=target_user_id,
+            stars_amount=payment_record.stars_amount,
+        )
+
+    except ValueError as e:
+        logger.info(
+            "admin.refund_validation_error",
+            admin_user_id=user_id,
+            transaction_id=transaction_id,
+            error=str(e),
+        )
+        await message.answer(
+            get_text("admin.refund_failed", lang, error=str(e)))
+
+    except Exception as e:
+        logger.error(
+            "admin.refund_error",
+            admin_user_id=user_id,
+            transaction_id=transaction_id,
+            error=str(e),
+            exc_info=True,
+            msg="Unexpected error during admin refund",
+        )
+        await message.answer(get_text("admin.refund_error", lang))
+
+
 @router.message(Command("set_margin"))
 async def cmd_set_margin(message: Message):
     """Handler for /set_margin command - configure owner margin (k3).
